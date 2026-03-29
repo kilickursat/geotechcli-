@@ -1,0 +1,2 @@
+# geotechcli-
+agentic geotech engineer
