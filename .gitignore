@@ -1,0 +1,31 @@
+node_modules/
+dist/
+.turbo/
+.next/
+out/
+*.tsbuildinfo
+
+# Environment — NEVER commit real keys
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test
+coverage/
+
+# Build artifacts
+*.tgz

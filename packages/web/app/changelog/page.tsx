@@ -1,0 +1,93 @@
+import { Nav } from '@/components/Nav';
+import { Footer } from '@/components/Footer';
+import { GEOTECHCLI_VERSION } from '@geotechcli/core';
+
+const releases = [
+  {
+    version: GEOTECHCLI_VERSION,
+    date: '2026-03-30',
+    tag: 'Stability + Safety',
+    changes: [
+      { type: 'security', text: 'Filesystem sandbox and shell command hardening for agent tools' },
+      { type: 'feat', text: 'Pile capacity, slope stability, and lateral earth pressure modules added to the deterministic core' },
+      { type: 'fix', text: 'Bearing capacity water-table correction implemented for shallow foundations' },
+      { type: 'feat', text: 'Persistent CLI usage tracking and email verification flow added' },
+      { type: 'feat', text: '--quiet and --dry-run wired into the CLI for safer scripted workflows' },
+      { type: 'fix', text: 'Expanded guardrails, standards coverage, and tool registry breadth for agent execution' },
+    ],
+  },
+  {
+    version: '0.1.0',
+    date: '2026-03-26',
+    tag: 'Initial Release',
+    changes: [
+      { type: 'feat', text: 'Bearing capacity calculation (Terzaghi, Meyerhof, Hansen, Vesic)' },
+      { type: 'feat', text: 'Liquefaction triggering analysis (Boulanger & Idriss 2014, NCEER)' },
+      { type: 'feat', text: 'Rock & soil classification (RMR89, USCS, Q-system)' },
+      { type: 'feat', text: 'TBM performance prediction, type selection, cutter wear estimation' },
+      { type: 'feat', text: 'AI vision analysis: core box, hybrid RMR, sensor data, borehole logs' },
+      { type: 'feat', text: 'Multi-agent orchestrator (Geo, Tunnel, Hydro, Seismic, Slope, Foundation agents)' },
+      { type: 'feat', text: 'AI-powered report generation from analysis data' },
+      { type: 'feat', text: 'Natural language soil classification' },
+      { type: 'feat', text: 'GBR document Q&A with vision model' },
+      { type: 'feat', text: 'Export to GeoJSON, DXF (AutoCAD), and CSV' },
+      { type: 'feat', text: 'PLAXIS / FLAC / Rocscience bridge (detection + script generation)' },
+      { type: 'feat', text: 'LLM-agnostic provider layer: Zhipu GLM-5 (default), OpenAI, Anthropic, self-hosted' },
+      { type: 'feat', text: 'Anti-abuse metering: 5 free AI calls for unregistered users, IP fingerprinting' },
+      { type: 'feat', text: '--json, --verbose, --plot, --output global flags on every command' },
+      { type: 'security', text: 'API keys never logged, echoed, or included in error messages' },
+      { type: 'security', text: 'JSON output auto-redacts all sensitive fields' },
+    ],
+  },
+];
+
+const typeColors: Record<string, string> = {
+  feat: 'bg-[rgba(45,212,191,0.15)] text-[var(--accent-teal)]',
+  fix: 'bg-[rgba(59,130,246,0.15)] text-[var(--accent-blue)]',
+  security: 'bg-[rgba(245,158,11,0.15)] text-[var(--accent-orange)]',
+  breaking: 'bg-[rgba(239,68,68,0.15)] text-red-400',
+};
+
+export default function ChangelogPage() {
+  return (
+    <>
+      <Nav />
+      <main className="pt-24 px-12 pb-16 max-w-[800px]">
+        <h1 className="text-4xl font-bold tracking-tight mb-4">Changelog</h1>
+        <p className="text-[var(--text-secondary)] text-base mb-12">
+          All notable changes to geotechCLI.
+        </p>
+
+        {releases.map((release) => (
+          <section key={release.version} className="mb-16">
+            <div className="flex items-center gap-4 mb-6">
+              <h2 className="text-2xl font-bold tracking-tight">v{release.version}</h2>
+              <span className="font-[var(--font-mono)] text-xs text-[var(--text-muted)]">
+                {release.date}
+              </span>
+              <span className="px-2.5 py-0.5 bg-[rgba(45,212,191,0.1)] text-[var(--accent-teal)] text-[10px] font-semibold rounded-full uppercase tracking-wider">
+                {release.tag}
+              </span>
+            </div>
+
+            <div className="space-y-3">
+              {release.changes.map((change, i) => (
+                <div key={i} className="flex items-start gap-3">
+                  <span
+                    className={`shrink-0 mt-0.5 px-2 py-0.5 text-[10px] font-semibold rounded uppercase tracking-wider ${typeColors[change.type] ?? typeColors.feat}`}
+                  >
+                    {change.type}
+                  </span>
+                  <span className="text-[14px] text-[var(--text-secondary)] leading-[1.6]">
+                    {change.text}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
+        ))}
+      </main>
+      <Footer />
+    </>
+  );
+}

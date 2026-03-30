@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: TypeScript Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm ci
+      - run: npm run verify:consistency
+      - run: npx turbo run build --filter=@geotechcli/core
+      - run: npx tsc --noEmit
+        working-directory: packages/core
+      - run: npx tsc --noEmit
+        working-directory: packages/cli
+      - run: npx tsc --noEmit
+        working-directory: packages/web
+
+  test:
+    name: Test Suite (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18, 20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ matrix.node-version }}', cache: npm }
+      - run: npm ci
+      - run: npm test --workspace=packages/core
+
+  build:
+    name: Full Build
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm ci
+      - run: npx turbo run build
+      - run: npm run smoke:web
+      - run: test -f packages/cli/dist/index.js
+      - run: test -f packages/core/dist/index.js
+      - run: test -f packages/web/.next/BUILD_ID
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm ci
+      - name: Check for hardcoded secrets
+        run: |
+          if grep -rn --include='*.ts' --include='*.tsx' -E '(sk-[a-zA-Z0-9]{20,}|hf_[a-zA-Z0-9]{20,}|gtp_[a-zA-Z0-9]{20,})' packages/ ; then
+            echo "::error::Potential hardcoded API key!" && exit 1
+          fi
+      - name: Audit deps
+        run: npm audit --audit-level=high || true
+      - name: Verify security hardening
+        run: |
+          grep -q '0o600' packages/core/src/config/index.ts
+          grep -q 'MAX_BODY_SIZE_BYTES' packages/web/app/api/proxy/route.ts
+          grep -q 'isIPRateLimited' packages/web/app/api/proxy/route.ts
+          grep -q 'validateMessages' packages/web/app/api/proxy/route.ts
+          grep -q 'verifyWebhookSignature' packages/web/lib/stripe.ts
+          grep -q 'getUserByKey' packages/web/app/api/proxy/route.ts
+          grep -q 'RedisUsageStore' packages/core/src/db/redis.ts
+          echo "All security controls verified."

@@ -1,0 +1,46 @@
+{
+  "version": "0.2.0",
+  "defaults": {
+    "provider": "zhipu",
+    "model": "glm-5",
+    "visionModel": "glm-4v-flash"
+  },
+  "proxyModels": ["glm-5", "glm-4v-flash", "glm-4.6v", "glm-5-turbo"],
+  "globalFlags": [
+    {
+      "key": "json",
+      "option": "--json",
+      "description": "Output raw JSON (for piping to jq, scripts, CI)"
+    },
+    {
+      "key": "plot",
+      "option": "--plot",
+      "description": "Render terminal chart"
+    },
+    {
+      "key": "verbose",
+      "option": "--verbose",
+      "description": "Show step-by-step calculation details"
+    },
+    {
+      "key": "quiet",
+      "option": "--quiet",
+      "description": "Suppress all non-essential output"
+    },
+    {
+      "key": "dryRun",
+      "option": "--dry-run",
+      "description": "Show what would be calculated without executing"
+    },
+    {
+      "key": "output",
+      "option": "--output <file>",
+      "description": "Save results to file (csv, json)"
+    },
+    {
+      "key": "noColor",
+      "option": "--no-color",
+      "description": "Disable colored output"
+    }
+  ]
+}
