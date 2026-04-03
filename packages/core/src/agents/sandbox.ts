@@ -111,11 +111,20 @@ export function validatePath(
   extraAllowed?: string[],
 ): SandboxCheck {
   const resolved = resolve(targetPath);
+  const normalizeForPrefixCheck = (value: string) => value.replace(/\\/g, '/').toLowerCase();
+  const normalizedInput = normalizeForPrefixCheck(targetPath);
+  const normalizedResolved = normalizeForPrefixCheck(resolved);
 
   // --- 1. Block system directories ---
-  const resolvedLower = resolved.toLowerCase();
   for (const prefix of BLOCKED_SYSTEM_PREFIXES) {
-    if (resolvedLower.startsWith(prefix.toLowerCase() + sep) || resolvedLower === prefix.toLowerCase()) {
+    const normalizedPrefix = normalizeForPrefixCheck(prefix);
+    const matchesSystemPrefix =
+      normalizedInput === normalizedPrefix ||
+      normalizedInput.startsWith(`${normalizedPrefix}/`) ||
+      normalizedResolved === normalizedPrefix ||
+      normalizedResolved.startsWith(`${normalizedPrefix}/`);
+
+    if (matchesSystemPrefix) {
       return {
         safe: false,
         resolved,

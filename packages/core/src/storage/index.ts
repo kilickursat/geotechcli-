@@ -252,49 +252,47 @@ function normalizeAgentSession(value: unknown, index: number): ProjectAgentSessi
 function normalizeDatasets(value: unknown): Record<string, ProjectDataset> {
   if (!isRecord(value)) return {};
 
-  return Object.fromEntries(
-    Object.entries(value)
-      .map(([name, dataset]) => {
-        if (!isRecord(dataset)) return null;
-        const resolvedName = asOptionalString(dataset.name) ?? name;
-        const kind = asOptionalString(dataset.kind);
-        if (!resolvedName || !kind) return null;
-        return [
-          resolvedName,
-          {
-            name: resolvedName,
-            kind,
-            data: dataset.data ?? null,
-            source: asOptionalString(dataset.source),
-            updatedAt: asOptionalString(dataset.updatedAt) ?? nowIso(),
-          } satisfies ProjectDataset,
-        ] as const;
-      })
-      .filter((entry): entry is readonly [string, ProjectDataset] => entry !== null),
-  );
+  const datasets: Record<string, ProjectDataset> = {};
+
+  for (const [name, dataset] of Object.entries(value)) {
+    if (!isRecord(dataset)) continue;
+
+    const resolvedName = asOptionalString(dataset.name) ?? name;
+    const kind = asOptionalString(dataset.kind);
+    if (!resolvedName || !kind) continue;
+
+    datasets[resolvedName] = {
+      name: resolvedName,
+      kind,
+      data: dataset.data ?? null,
+      source: asOptionalString(dataset.source),
+      updatedAt: asOptionalString(dataset.updatedAt) ?? nowIso(),
+    };
+  }
+
+  return datasets;
 }
 
 function normalizeDerivedParameters(value: unknown): Record<string, DerivedParameter> {
   if (!isRecord(value)) return {};
 
-  return Object.fromEntries(
-    Object.entries(value)
-      .map(([name, parameter]) => {
-        if (!isRecord(parameter)) return null;
-        const resolvedName = asOptionalString(parameter.name) ?? name;
-        if (!resolvedName) return null;
-        return [
-          resolvedName,
-          {
-            name: resolvedName,
-            value: parameter.value ?? null,
-            source: asOptionalString(parameter.source),
-            updatedAt: asOptionalString(parameter.updatedAt) ?? nowIso(),
-          } satisfies DerivedParameter,
-        ] as const;
-      })
-      .filter((entry): entry is readonly [string, DerivedParameter] => entry !== null),
-  );
+  const parameters: Record<string, DerivedParameter> = {};
+
+  for (const [name, parameter] of Object.entries(value)) {
+    if (!isRecord(parameter)) continue;
+
+    const resolvedName = asOptionalString(parameter.name) ?? name;
+    if (!resolvedName) continue;
+
+    parameters[resolvedName] = {
+      name: resolvedName,
+      value: parameter.value ?? null,
+      source: asOptionalString(parameter.source),
+      updatedAt: asOptionalString(parameter.updatedAt) ?? nowIso(),
+    };
+  }
+
+  return parameters;
 }
 
 function normalizeActiveAnalysisContext(value: unknown): ActiveAnalysisContext {

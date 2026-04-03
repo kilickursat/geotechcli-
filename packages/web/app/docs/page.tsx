@@ -18,10 +18,15 @@ const sections = [
     id: 'install',
     title: 'Installation',
     content: `\`\`\`bash
+# Install Node.js LTS first and verify the toolchain
+node -v
+npm -v
+
+# Install geotechCLI
 npm install -g geotechcli
 \`\`\`
 
-Requires Node.js ≥ 18. Verify installation:
+Use the official Node.js installer or a trusted OS package manager. Deterministic commands work immediately after install. AI, vision, and agent commands require a provider key in Wave 1. Verify installation:
 
 \`\`\`bash
 geotech --version
@@ -42,12 +47,15 @@ geotech config set llm.provider ${DEFAULT_LLM_PROVIDER}
 # Set API key (stored locally, never transmitted in logs)
 geotech config set llm.api_key your-api-key
 
-# Default hosted models
+# Strong beta defaults
 geotech config get llm.provider   # ${DEFAULT_LLM_PROVIDER}
 geotech config get llm.model      # provider default (${DEFAULT_LLM_MODEL})
 geotech config get llm.vision_model  # provider default (${DEFAULT_LLM_VISION_MODEL})
 
-# Hugging Face — any model from the Hub (Pro tier required)
+# Wave 1 note: hosted anonymous GLM access is coming in Wave 2
+# For now, configure your own provider key locally.
+
+# Hugging Face — advanced beta with your own token
 geotech config set llm.provider huggingface
 geotech config set llm.api_key hf_your_token
 geotech config set llm.model meta-llama/Llama-3.1-8B-Instruct
@@ -59,15 +67,15 @@ geotech config set llm.model deepseek-ai/DeepSeek-V3:cheapest
 # HF vision model for geotech vision commands
 geotech config set llm.vision_model Qwen/Qwen2.5-VL-7B-Instruct
 
-# OpenAI (Pro tier required)
+# OpenAI — advanced beta with your own key
 geotech config set llm.provider openai
 geotech config set llm.api_key sk-...
 
-# Anthropic (Pro tier required)
+# Anthropic — advanced beta with your own key
 geotech config set llm.provider anthropic
 geotech config set llm.api_key sk-ant-...
 
-# Switch to self-hosted model (e.g. Qwen on VPS)
+# Self-hosted model (e.g. Qwen on VPS)
 geotech config set llm.provider openai-compatible
 geotech config set llm.base_url http://your-vps:8000/v1
 geotech config set llm.model qwen3.5-4b
@@ -75,6 +83,8 @@ geotech config set llm.model qwen3.5-4b
 # Reset to defaults
 geotech config reset
 \`\`\`
+
+Wave 1 behavior: deterministic commands work immediately after install. AI, vision, and agent commands use your own provider key in this wave. Hosted anonymous GLM beta access and server-side rate limiting are being prepared for Wave 2.
 
 Hugging Face setup: get a token at huggingface.co/settings/tokens with "Make calls to Inference Providers" permission. Browse models at huggingface.co/models. Append :fastest or :cheapest to auto-route, or :provider to force a specific backend (cerebras, together, groq, etc.).`,
   },
@@ -223,7 +233,7 @@ geotech bridge generate --software rocscience --analysis slope
   {
     id: 'global-flags',
     title: 'Global Flags',
-    content: `Every command supports these flags:
+    content: `Most calculation and analysis commands support these flags:
 
 ${globalFlagsTable}`,
   },
@@ -254,9 +264,9 @@ export default function DocsPage() {
     <>
       <Nav />
       <main className="pt-24 px-12 pb-16 max-w-[900px]">
-        <h1 className="text-4xl font-bold tracking-tight mb-4">Documentation</h1>
+        <h1 className="text-4xl font-bold tracking-tight mb-4">Strong Beta Docs</h1>
         <p className="text-[var(--text-secondary)] text-base mb-12">
-          Complete reference for geotechCLI commands, flags, and configuration.
+          Strong beta reference for geotechCLI commands, flags, and local provider configuration.
         </p>
 
         {/* Table of contents */}

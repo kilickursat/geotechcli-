@@ -4,7 +4,6 @@ import ora from 'ora';
 import chalk from 'chalk';
 import {
   buildLLMConfig,
-  loadConfig,
   analyzeCoreBox,
   classifyRMRFromImage,
   classifySoilFromDescription,
@@ -23,9 +22,6 @@ import {
   saveDerivedParameter,
   setActiveAnalysisContext,
   generateReport,
-  FileUsageStore,
-  checkUsageAndAbuse,
-  generateFingerprint,
   type AgentStep,
   type AgentSession,
   type SwarmStep,
@@ -33,52 +29,12 @@ import {
 } from '@geotechcli/core';
 import { heading, keyValue, renderJSON, success, error, warn, renderTable } from '../ui/terminal.js';
 import { addGlobalFlags, getGlobalFlags } from '../util/flags.js';
-import { networkInterfaces } from 'node:os';
 
-// Shared metering store (singleton per CLI session)
-const usageStore = new FileUsageStore();
-
-function getLocalIP(): string {
-  const nets = networkInterfaces();
-  for (const name in nets) {
-    for (const net of nets[name] ?? []) {
-      if (net.family === 'IPv4' && !net.internal) return net.address;
-    }
-  }
-  return '127.0.0.1';
-}
-
-async function checkQuota(callType: 'llmCalls' | 'visionCalls' | 'agentCalls'): Promise<boolean> {
-  const config = loadConfig();
-  const isRegistered = Boolean(config.auth.api_key);
-  const identifier = isRegistered
-    ? config.auth.api_key
-    : generateFingerprint(getLocalIP());
-
-  const check = await checkUsageAndAbuse(
-    usageStore,
-    identifier,
-    callType,
-    config.auth.tier,
-    isRegistered,
-  );
-
-  if (!check.allowed) {
-    if (check.upgradeMessage) {
-      console.log(chalk.yellow(check.upgradeMessage));
-    } else {
-      error(check.reason ?? 'Request blocked.');
-    }
-    return false;
-  }
-
-  // Increment usage
-  await usageStore.increment(identifier, callType);
-
-  if (check.shouldPromptUpgrade && check.upgradeMessage) {
-    warn(check.upgradeMessage);
-  }
-
+async function checkQuota(_callType: 'llmCalls' | 'visionCalls' | 'agentCalls'): Promise<boolean> {
+  // Wave 1 strong-beta behavior:
+  // AI calls go directly to the user's configured provider, so there is no
+  // hosted quota gate at the CLI layer. Hosted anonymous GLM limits land in
+  // Wave 2 once the beta proxy is enabled.
   return true;
 }
 

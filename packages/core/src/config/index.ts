@@ -174,7 +174,7 @@ export function getConfigValue(key: string): unknown {
 
 /**
  * Build an LLMConfig from the stored config + environment variables.
- * Environment variables take precedence over config file values.
+ * Environment variables take precedence over config file values when present.
  * API keys are NEVER logged or exposed.
  */
 export function buildLLMConfig(): { provider: import('../llm/types.js').LLMProvider; apiKey: string; baseUrl?: string; modelId?: string; visionModelId?: string; timeout: number } {
@@ -182,51 +182,53 @@ export function buildLLMConfig(): { provider: import('../llm/types.js').LLMProvi
 
   const provider = config.llm.provider;
 
-  // Resolve API key: env var > config file
-  let apiKey = config.llm.api_key;
-  if (!apiKey) {
-    switch (provider) {
-      case 'zhipu':
-        apiKey = process.env.ZHIPU_API_KEY ?? '';
-        break;
-      case 'openai':
-        apiKey = process.env.OPENAI_API_KEY ?? '';
-        break;
-      case 'anthropic':
-        apiKey = process.env.ANTHROPIC_API_KEY ?? '';
-        break;
-      case 'openai-compatible':
-        apiKey = process.env.QWEN_VPS_API_KEY ?? process.env.OPENAI_API_KEY ?? '';
-        break;
-      case 'huggingface':
-        apiKey = process.env.HF_TOKEN ?? process.env.HUGGINGFACE_TOKEN ?? '';
-        break;
+  function preferEnv(...values: Array<string | undefined>): string {
+    for (const value of values) {
+      if (value && value.trim().length > 0) {
+        return value;
+      }
     }
+    return '';
   }
 
-  // BYOL tier enforcement: huggingface, openai, anthropic, openai-compatible
-  // require Pro or Annual tier (zhipu is the free-tier default)
-  const byolProviders = ['openai', 'anthropic', 'openai-compatible', 'huggingface'];
-  if (byolProviders.includes(provider) && config.auth.tier !== 'pro' && config.auth.tier !== 'annual') {
-    const providerName = provider === 'huggingface' ? 'Hugging Face' : provider;
-    throw new Error(
-      `${providerName} requires a Pro ($49/mo) or Annual ($399/yr) subscription.\n` +
-      `Your current tier: ${config.auth.tier}\n` +
-      `Upgrade at: https://geotechcli.com/pricing\n` +
-      `Or use the default Zhipu GLM-5 models: geotech config set llm.provider zhipu`,
-    );
+  // Resolve API key: env var > config file
+  let apiKey = config.llm.api_key;
+  switch (provider) {
+    case 'zhipu':
+      apiKey = preferEnv(process.env.ZHIPU_API_KEY, config.llm.api_key);
+      break;
+    case 'openai':
+      apiKey = preferEnv(process.env.OPENAI_API_KEY, config.llm.api_key);
+      break;
+    case 'anthropic':
+      apiKey = preferEnv(process.env.ANTHROPIC_API_KEY, config.llm.api_key);
+      break;
+    case 'openai-compatible':
+      apiKey = preferEnv(
+        process.env.QWEN_VPS_API_KEY,
+        process.env.OPENAI_API_KEY,
+        config.llm.api_key,
+      );
+      break;
+    case 'huggingface':
+      apiKey = preferEnv(
+        process.env.HF_TOKEN,
+        process.env.HUGGINGFACE_TOKEN,
+        config.llm.api_key,
+      );
+      break;
   }
 
   // Resolve base URL for openai-compatible (Qwen VPS)
   let baseUrl = config.llm.base_url || undefined;
-  if (provider === 'openai-compatible' && !baseUrl) {
-    baseUrl = process.env.QWEN_VPS_BASE_URL;
+  if (provider === 'openai-compatible') {
+    baseUrl = preferEnv(process.env.QWEN_VPS_BASE_URL, config.llm.base_url) || undefined;
   }
 
   // Resolve model overrides
   let modelId = config.llm.model || undefined;
-  if (provider === 'openai-compatible' && !modelId) {
-    modelId = process.env.QWEN_VPS_MODEL_ID;
+  if (provider === 'openai-compatible') {
+    modelId = preferEnv(process.env.QWEN_VPS_MODEL_ID, config.llm.model) || undefined;
   }
 
   return {

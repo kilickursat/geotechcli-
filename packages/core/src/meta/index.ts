@@ -1,4 +1,4 @@
-import metadata from './metadata.json';
+import metadata from './metadata.json' with { type: 'json' };
 
 export const GEOTECHCLI_VERSION = metadata.version as string;
 

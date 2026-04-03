@@ -4,7 +4,6 @@ import { Footer } from '@/components/Footer';
 import {
   DEFAULT_LLM_MODEL,
   DEFAULT_LLM_VISION_MODEL,
-  TIER_LIMITS,
 } from '@geotechcli/core';
 
 export default function PricingPage() {
@@ -14,45 +13,48 @@ export default function PricingPage() {
       <main className="pt-24">
         <Pricing />
         <section className="px-12 pb-24 max-w-[800px] mx-auto">
-          <h2 className="text-2xl font-bold tracking-tight mb-6">FAQ</h2>
+          <h2 className="text-2xl font-bold tracking-tight mb-6">Strong Beta FAQ</h2>
           <div className="space-y-8">
             <div>
-              <h3 className="font-semibold mb-2">Are deterministic calculations really free?</h3>
+              <h3 className="font-semibold mb-2">What is included in strong beta today?</h3>
               <p className="text-[var(--text-secondary)] text-sm leading-relaxed">
-                Yes. Bearing capacity, settlement, liquefaction, classification, TBM prediction, and
-                all other deterministic commands are always free with no limits. They work offline
-                too — no API key required.
+                Deterministic commands are available now with no signup or billing.
+                That includes bearing capacity, liquefaction, classification, pile,
+                slope, retaining, tunnel, exports, and bridge script generation.
               </p>
             </div>
             <div>
-              <h3 className="font-semibold mb-2">What happens if I hit the free limit?</h3>
+              <h3 className="font-semibold mb-2">How does AI work in this beta branch?</h3>
               <p className="text-[var(--text-secondary)] text-sm leading-relaxed">
-                Unregistered users get 5 free AI calls to try the platform. After that, you&apos;ll
-                see an upgrade prompt. Registered free users get {TIER_LIMITS.free.llmCallsPerMonth}{' '}
-                AI analyses per month. Deterministic calculations continue working normally at all times.
+                Right now, AI commands work with your own provider key. The current
+                default model family is Zhipu {DEFAULT_LLM_MODEL} for text and{' '}
+                {DEFAULT_LLM_VISION_MODEL} for vision. Hosted anonymous GLM beta
+                access is being prepared for the next wave.
               </p>
             </div>
             <div>
-              <h3 className="font-semibold mb-2">What is "Bring Your Own LLM" (BYOL)?</h3>
+              <h3 className="font-semibold mb-2">Why are the paid plans marked coming soon?</h3>
               <p className="text-[var(--text-secondary)] text-sm leading-relaxed">
-                Pro and Annual subscribers can configure any OpenAI-compatible LLM endpoint. This
-                includes OpenAI, Anthropic, self-hosted models (Ollama, vLLM), or any cloud provider.
-                Your API calls go directly to your provider — not through our servers.
+                Stripe approval, billing, signup, and entitlement flows are
+                intentionally disabled during strong beta. The goal of this branch
+                is to validate the CLI, docs, and hosted beta rollout safely before
+                commercial plans go live.
               </p>
             </div>
             <div>
               <h3 className="font-semibold mb-2">What LLM models are used by default?</h3>
               <p className="text-[var(--text-secondary)] text-sm leading-relaxed">
-                Free and Lite Pro tiers use Zhipu {DEFAULT_LLM_MODEL} for text and{' '}
-                {DEFAULT_LLM_VISION_MODEL} for vision analysis. These are high-quality models from
-                Z.AI with strong performance on technical tasks.
+                The strong-beta defaults are Zhipu {DEFAULT_LLM_MODEL} for text and{' '}
+                {DEFAULT_LLM_VISION_MODEL} for vision analysis. These defaults will
+                also be used for the hosted beta gateway once it is enabled.
               </p>
             </div>
             <div>
-              <h3 className="font-semibold mb-2">How is usage tracked?</h3>
+              <h3 className="font-semibold mb-2">Will there be hosted AI limits?</h3>
               <p className="text-[var(--text-secondary)] text-sm leading-relaxed">
-                Each AI-powered command (vision, agent, analyze, report) counts as one call against
-                your monthly quota. You can check your usage anytime with <code className="bg-[var(--bg-card)] px-1.5 py-0.5 rounded text-[var(--accent-teal)] font-[var(--font-mono)] text-xs">geotech status</code>.
+                Yes. Hosted anonymous beta access will ship with strict rate limits
+                and anti-abuse controls. Those limits will be published once the
+                beta proxy rollout is active.
               </p>
             </div>
           </div>

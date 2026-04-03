@@ -18,13 +18,13 @@ export const SlopeStabilityInputSchema = z.object({
   soilLayers: z.array(z.object({
     thickness: z.number().positive().describe('Layer thickness (m)'),
     unitWeight: z.number().positive().describe('Total unit weight γ (kN/m³)'),
-    cohesion: z.number().nonneg().describe('Effective cohesion c\' (kPa)'),
+    cohesion: z.number().min(0).describe('Effective cohesion c\' (kPa)'),
     frictionAngle: z.number().min(0).max(50).describe('Effective friction angle φ\' (degrees)'),
     saturatedUnitWeight: z.number().positive().optional().describe('Saturated unit weight γ_sat (kN/m³)'),
   })).min(1),
-  waterTableDepth: z.number().nonneg().default(999).describe('Depth to water table from crest (m)'),
-  surcharge: z.number().nonneg().default(0).describe('Surcharge load at crest (kPa)'),
-  seismicCoefficient: z.number().nonneg().default(0).describe('Horizontal seismic coefficient kh'),
+  waterTableDepth: z.number().min(0).default(999).describe('Depth to water table from crest (m)'),
+  surcharge: z.number().min(0).default(0).describe('Surcharge load at crest (kPa)'),
+  seismicCoefficient: z.number().min(0).default(0).describe('Horizontal seismic coefficient kh'),
   numberOfSlices: z.number().int().min(5).max(50).default(10),
   method: z.enum(['bishop', 'ordinary']).default('bishop'),
 });

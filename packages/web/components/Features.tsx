@@ -1,45 +1,45 @@
 const features = [
   {
-    icon: '⛏',
+    icon: 'G',
     color: 'teal',
-    name: 'Soil Stratification Engine',
-    desc: 'AI-powered borehole log interpretation with USCS & AASHTO classification, multi-borehole correlation.',
-    specs: ['USCS & AASHTO classification', 'Multi-borehole correlation', 'GeoJSON / DXF export'],
+    name: 'Classification & Borehole Workflows',
+    desc: 'USCS, RMR, Q-system, borehole interpretation, and export-oriented geotechnical workflows from one CLI.',
+    specs: ['USCS, RMR, and Q-system', 'Borehole log interpretation path', 'GeoJSON / DXF export'],
   },
   {
-    icon: '⏱',
+    icon: 'S',
     color: 'blue',
     name: 'SPT / CPT Analysis',
-    desc: 'Full SPT corrections (N₁₆₀), Robertson CPT charts, and liquefaction triggering with Boulanger & Idriss 2014.',
-    specs: ['Robertson 1990 / 2016 charts', 'Boulanger & Idriss CRR model', 'Real-time plotting via --plot'],
+    desc: 'SPT and CPT ingestion, liquefaction checks, and deterministic workflows that are practical in day-to-day site evaluation.',
+    specs: ['CPT + AGS ingestion', 'Liquefaction triggering', 'Plot-ready terminal outputs'],
   },
   {
-    icon: '⚡',
+    icon: 'F',
     color: 'orange',
-    name: 'AI Bearing Capacity',
-    desc: 'Terzaghi, Meyerhof, Hansen, and Vesic methods with AI-enhanced soil parameter estimation.',
-    specs: ['Shallow & deep foundations', '4 classical methods', 'Uncertainty quantification'],
+    name: 'Foundation Analysis',
+    desc: 'Bearing, pile, retaining, and settlement-oriented calculations with deterministic geotechnical methods.',
+    specs: ['Bearing + pile capacity', 'Retaining pressure checks', 'Settlement-related workflows'],
   },
   {
-    icon: '📐',
+    icon: 'T',
     color: 'teal',
-    name: 'Settlement Modeling',
-    desc: 'Terzaghi 1D consolidation, Schmertmann immediate settlement, and Peck tunnel settlement trough.',
-    specs: ['Terzaghi 1D consolidation', 'Schmertmann strain influence', 'CSV time-series output'],
+    name: 'Slope & Tunnel Commands',
+    desc: 'Bishop Simplified slope stability, TBM prediction, cutter wear, and tunnel support-facing CLI workflows.',
+    specs: ['Slope stability', 'TBM selection + performance', 'Tunnel reporting workflows'],
   },
   {
-    icon: '🚇',
+    icon: 'A',
     color: 'blue',
-    name: 'TBM Performance & Selection',
-    desc: 'Penetration rate, cutter wear, thrust, torque prediction. Automatic EPB/Slurry/Open TBM recommendation.',
-    specs: ['NTNU/CSM penetration model', 'Gehring cutter wear model', 'Multi-mode TBM selection'],
+    name: 'Agentic CLI Beta',
+    desc: 'Agent, chat, vision, and report commands are available for evaluation with your own provider key during strong beta.',
+    specs: ['Vision commands', 'Agent + chat flows', 'Report generation beta'],
   },
   {
-    icon: '🔗',
+    icon: 'B',
     color: 'orange',
-    name: 'Pipeline & CI/CD Ready',
-    desc: 'Scriptable JSON output for batch processing. Docker, GitHub Actions, and webhook integrations.',
-    specs: ['--json flag on every command', 'Webhook & Slack alerts', 'Docker & GitHub Actions'],
+    name: 'Strong Beta Rollout',
+    desc: 'Public beta is focused on installability, deterministic confidence, and safe iteration before signup and billing go live.',
+    specs: ['Installable CLI now', 'No signup or billing yet', 'Hosted GLM beta coming next'],
   },
 ];
 
@@ -64,8 +64,8 @@ export function Features() {
           </h2>
         </div>
         <p className="text-[15px] text-[var(--text-secondary)] max-w-[340px] leading-[1.6]">
-          Every geotechnical calculation you need, from bearing capacity to TBM
-          selection — deterministic engines plus AI interpretation.
+          A practical beta slice of geotechCLI: deterministic engines first,
+          with AI and hosted beta access rolling out in controlled waves.
         </p>
       </div>
 

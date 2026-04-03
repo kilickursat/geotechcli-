@@ -4,6 +4,18 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core';
 
 const releases = [
   {
+    version: 'strong-beta',
+    date: '2026-04-03',
+    tag: 'Strong Beta Branch',
+    changes: [
+      { type: 'feat', text: 'Public beta branch introduced for safe Cloudflare deployment trials' },
+      { type: 'feat', text: 'Website messaging rewritten around strong beta: deterministic CLI live, hosted anonymous GLM coming in a later wave' },
+      { type: 'fix', text: 'Signup, checkout, usage, webhook, and hosted proxy endpoints disabled until the beta gateway is ready' },
+      { type: 'fix', text: 'CLI AI flows now use the user configured provider directly in Wave 1, without fake registration walls' },
+      { type: 'feat', text: 'Default Z.AI models updated to glm-5-turbo for text and glm-5v-turbo for vision' },
+    ],
+  },
+  {
     version: GEOTECHCLI_VERSION,
     date: '2026-03-30',
     tag: 'Stability + Safety',
@@ -55,7 +67,7 @@ export default function ChangelogPage() {
       <main className="pt-24 px-12 pb-16 max-w-[800px]">
         <h1 className="text-4xl font-bold tracking-tight mb-4">Changelog</h1>
         <p className="text-[var(--text-secondary)] text-base mb-12">
-          All notable changes to geotechCLI.
+          Strong beta branch notes followed by the main historical release log.
         </p>
 
         {releases.map((release) => (

@@ -17,6 +17,7 @@
     "release": "turbo run build && changeset publish"
   },
   "devDependencies": {
+    "@types/node": "^24.0.0",
     "@changesets/cli": "^2.27.0",
     "turbo": "^2.4.0",
     "typescript": "^5.7.0"

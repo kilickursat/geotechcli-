@@ -47,7 +47,7 @@ interface HFChatResponse {
  * Authentication: HF token (hf_xxx) from https://huggingface.co/settings/tokens
  * Required permission: "Make calls to Inference Providers"
  *
- * IMPORTANT: This provider requires Pro tier on geotechCLI.
+ * In strong beta, this provider can be used directly with the user's own token.
  */
 export class HuggingFaceAdapter implements ProviderAdapter {
   readonly name = 'huggingface' as const;

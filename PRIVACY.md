@@ -1,68 +1,71 @@
-# geotechCLI — Data Privacy & Security
+# geotechCLI Privacy
 
-## What We NEVER Do
+## Strong Beta Position
 
-- **We NEVER store your LLM API keys.** Your OpenAI, Anthropic, Hugging Face, or other provider keys stay exclusively on your machine in `~/.geotechcli/config.json`. When you use a Pro-tier BYOL (Bring Your Own LLM) provider, your CLI sends requests **directly** to the provider — they never pass through our servers.
+geotechCLI is being built so engineers can evaluate deterministic and AI-assisted workflows without giving up control of their project data.
 
-- **We NEVER store or log the content of your prompts or LLM responses.** The free-tier proxy forwards your messages to the LLM provider and returns the response. Nothing is saved, cached, or logged. Server error logs contain only HTTP status codes, never message content.
+In the current `strong-beta` branch:
 
-- **We NEVER store IP addresses.** Rate limiting uses in-memory or short-lived hashed keys that auto-expire within 60 seconds. No raw IP is ever written to a database.
+- No signup is required.
+- Deterministic commands run without an AI provider.
+- AI, vision, and agent commands in Wave 1 use the provider configured by the user.
+- Hosted anonymous GLM beta is being added separately and is expected to keep the same privacy posture.
 
-- **We NEVER share, sell, or transfer any user data to third parties** (beyond Stripe for payment processing).
+## What geotechCLI does not do
 
-## What We Store
+- We do not sell user engineering data.
+- We do not use prompts, uploaded files, or generated outputs to train geotechCLI.
+- We do not keep a signup-based customer profile in strong beta.
+- We do not persist raw prompt or file content on geotechCLI servers as part of the intended hosted beta design.
 
-| Data | Purpose | Where |
-|------|---------|-------|
-| Email address | Account recovery, billing receipts | Supabase (encrypted at rest) |
-| geotechCLI API key (`gtp_...`) | Authenticates your CLI to our proxy | Supabase (encrypted at rest) |
-| Subscription tier | Determines your rate limits | Supabase |
-| Stripe customer ID | Links your account to billing | Supabase |
-| Monthly call counts | Enforces usage quotas (counts only, not content) | Upstash Redis (auto-expires monthly) |
+## What happens in Wave 1
 
-That's it. No names, no locations, no device info, no usage patterns, no conversation history.
+Wave 1 AI commands use the provider configured by the user.
 
-## Your LLM API Keys — The Full Picture
+That means:
 
-```
-┌─────────────────────────────┐
-│   Your Machine              │
-│   ~/.geotechcli/config.json │
-│   ┌───────────────────┐     │
-│   │ llm.api_key: sk-…│     │    Free tier (Zhipu GLM-5):
-│   │ llm.provider: …  │     │    ┌──────────────────┐
-│   └───────┬───────────┘     │    │ Our Proxy Server │
-│           │                 │───→│ (no keys stored) │───→ Zhipu API
-│           │                 │    └──────────────────┘
-│           │ Pro tier (BYOL):│
-│           └─────────────────│───→ OpenAI / Anthropic / HF DIRECTLY
-│                             │    (our server is never involved)
-└─────────────────────────────┘
-```
+- Requests go directly from the CLI to the selected provider.
+- Provider API keys stay in the local geotechCLI config or environment variables.
+- geotechCLI is not in the middle of those AI requests in this wave.
 
-- **Free tier**: Your messages route through our proxy, which adds our Zhipu API key server-side. Your messages are forwarded and returned — never stored or logged.
-- **Pro/Annual tier (BYOL)**: Your CLI talks directly to your chosen LLM provider. Our server is not in the path at all. Your API key goes straight from your machine to OpenAI/Anthropic/HF.
+## What hosted beta is designed to keep
 
-## Config File Security
+For the hosted beta path, geotechCLI is being shaped around these rules:
 
-Your local config file (`~/.geotechcli/config.json`) contains your LLM API key. We protect it by:
+- Requests are forwarded only for real-time completion.
+- Raw prompt and file content are not stored on geotechCLI servers.
+- User engineering data is not used to train geotechCLI.
+- Abuse protection keeps only minimal hashed counters and short-lived operational metadata.
 
-- Setting **file permissions to 0600** (owner read/write only) on Unix/macOS
-- Setting **directory permissions to 0700** on the `~/.geotechcli/` directory
-- **Auto-repairing** permissions if they're too open (with a warning)
-- **Redacting** all key fields in `--json` CLI output
+## Important provider note
 
-## Your Rights
+A model response still requires sending the request to the model provider that generates it.
 
-- **Delete your account**: Contact support@geotechcli.com or use the API. All your data (email, key, usage counts, Stripe link) is permanently deleted via CASCADE.
-- **Export your data**: Use `GET /api/usage` with your API key to see everything we store about you.
-- **Regenerate your key**: If compromised, use `POST /api/auth` with `action: "regenerate"` to invalidate the old key instantly.
+- In Wave 1, that provider is chosen by the user.
+- In hosted Z.AI beta, provider-side handling follows the provider API terms and privacy commitments in addition to geotechCLI server behavior.
 
-## Security Measures
+## Local config
 
-- All database access uses Supabase Row Level Security (RLS)
-- Stripe webhook signatures verified with HMAC-SHA256 + constant-time comparison
-- Proxy enforces: 256KB body limit, 15 req/min rate limit, message validation
-- Proxy injects a controlled system prompt — prevents LLM abuse for non-geotech queries
-- Only `data:image/*` base64 URIs accepted — no external URL fetching
-- API keys never appear in logs, error messages, or JSON output
+geotechCLI stores local settings in `~/.geotechcli/config.json`.
+
+- API keys are redacted in CLI output.
+- Restrictive filesystem permissions are applied where the platform supports them.
+- Environment variables take precedence over config values when present.
+
+## Minimal operational data
+
+When hosted beta rate limiting is enabled, the goal is to retain only what is needed to protect the service:
+
+- short-lived hashed abuse-protection counters
+- basic service health metadata
+- no reusable prompt history
+- no stored engineering file content
+
+## Summary
+
+The intended privacy model is simple:
+
+- no training on user project data
+- no prompt storage on geotechCLI servers
+- no sale of engineering data
+- only the minimum metadata needed to keep the beta safe

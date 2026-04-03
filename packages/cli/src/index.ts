@@ -49,7 +49,7 @@ registerRetainingCommand(program);
 registerTunnelCommands(program);
 
 // ---------------------------------------------------------------------------
-// AI-powered commands (metered, require API key)
+// AI-assisted commands (Wave 1 uses the user's own provider key)
 // ---------------------------------------------------------------------------
 registerVisionCommand(program);
 registerAIClassifyCommand(program);

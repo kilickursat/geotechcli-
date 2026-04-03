@@ -48,6 +48,7 @@ export function registerSlopeCommand(program: Command): void {
           surcharge: opts.surcharge,
           seismicCoefficient: opts.kh,
           numberOfSlices: opts.slices,
+          method: 'bishop',
         });
 
         if (flags.json) { renderJSON(result); return; }

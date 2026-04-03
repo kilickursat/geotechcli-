@@ -11,7 +11,7 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "clean": "rm -rf dist",
-    "test": "node --experimental-vm-modules node_modules/.bin/vitest run",
+    "test": "vitest run --passWithNoTests",
     "lint": "tsc --noEmit",
     "start": "node dist/index.js"
   },
@@ -43,7 +43,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/kilickursat/geotechcli"
+    "url": "https://github.com/kilickursat/geotechcli-"
   },
   "homepage": "https://geotechcli.com",
   "license": "SEE LICENSE IN LICENSE"

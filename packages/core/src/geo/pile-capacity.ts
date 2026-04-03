@@ -25,13 +25,13 @@ export const PileCapacityInputSchema = z.object({
   layers: z.array(z.object({
     thickness: z.number().positive().describe('Layer thickness (m)'),
     soilType: z.enum(['clay', 'sand', 'silt', 'gravel', 'rock']),
-    undrained_shear_strength: z.number().nonneg().optional().describe('Su or cu (kPa) — for cohesive soils'),
+    undrained_shear_strength: z.number().min(0).optional().describe('Su or cu (kPa) — for cohesive soils'),
     friction_angle: z.number().min(0).max(50).optional().describe('φ\' (degrees) — for granular soils'),
     unit_weight: z.number().positive().default(18).describe('γ (kN/m³)'),
-    spt_n: z.number().nonneg().optional().describe('SPT N-value'),
+    spt_n: z.number().min(0).optional().describe('SPT N-value'),
     Ko: z.number().positive().optional().describe('At-rest earth pressure coefficient'),
   })).min(1),
-  waterTableDepth: z.number().nonneg().default(999).describe('Water table depth (m)'),
+  waterTableDepth: z.number().min(0).default(999).describe('Water table depth (m)'),
   factorOfSafety: z.number().positive().default(2.5),
   method: z.enum(['alpha', 'beta', 'spt-meyerhof', 'auto']).default('auto'),
 });

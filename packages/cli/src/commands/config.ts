@@ -98,8 +98,9 @@ export function registerConfigCommand(program: Command): void {
       setConfigValue('llm.provider', 'zhipu');
       setConfigValue('llm.api_key', '');
       setConfigValue('llm.model', '');
+      setConfigValue('llm.vision_model', '');
       setConfigValue('llm.base_url', '');
-      success('Configuration reset to defaults (Zhipu GLM-5).');
+      success('Configuration reset to defaults (Zhipu GLM-5-Turbo / GLM-5V-Turbo).');
     });
 
   program.addCommand(config);

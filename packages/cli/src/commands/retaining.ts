@@ -35,6 +35,7 @@ export function registerRetainingCommand(program: Command): void {
           pressureState: opts.state,
           wallFrictionAngle: opts.delta,
           backfillAngle: opts.beta,
+          wallInclination: 0,
           waterTableDepth: opts.gwt,
           surcharge: opts.surcharge,
         });

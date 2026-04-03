@@ -18,7 +18,7 @@ export const LateralEarthPressureInputSchema = z.object({
   soilLayers: z.array(z.object({
     thickness: z.number().positive().describe('Layer thickness (m)'),
     unitWeight: z.number().positive().describe('Unit weight γ (kN/m³)'),
-    cohesion: z.number().nonneg().default(0).describe('Cohesion c (kPa)'),
+    cohesion: z.number().min(0).default(0).describe('Cohesion c (kPa)'),
     frictionAngle: z.number().min(0).max(50).describe('Friction angle φ (degrees)'),
   })).min(1),
   method: z.enum(['rankine', 'coulomb']).default('rankine'),
@@ -26,8 +26,8 @@ export const LateralEarthPressureInputSchema = z.object({
   wallFrictionAngle: z.number().min(0).max(40).default(0).describe('Wall friction angle δ (degrees) — Coulomb only'),
   backfillAngle: z.number().min(0).max(45).default(0).describe('Backfill slope angle β (degrees)'),
   wallInclination: z.number().min(0).max(30).default(0).describe('Wall inclination from vertical α (degrees)'),
-  waterTableDepth: z.number().nonneg().default(999).describe('Water table depth from top of wall (m)'),
-  surcharge: z.number().nonneg().default(0).describe('Uniform surcharge on backfill (kPa)'),
+  waterTableDepth: z.number().min(0).default(999).describe('Water table depth from top of wall (m)'),
+  surcharge: z.number().min(0).default(0).describe('Uniform surcharge on backfill (kPa)'),
 });
 
 export type LateralEarthPressureInput = z.infer<typeof LateralEarthPressureInputSchema>;
@@ -90,17 +90,24 @@ function coulombKa(phi: number, delta: number, alpha: number, beta: number): num
   const deltaRad = degToRad(delta);
   const alphaRad = degToRad(alpha);
   const betaRad = degToRad(beta);
+  const cosDeltaAlpha = Math.cos(deltaRad + alphaRad);
+  const cosAlphaBeta = Math.cos(alphaRad - betaRad);
+  const rootTermDenom = cosDeltaAlpha * cosAlphaBeta;
 
-  const sinPhiDelta = Math.sin(phiRad + deltaRad);
-  const sinPhiBeta = Math.sin(phiRad - betaRad);
-  const cosAlphaDelta = Math.cos(alphaRad - deltaRad);
-  const cosAlphaBeta = Math.cos(alphaRad + betaRad);
+  if (cosDeltaAlpha <= 0 || cosAlphaBeta <= 0 || rootTermDenom <= 0) {
+    return 0;
+  }
 
-  const num = Math.sin(phiRad + alphaRad) ** 2;
-  const denom = Math.sin(alphaRad) ** 2 * cosAlphaDelta *
-    (1 + Math.sqrt(sinPhiDelta * sinPhiBeta / (cosAlphaDelta * cosAlphaBeta))) ** 2;
+  const rootTerm = (Math.sin(phiRad + deltaRad) * Math.sin(phiRad - betaRad)) / rootTermDenom;
+  if (rootTerm < 0) {
+    return 0;
+  }
 
-  return denom > 0 ? num / denom : 0;
+  const numerator = Math.cos(phiRad - alphaRad) ** 2;
+  const denominator = Math.cos(alphaRad) ** 2 * cosDeltaAlpha *
+    (1 + Math.sqrt(rootTerm)) ** 2;
+
+  return denominator > 0 ? numerator / denominator : 0;
 }
 
 function coulombKp(phi: number, delta: number, alpha: number, beta: number): number {
@@ -108,17 +115,24 @@ function coulombKp(phi: number, delta: number, alpha: number, beta: number): num
   const deltaRad = degToRad(delta);
   const alphaRad = degToRad(alpha);
   const betaRad = degToRad(beta);
-
-  const sinPhiDelta = Math.sin(phiRad + deltaRad);
-  const sinPhiBeta = Math.sin(phiRad + betaRad);
-  const cosAlphaDelta = Math.cos(deltaRad + alphaRad);
+  const cosDeltaAlpha = Math.cos(deltaRad - alphaRad);
   const cosAlphaBeta = Math.cos(alphaRad - betaRad);
+  const rootTermDenom = cosDeltaAlpha * cosAlphaBeta;
 
-  const num = Math.sin(phiRad + alphaRad) ** 2;
-  const denom = Math.sin(alphaRad) ** 2 * cosAlphaDelta *
-    (1 - Math.sqrt(sinPhiDelta * sinPhiBeta / (cosAlphaDelta * cosAlphaBeta))) ** 2;
+  if (cosDeltaAlpha <= 0 || cosAlphaBeta <= 0 || rootTermDenom <= 0) {
+    return 999;
+  }
 
-  return denom > 0 ? num / denom : 999;
+  const rootTerm = (Math.sin(phiRad + deltaRad) * Math.sin(phiRad + betaRad)) / rootTermDenom;
+  if (rootTerm < 0 || rootTerm >= 1) {
+    return 999;
+  }
+
+  const numerator = Math.cos(phiRad + alphaRad) ** 2;
+  const denominator = Math.cos(alphaRad) ** 2 * cosDeltaAlpha *
+    (1 - Math.sqrt(rootTerm)) ** 2;
+
+  return denominator > 0 ? numerator / denominator : 999;
 }
 
 // ---------------------------------------------------------------------------
@@ -167,8 +181,8 @@ export function calculateLateralEarthPressure(input: LateralEarthPressureInput):
     steps.push(`${pressureState === 'active' ? 'Ka' : 'Kp'} = ${K.toFixed(4)} (Rankine${beta > 0 ? `, β=${beta}°` : ''})`);
   } else {
     K = pressureState === 'active'
-      ? coulombKa(avgPhi, delta, 90 - alpha, beta)
-      : coulombKp(avgPhi, delta, 90 - alpha, beta);
+      ? coulombKa(avgPhi, delta, alpha, beta)
+      : coulombKp(avgPhi, delta, alpha, beta);
     steps.push(`${pressureState === 'active' ? 'Ka' : 'Kp'} = ${K.toFixed(4)} (Coulomb, δ=${delta}°, α=${alpha}°, β=${beta}°)`);
   }
 

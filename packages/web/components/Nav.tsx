@@ -11,16 +11,16 @@ export function Nav() {
           Docs
         </a>
         <a href="/pricing" className="text-[var(--text-secondary)] text-[13.5px] font-medium hover:text-[var(--text-primary)] transition">
-          Pricing
+          Beta
         </a>
         <a href="/changelog" className="text-[var(--text-secondary)] text-[13.5px] font-medium hover:text-[var(--text-primary)] transition">
           Changelog
         </a>
-        <a href="https://github.com/kilickursat/geotechcli" className="text-[var(--text-secondary)] text-[13.5px] font-medium hover:text-[var(--text-primary)] transition">
+        <a href="https://github.com/kilickursat/geotechcli-" className="text-[var(--text-secondary)] text-[13.5px] font-medium hover:text-[var(--text-primary)] transition">
           GitHub
         </a>
         <a href="/docs" className="px-[18px] py-[7px] bg-[var(--accent-teal)] text-[var(--bg-primary)] text-[13px] font-semibold rounded-md hover:brightness-110 transition">
-          Get Started
+          Install Beta
         </a>
       </div>
     </nav>

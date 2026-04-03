@@ -1,81 +1,71 @@
 import {
   DEFAULT_LLM_MODEL,
   DEFAULT_LLM_VISION_MODEL,
-  TIER_LIMITS,
 } from '@geotechcli/core';
 
 const tiers = [
   {
-    name: 'Free',
+    name: 'Strong Beta',
     price: '$0',
-    period: 'forever',
-    highlight: false,
-    badge: 'Default Models',
+    period: 'for now',
+    highlight: true,
+    badge: 'Active',
     features: [
-      `${DEFAULT_LLM_MODEL} + ${DEFAULT_LLM_VISION_MODEL} default models`,
-      `${TIER_LIMITS.free.llmCallsPerMonth} AI analyses / month`,
-      `${TIER_LIMITS.free.visionCallsPerMonth} vision analyses / month`,
-      `${TIER_LIMITS.free.agentCallsPerMonth} agent tasks / month`,
       'Unlimited deterministic calculations',
-      '--json output for CI/CD',
-      'Community support',
+      'AI commands currently work with your own key',
+      `Current defaults: ${DEFAULT_LLM_MODEL} and ${DEFAULT_LLM_VISION_MODEL}`,
+      'Hosted anonymous GLM beta access is being prepared',
+      'Docs, changelog, and feedback-driven updates',
+      'No signup or billing during this wave',
     ],
-    cta: 'Get Started Free',
+    cta: 'Install Beta',
     ctaLink: '/docs',
+    disabled: false,
   },
   {
     name: 'Lite Pro',
-    price: '$15',
-    period: '/month',
+    price: 'Coming Soon',
+    period: '',
     highlight: false,
-    badge: 'GLM Unlimited',
+    badge: 'Planned',
     features: [
-      'Everything in Free',
-      'Unlimited GLM model access',
-      `${TIER_LIMITS.lite_pro.llmCallsPerMonth.toLocaleString()} AI analyses / month`,
-      `${TIER_LIMITS.lite_pro.visionCallsPerMonth.toLocaleString()} vision analyses / month`,
-      `${TIER_LIMITS.lite_pro.agentCallsPerMonth.toLocaleString()} agent tasks / month`,
-      'PDF report generation',
-      'Email support',
+      'Hosted GLM usage tiers are under evaluation',
+      'Roadmap pricing only, not purchasable in beta',
+      'Feedback from strong-beta will shape final limits',
     ],
-    cta: 'Subscribe',
+    cta: 'Coming Soon',
     ctaLink: '/pricing',
+    disabled: true,
   },
   {
     name: 'Pro',
-    price: '$49',
-    period: '/month',
-    highlight: true,
-    badge: 'BYOL Enabled',
+    price: 'Coming Soon',
+    period: '',
+    highlight: false,
+    badge: 'Planned',
     features: [
-      'Everything in Lite Pro',
-      'Bring Your Own LLM (OpenAI, Anthropic, etc.)',
-      'Unlimited everything',
-      'Batch processing',
-      'PLAXIS / FLAC / Rocscience bridge',
-      'DXF / GeoJSON / Excel export',
-      'Priority support',
+      'Bring Your Own LLM and hosted plans will return later',
+      'Beta branch is not selling paid access yet',
+      'Production entitlements come after billing validation',
     ],
-    cta: 'Go Pro',
+    cta: 'Coming Soon',
     ctaLink: '/pricing',
+    disabled: true,
   },
   {
     name: 'Annual',
-    price: '$399',
-    period: '/year',
+    price: 'Coming Soon',
+    period: '',
     highlight: false,
-    badge: 'Save 32%',
+    badge: 'Planned',
     features: [
-      'Everything in Pro',
-      'Billed annually ($33/mo effective)',
-      'CI/CD batch pipelines',
-      'Dedicated support channel',
-      'SLA guarantee',
-      'Custom model deployment',
-      'Early access to new features',
+      'Reserved for the stable product phase',
+      'No live annual plan during strong beta',
+      'Commercial rollout starts after beta validation',
     ],
-    cta: 'Get Annual',
+    cta: 'Coming Soon',
     ctaLink: '/pricing',
+    disabled: true,
   },
 ];
 
@@ -84,14 +74,14 @@ export function Pricing() {
     <section className="px-12 py-24" id="pricing">
       <div className="text-center mb-16">
         <div className="font-[var(--font-mono)] text-[11px] font-medium uppercase tracking-[2px] text-[var(--accent-teal)] mb-3">
-          Pricing
+          Beta Rollout
         </div>
         <h2 className="text-[clamp(28px,3.5vw,42px)] font-bold tracking-tight">
-          Start free. Scale when ready.
+          Strong beta now. Commercial rollout later.
         </h2>
         <p className="text-[var(--text-secondary)] text-[15px] mt-3 max-w-[480px] mx-auto">
-          Deterministic calculations are always free and unlimited. AI features
-          are metered by tier.
+          Deterministic calculations are live now. Hosted anonymous GLM beta
+          access and paid tiers are being introduced carefully in later waves.
         </p>
       </div>
 
@@ -107,7 +97,7 @@ export function Pricing() {
           >
             {tier.highlight && (
               <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-[var(--accent-teal)] text-[var(--bg-primary)] text-[10px] font-bold uppercase tracking-wider rounded-full">
-                Most Popular
+                Available Now
               </div>
             )}
 
@@ -136,22 +126,24 @@ export function Pricing() {
                   key={feature}
                   className="flex items-start gap-2 text-[13px] text-[var(--text-secondary)] leading-[1.5]"
                 >
-                  <span className="text-[var(--accent-teal)] mt-0.5 shrink-0">•</span>
+                  <span className="text-[var(--accent-teal)] mt-0.5 shrink-0">-</span>
                   {feature}
                 </li>
               ))}
             </ul>
 
-            <a
-              href={tier.ctaLink}
-              className={`block text-center py-2.5 rounded-lg text-sm font-semibold transition ${
-                tier.highlight
-                  ? 'bg-[var(--accent-teal)] text-[var(--bg-primary)] hover:brightness-110'
-                  : 'bg-[var(--bg-card)] text-[var(--text-primary)] border border-[var(--border-color)] hover:border-[var(--accent-teal)]'
-              }`}
-            >
-              {tier.cta}
-            </a>
+            {tier.disabled ? (
+              <span className="block text-center py-2.5 rounded-lg text-sm font-semibold bg-[var(--bg-card)] text-[var(--text-muted)] border border-[var(--border-color)] cursor-not-allowed">
+                {tier.cta}
+              </span>
+            ) : (
+              <a
+                href={tier.ctaLink}
+                className="block text-center py-2.5 rounded-lg text-sm font-semibold transition bg-[var(--accent-teal)] text-[var(--bg-primary)] hover:brightness-110"
+              >
+                {tier.cta}
+              </a>
+            )}
           </div>
         ))}
       </div>
