@@ -31,15 +31,15 @@ const features = [
     icon: 'A',
     color: 'blue',
     name: 'Agentic CLI Beta',
-    desc: 'Agent, chat, vision, and report commands are available for evaluation with your own provider key during strong beta.',
-    specs: ['Vision commands', 'Agent + chat flows', 'Report generation beta'],
+    desc: 'Agent, chat, vision, and report commands now run against the hosted GLM beta by default, with optional BYO-provider overrides for advanced users.',
+    specs: ['Hosted GLM text + vision', 'Agent + chat flows', 'Report generation beta'],
   },
   {
     icon: 'B',
     color: 'orange',
     name: 'Strong Beta Rollout',
-    desc: 'Public beta is focused on installability, deterministic confidence, and safe iteration before signup and billing go live.',
-    specs: ['Installable CLI now', 'No signup or billing yet', 'Hosted GLM beta coming next'],
+    desc: 'Public beta is focused on installability, deterministic confidence, hosted GLM evaluation, and safe iteration before signup and billing go live.',
+    specs: ['Installable CLI now', 'Hosted beta with rate limits', 'No signup or billing yet'],
   },
 ];
 
@@ -65,7 +65,7 @@ export function Features() {
         </div>
         <p className="text-[15px] text-[var(--text-secondary)] max-w-[340px] leading-[1.6]">
           A practical beta slice of geotechCLI: deterministic engines first,
-          with AI and hosted beta access rolling out in controlled waves.
+          with hosted GLM access now live and the commercial stack still gated behind later waves.
         </p>
       </div>
 

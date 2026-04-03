@@ -9,6 +9,7 @@ import { DEFAULT_LLM_PROVIDER } from '../meta/index.js';
 // ---------------------------------------------------------------------------
 
 const LLMProviderSchema = z.enum([
+  'hosted-beta',
   'zhipu',
   'openai',
   'anthropic',
@@ -194,6 +195,9 @@ export function buildLLMConfig(): { provider: import('../llm/types.js').LLMProvi
   // Resolve API key: env var > config file
   let apiKey = config.llm.api_key;
   switch (provider) {
+    case 'hosted-beta':
+      apiKey = '';
+      break;
     case 'zhipu':
       apiKey = preferEnv(process.env.ZHIPU_API_KEY, config.llm.api_key);
       break;
@@ -221,7 +225,11 @@ export function buildLLMConfig(): { provider: import('../llm/types.js').LLMProvi
 
   // Resolve base URL for openai-compatible (Qwen VPS)
   let baseUrl = config.llm.base_url || undefined;
-  if (provider === 'openai-compatible') {
+  if (provider === 'hosted-beta') {
+    baseUrl =
+      preferEnv(process.env.GEOTECHCLI_PROXY_URL, config.llm.base_url) ||
+      'https://geotechcli.com/api/proxy';
+  } else if (provider === 'openai-compatible') {
     baseUrl = preferEnv(process.env.QWEN_VPS_BASE_URL, config.llm.base_url) || undefined;
   }
 

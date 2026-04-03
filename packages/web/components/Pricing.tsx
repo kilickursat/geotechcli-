@@ -12,9 +12,9 @@ const tiers = [
     badge: 'Active',
     features: [
       'Unlimited deterministic calculations',
-      'AI commands currently work with your own key',
+      'Hosted GLM beta access with no user provider key',
       `Current defaults: ${DEFAULT_LLM_MODEL} and ${DEFAULT_LLM_VISION_MODEL}`,
-      'Hosted anonymous GLM beta access is being prepared',
+      'Server-side rate limits and abuse protection',
       'Docs, changelog, and feedback-driven updates',
       'No signup or billing during this wave',
     ],
@@ -80,8 +80,8 @@ export function Pricing() {
           Strong beta now. Commercial rollout later.
         </h2>
         <p className="text-[var(--text-secondary)] text-[15px] mt-3 max-w-[480px] mx-auto">
-          Deterministic calculations are live now. Hosted anonymous GLM beta
-          access and paid tiers are being introduced carefully in later waves.
+          Deterministic calculations and hosted GLM beta access are live now.
+          Paid tiers are still being introduced carefully in later waves.
         </p>
       </div>
 

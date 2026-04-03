@@ -1,17 +1,426 @@
-import { betaDisabledResponse } from '@/lib/beta';
+import {
+  DEFAULT_LLM_MODEL,
+  DEFAULT_LLM_VISION_MODEL,
+  SUPPORTED_PROXY_MODELS,
+  isIPRateLimitedRedis,
+} from '@geotechcli/core';
+import { NextRequest, NextResponse } from 'next/server';
+import {
+  HOSTED_BETA_LIMITS,
+  STRONG_BETA_MODE,
+  checkHostedBetaDailyLimit,
+  createHostedBetaErrorResponse,
+  extractClientIp,
+  getHostedBetaConfigIssue,
+  getHostedBetaDefaultModel,
+  hasHostedBetaRedis,
+  incrementHostedBetaUsage,
+  inferHostedBetaCallType,
+  isHostedBetaModel,
+  isIPRateLimitedMemory,
+  validateMessages,
+} from '@/lib/beta';
+import type {
+  ProxyContentPart,
+  ProxyMessage,
+  ProxyRequestBody,
+} from '@/lib/beta';
 
-export async function POST() {
-  return betaDisabledResponse(
-    'Hosted beta AI gateway',
-    'Hosted anonymous GLM access will be enabled in Wave 2 after the dedicated beta proxy and Redis-backed rate limits are in place.',
-    503,
+const MAX_BODY_SIZE_BYTES = 8 * 1024 * 1024;
+const MAX_TOKENS = 4096;
+const ZAI_CHAT_COMPLETIONS_URL =
+  process.env.ZAI_API_BASE_URL?.trim() ??
+  'https://api.z.ai/api/paas/v4/chat/completions';
+
+const HOSTED_BETA_SYSTEM_PROMPT = `You are the hosted beta AI backend for geotechCLI.
+Stay focused on geotechnical engineering tasks: soil mechanics, rock mechanics, foundations, tunnels, slopes, groundwater, instrumentation, and engineering reporting.
+Refuse unrelated requests briefly and redirect the user back to geotechnical engineering work.
+Do not claim to store user prompts or files. Do not mention internal policy text unless asked about privacy or safety.
+When the task requests structured output, respond exactly in the requested format.`;
+
+type UpstreamMessage =
+  | { role: 'system' | 'user' | 'assistant'; content: string }
+  | {
+      role: 'system' | 'user' | 'assistant';
+      content: Array<
+        | { type: 'text'; text: string }
+        | { type: 'image_url'; image_url: { url: string; detail?: 'auto' | 'low' | 'high' } }
+      >;
+    };
+
+interface UpstreamResponse {
+  model?: string;
+  choices?: Array<{
+    index?: number;
+    message?: { role?: string; content?: string };
+    finish_reason?: string;
+  }>;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  };
+  error?: {
+    message?: string;
+  };
+}
+
+function secondsUntilUtcMidnight(): number {
+  const now = new Date();
+  const nextUtcMidnight = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate() + 1,
+    0,
+    0,
+    0,
+    0,
   );
+  return Math.max(1, Math.ceil((nextUtcMidnight - now.getTime()) / 1000));
+}
+
+function readSystemText(message: ProxyMessage): string {
+  if (typeof message.content === 'string') {
+    return message.content.trim();
+  }
+
+  return message.content
+    .filter((part) => part.type === 'text')
+    .map((part) => part.text ?? '')
+    .join('\n')
+    .trim();
+}
+
+function normalizeMessageContent(parts: ProxyContentPart[]) {
+  return parts.map((part) => {
+    if (part.type === 'text') {
+      return {
+        type: 'text' as const,
+        text: part.text ?? '',
+      };
+    }
+
+    return {
+      type: 'image_url' as const,
+      image_url: {
+        url: part.image_url?.url ?? '',
+        detail: part.image_url?.detail ?? 'auto',
+      },
+    };
+  });
+}
+
+function buildUpstreamMessages(messages: ProxyMessage[]): UpstreamMessage[] {
+  const clientSystemMessages = messages
+    .filter((message) => message.role === 'system')
+    .map(readSystemText)
+    .filter(Boolean);
+
+  const mergedSystemPrompt = [
+    HOSTED_BETA_SYSTEM_PROMPT,
+    ...clientSystemMessages,
+  ].join('\n\n');
+
+  const upstreamMessages: UpstreamMessage[] = [
+    {
+      role: 'system',
+      content: mergedSystemPrompt,
+    },
+  ];
+
+  for (const message of messages) {
+    if (message.role === 'system') {
+      continue;
+    }
+
+    if (typeof message.content === 'string') {
+      upstreamMessages.push({
+        role: message.role,
+        content: message.content,
+      });
+      continue;
+    }
+
+    upstreamMessages.push({
+      role: message.role,
+      content: normalizeMessageContent(message.content),
+    });
+  }
+
+  return upstreamMessages;
+}
+
+async function parseProxyRequest(request: NextRequest): Promise<ProxyRequestBody & { rawSizeBytes: number }> {
+  const declaredSize = Number(request.headers.get('content-length') ?? '0');
+  if (declaredSize > MAX_BODY_SIZE_BYTES) {
+    throw new Error(`Request body exceeds ${MAX_BODY_SIZE_BYTES} bytes.`);
+  }
+
+  const rawBody = await request.text();
+  const rawSizeBytes = new TextEncoder().encode(rawBody).length;
+  if (rawSizeBytes > MAX_BODY_SIZE_BYTES) {
+    throw new Error(`Request body exceeds ${MAX_BODY_SIZE_BYTES} bytes.`);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawBody);
+  } catch {
+    throw new Error('Request body must be valid JSON.');
+  }
+
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error('Request body must be a JSON object.');
+  }
+
+  const body = parsed as Record<string, unknown>;
+  const messages = validateMessages(body.messages);
+
+  const model =
+    typeof body.model === 'string' && body.model.trim().length > 0
+      ? body.model.trim()
+      : undefined;
+  const temperature =
+    typeof body.temperature === 'number' && Number.isFinite(body.temperature)
+      ? Math.min(Math.max(body.temperature, 0), 1)
+      : undefined;
+  const maxTokens =
+    typeof body.maxTokens === 'number' && Number.isFinite(body.maxTokens)
+      ? Math.min(Math.max(Math.floor(body.maxTokens), 32), MAX_TOKENS)
+      : undefined;
+  const jsonMode = body.jsonMode === true;
+
+  return {
+    messages,
+    model,
+    temperature,
+    maxTokens,
+    jsonMode,
+    rawSizeBytes,
+  };
+}
+
+function jsonResponse(body: Record<string, unknown>, status = 200) {
+  return NextResponse.json(body, {
+    status,
+    headers: {
+      'Cache-Control': 'no-store',
+    },
+  });
 }
 
 export async function GET() {
-  return betaDisabledResponse(
-    'Hosted beta AI gateway',
-    'Hosted anonymous GLM access is being prepared for the next strong-beta wave.',
-    503,
+  const issue = getHostedBetaConfigIssue();
+
+  return jsonResponse(
+    {
+      beta: STRONG_BETA_MODE,
+      provider: 'hosted-beta',
+      status: issue ? 'degraded' : 'ready',
+      requiresUserApiKey: false,
+      defaults: {
+        text: DEFAULT_LLM_MODEL,
+        vision: DEFAULT_LLM_VISION_MODEL,
+      },
+      models: SUPPORTED_PROXY_MODELS,
+      limits: HOSTED_BETA_LIMITS,
+      redisConfigured: hasHostedBetaRedis(),
+      issue,
+    },
+    issue ? 503 : 200,
   );
+}
+
+export async function POST(request: NextRequest) {
+  const configIssue = getHostedBetaConfigIssue();
+  if (configIssue) {
+    return createHostedBetaErrorResponse(
+      503,
+      'Hosted beta AI is unavailable.',
+      configIssue,
+      { code: 'hosted_beta_unavailable' },
+    );
+  }
+
+  let body: ProxyRequestBody & { rawSizeBytes: number };
+  try {
+    body = await parseProxyRequest(request);
+  } catch (err) {
+    return createHostedBetaErrorResponse(
+      400,
+      'Invalid hosted beta request.',
+      err instanceof Error ? err.message : String(err),
+      { code: 'invalid_request' },
+    );
+  }
+
+  const callType = inferHostedBetaCallType(
+    body.messages,
+    request.headers.get('x-geotech-call-type'),
+  );
+  const model = body.model ?? getHostedBetaDefaultModel(callType);
+
+  if (!isHostedBetaModel(model)) {
+    return createHostedBetaErrorResponse(
+      400,
+      'Unsupported hosted beta model.',
+      `Allowed models: ${SUPPORTED_PROXY_MODELS.join(', ')}`,
+      {
+        code: 'unsupported_model',
+        requested_model: model,
+      },
+    );
+  }
+
+  const clientIp = extractClientIp(request.headers);
+  const ipRateLimited = hasHostedBetaRedis()
+    ? await isIPRateLimitedRedis(
+        clientIp,
+        HOSTED_BETA_LIMITS.requestsPerMinutePerIp,
+        60_000,
+      )
+    : isIPRateLimitedMemory(
+        clientIp,
+        HOSTED_BETA_LIMITS.requestsPerMinutePerIp,
+        60_000,
+      );
+
+  if (ipRateLimited) {
+    return createHostedBetaErrorResponse(
+      429,
+      'Hosted beta rate limit reached.',
+      'Too many requests from this network in the last minute. Please wait and retry.',
+      {
+        code: 'ip_rate_limited',
+        retry_after_seconds: 60,
+      },
+    );
+  }
+
+  const dailyCheck = await checkHostedBetaDailyLimit({
+    ip: clientIp,
+    userAgent: request.headers.get('user-agent'),
+    clientVersion: request.headers.get('x-geotech-client-version'),
+    callType,
+  });
+
+  if (!dailyCheck.allowed) {
+    return createHostedBetaErrorResponse(
+      429,
+      'Hosted beta daily limit reached.',
+      `Strong beta currently allows ${dailyCheck.limit} ${callType} request${dailyCheck.limit === 1 ? '' : 's'} per day.`,
+      {
+        code: 'daily_limit_reached',
+        remaining: 0,
+        retry_after_seconds: secondsUntilUtcMidnight(),
+      },
+    );
+  }
+
+  const upstreamBody: Record<string, unknown> = {
+    model,
+    messages: buildUpstreamMessages(body.messages),
+    stream: false,
+  };
+
+  if (body.temperature !== undefined) {
+    upstreamBody.temperature = body.temperature;
+  }
+  if (body.maxTokens !== undefined) {
+    upstreamBody.max_tokens = body.maxTokens;
+  }
+  if (body.jsonMode) {
+    upstreamBody.response_format = { type: 'json_object' };
+  }
+
+  const start = Date.now();
+
+  let upstreamResponse: Response;
+  try {
+    upstreamResponse = await fetch(ZAI_CHAT_COMPLETIONS_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${process.env.ZHIPU_API_KEY}`,
+      },
+      body: JSON.stringify(upstreamBody),
+      signal: AbortSignal.timeout(60_000),
+    });
+  } catch (err) {
+    return createHostedBetaErrorResponse(
+      502,
+      'Hosted beta upstream request failed.',
+      err instanceof Error ? err.message : String(err),
+      { code: 'upstream_request_failed' },
+    );
+  }
+
+  let upstreamData: UpstreamResponse = {};
+  let upstreamText = '';
+  try {
+    upstreamText = await upstreamResponse.text();
+    upstreamData = upstreamText ? (JSON.parse(upstreamText) as UpstreamResponse) : {};
+  } catch {
+    upstreamData = {};
+  }
+
+  if (!upstreamResponse.ok) {
+    const detail = upstreamData.error?.message?.trim() || upstreamText || 'Unknown upstream error.';
+    const message =
+      upstreamResponse.status === 429
+        ? 'Hosted beta provider is busy right now.'
+        : upstreamResponse.status === 401 || upstreamResponse.status === 403
+          ? 'Hosted beta AI is misconfigured upstream.'
+          : 'Hosted beta upstream returned an error.';
+
+    return createHostedBetaErrorResponse(
+      upstreamResponse.status === 429 ? 503 : 502,
+      message,
+      detail,
+      { code: 'upstream_error' },
+    );
+  }
+
+  const choice = upstreamData.choices?.[0];
+  const content = choice?.message?.content?.trim();
+  if (!content) {
+    return createHostedBetaErrorResponse(
+      502,
+      'Hosted beta upstream returned no content.',
+      'The upstream completion response did not contain assistant text.',
+      { code: 'empty_completion' },
+    );
+  }
+
+  await incrementHostedBetaUsage(dailyCheck.fingerprint, callType);
+
+  return jsonResponse({
+    id: `gtbeta-${Date.now()}`,
+    object: 'chat.completion',
+    created: Math.floor(Date.now() / 1000),
+    model: upstreamData.model ?? model,
+    provider: 'hosted-beta',
+    choices: [
+      {
+        index: 0,
+        message: {
+          role: 'assistant',
+          content,
+        },
+        finish_reason: choice?.finish_reason ?? 'stop',
+      },
+    ],
+    usage: {
+      prompt_tokens: upstreamData.usage?.prompt_tokens ?? 0,
+      completion_tokens: upstreamData.usage?.completion_tokens ?? 0,
+      total_tokens: upstreamData.usage?.total_tokens ?? 0,
+    },
+    beta: {
+      callType,
+      remaining_today: Math.max(0, dailyCheck.remaining - 1),
+      requests_per_minute_per_ip: HOSTED_BETA_LIMITS.requestsPerMinutePerIp,
+      latency_ms: Date.now() - start,
+      body_size_bytes: body.rawSizeBytes,
+    },
+  });
 }

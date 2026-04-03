@@ -25,7 +25,7 @@ export function Hero() {
       <div className="relative z-10 flex-1 flex flex-col justify-end px-12 pb-20 max-w-[820px]">
         <div className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-[rgba(45,212,191,0.1)] border border-[rgba(45,212,191,0.2)] rounded-full text-xs font-medium text-[var(--accent-teal)] font-[var(--font-mono)] mb-7 w-fit">
           <span className="w-1.5 h-1.5 bg-[var(--accent-teal)] rounded-full animate-pulse" />
-          Strong Beta - deterministic CLI live, hosted AI coming next wave
+          Strong Beta - deterministic CLI live, hosted GLM beta now active
         </div>
 
         <h1 className="text-[clamp(38px,5.2vw,62px)] font-bold leading-[1.08] tracking-[-2px] mb-6 text-[var(--text-primary)]">
@@ -37,8 +37,9 @@ export function Hero() {
 
         <p className="text-[17px] leading-[1.7] text-[var(--text-secondary)] max-w-[560px] mb-9 font-normal">
           Deterministic geotechnical calculations are ready today. AI commands are
-          available in strong beta with your own provider key while hosted GLM beta
-          access is being prepared with rate limits and abuse protection.
+          available in strong beta with hosted GLM access by default, protected by
+          server-side rate limits and abuse controls. Bring-your-own provider keys
+          remain available as an advanced override.
         </p>
 
         <div className="flex items-center gap-4">

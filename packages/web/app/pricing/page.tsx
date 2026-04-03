@@ -26,10 +26,10 @@ export default function PricingPage() {
             <div>
               <h3 className="font-semibold mb-2">How does AI work in this beta branch?</h3>
               <p className="text-[var(--text-secondary)] text-sm leading-relaxed">
-                Right now, AI commands work with your own provider key. The current
-                default model family is Zhipu {DEFAULT_LLM_MODEL} for text and{' '}
-                {DEFAULT_LLM_VISION_MODEL} for vision. Hosted anonymous GLM beta
-                access is being prepared for the next wave.
+                AI commands now use hosted GLM beta access by default, so end users
+                do not need to bring their own Z.AI key. The current default model
+                family is {DEFAULT_LLM_MODEL} for text and {DEFAULT_LLM_VISION_MODEL}{' '}
+                for vision, with server-side rate limits protecting the beta.
               </p>
             </div>
             <div>
@@ -52,9 +52,9 @@ export default function PricingPage() {
             <div>
               <h3 className="font-semibold mb-2">Will there be hosted AI limits?</h3>
               <p className="text-[var(--text-secondary)] text-sm leading-relaxed">
-                Yes. Hosted anonymous beta access will ship with strict rate limits
-                and anti-abuse controls. Those limits will be published once the
-                beta proxy rollout is active.
+                Yes. Strong beta already uses strict server-side rate limits and
+                anti-abuse controls so users can evaluate the product without
+                exhausting the hosted GLM credit pool.
               </p>
             </div>
           </div>

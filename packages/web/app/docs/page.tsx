@@ -26,10 +26,11 @@ npm -v
 npm install -g geotechcli
 \`\`\`
 
-Use the official Node.js installer or a trusted OS package manager. Deterministic commands work immediately after install. AI, vision, and agent commands require a provider key in Wave 1. Verify installation:
+Use the official Node.js installer or a trusted OS package manager. Deterministic commands work immediately after install, and strong-beta AI commands use the hosted GLM gateway by default. Verify installation:
 
 \`\`\`bash
 geotech --version
+geotech status
 \`\`\``,
   },
   {
@@ -44,16 +45,13 @@ geotech config view
 # Set LLM provider (default: ${DEFAULT_LLM_PROVIDER})
 geotech config set llm.provider ${DEFAULT_LLM_PROVIDER}
 
-# Set API key (stored locally, never transmitted in logs)
-geotech config set llm.api_key your-api-key
-
 # Strong beta defaults
 geotech config get llm.provider   # ${DEFAULT_LLM_PROVIDER}
 geotech config get llm.model      # provider default (${DEFAULT_LLM_MODEL})
 geotech config get llm.vision_model  # provider default (${DEFAULT_LLM_VISION_MODEL})
 
-# Wave 1 note: hosted anonymous GLM access is coming in Wave 2
-# For now, configure your own provider key locally.
+# Hosted beta is the default and does not require a user provider key.
+# Optional advanced override: switch to another provider with your own key.
 
 # Hugging Face — advanced beta with your own token
 geotech config set llm.provider huggingface
@@ -84,7 +82,7 @@ geotech config set llm.model qwen3.5-4b
 geotech config reset
 \`\`\`
 
-Wave 1 behavior: deterministic commands work immediately after install. AI, vision, and agent commands use your own provider key in this wave. Hosted anonymous GLM beta access and server-side rate limiting are being prepared for Wave 2.
+Strong-beta behavior: deterministic commands work immediately after install. AI, vision, and agent commands use hosted GLM access by default, with server-side rate limits and no user provider key required. Bring-your-own provider keys remain available as an advanced override.
 
 Hugging Face setup: get a token at huggingface.co/settings/tokens with "Make calls to Inference Providers" permission. Browse models at huggingface.co/models. Append :fastest or :cheapest to auto-route, or :provider to force a specific backend (cerebras, together, groq, etc.).`,
   },
@@ -166,7 +164,7 @@ geotech tunnel cutter-wear --cai 3.5 --ucs 120 --distance 5000 --cutters 48
   {
     id: 'vision',
     title: 'geotech vision (AI)',
-    content: `AI-powered image analysis. Requires API key.
+    content: `AI-powered image analysis. Uses hosted GLM beta by default.
 
 \`\`\`bash
 # Core box analysis → RQD, fracture spacing, weathering
@@ -266,7 +264,7 @@ export default function DocsPage() {
       <main className="pt-24 px-12 pb-16 max-w-[900px]">
         <h1 className="text-4xl font-bold tracking-tight mb-4">Strong Beta Docs</h1>
         <p className="text-[var(--text-secondary)] text-base mb-12">
-          Strong beta reference for geotechCLI commands, flags, and local provider configuration.
+          Strong beta reference for geotechCLI commands, hosted GLM defaults, and optional advanced provider overrides.
         </p>
 
         {/* Table of contents */}

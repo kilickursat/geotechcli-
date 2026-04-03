@@ -4,6 +4,17 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core';
 
 const releases = [
   {
+    version: 'strong-beta-wave2',
+    date: '2026-04-03',
+    tag: 'Hosted GLM Beta',
+    changes: [
+      { type: 'feat', text: 'Hosted GLM beta gateway enabled for strong-beta with glm-5-turbo and glm-5v-turbo defaults' },
+      { type: 'security', text: 'Proxy now validates requests, enforces model allowlists, and applies server-side rate limits before calling Z.AI' },
+      { type: 'feat', text: 'CLI default provider switched to hosted-beta so users can try AI commands without bringing their own key' },
+      { type: 'feat', text: 'Website, docs, and privacy copy updated to reflect hosted beta access with no-signup limits' },
+    ],
+  },
+  {
     version: 'strong-beta',
     date: '2026-04-03',
     tag: 'Strong Beta Branch',

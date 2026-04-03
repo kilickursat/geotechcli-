@@ -4,8 +4,10 @@ import {
   buildLLMConfig,
   generateText,
   GEOTECHCLI_VERSION,
+  DEFAULT_LLM_MODEL,
+  DEFAULT_LLM_VISION_MODEL,
 } from '@geotechcli/core';
-import { heading, keyValue, success, error, warn, renderJSON } from '../ui/terminal.js';
+import { heading, keyValue, warn, renderJSON } from '../ui/terminal.js';
 import ora from 'ora';
 import chalk from 'chalk';
 
@@ -17,18 +19,21 @@ export function registerStatusCommand(program: Command): void {
     .action(async (opts) => {
       const config = loadConfig();
       const llmConfig = buildLLMConfig();
+      const usesHostedBeta = llmConfig.provider === 'hosted-beta';
 
       const status = {
         version: GEOTECHCLI_VERSION,
         provider: config.llm.provider,
-        model: config.llm.model || '(default)',
+        model: config.llm.model || DEFAULT_LLM_MODEL,
+        visionModel: config.llm.vision_model || DEFAULT_LLM_VISION_MODEL,
         tier: config.auth.tier,
         apiKeySet: Boolean(llmConfig.apiKey),
+        requiresUserApiKey: !usesHostedBeta,
         connectivity: 'unknown' as string,
         latencyMs: 0,
       };
 
-      if (opts.json && !llmConfig.apiKey) {
+      if (opts.json && !usesHostedBeta && !llmConfig.apiKey) {
         status.connectivity = 'no_api_key';
         renderJSON(status);
         return;
@@ -39,11 +44,19 @@ export function registerStatusCommand(program: Command): void {
         keyValue('Version', status.version);
         keyValue('LLM provider', config.llm.provider);
         keyValue('Model', status.model);
+        keyValue('Vision model', status.visionModel);
         keyValue('Tier', config.auth.tier);
-        keyValue('API key', status.apiKeySet ? chalk.green('set') : chalk.yellow('not set'));
+        keyValue(
+          'API key',
+          usesHostedBeta
+            ? chalk.gray('not required for hosted beta')
+            : status.apiKeySet
+              ? chalk.green('set')
+              : chalk.yellow('not set'),
+        );
       }
 
-      if (llmConfig.apiKey) {
+      if (usesHostedBeta || llmConfig.apiKey) {
         const spinner = opts.json ? null : ora({ text: 'Testing LLM connectivity...', indent: 2 }).start();
 
         try {
@@ -60,15 +73,17 @@ export function registerStatusCommand(program: Command): void {
             spinner.succeed(`LLM online — ${response.latencyMs}ms latency (${response.model})`);
           }
         } catch (err) {
-          status.connectivity = 'error';
+          const message = err instanceof Error ? err.message : 'Unknown error';
+          status.connectivity = /rate limit/i.test(message) ? 'rate_limited' : 'error';
 
           if (spinner) {
-            spinner.fail(`LLM unreachable: ${err instanceof Error ? err.message.slice(0, 80) : 'Unknown error'}`);
+            spinner.fail(`LLM unreachable: ${message.slice(0, 120)}`);
           }
         }
       } else {
         if (!opts.json) {
-          warn('No API key configured. Run: geotech config set llm.api_key <your-key>');
+          warn('No provider API key configured. Switch to hosted beta or set your own provider key.');
+          warn('Hosted beta default: geotech config set llm.provider hosted-beta');
           warn('Deterministic calculations work without an API key.');
         }
       }

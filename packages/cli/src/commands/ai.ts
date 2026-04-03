@@ -31,10 +31,9 @@ import { heading, keyValue, renderJSON, success, error, warn, renderTable } from
 import { addGlobalFlags, getGlobalFlags } from '../util/flags.js';
 
 async function checkQuota(_callType: 'llmCalls' | 'visionCalls' | 'agentCalls'): Promise<boolean> {
-  // Wave 1 strong-beta behavior:
-  // AI calls go directly to the user's configured provider, so there is no
-  // hosted quota gate at the CLI layer. Hosted anonymous GLM limits land in
-  // Wave 2 once the beta proxy is enabled.
+  // Strong-beta hosted limits are enforced server-side by the beta proxy.
+  // Keep the CLI permissive here so successful completions, retries, and
+  // daily limits are handled by the hosted gateway instead of stale local state.
   return true;
 }
 
@@ -712,9 +711,9 @@ export function registerChatCommand(program: Command): void {
         return;
       }
 
-      if (!config.apiKey) {
-        warn('No API key set. Run: geotech config set llm.api_key <key>');
-        warn('Or set ZHIPU_API_KEY environment variable.');
+      if (config.provider !== 'hosted-beta' && !config.apiKey) {
+        warn('No provider API key set. Run: geotech config set llm.api_key <key>');
+        warn('Or switch back to hosted beta with: geotech config set llm.provider hosted-beta');
         return;
       }
 

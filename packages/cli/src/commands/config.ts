@@ -24,7 +24,14 @@ export function registerConfigCommand(program: Command): void {
       console.log('');
       console.log(chalk.gray('  [LLM]'));
       keyValue('  Provider', cfg.llm.provider);
-      keyValue('  API key', cfg.llm.api_key ? '****' + cfg.llm.api_key.slice(-4) : chalk.yellow('not set'));
+      keyValue(
+        '  API key',
+        cfg.llm.provider === 'hosted-beta'
+          ? chalk.gray('not required for hosted beta')
+          : cfg.llm.api_key
+            ? '****' + cfg.llm.api_key.slice(-4)
+            : chalk.yellow('not set'),
+      );
       keyValue('  Model override', cfg.llm.model || chalk.gray('(provider default)'));
       keyValue('  Vision model', cfg.llm.vision_model || chalk.gray('(provider default)'));
       keyValue('  Base URL', cfg.llm.base_url || chalk.gray('(provider default)'));
@@ -95,12 +102,12 @@ export function registerConfigCommand(program: Command): void {
     .command('reset')
     .description('Reset configuration to defaults')
     .action(() => {
-      setConfigValue('llm.provider', 'zhipu');
+      setConfigValue('llm.provider', 'hosted-beta');
       setConfigValue('llm.api_key', '');
       setConfigValue('llm.model', '');
       setConfigValue('llm.vision_model', '');
       setConfigValue('llm.base_url', '');
-      success('Configuration reset to defaults (Zhipu GLM-5-Turbo / GLM-5V-Turbo).');
+      success('Configuration reset to defaults (hosted beta GLM-5-Turbo / GLM-5V-Turbo).');
     });
 
   program.addCommand(config);

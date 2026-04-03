@@ -3,6 +3,7 @@ import metadata from './metadata.json' with { type: 'json' };
 export const GEOTECHCLI_VERSION = metadata.version as string;
 
 export const DEFAULT_LLM_PROVIDER = metadata.defaults.provider as
+  | 'hosted-beta'
   | 'zhipu'
   | 'openai'
   | 'anthropic'

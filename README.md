@@ -21,14 +21,15 @@
 
 ## What is geotechCLI?
 
-geotechCLI is a geotechnical engineering command-line tool that combines deterministic analysis, AI-assisted interpretation, vision workflows, and export utilities in one terminal-first product.
+geotechCLI is a terminal-first geotechnical engineering product that combines deterministic analysis, AI-assisted interpretation, vision workflows, agentic reasoning, and export utilities in one CLI.
 
 ## Strong Beta Status
 
 - Deterministic commands are available now.
-- AI, vision, and agent commands work with your own provider key in Wave 1.
-- Hosted anonymous GLM beta access, signup, and billing are intentionally disabled on `strong-beta`.
-- Paid plans remain visible as product direction, but they are not active yet on this branch.
+- Hosted GLM beta access is available now with no user Z.AI key required.
+- Text defaults to `glm-5-turbo` and vision defaults to `glm-5v-turbo`.
+- Server-side rate limits protect the hosted beta credit pool.
+- Signup, billing, and paid entitlements are intentionally disabled on `strong-beta`.
 
 ## Install
 
@@ -41,14 +42,13 @@ npm -v
 npm install -g geotechcli
 ```
 
-Use the official Node.js installer or a trusted OS package manager. For the beta, the safest install path is still Node.js LTS plus `npm install -g geotechcli`.
+Use the official Node.js installer or a trusted OS package manager. For strong beta, the safest install path is still Node.js LTS plus `npm install -g geotechcli`.
 
 ## Quick Start
 
 ```bash
-# Configure the default Z.AI provider for strong beta AI commands
-geotech config set llm.provider zhipu
-geotech config set llm.api_key your-key
+# Confirm the hosted beta path is active
+geotech status
 
 # Bearing capacity (Meyerhof)
 geotech bearing --depth 5 --phi 30 --cohesion 25 --width 2.5
@@ -58,9 +58,6 @@ geotech liquefaction --pga 0.25 --magnitude 7.5 --spt-profile site.csv
 
 # RMR89 classification
 geotech classify rmr --ucs 85 --rqd 72 --spacing 0.4 --condition fair --gw dry
-
-# TBM performance prediction
-geotech tunnel tbm-predict --diameter 6.5 --ucs 80 --rqd 65 --cai 2.1
 
 # AI: classify RMR from a tunnel face photo
 geotech vision rmr tunnel-face.jpg
@@ -76,7 +73,7 @@ geotech export dxf --input boreholes.json --output profile.dxf
 
 ### Deterministic
 
-These commands are the public strong beta foundation and are available now.
+These commands are the public strong-beta foundation and are available now.
 
 | Command | Description |
 |---------|-------------|
@@ -94,7 +91,7 @@ These commands are the public strong beta foundation and are available now.
 
 ### AI-Assisted
 
-These commands are available in strong beta with your own provider key in Wave 1.
+These commands now use the hosted beta GLM path by default.
 
 | Command | Description |
 |---------|-------------|
@@ -134,36 +131,39 @@ Most calculation and analysis commands support:
 
 ## LLM Configuration
 
-In `strong-beta`, AI commands use your own provider key. The default Z.AI models are:
+In `strong-beta`, AI commands default to the hosted beta provider, so a user does not need to bring a Z.AI key.
 
-- Text: `glm-5-turbo`
-- Vision: `glm-5v-turbo`
+- Default provider: `hosted-beta`
+- Default text model: `glm-5-turbo`
+- Default vision model: `glm-5v-turbo`
 
 ```bash
-# Default beta setup (Z.AI)
-geotech config set llm.provider zhipu
-geotech config set llm.api_key your-key
+# Confirm the strong-beta defaults
+geotech config get llm.provider
+geotech config get llm.model
+geotech config get llm.vision_model
 
-# Hugging Face with your own token
+# Restore hosted beta defaults
+geotech config reset
+
+# Optional advanced override: Hugging Face
 geotech config set llm.provider huggingface
 geotech config set llm.api_key hf_your_token
 geotech config set llm.model meta-llama/Llama-3.1-8B-Instruct
 
-# OpenAI with your own key
+# Optional advanced override: OpenAI
 geotech config set llm.provider openai
 geotech config set llm.api_key sk-...
 
-# Anthropic with your own key
+# Optional advanced override: Anthropic
 geotech config set llm.provider anthropic
 geotech config set llm.api_key sk-ant-...
 
-# Self-hosted model
+# Optional advanced override: self-hosted OpenAI-compatible endpoint
 geotech config set llm.provider openai-compatible
 geotech config set llm.base_url http://localhost:11434/v1
 geotech config set llm.model qwen3.5-4b
 ```
-
-Hosted anonymous GLM access and server-side rate limiting are planned for Wave 2.
 
 ## Pricing
 
@@ -174,21 +174,21 @@ Hosted anonymous GLM access and server-side rate limiting are planned for Wave 2
 | **Pro** | Coming Soon | Not active in this branch |
 | **Annual** | Coming Soon | Not active in this branch |
 
-Strong beta currently gives users deterministic commands plus AI and vision with their own provider key. Managed hosted AI and paid entitlements come later.
+Strong beta currently gives users deterministic commands plus hosted GLM beta access with limits. Managed commercial plans and entitlements come later.
 
-## Security
+## Security and Privacy
 
+- End users do not need to submit their own Z.AI key for hosted beta usage.
+- Hosted beta requests are forwarded for completion and are not intended to be stored as reusable prompt or file history on geotechCLI servers.
+- geotechCLI does not use prompts, uploaded project files, or outputs to train geotechCLI.
+- geotechCLI does not sell user engineering data.
+- Hosted beta keeps only minimal hashed abuse-protection counters and service metadata.
 - API keys are never logged, echoed, or included in error messages.
 - `--json` output redacts sensitive fields.
 - Environment variables take precedence over config file values when present.
 - Config is stored at `~/.geotechcli/config.json` and protected with restrictive permissions where supported.
-- In Wave 1, AI calls go directly to the provider configured locally by the user.
-- geotechCLI does not use prompts, project files, or outputs to train its own models.
-- geotechCLI does not sell user engineering data.
 - Agent filesystem tools are sandboxed to the working directory.
 - Shell commands are sandbox-validated and limited to a narrow allowlist.
-- Signup, checkout, usage, webhook, and hosted proxy endpoints are disabled on `strong-beta`.
-- Hosted anonymous GLM beta rate limiting will arrive in the next wave.
 
 ## License
 

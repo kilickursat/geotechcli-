@@ -77,11 +77,15 @@ jobs:
       - name: Verify security hardening
         run: |
           grep -q '0o600' packages/core/src/config/index.ts
-          grep -q 'betaDisabledResponse' packages/web/app/api/proxy/route.ts
+          grep -q 'MAX_BODY_SIZE_BYTES' packages/web/app/api/proxy/route.ts
+          grep -q 'isIPRateLimitedRedis' packages/web/app/api/proxy/route.ts
+          grep -q 'validateMessages' packages/web/app/api/proxy/route.ts
+          grep -q 'verifyWebhookSignature' packages/web/lib/stripe.ts
+          grep -q 'SUPPORTED_PROXY_MODELS' packages/web/app/api/proxy/route.ts
+          grep -q 'incrementHostedBetaUsage' packages/web/app/api/proxy/route.ts
           grep -q 'betaDisabledResponse' packages/web/app/api/auth/route.ts
           grep -q 'betaDisabledResponse' packages/web/app/api/checkout/route.ts
           grep -q 'betaDisabledResponse' packages/web/app/api/usage/route.ts
           grep -q 'betaDisabledResponse' packages/web/app/api/webhook/route.ts
-          grep -q 'verifyWebhookSignature' packages/web/lib/stripe.ts
           grep -q 'RedisUsageStore' packages/core/src/db/redis.ts
           echo "All security controls verified."

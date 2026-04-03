@@ -9,7 +9,7 @@ const guarantees = [
     label: 'No prompt storage',
     title: 'geotechCLI does not keep your prompt or file content',
     body:
-      'Wave 1 AI calls go directly to the provider you configure. For hosted beta, requests are intended to be forwarded only for real-time completion, not stored on geotechCLI servers.',
+      'Hosted beta requests are intended to be forwarded only for real-time completion, not stored on geotechCLI servers as reusable prompt or file history.',
   },
   {
     label: 'No training',
@@ -46,10 +46,9 @@ export function PrivacyCallout() {
             </p>
             <p className="text-[12.5px] leading-[1.8] text-[var(--text-muted)] max-w-[560px] mt-6">
               Requests still have to reach the model provider needed to answer
-              them. In Wave 1 that is the provider configured by the user. In
-              hosted beta, geotechCLI forwards requests only for completion and
-              keeps minimal hashed abuse-protection counters instead of raw
-              prompt history.
+              them. In hosted beta, geotechCLI forwards requests only for
+              completion and keeps minimal hashed abuse-protection counters
+              instead of raw prompt history.
             </p>
             <a
               href="/privacy"

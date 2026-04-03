@@ -1,7 +1,7 @@
 {
   "version": "0.2.0",
   "defaults": {
-    "provider": "zhipu",
+    "provider": "hosted-beta",
     "model": "glm-5-turbo",
     "visionModel": "glm-5v-turbo"
   },

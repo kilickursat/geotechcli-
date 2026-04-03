@@ -17,8 +17,9 @@ export default function HomePage() {
           <strong className="text-[var(--text-primary)] font-semibold">
             {' '}Deterministic workflows are ready today.
           </strong>
-          {' '}AI capabilities are available with your own provider key. Hosted
-          anonymous GLM access, signup, and billing are not live yet in this wave.
+          {' '}AI capabilities are now available through hosted GLM beta access with
+          no user provider key required. Signup and billing are still intentionally
+          disabled while we validate the CLI, rate limits, and privacy model.
           <strong className="text-[var(--text-primary)] font-semibold">
             {' '}The goal of this branch is safe public validation, not fake production.
           </strong>
@@ -34,7 +35,7 @@ export default function HomePage() {
         </h2>
         <p className="text-[var(--text-secondary)] text-base mb-8 max-w-md mx-auto">
           The public beta is focused on real CLI usage, deterministic confidence,
-          and a safer rollout path for hosted GLM features.
+          hosted GLM evaluation, and a safer rollout path for the full product.
         </p>
         <div className="flex gap-4 justify-center items-center">
           <a

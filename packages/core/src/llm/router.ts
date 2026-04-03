@@ -10,6 +10,7 @@ import { ZhipuAdapter } from './providers/zhipu.js';
 import { OpenAICompatibleAdapter } from './providers/openai-compatible.js';
 import { AnthropicAdapter } from './providers/anthropic.js';
 import { HuggingFaceAdapter } from './providers/huggingface.js';
+import { HostedBetaAdapter } from './providers/hosted-beta.js';
 
 // ---------------------------------------------------------------------------
 // Provider registry — singleton, adapters registered once at startup
@@ -40,6 +41,7 @@ class Registry implements ProviderRegistry {
 const registry = new Registry();
 
 // Register built-in providers
+registry.register(new HostedBetaAdapter());
 registry.register(new ZhipuAdapter());
 
 registry.register(

@@ -12,10 +12,10 @@ const sections = [
     ],
   },
   {
-    title: 'What happens in Wave 1',
+    title: 'What happens in strong beta',
     points: [
-      'AI, vision, and agent commands use the provider configured by the user.',
-      'That means requests go directly from the CLI to the chosen provider in this wave.',
+      'AI, vision, and agent commands use the hosted GLM beta path by default.',
+      'That means requests are forwarded from the CLI to the geotechCLI beta gateway and then to the model provider needed to answer them.',
       'Deterministic calculations stay local and do not require an AI provider.',
     ],
   },
@@ -31,7 +31,7 @@ const sections = [
     title: 'Important provider note',
     points: [
       'A response still requires sending the request to the model provider that generates it.',
-      'In Wave 1, that provider is selected by the user.',
+      'In strong beta, the hosted default is Z.AI unless the user intentionally switches to another provider.',
       'According to the current Z.AI API terms for developers, end-user content is used only as necessary to provide the API service and is not used to develop or improve services unless the customer explicitly agrees.',
       'For hosted Z.AI beta, provider-side handling follows the provider API terms and privacy commitments in addition to geotechCLI server behavior.',
     ],

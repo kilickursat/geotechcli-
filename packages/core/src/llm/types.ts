@@ -2,7 +2,13 @@
 // LLM provider abstraction — types only, zero dependencies
 // ---------------------------------------------------------------------------
 
-export type LLMProvider = 'zhipu' | 'openai' | 'anthropic' | 'openai-compatible' | 'huggingface';
+export type LLMProvider =
+  | 'hosted-beta'
+  | 'zhipu'
+  | 'openai'
+  | 'anthropic'
+  | 'openai-compatible'
+  | 'huggingface';
 
 export interface LLMConfig {
   provider: LLMProvider;

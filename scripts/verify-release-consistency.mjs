@@ -31,6 +31,10 @@ for (const pkg of [cliPkg, corePkg, webPkg]) {
 
 const readme = readText('README.md');
 assert(
+  readme.includes(metadata.defaults.provider),
+  `README.md must mention the shared default provider ${metadata.defaults.provider}.`,
+);
+assert(
   readme.includes(metadata.defaults.model),
   `README.md must mention the shared default text model ${metadata.defaults.model}.`,
 );
