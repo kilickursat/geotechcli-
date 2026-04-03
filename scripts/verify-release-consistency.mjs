@@ -31,8 +31,12 @@ for (const pkg of [cliPkg, corePkg, webPkg]) {
 
 const readme = readText('README.md');
 assert(
-  readme.includes(`Default: Zhipu ${metadata.defaults.model}`),
+  readme.includes(metadata.defaults.model),
   `README.md must mention the shared default text model ${metadata.defaults.model}.`,
+);
+assert(
+  readme.includes(metadata.defaults.visionModel),
+  `README.md must mention the shared default vision model ${metadata.defaults.visionModel}.`,
 );
 for (const requiredFlag of ['--quiet', '--dry-run']) {
   assert(

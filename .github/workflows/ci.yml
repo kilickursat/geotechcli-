@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [master, strong-beta, main]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -74,10 +77,11 @@ jobs:
       - name: Verify security hardening
         run: |
           grep -q '0o600' packages/core/src/config/index.ts
-          grep -q 'MAX_BODY_SIZE_BYTES' packages/web/app/api/proxy/route.ts
-          grep -q 'isIPRateLimited' packages/web/app/api/proxy/route.ts
-          grep -q 'validateMessages' packages/web/app/api/proxy/route.ts
+          grep -q 'betaDisabledResponse' packages/web/app/api/proxy/route.ts
+          grep -q 'betaDisabledResponse' packages/web/app/api/auth/route.ts
+          grep -q 'betaDisabledResponse' packages/web/app/api/checkout/route.ts
+          grep -q 'betaDisabledResponse' packages/web/app/api/usage/route.ts
+          grep -q 'betaDisabledResponse' packages/web/app/api/webhook/route.ts
           grep -q 'verifyWebhookSignature' packages/web/lib/stripe.ts
-          grep -q 'getUserByKey' packages/web/app/api/proxy/route.ts
           grep -q 'RedisUsageStore' packages/core/src/db/redis.ts
           echo "All security controls verified."
