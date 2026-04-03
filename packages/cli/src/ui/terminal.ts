@@ -185,6 +185,9 @@ export function renderJSON(data: unknown): void {
   // Security: strip any apiKey/api_key/token fields before output
   const sanitized = JSON.parse(JSON.stringify(data, (key, value) => {
     if (/api.?key|token|secret|password/i.test(key)) {
+      if (typeof value === 'boolean' || typeof value === 'number' || value == null) {
+        return value;
+      }
       return '***REDACTED***';
     }
     return value;

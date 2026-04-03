@@ -55,6 +55,38 @@ function formatMaybe(value: string | number | null | undefined, suffix = ''): st
   return `${value}${suffix}`;
 }
 
+function sanitizeErrorMessage(message: string): string {
+  return message.replace(
+    /(?:Bearer |sk-|zhipu-|api[_-]?key[=: ]*)[^\s"'\]},]*/gi,
+    '***REDACTED***',
+  );
+}
+
+function getErrorMessage(err: unknown): string {
+  return sanitizeErrorMessage(err instanceof Error ? err.message : String(err));
+}
+
+function handleCommandError(
+  err: unknown,
+  flags: { json?: boolean },
+  code = 'command_failed',
+): void {
+  const message = getErrorMessage(err);
+  process.exitCode = 1;
+
+  if (flags.json) {
+    renderJSON({
+      error: {
+        code,
+        message,
+      },
+    });
+    return;
+  }
+
+  error(message);
+}
+
 function renderWarnings(warnings: string[]): void {
   if (warnings.length === 0) return;
   console.log(chalk.yellow('  Warnings:'));
@@ -211,7 +243,7 @@ export function registerVisionCommand(program: Command): void {
         console.log('');
       } catch (err) {
         spinner?.fail('Analysis failed');
-        error(err instanceof Error ? err.message : String(err));
+        handleCommandError(err, flags, 'corebox_analysis_failed');
       }
     });
   addGlobalFlags(coreboxCmd);
@@ -260,7 +292,7 @@ export function registerVisionCommand(program: Command): void {
         console.log('');
       } catch (err) {
         spinner?.fail('RMR classification failed');
-        error(err instanceof Error ? err.message : String(err));
+        handleCommandError(err, flags, 'rmr_classification_failed');
       }
     });
   addGlobalFlags(rmrImageCmd);
@@ -301,7 +333,7 @@ export function registerVisionCommand(program: Command): void {
         console.log('');
       } catch (err) {
         spinner?.fail('Sensor interpretation failed');
-        error(err instanceof Error ? err.message : String(err));
+        handleCommandError(err, flags, 'sensor_interpretation_failed');
       }
     });
   addGlobalFlags(sensorCmd);
@@ -354,7 +386,7 @@ export function registerVisionCommand(program: Command): void {
         console.log('');
       } catch (err) {
         spinner?.fail('Extraction failed');
-        error(err instanceof Error ? err.message : String(err));
+        handleCommandError(err, flags, 'borehole_extraction_failed');
       }
     });
   addGlobalFlags(logCmd);
@@ -401,7 +433,7 @@ export function registerAIClassifyCommand(program: Command): void {
         console.log('');
       } catch (err) {
         spinner?.fail('Classification failed');
-        error(err instanceof Error ? err.message : String(err));
+        handleCommandError(err, flags, 'ai_classification_failed');
       }
     });
 
@@ -447,7 +479,7 @@ export function registerGBRCommand(program: Command): void {
         console.log('');
       } catch (err) {
         spinner?.fail('GBR query failed');
-        error(err instanceof Error ? err.message : String(err));
+        handleCommandError(err, flags, 'gbr_query_failed');
       }
     });
 
@@ -565,19 +597,21 @@ export function registerAgentCommand(program: Command): void {
 
       if (!(await checkQuota('agentCalls'))) return;
 
-      console.log('');
+      if (!flags.json) {
+        console.log('');
       if (useSwarm) {
         console.log(chalk.gray('  Swarm activated — Interpretation → Simulation → Reviewer'));
       } else {
         console.log(chalk.gray('  Agent activated — planning and executing...'));
       }
-      console.log('');
+        console.log('');
+      }
 
       try {
         const config = buildLLMConfig();
         const projectState = loadProjectState(opts.project);
 
-        if (projectState) {
+        if (projectState && !flags.json) {
           console.log(chalk.gray(`  Project context loaded: ${projectState.name} (${projectState.id})`));
           console.log('');
         }
@@ -676,9 +710,11 @@ export function registerAgentCommand(program: Command): void {
           }
         }
 
-        console.log('');
+        if (!flags.json) {
+          console.log('');
+        }
       } catch (err) {
-        error(err instanceof Error ? err.message : String(err));
+        handleCommandError(err, flags, useSwarm ? 'swarm_failed' : 'agent_failed');
       }
     });
 
@@ -867,7 +903,7 @@ export function registerReportCommand(program: Command): void {
         console.log('');
       } catch (err) {
         spinner?.fail('Report generation failed');
-        error(err instanceof Error ? err.message : String(err));
+        handleCommandError(err, flags, 'report_generation_failed');
       }
     });
 
