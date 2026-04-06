@@ -1,10 +1,12 @@
 import type { Metadata } from 'next';
 import './globals.css';
 
+const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || 'https://beta.geotechcli.com';
+
 export const metadata: Metadata = {
   title: 'geotechCLI Strong Beta - Geotechnical CLI',
   description:
-    'Strong beta for geotechCLI. Deterministic geotechnical calculations are live now, with privacy-first AI evaluation and hosted GLM beta rolling out in later waves.',
+    'Strong beta for geotechCLI. Deterministic geotechnical calculations and hosted GLM beta access are live now with privacy-first guardrails.',
   keywords: [
     'geotechnical engineering',
     'CLI',
@@ -17,18 +19,18 @@ export const metadata: Metadata = {
     'tunnel',
     'soil classification',
   ],
-  metadataBase: new URL('https://geotechcli.com'),
+  metadataBase: new URL(appUrl),
   openGraph: {
     title: 'geotechCLI Strong Beta',
-    description: 'Privacy-first strong beta for a geotechnical engineering CLI with deterministic workflows live now.',
-    url: 'https://geotechcli.com',
+    description: 'Privacy-first strong beta for a geotechnical engineering CLI with deterministic workflows and hosted GLM beta access live now.',
+    url: appUrl,
     siteName: 'geotechCLI',
     type: 'website',
   },
   twitter: {
     card: 'summary_large_image',
     title: 'geotechCLI Strong Beta',
-    description: 'Privacy-first deterministic geotechnical CLI workflows are live now.',
+    description: 'Privacy-first deterministic geotechnical CLI workflows and hosted GLM beta access are live now.',
   },
 };
 

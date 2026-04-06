@@ -14,7 +14,7 @@ export function banner(): void {
     chalk.gray(` v${GEOTECHCLI_VERSION}`) +
     chalk.gray('  —  AI-native geotechnical engineering'),
   );
-  console.log(chalk.gray('  https://geotechcli.com'));
+  console.log(chalk.gray('  https://beta.geotechcli.com'));
   console.log('');
 }
 

@@ -28,7 +28,9 @@
     "vitest": "^3.1.0",
     "@types/asciichart": "^1.5.8"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "keywords": [
     "geotechnical",
     "engineering",
@@ -45,6 +47,6 @@
     "type": "git",
     "url": "https://github.com/kilickursat/geotechcli-"
   },
-  "homepage": "https://geotechcli.com",
+  "homepage": "https://beta.geotechcli.com",
   "license": "SEE LICENSE IN LICENSE"
 }

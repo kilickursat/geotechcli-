@@ -33,3 +33,7 @@ coverage/
 
 # Build artifacts
 *.tgz
+.open-next/
+.wrangler/
+.dev.vars
+.dev.vars.*

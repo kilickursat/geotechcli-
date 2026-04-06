@@ -8,8 +8,8 @@ In the current `strong-beta` branch:
 
 - No signup is required.
 - Deterministic commands run without an AI provider.
-- AI, vision, and agent commands in Wave 1 use the provider configured by the user.
-- Hosted anonymous GLM beta is being added separately and is expected to keep the same privacy posture.
+- AI, vision, and agent commands use hosted GLM beta by default.
+- Bring-your-own provider keys remain available only as an advanced override.
 
 ## What geotechCLI does not do
 
@@ -18,31 +18,24 @@ In the current `strong-beta` branch:
 - We do not keep a signup-based customer profile in strong beta.
 - We do not persist raw prompt or file content on geotechCLI servers as part of the intended hosted beta design.
 
-## What happens in Wave 1
+## What happens in strong beta
 
-Wave 1 AI commands use the provider configured by the user.
+Strong-beta AI commands use the hosted GLM gateway by default.
 
 That means:
 
-- Requests go directly from the CLI to the selected provider.
-- Provider API keys stay in the local geotechCLI config or environment variables.
-- geotechCLI is not in the middle of those AI requests in this wave.
-
-## What hosted beta is designed to keep
-
-For the hosted beta path, geotechCLI is being shaped around these rules:
-
 - Requests are forwarded only for real-time completion.
-- Raw prompt and file content are not stored on geotechCLI servers.
-- User engineering data is not used to train geotechCLI.
-- Abuse protection keeps only minimal hashed counters and short-lived operational metadata.
+- End users do not need to provide their own Z.AI key for the default hosted path.
+- geotechCLI applies server-side rate limits and abuse controls before calling the model provider.
+- Raw prompt and file content are not intended to be stored on geotechCLI servers as reusable history.
 
 ## Important provider note
 
 A model response still requires sending the request to the model provider that generates it.
 
-- In Wave 1, that provider is chosen by the user.
-- In hosted Z.AI beta, provider-side handling follows the provider API terms and privacy commitments in addition to geotechCLI server behavior.
+- In strong beta, the default hosted provider path uses Z.AI.
+- If a user manually switches to another provider, that provider handles the request directly.
+- Provider-side handling follows that provider's API terms and privacy commitments in addition to geotechCLI server behavior.
 
 ## Local config
 

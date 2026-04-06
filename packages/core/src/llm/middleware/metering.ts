@@ -151,8 +151,8 @@ export async function checkUsageAndAbuse(
 ║  → Pro ($49/mo)       Bring Your Own LLM                ║
 ║  → Annual ($399/yr)   Everything + SLA                  ║
 ║                                                         ║
-║  Register at: https://geotechcli.com/pricing            ║
-║  Or run: geotech auth login                             ║
+║  Register at: https://beta.geotechcli.com/pricing            ║
+║  No login is required on strong-beta                             ║
 ║                                                         ║
 ║  Deterministic calculations remain FREE forever.        ║
 ╚══════════════════════════════════════════════════════════╝`,
@@ -165,7 +165,7 @@ export async function checkUsageAndAbuse(
       remainingCalls: remaining,
       shouldPromptUpgrade: remaining <= 2,
       upgradeMessage: remaining <= 2
-        ? `⚠ ${remaining} free AI call${remaining === 1 ? '' : 's'} remaining. Register at geotechcli.com for unlimited access.`
+        ? `⚠ ${remaining} free AI call${remaining === 1 ? '' : 's'} remaining. See beta.geotechcli.com/pricing for current strong-beta status.`
         : undefined,
     };
   }
@@ -186,7 +186,7 @@ export async function checkUsageAndAbuse(
       remainingCalls: 0,
       shouldPromptUpgrade: tier === 'free' || tier === 'lite_pro',
       upgradeMessage: tier === 'free'
-        ? `Upgrade to Lite Pro ($15/mo) for 1000 analyses/month, or Pro ($49/mo) for unlimited. Visit geotechcli.com/pricing`
+        ? `Upgrade to Lite Pro ($15/mo) for 1000 analyses/month, or Pro ($49/mo) for unlimited. See beta.geotechcli.com/pricing`
         : tier === 'lite_pro'
           ? `Upgrade to Pro ($49/mo) for unlimited analyses + BYOL. Visit geotechcli.com/pricing`
           : undefined,

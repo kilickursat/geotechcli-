@@ -98,7 +98,7 @@ export class HostedBetaAdapter implements ProviderAdapter {
     this.baseUrl =
       baseUrl ??
       process.env.GEOTECHCLI_PROXY_URL?.trim() ??
-      'https://geotechcli.com/api/proxy';
+      'https://beta.geotechcli.com/api/proxy';
   }
 
   async complete(

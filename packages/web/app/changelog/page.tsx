@@ -1,6 +1,6 @@
 import { Nav } from '@/components/Nav';
 import { Footer } from '@/components/Footer';
-import { GEOTECHCLI_VERSION } from '@geotechcli/core';
+import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 
 const releases = [
   {

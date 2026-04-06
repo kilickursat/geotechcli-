@@ -4,7 +4,7 @@
 
 **Strong beta CLI for geotechnical engineering.**
 
-[Website](https://geotechcli.com) | [Documentation](https://geotechcli.com/docs) | [Changelog](https://geotechcli.com/changelog) | [Beta](https://geotechcli.com/pricing)
+[Website](https://beta.geotechcli.com) | [Documentation](https://beta.geotechcli.com/docs) | [Changelog](https://beta.geotechcli.com/changelog) | [Beta](https://beta.geotechcli.com/pricing)
 
 </div>
 

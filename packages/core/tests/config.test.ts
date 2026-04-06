@@ -41,7 +41,7 @@ describe('hosted-beta config defaults', () => {
     expect(config.llm.provider).toBe('hosted-beta');
     expect(llmConfig.provider).toBe('hosted-beta');
     expect(llmConfig.apiKey).toBe('');
-    expect(llmConfig.baseUrl).toBe('https://geotechcli.com/api/proxy');
+    expect(llmConfig.baseUrl).toBe('https://beta.geotechcli.com/api/proxy');
   });
 
   it('uses GEOTECHCLI_PROXY_URL when hosted-beta is active', () => {

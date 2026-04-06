@@ -5,7 +5,7 @@ import {
   DEFAULT_LLM_PROVIDER,
   DEFAULT_LLM_VISION_MODEL,
   GLOBAL_FLAG_DEFINITIONS,
-} from '@geotechcli/core';
+} from '@geotechcli/core/meta';
 
 const globalFlagsTable = [
   '| Flag | Description |',

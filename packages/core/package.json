@@ -21,6 +21,14 @@
     "./config": {
       "types": "./dist/config/index.d.ts",
       "import": "./dist/config/index.js"
+    },
+    "./meta": {
+      "types": "./dist/meta/index.d.ts",
+      "import": "./dist/meta/index.js"
+    },
+    "./db/redis": {
+      "types": "./dist/db/redis.d.ts",
+      "import": "./dist/db/redis.js"
     }
   },
   "scripts": {
@@ -37,6 +45,8 @@
     "typescript": "^5.7.0",
     "vitest": "^3.1.0"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "license": "SEE LICENSE IN LICENSE"
 }

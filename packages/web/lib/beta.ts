@@ -2,7 +2,7 @@ import {
   DEFAULT_LLM_MODEL,
   DEFAULT_LLM_VISION_MODEL,
   SUPPORTED_PROXY_MODELS,
-} from '@geotechcli/core';
+} from '@geotechcli/core/meta';
 import { NextResponse } from 'next/server';
 
 export const STRONG_BETA_MODE = true;

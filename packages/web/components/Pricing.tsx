@@ -1,7 +1,7 @@
 import {
   DEFAULT_LLM_MODEL,
   DEFAULT_LLM_VISION_MODEL,
-} from '@geotechcli/core';
+} from '@geotechcli/core/meta';
 
 const tiers = [
   {

@@ -2,8 +2,8 @@ import {
   DEFAULT_LLM_MODEL,
   DEFAULT_LLM_VISION_MODEL,
   SUPPORTED_PROXY_MODELS,
-  isIPRateLimitedRedis,
-} from '@geotechcli/core';
+} from '@geotechcli/core/meta';
+import { isIPRateLimitedRedis } from '@geotechcli/core/db/redis';
 import { NextRequest, NextResponse } from 'next/server';
 import {
   HOSTED_BETA_LIMITS,

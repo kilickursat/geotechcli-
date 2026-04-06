@@ -4,7 +4,7 @@ import { Footer } from '@/components/Footer';
 import {
   DEFAULT_LLM_MODEL,
   DEFAULT_LLM_VISION_MODEL,
-} from '@geotechcli/core';
+} from '@geotechcli/core/meta';
 
 export default function PricingPage() {
   return (
@@ -45,8 +45,7 @@ export default function PricingPage() {
               <h3 className="font-semibold mb-2">What LLM models are used by default?</h3>
               <p className="text-[var(--text-secondary)] text-sm leading-relaxed">
                 The strong-beta defaults are Zhipu {DEFAULT_LLM_MODEL} for text and{' '}
-                {DEFAULT_LLM_VISION_MODEL} for vision analysis. These defaults will
-                also be used for the hosted beta gateway once it is enabled.
+                {DEFAULT_LLM_VISION_MODEL} for vision analysis. These defaults are live on the hosted beta gateway today.
               </p>
             </div>
             <div>

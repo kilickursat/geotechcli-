@@ -228,7 +228,7 @@ export function buildLLMConfig(): { provider: import('../llm/types.js').LLMProvi
   if (provider === 'hosted-beta') {
     baseUrl =
       preferEnv(process.env.GEOTECHCLI_PROXY_URL, config.llm.base_url) ||
-      'https://geotechcli.com/api/proxy';
+      'https://beta.geotechcli.com/api/proxy';
   } else if (provider === 'openai-compatible') {
     baseUrl = preferEnv(process.env.QWEN_VPS_BASE_URL, config.llm.base_url) || undefined;
   }

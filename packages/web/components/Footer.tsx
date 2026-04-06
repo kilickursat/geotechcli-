@@ -7,8 +7,8 @@ export function Footer() {
             geotech<span className="text-[var(--accent-teal)]">CLI</span>
           </div>
           <p className="text-[var(--text-muted)] text-xs mt-2 max-w-[320px] leading-relaxed">
-            Strong beta: no signup, no live billing, and no hosted anonymous AI yet.
-            Deterministic commands are live now. Hosted GLM beta access is the next rollout.
+            Strong beta: no signup, no live billing, and hosted GLM beta is active now.
+            Deterministic commands, privacy-first AI evaluation, and server-side limits are live.
           </p>
         </div>
         <div className="flex gap-8">
