@@ -1,16 +1,18 @@
 @import "tailwindcss";
 
 :root {
-  --bg-primary: #0a0e17;
-  --bg-secondary: #0f1520;
-  --bg-card: #131b2a;
-  --text-primary: #e8ecf4;
-  --text-secondary: #8892a4;
-  --text-muted: #515b6e;
-  --accent-teal: #2dd4bf;
+  --bg-primary: #0a0a0f;
+  --bg-secondary: #0e0e16;
+  --bg-card: #13131d;
+  --text-primary: #e8e8ef;
+  --text-secondary: #9494a8;
+  --text-muted: #5e5e72;
+  --accent-teal: #00e5a0;
+  --accent-cyan: #00c4ff;
+  --accent-purple: #7b61ff;
   --accent-blue: #3b82f6;
   --accent-orange: #f59e0b;
-  --border-color: rgba(255, 255, 255, 0.06);
+  --border-color: rgba(255, 255, 255, 0.05);
   --font-sans: 'Inter', -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
 }
@@ -26,9 +28,22 @@ body {
   background: var(--bg-primary);
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
 }
 
 ::selection {
-  background: rgba(45, 212, 191, 0.3);
-  color: #fff;
+  background: var(--accent-teal);
+  color: var(--bg-primary);
+}
+
+/* Scroll reveal */
+.reveal-anim {
+  opacity: 0;
+  transform: translateY(36px);
+  transition: opacity 0.85s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.85s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.reveal-anim.is-visible {
+  opacity: 1;
+  transform: translateY(0);
 }
