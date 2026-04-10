@@ -2,10 +2,10 @@
   "version": "0.2.0",
   "defaults": {
     "provider": "hosted-beta",
-    "model": "glm-5-turbo",
+    "model": "glm-5.1",
     "visionModel": "glm-5v-turbo"
   },
-  "proxyModels": ["glm-5-turbo", "glm-5v-turbo"],
+  "proxyModels": ["glm-5.1", "glm-5v-turbo"],
   "globalFlags": [
     {
       "key": "json",
