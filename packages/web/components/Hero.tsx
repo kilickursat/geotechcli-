@@ -129,7 +129,7 @@ export function Hero() {
         {/* Badge */}
         <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-[rgba(0,229,160,0.07)] border border-[rgba(0,229,160,0.18)] rounded-full text-[12px] font-medium text-[var(--accent-teal)] font-[var(--font-mono)] mb-8 w-fit tracking-wide">
           <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent-teal)] animate-pulse" />
-          Strong Beta — hosted GLM active, no signup required
+          World&apos;s first agentic AI CLI for geotechnical engineering
         </div>
 
         {/* Headline */}
@@ -137,7 +137,7 @@ export function Hero() {
           className="font-bold leading-[1.05] tracking-[-3px] mb-6"
           style={{ fontSize: 'clamp(40px,7vw,78px)' }}
         >
-          Geotechnical engineering,
+          Agentic AI meets
           <br />
           <span
             style={{
@@ -147,18 +147,18 @@ export function Hero() {
               backgroundClip: 'text',
             }}
           >
-            one command away.
+            the subsurface.
           </span>
         </h1>
 
         {/* Sub */}
         <p
-          className="text-[var(--text-secondary)] leading-[1.65] max-w-[580px] mb-10 font-normal"
+          className="text-[var(--text-secondary)] leading-[1.65] max-w-[600px] mb-10 font-normal"
           style={{ fontSize: 'clamp(16px,2vw,19px)' }}
         >
-          Deterministic calculations ready today. AI commands — bearing, liquefaction, RMR,
-          TBM, slope, pile, agent workflows — now powered by hosted GLM beta.
-          No provider key required.
+          Multi-agent orchestration, vision workflows, and AI reasoning powered by{' '}
+          <span style={{ color: 'var(--accent-teal)' }}>GLM-5.1</span> — combined with
+          deterministic geotechnical engines. No provider key. No signup. One command.
         </p>
 
         {/* CTAs */}
@@ -224,33 +224,25 @@ export function Hero() {
           <pre className="px-5 pb-5 font-[var(--font-mono)] text-[13px] leading-[1.9] overflow-x-auto">
             <span style={{ color: 'var(--accent-teal)' }}>$</span>{' '}
             <span style={{ color: 'var(--text-primary)' }}>geotech</span>{' '}
-            <span style={{ color: 'var(--text-secondary)' }}>bearing</span>{' '}
-            <span style={{ color: 'var(--accent-purple)' }}>--depth</span>{' 5 '}
-            <span style={{ color: 'var(--accent-purple)' }}>--phi</span>{' 30 '}
-            <span style={{ color: 'var(--accent-purple)' }}>--cohesion</span>{' 25'}
-            {'\n'}
-            <span style={{ color: 'var(--text-muted)' }}>⠋ Running Meyerhof, Hansen, Terzaghi, Vesic...</span>
-            {'\n'}
-            <span style={{ color: 'var(--accent-teal)' }}>✓</span>{' '}
-            <span style={{ color: 'var(--text-primary)' }}>Ultimate capacity: 4,184 kPa  Allowable: 1,395 kPa (FS=3)</span>
-            {'\n\n'}
-            <span style={{ color: 'var(--accent-teal)' }}>$</span>{' '}
-            <span style={{ color: 'var(--text-primary)' }}>geotech</span>{' '}
             <span style={{ color: 'var(--text-secondary)' }}>agent</span>{' '}
-            <span style={{ color: 'var(--accent-cyan)' }}>"evaluate foundation on soft clay, 12-story"</span>
+            <span style={{ color: 'var(--accent-cyan)' }}>&quot;evaluate foundation options for 12-story on soft clay&quot;</span>
             {'\n'}
-            <span style={{ color: 'var(--text-muted)' }}>⠙ Reasoning with glm-5.1 via hosted beta...</span>
+            <span style={{ color: 'var(--text-muted)' }}>⠋ Spawning Geo + Foundation + Seismic agents via GLM-5.1...</span>
+            {'\n'}
+            <span style={{ color: 'var(--text-muted)' }}>⠙ Geo agent: SPT N=8, clay CU=35 kPa, LL=52% identified</span>
+            {'\n'}
+            <span style={{ color: 'var(--text-muted)' }}>⠹ Foundation agent: pile vs raft analysis running...</span>
             {'\n'}
             <span style={{ color: 'var(--accent-teal)' }}>✓</span>{' '}
-            <span style={{ color: 'var(--text-primary)' }}>Report saved → ./report.md</span>
+            <span style={{ color: 'var(--text-primary)' }}>Recommendation: piled raft — 18m bored piles at 450mm dia.</span>
+            {'\n'}
+            <span style={{ color: 'var(--accent-teal)' }}>✓</span>{' '}
+            <span style={{ color: 'var(--text-primary)' }}>Report saved → ./foundation-analysis.md</span>
             {'\n'}
             <span style={{ color: 'var(--accent-teal)' }}>$</span>{' '}
             <span
               className="inline-block w-2 h-[14px] align-middle ml-0.5"
-              style={{
-                background: 'var(--accent-teal)',
-                animation: 'blink 1s step-end infinite',
-              }}
+              style={{ background: 'var(--accent-teal)', animation: 'blink 1s step-end infinite' }}
             />
             <style>{`@keyframes blink { 50% { opacity: 0; } }`}</style>
           </pre>

@@ -6,25 +6,25 @@ const features = [
   {
     icon: (
       <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-        <path d="M2 12h4l3-9 4 18 3-9h4" />
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
       </svg>
     ),
     colorClass: 'teal',
-    name: 'Classification & Borehole',
-    desc: 'USCS, RMR89, Q-system, and borehole log interpretation from one CLI. Export to GeoJSON or AutoCAD DXF.',
-    tag: 'Live',
+    name: 'Multi-Agent Orchestration',
+    desc: 'Geo, Foundation, Seismic, Tunnel, Slope, and Hydro agents collaborate autonomously — powered by GLM-5.1 via hosted beta. No key required.',
+    tag: 'GLM-5.1',
     tagColor: 'teal',
   },
   {
     icon: (
       <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-        <circle cx="12" cy="12" r="10" /><path d="M8 12l2.5 2.5L16 9" />
+        <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>
       </svg>
     ),
     colorClass: 'cyan',
-    name: 'Foundation Analysis',
-    desc: 'Bearing capacity via Terzaghi, Meyerhof, Hansen, and Vesic. Pile capacity, retaining pressure, and settlement.',
-    tag: 'Deterministic',
+    name: 'Vision AI Workflows',
+    desc: 'Point a photo at a tunnel face, core box, or borehole log — GLM-5.1 Vision extracts RQD, fracture spacing, weathering, and USCS classification automatically.',
+    tag: 'GLM-5.1 Vision',
     tagColor: 'cyan',
   },
   {
@@ -34,10 +34,22 @@ const features = [
       </svg>
     ),
     colorClass: 'purple',
-    name: 'Slope & Liquefaction',
-    desc: 'Bishop Simplified slope stability and Boulanger & Idriss 2014 seismic liquefaction triggering analysis.',
-    tag: 'Deterministic',
+    name: 'AI Chat & GBR Q&A',
+    desc: 'Interactive AI session with project memory, or interrogate a Geotechnical Baseline Report using vision-backed document Q&A — all from the terminal.',
+    tag: 'Agentic AI',
     tagColor: 'purple',
+  },
+  {
+    icon: (
+      <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+        <path d="M2 12h4l3-9 4 18 3-9h4" />
+      </svg>
+    ),
+    colorClass: 'teal',
+    name: 'Deterministic Engines',
+    desc: 'USCS, RMR89, Q-system, bearing capacity (4 methods), pile, slope, liquefaction, TBM, and retaining — validated calculation cores, no AI required.',
+    tag: 'Live',
+    tagColor: 'teal',
   },
   {
     icon: (
@@ -45,22 +57,10 @@ const features = [
         <rect x="2" y="3" width="20" height="14" rx="2" /><path d="M8 21h8M12 17v4" />
       </svg>
     ),
-    colorClass: 'teal',
-    name: 'TBM & Tunnel Commands',
-    desc: 'TBM penetration rate, thrust, torque, cutter wear prediction, and type selection for mechanised tunnelling.',
-    tag: 'Live',
-    tagColor: 'teal',
-  },
-  {
-    icon: (
-      <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-      </svg>
-    ),
     colorClass: 'cyan',
-    name: 'AI Agent & Vision Beta',
-    desc: 'Multi-agent orchestration, chat, vision workflows (core box, RMR, borehole log), and report generation via hosted GLM.',
-    tag: 'AI Beta',
+    name: 'TBM & Tunnel Analysis',
+    desc: 'Penetration rate, thrust, torque, cutter wear prediction, and TBM type selection — then hand off to a tunnel agent for full subsurface reasoning.',
+    tag: 'Live + AI',
     tagColor: 'cyan',
   },
   {
@@ -71,9 +71,9 @@ const features = [
       </svg>
     ),
     colorClass: 'purple',
-    name: 'Export & Bridge',
-    desc: 'Export to GeoJSON, DXF, and CSV. Detect running PLAXIS, FLAC, or Rocscience processes and generate automation scripts.',
-    tag: 'Live',
+    name: 'AI Report Generation',
+    desc: 'One command drafts a full geotechnical report from your analysis data — structured sections, engineering language, export to Markdown or JSON.',
+    tag: 'GLM-5.1',
     tagColor: 'purple',
   },
 ];
