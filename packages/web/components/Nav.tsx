@@ -16,8 +16,8 @@ export function Nav() {
         <a href="/changelog" className="text-[var(--text-secondary)] text-[13.5px] font-medium hover:text-[var(--text-primary)] transition">
           Changelog
         </a>
-        <a href="https://github.com/kilickursat/geotechcli-" className="text-[var(--text-secondary)] text-[13.5px] font-medium hover:text-[var(--text-primary)] transition">
-          GitHub
+        <a href="mailto:support@geotechcli.com" className="text-[var(--text-secondary)] text-[13.5px] font-medium hover:text-[var(--text-primary)] transition">
+          Contact
         </a>
         <a href="/docs" className="px-[18px] py-[7px] bg-[var(--accent-teal)] text-[var(--bg-primary)] text-[13px] font-semibold rounded-md hover:brightness-110 transition">
           Install Beta

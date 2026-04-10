@@ -14,7 +14,7 @@ export function Footer() {
         <div className="flex gap-8">
           <a href="/docs" className="text-[var(--text-muted)] text-xs hover:text-[var(--text-secondary)] transition">Documentation</a>
           <a href="/privacy" className="text-[var(--text-muted)] text-xs hover:text-[var(--text-secondary)] transition">Privacy</a>
-          <a href="https://github.com/kilickursat/geotechcli-" className="text-[var(--text-muted)] text-xs hover:text-[var(--text-secondary)] transition">GitHub</a>
+          <a href="mailto:support@geotechcli.com" className="text-[var(--text-muted)] text-xs hover:text-[var(--text-secondary)] transition">Contact</a>
           <a href="/changelog" className="text-[var(--text-muted)] text-xs hover:text-[var(--text-secondary)] transition">Changelog</a>
         </div>
         <div className="text-[var(--text-muted)] text-xs">Copyright 2026 geotechCLI. All rights reserved.</div>
