@@ -17,7 +17,7 @@ export function Footer() {
           <a href="https://github.com/kilickursat/geotechcli-" className="text-[var(--text-muted)] text-xs hover:text-[var(--text-secondary)] transition">GitHub</a>
           <a href="/changelog" className="text-[var(--text-muted)] text-xs hover:text-[var(--text-secondary)] transition">Changelog</a>
         </div>
-        <div className="text-[var(--text-muted)] text-xs">Copyright 2026 Kursat Kilic. All rights reserved.</div>
+        <div className="text-[var(--text-muted)] text-xs">Copyright 2026 geotechCLI. All rights reserved.</div>
       </div>
     </footer>
   );

@@ -3,9 +3,9 @@
 export function Nav() {
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 px-12 h-16 flex items-center justify-between bg-[rgba(10,14,23,0.7)] backdrop-blur-2xl border-b border-[var(--border-color)]">
-      <div className="font-[var(--font-mono)] font-semibold text-[17px] text-[var(--text-primary)] tracking-tight">
+      <a href="/" className="font-[var(--font-mono)] font-semibold text-[17px] text-[var(--text-primary)] tracking-tight hover:opacity-80 transition">
         geotech<span className="text-[var(--accent-teal)]">CLI</span>
-      </div>
+      </a>
       <div className="flex items-center gap-9">
         <a href="/docs" className="text-[var(--text-secondary)] text-[13.5px] font-medium hover:text-[var(--text-primary)] transition">
           Docs

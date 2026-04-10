@@ -12,7 +12,7 @@
 
 > **PROPRIETARY SOFTWARE - ALL RIGHTS RESERVED**
 >
-> Copyright (c) 2026 Kursat Kilic. This software is proprietary and confidential.
+> Copyright (c) 2026 geotechCLI. This software is proprietary and confidential.
 > No part of this software may be reproduced, distributed, or transmitted in any
 > form or by any means without the prior written permission of the owner.
 > See [LICENSE](./LICENSE) for full terms.
@@ -192,7 +192,7 @@ Strong beta currently gives users deterministic commands plus hosted GLM beta ac
 
 ## License
 
-**Copyright (c) 2026 Kursat Kilic. All Rights Reserved.**
+**Copyright (c) 2026 geotechCLI. All Rights Reserved.**
 
 This is proprietary software. No part of this software may be reproduced,
 distributed, or transmitted in any form without prior written permission.
