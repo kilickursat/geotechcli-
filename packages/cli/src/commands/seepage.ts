@@ -3,6 +3,7 @@ import chalk from 'chalk';
 import {
   calculateDupuitSeepage,
   calculateFlowNetSeepage,
+  type SeepageResult,
 } from '@geotechcli/core';
 import {
   banner,
@@ -59,7 +60,7 @@ export function registerSeepageCommand(program: Command): void {
       const e = parseFloat(opts.voidRatio);
 
       try {
-        let result;
+        let result: SeepageResult;
 
         if (method === 'flownet') {
           if (!opts.head || !opts.nf || !opts.nd) {
