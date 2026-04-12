@@ -28,6 +28,20 @@ const releases = [
   },
   {
     version: GEOTECHCLI_VERSION,
+    date: '2026-04-12',
+    tag: 'Strong Beta Finalization',
+    changes: [
+      { type: 'feat', text: 'Enabled PDF and DOCX exports for the report command using dedicated layout generators' },
+      { type: 'feat', text: 'Introduced seepage analysis engine (Dupuit-Forchheimer & Flow-net methods with piping checks)' },
+      { type: 'feat', text: 'Added settlement analysis engines (1D consolidation, Schmertmann elastic, and Peck excavation trough)' },
+      { type: 'feat', text: 'Branded GEOTECHCLI ASCII art banner added to terminal invocation' },
+      { type: 'fix', text: 'Added intelligent fallback recovery logic for upstream GLM vision empty-content errors' },
+      { type: 'fix', text: 'Ensured English-only response safety by intercepting and translating upstream API language tracebacks' },
+      { type: 'feat', text: 'Enhanced agent session UX with interactive prompts allowing continuation via the interactive chat REPL' },
+    ],
+  },
+  {
+    version: '0.2.0',
     date: '2026-03-30',
     tag: 'Stability + Safety',
     changes: [
