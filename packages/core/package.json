@@ -1,6 +1,6 @@
 {
   "name": "@geotechcli/core",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Shared computation and LLM engine for geotechCLI",
   "type": "module",
   "main": "./dist/index.js",
