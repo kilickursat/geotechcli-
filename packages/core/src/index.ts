@@ -1,6 +1,9 @@
 // LLM provider layer
 export * from './llm/index.js';
 
+// LLM error utilities
+export { sanitizeUpstreamError } from './llm/util.js';
+
 // Geotechnical computation engines
 export * from './geo/index.js';
 
@@ -64,7 +67,7 @@ export {
 } from './vision/index.js';
 
 // Report generation
-export { generateReport, type GeneratedReport, type ReportSection } from './report/index.js';
+export { generateReport, renderReportAsPdf, renderReportAsDocx, type GeneratedReport, type ReportSection } from './report/index.js';
 
 // Export formats
 export {

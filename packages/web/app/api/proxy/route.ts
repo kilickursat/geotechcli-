@@ -5,6 +5,7 @@ import {
 } from '@geotechcli/core/meta';
 import { isIPRateLimitedRedis } from '@geotechcli/core/db/redis';
 import { NextRequest, NextResponse } from 'next/server';
+import { sanitizeUpstreamError } from '@geotechcli/core';
 import {
   HOSTED_BETA_LIMITS,
   STRONG_BETA_MODE,
@@ -365,7 +366,8 @@ export async function POST(request: NextRequest) {
   }
 
   if (!upstreamResponse.ok) {
-    const detail = upstreamData.error?.message?.trim() || upstreamText || 'Unknown upstream error.';
+    const rawDetail = upstreamData.error?.message?.trim() || upstreamText || 'Unknown upstream error.';
+    const detail = sanitizeUpstreamError(rawDetail);
     const message =
       upstreamResponse.status === 429
         ? 'Hosted beta provider is busy right now.'

@@ -1,6 +1,9 @@
 import type { LLMConfig } from '../llm/types.js';
 import { generateText } from '../llm/router.js';
 
+export { renderReportAsPdf } from './pdf.js';
+export { renderReportAsDocx } from './docx.js';
+
 export interface ReportSection {
   title: string;
   content: string;

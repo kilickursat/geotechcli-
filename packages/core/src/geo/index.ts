@@ -5,11 +5,22 @@ export {
   calculateConsolidation,
   calculateSchmertmann,
   calculatePeckSettlement,
+  type ConsolidationInput,
   type ConsolidationResult,
+  type SchmertmannInput,
   type SchmertmannResult,
+  type PeckSettlementInput,
   type PeckSettlementResult,
 } from './settlement.js';
 export { predictTBMPerformance, selectTBMType, predictCutterWear } from './tunnel/index.js';
 export { calculatePileCapacity, type PileCapacityResult, type PileCapacityInput } from './pile-capacity.js';
 export { calculateSlopeStability, type SlopeStabilityResult, type SlopeStabilityInput } from './slope-stability.js';
 export { calculateLateralEarthPressure, type LateralEarthPressureResult, type LateralEarthPressureInput } from './lateral-earth-pressure.js';
+export {
+  calculateDupuitSeepage,
+  calculateFlowNetSeepage,
+  type DupuitSeepageInput,
+  type FlowNetSeepageInput,
+  type SeepageResult,
+} from './seepage.js';
+

@@ -22,6 +22,8 @@ import {
   saveDerivedParameter,
   setActiveAnalysisContext,
   generateReport,
+  renderReportAsPdf,
+  renderReportAsDocx,
   type AgentStep,
   type AgentSession,
   type SwarmStep,
@@ -44,6 +46,17 @@ function loadImageBase64(filePath: string): { base64: string; mimeType: string }
     jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
     gif: 'image/gif', webp: 'image/webp', pdf: 'application/pdf',
   };
+
+  // Warn if user provides a PDF — GLM vision works best with PNG/JPG images.
+  if (ext === 'pdf') {
+    console.log('');
+    console.log(chalk.yellow('  ⚠ PDF input detected.'));
+    console.log(chalk.gray('    GLM vision works best with image files (PNG or JPG).'));
+    console.log(chalk.gray('    For PDFs: extract a page as PNG first (e.g. with pdf2pic or a screenshot).'));
+    console.log(chalk.gray('    Attempting analysis anyway — results may be incomplete.'));
+    console.log('');
+  }
+
   return {
     base64: buffer.toString('base64'),
     mimeType: mimeMap[ext] ?? 'image/png',
@@ -75,13 +88,23 @@ function handleCommandError(
   process.exitCode = 1;
 
   if (flags.json) {
-    renderJSON({
-      error: {
-        code,
-        message,
-      },
-    });
+    renderJSON({ error: { code, message } });
     return;
+  }
+
+  // Provide specific guidance for common vision errors
+  if (code.includes('vision') || code.includes('corebox') || code.includes('rmr') || code.includes('sensor') || code.includes('borehole')) {
+    if (message.toLowerCase().includes('no content') || message.toLowerCase().includes('empty') || message.toLowerCase().includes('upstream')) {
+      error(message);
+      console.log('');
+      console.log(chalk.gray('  Vision troubleshooting tips:'));
+      console.log(chalk.gray('    · Use PNG or JPG images (not PDF or BMP)'));
+      console.log(chalk.gray('    · Ensure the image is well-lit and clearly shows the subject'));
+      console.log(chalk.gray('    · Try a smaller image file (< 5 MB)'));
+      console.log(chalk.gray('    · Wait a moment and retry — the AI provider may be busy'));
+      console.log(chalk.gray('    · Run with --verbose to see the raw response'));
+      return;
+    }
   }
 
   error(message);
@@ -657,6 +680,7 @@ export function registerAgentCommand(program: Command): void {
             const toolCalls = session.steps.filter((s) => s.type === 'tool_call').length;
             const agents = [...new Set(session.steps.map((s) => s.agent))];
             console.log(chalk.gray(`  (${agents.length} agents, ${toolCalls} tools executed, review: ${session.reviewPassed ? 'PASSED' : 'ISSUES NOTED'}, ${session.totalTokens} tokens)`));
+            console.log(chalk.cyan('\n  Hint: To continue this session interactively, run: ') + chalk.white(`geotech chat${opts.project ? ` --project ${opts.project}` : ''}`));
           }
 
           if (flags.output && answer) {
@@ -701,6 +725,7 @@ export function registerAgentCommand(program: Command): void {
             console.log(answer.content);
             console.log('');
             console.log(chalk.gray(`  (${session.steps.filter((s) => s.type === 'tool_call').length} tools executed, ${session.totalTokens} tokens, ${session.totalLatencyMs}ms)`));
+            console.log(chalk.cyan('\n  Hint: To continue this session interactively, run: ') + chalk.white(`geotech chat${opts.project ? ` --project ${opts.project}` : ''}`));
           }
 
           if (flags.output && answer) {
@@ -877,6 +902,7 @@ export function registerReportCommand(program: Command): void {
     .option('--type <type>', 'Report type: borehole|site-investigation|tunnel-design|foundation|slope|custom', 'site-investigation')
     .option('--project <name>', 'Project name')
     .option('--location <loc>', 'Project location')
+    .option('--format <ext>', 'Export format: md|pdf|docx', 'md')
     .action(async (opts) => {
       const flags = getGlobalFlags(opts);
 
@@ -897,8 +923,25 @@ export function registerReportCommand(program: Command): void {
 
         if (flags.json) { renderJSON(report); return; }
 
-        const outputFile = flags.output ?? 'report.md';
-        writeFileSync(outputFile, report.fullMarkdown);
+        const format = opts.format.toLowerCase();
+        let outputFile = flags.output;
+        
+        if (!outputFile) {
+          const baseName = (opts.project ? opts.project.replace(/\s+/g, '_') : 'report').toLowerCase();
+          outputFile = `${baseName}.${format}`;
+        }
+
+        if (format === 'pdf') {
+          const buf = await renderReportAsPdf(report);
+          writeFileSync(outputFile, buf);
+        } else if (format === 'docx') {
+          const buf = await renderReportAsDocx(report);
+          writeFileSync(outputFile, buf);
+        } else {
+          // Default to markdown
+          writeFileSync(outputFile, report.fullMarkdown);
+        }
+
         success(`Report saved to ${outputFile}`);
         console.log('');
       } catch (err) {

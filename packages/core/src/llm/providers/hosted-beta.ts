@@ -10,6 +10,7 @@ import {
   DEFAULT_LLM_VISION_MODEL,
   GEOTECHCLI_VERSION,
 } from '../../meta/index.js';
+import { sanitizeUpstreamError } from '../util.js';
 
 interface HostedBetaResponse {
   model?: string;
@@ -69,8 +70,10 @@ function readMessageContent(content: string | ContentPart[] | undefined): string
 }
 
 function formatHostedBetaError(status: number, data: HostedBetaResponse, fallback: string): string {
-  const message = data.error?.message?.trim() || fallback;
-  const detail = data.error?.detail?.trim();
+  const rawMessage = data.error?.message?.trim() || fallback;
+  const message = sanitizeUpstreamError(rawMessage);
+  const rawDetail = data.error?.detail?.trim();
+  const detail = rawDetail ? sanitizeUpstreamError(rawDetail) : undefined;
   const remaining =
     typeof data.error?.remaining === 'number'
       ? ` Remaining today: ${data.error.remaining}.`

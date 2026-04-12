@@ -14,6 +14,55 @@ import {
 
 export type { ParseSafety, ParseStatus } from './parse.js';
 
+// ---------------------------------------------------------------------------
+// Vision retry helper — handles upstream empty-content failures
+// ---------------------------------------------------------------------------
+
+/**
+ * Execute a vision call with automatic retry on empty/null response.
+ * First attempt: strict JSON-only prompt at low temperature.
+ * Second attempt: softer plain-text prompt at higher temperature, same image.
+ * This handles GLM-5v-turbo returning empty content on the first call.
+ */
+async function visionWithRetry(
+  imageBase64: string,
+  mimeType: string,
+  config: LLMConfig,
+  strictPrompt: string,
+  softPrompt: string,
+  systemPrompt: string,
+  maxTokens: number,
+): Promise<{ text: string; latencyMs: number; usedFallback: boolean }> {
+  const start = Date.now();
+
+  // Attempt 1: strict JSON prompt
+  try {
+    const r1 = await generateVision(strictPrompt, imageBase64, mimeType, config, {
+      systemPrompt,
+      temperature: 0.1,
+      maxTokens,
+    });
+    if (r1.text && r1.text.trim().length > 10) {
+      return { text: r1.text, latencyMs: r1.latencyMs, usedFallback: false };
+    }
+  } catch {
+    // fall through to retry
+  }
+
+  // Attempt 2: softer plain text prompt
+  const r2 = await generateVision(softPrompt, imageBase64, mimeType, config, {
+    systemPrompt: systemPrompt + ' Be concise but thorough. You must provide values even if approximate.',
+    temperature: 0.3,
+    maxTokens: maxTokens + 200,
+  });
+
+  return {
+    text: r2.text,
+    latencyMs: Date.now() - start,
+    usedFallback: true,
+  };
+}
+
 const VALID_JOINT_CONDITIONS = [
   'very_good',
   'good',
@@ -63,7 +112,7 @@ export async function analyzeCoreBox(
   mimeType: string,
   config: LLMConfig,
 ): Promise<CoreBoxAnalysisResult> {
-  const prompt = `Analyze this rock core box image. You MUST respond with ONLY a JSON object (no markdown, no backticks, no explanation) with these exact fields:
+  const strictPrompt = `Analyze this rock core box image. You MUST respond with ONLY a JSON object (no markdown, no backticks, no explanation) with these exact fields:
 {
   "rqd": <number 0-100, Rock Quality Designation percentage>,
   "fractureSpacing": "<string: very close/close/moderate/wide/very wide>",
@@ -75,14 +124,27 @@ export async function analyzeCoreBox(
   "warnings": ["<warning>", "<warning>"]
 }`;
 
-  const response = await generateVision(prompt, imageBase64, mimeType, config, {
-    systemPrompt: 'You are an expert engineering geologist performing core logging. Respond with JSON only.',
-    temperature: 0.1,
-    maxTokens: 900,
-  });
+  const softPrompt = `Examine this rock core box image and describe:
+1. RQD (Rock Quality Designation) as a percentage 0-100
+2. Fracture spacing (very close / close / moderate / wide / very wide)
+3. Weathering grade (W1-Fresh through W6-Residual)
+4. Rock type / lithology
+5. Core recovery percentage
+6. Discontinuity description (surfaces, infilling, roughness)
+Provide approximate values even if uncertain.`;
+
+  const response = await visionWithRetry(
+    imageBase64, mimeType, config,
+    strictPrompt, softPrompt,
+    'You are an expert engineering geologist performing core logging. Respond with JSON only.',
+    900,
+  );
 
   const parsed = parseJsonObject(response.text);
   const warnings = [...parsed.warnings];
+  if (response.usedFallback) {
+    warnings.push('Vision model used plain-text fallback — values extracted from narrative response.');
+  }
   const rqd = readNumber(parsed.value, 'rqd', warnings);
   const fractureSpacing = readString(parsed.value, 'fractureSpacing', warnings);
   const weatheringGrade = readString(parsed.value, 'weatheringGrade', warnings);
@@ -143,7 +205,7 @@ export async function classifyRMRFromImage(
   mimeType: string,
   config: LLMConfig,
 ): Promise<HybridRMRResult> {
-  const prompt = `Analyze this rock exposure / tunnel face / core box image for Rock Mass Rating input parameters. Respond with ONLY a JSON object (no markdown):
+  const strictPrompt = `Analyze this rock exposure / tunnel face / core box image for Rock Mass Rating input parameters. Respond with ONLY a JSON object (no markdown):
 {
   "estimatedUCS": <number in MPa, estimate from visual appearance>,
   "estimatedRQD": <number 0-100>,
@@ -154,14 +216,26 @@ export async function classifyRMRFromImage(
   "warnings": ["<warning>", "<warning>"]
 }`;
 
-  const response = await generateVision(prompt, imageBase64, mimeType, config, {
-    systemPrompt: 'You are an expert rock mechanics engineer performing field classification. Respond with JSON only.',
-    temperature: 0.1,
-    maxTokens: 700,
-  });
+  const softPrompt = `Look at this rock mass image and estimate:
+1. Uniaxial compressive strength UCS in MPa (from rock appearance)
+2. Rock Quality Designation RQD as % 0-100
+3. Mean discontinuity spacing in meters
+4. Joint condition: very_good, good, fair, poor, or very_poor
+5. Groundwater condition: dry, damp, wet, dripping, or flowing
+Give approximate values based on what you observe.`;
+
+  const response = await visionWithRetry(
+    imageBase64, mimeType, config,
+    strictPrompt, softPrompt,
+    'You are an expert rock mechanics engineer performing field classification. Respond with JSON only.',
+    700,
+  );
 
   const parsed = parseJsonObject(response.text);
   const warnings = [...parsed.warnings];
+  if (response.usedFallback) {
+    warnings.push('Vision model used plain-text fallback — values extracted from narrative response.');
+  }
   const estimatedUCS = readNumber(parsed.value, 'estimatedUCS', warnings);
   const estimatedRQD = readNumber(parsed.value, 'estimatedRQD', warnings);
   const estimatedSpacing = readNumber(parsed.value, 'estimatedSpacing', warnings);

@@ -7,16 +7,26 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core';
 // ---------------------------------------------------------------------------
 
 export function banner(): void {
+  const c = chalk.bold.cyan;
+  const w = chalk.bold.white;
+  const g = chalk.gray;
+
+  console.log('');
+  console.log(c('  ██████╗ ███████╗ ██████╗ ████████╗███████╗ ██████╗██╗  ██╗ ██████╗██╗     ██╗'));
+  console.log(c(' ██╔════╝ ██╔════╝██╔═══██╗╚══██╔══╝██╔════╝██╔════╝██║  ██║██╔════╝██║     ██║'));
+  console.log(w(' ██║  ███╗█████╗  ██║   ██║   ██║   █████╗  ██║     ███████║██║     ██║     ██║'));
+  console.log(w(' ██║   ██║██╔══╝  ██║   ██║   ██║   ██╔══╝  ██║     ██╔══██║██║     ██║     ██║'));
+  console.log(c(' ╚██████╔╝███████╗╚██████╔╝   ██║   ███████╗╚██████╗██║  ██║╚██████╗███████╗██║'));
+  console.log(c('  ╚═════╝ ╚══════╝ ╚═════╝    ╚═╝   ╚══════╝ ╚═════╝╚═╝  ╚═╝ ╚═════╝╚══════╝╚═╝'));
   console.log('');
   console.log(
-    chalk.bold.cyan('  geotech') +
-    chalk.bold.white('CLI') +
-    chalk.gray(` v${GEOTECHCLI_VERSION}`) +
-    chalk.gray('  —  AI-native geotechnical engineering'),
+    g('  v') + chalk.cyan(GEOTECHCLI_VERSION) +
+    g('  ·  AI-native geotechnical engineering  ·  ') +
+    chalk.dim('https://beta.geotechcli.com'),
   );
-  console.log(chalk.gray('  https://beta.geotechcli.com'));
   console.log('');
 }
+
 
 export function heading(text: string): void {
   console.log('');

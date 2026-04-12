@@ -14,6 +14,8 @@ import { registerBridgeCommand } from './commands/bridge.js';
 import { registerPileCommand } from './commands/pile.js';
 import { registerSlopeCommand } from './commands/slope.js';
 import { registerRetainingCommand } from './commands/retaining.js';
+import { registerSettlementCommands } from './commands/settlement.js';
+import { registerSeepageCommand } from './commands/seepage.js';
 import {
   registerVisionCommand,
   registerAIClassifyCommand,
@@ -44,6 +46,10 @@ registerClassifyCommand(program);
 registerPileCommand(program);
 registerSlopeCommand(program);
 registerRetainingCommand(program);
+registerSettlementCommands(program);
+
+// Seepage
+registerSeepageCommand(program);
 
 // Tunnel engineering
 registerTunnelCommands(program);
@@ -58,28 +64,18 @@ registerAgentCommand(program);
 registerReportCommand(program);
 registerChatCommand(program);
 
-// ---------------------------------------------------------------------------
 // Export & Bridge
-// ---------------------------------------------------------------------------
 registerExportCommand(program);
 registerBridgeCommand(program);
 
-// ---------------------------------------------------------------------------
 // System
-// ---------------------------------------------------------------------------
 registerConfigCommand(program);
 registerStatusCommand(program);
 
-// ---------------------------------------------------------------------------
-// Planned features
-// ---------------------------------------------------------------------------
-program.command('settlement').description('Settlement — core engine available via agent. CLI wiring coming v0.3.').action(() => {
-  console.log('  Settlement core engine is ready. Use: geotech agent "calculate settlement for ..."');
-  console.log('  Dedicated CLI command coming in v0.3.');
-});
-program.command('seepage').description('Seepage analysis (coming v0.3)').action(() => {
-  console.log('  Coming in v0.3');
-});
+// Show banner when invoked with no arguments
+if (process.argv.length <= 2) {
+  banner();
+}
 
 // ---------------------------------------------------------------------------
 // Error handling — never leak API keys in stack traces
