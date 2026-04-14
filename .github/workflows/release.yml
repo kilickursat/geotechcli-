@@ -19,6 +19,7 @@ jobs:
       - run: npm ci
       - run: npm run verify:consistency
       - run: npm test --workspace=packages/core
+      - run: npx turbo run build --filter=@geotechcli/core
       - run: npx tsc --noEmit
         working-directory: packages/web
       - run: npx turbo run build
