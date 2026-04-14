@@ -1,5 +1,14 @@
 ﻿# Changelog
 
+## [0.4.4] - 2026-04-14
+
+### Hosted Beta Fallbacks
+
+- Increased upstream retry/backoff depth again for transient Z.AI overload windows so the beta proxy waits longer before surfacing a hard failure.
+- Added a local heuristic fallback for `geotech ai-classify`, so plain-language soil descriptions can still return a USCS-oriented result when hosted-beta text is temporarily unavailable.
+- Added deterministic fallback behavior for `geotech agent` first-turn hosted-beta failures, so recognizable engineering prompts now return a useful limitation analysis instead of ending with zero tools and no answer.
+- Added regression coverage for the new hosted-beta fallback paths before cutting the patch release.
+
 ## [0.4.3] - 2026-04-14
 
 ### Hosted Beta Reliability

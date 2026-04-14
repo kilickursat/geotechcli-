@@ -494,6 +494,283 @@ export interface SoilClassificationFromTextResult extends ParseSafety {
   rawLLMText: string;
 }
 
+type HeuristicSoilProfile = {
+  symbol: string;
+  name: string;
+  frictionAngle: number | null;
+  cohesion: number | null;
+  unitWeight: number | null;
+  permeability: string | null;
+  notes: string;
+};
+
+const HEURISTIC_SOIL_PROFILES: Record<string, HeuristicSoilProfile> = {
+  CH: {
+    symbol: 'CH',
+    name: 'Fat Clay',
+    frictionAngle: 18,
+    cohesion: 35,
+    unitWeight: 17,
+    permeability: '1e-9 to 1e-8 m/s',
+    notes: 'High-plasticity clay; expect low permeability, high compressibility, and undrained-strength-controlled behavior.',
+  },
+  CL: {
+    symbol: 'CL',
+    name: 'Lean Clay',
+    frictionAngle: 24,
+    cohesion: 25,
+    unitWeight: 18,
+    permeability: '1e-8 to 1e-7 m/s',
+    notes: 'Low- to medium-plasticity clay; moderate cohesion with settlement and moisture sensitivity.',
+  },
+  'CL-ML': {
+    symbol: 'CL-ML',
+    name: 'Silty Clay / Clayey Silt',
+    frictionAngle: 26,
+    cohesion: 15,
+    unitWeight: 18,
+    permeability: '1e-7 to 1e-6 m/s',
+    notes: 'Borderline clay-silt behavior; check Atterberg limits and fines content before design use.',
+  },
+  MH: {
+    symbol: 'MH',
+    name: 'Elastic Silt',
+    frictionAngle: 27,
+    cohesion: 8,
+    unitWeight: 17,
+    permeability: '1e-7 to 1e-6 m/s',
+    notes: 'High-plasticity silt; can soften rapidly with water and may show significant compressibility.',
+  },
+  ML: {
+    symbol: 'ML',
+    name: 'Silt',
+    frictionAngle: 30,
+    cohesion: 5,
+    unitWeight: 18,
+    permeability: '1e-6 to 1e-5 m/s',
+    notes: 'Low-plasticity silt; often moisture-sensitive with moderate drainage and erosion susceptibility.',
+  },
+  SC: {
+    symbol: 'SC',
+    name: 'Clayey Sand',
+    frictionAngle: 29,
+    cohesion: 8,
+    unitWeight: 19,
+    permeability: '1e-7 to 1e-5 m/s',
+    notes: 'Sand with clay fines; lower drainage and higher apparent cohesion than clean sands.',
+  },
+  SM: {
+    symbol: 'SM',
+    name: 'Silty Sand',
+    frictionAngle: 31,
+    cohesion: 3,
+    unitWeight: 19,
+    permeability: '1e-6 to 1e-4 m/s',
+    notes: 'Sand with silt fines; permeability drops quickly as fines increase, so check gradation and fines content.',
+  },
+  SW: {
+    symbol: 'SW',
+    name: 'Well-Graded Sand',
+    frictionAngle: 35,
+    cohesion: 0,
+    unitWeight: 20,
+    permeability: '1e-4 to 1e-3 m/s',
+    notes: 'Dense, well-graded sand; high frictional strength with good drainage and low compressibility.',
+  },
+  SP: {
+    symbol: 'SP',
+    name: 'Poorly Graded Sand',
+    frictionAngle: 33,
+    cohesion: 0,
+    unitWeight: 19,
+    permeability: '1e-4 to 1e-3 m/s',
+    notes: 'Uniform sand; frictional material with high drainage but potentially lower density efficiency than well-graded sands.',
+  },
+  GC: {
+    symbol: 'GC',
+    name: 'Clayey Gravel',
+    frictionAngle: 34,
+    cohesion: 10,
+    unitWeight: 21,
+    permeability: '1e-6 to 1e-4 m/s',
+    notes: 'Gravel with clay fines; stronger than fine soils but drainage is reduced by cohesive fines.',
+  },
+  GM: {
+    symbol: 'GM',
+    name: 'Silty Gravel',
+    frictionAngle: 36,
+    cohesion: 5,
+    unitWeight: 21,
+    permeability: '1e-5 to 1e-3 m/s',
+    notes: 'Gravel with silt fines; usually free-draining unless fines become dominant.',
+  },
+  GW: {
+    symbol: 'GW',
+    name: 'Well-Graded Gravel',
+    frictionAngle: 40,
+    cohesion: 0,
+    unitWeight: 21,
+    permeability: '1e-3 to 1e-2 m/s',
+    notes: 'Clean well-graded gravel; very high drainage and strong frictional behavior.',
+  },
+  GP: {
+    symbol: 'GP',
+    name: 'Poorly Graded Gravel',
+    frictionAngle: 38,
+    cohesion: 0,
+    unitWeight: 20,
+    permeability: '1e-3 to 1e-2 m/s',
+    notes: 'Clean poorly graded gravel; high drainage and friction, but check density and particle breakage effects.',
+  },
+  OL: {
+    symbol: 'OL',
+    name: 'Organic Silt / Organic Clay (Low Plasticity)',
+    frictionAngle: 20,
+    cohesion: 10,
+    unitWeight: 15,
+    permeability: '1e-8 to 1e-6 m/s',
+    notes: 'Organic fine-grained soil; expect high compressibility and reduced strength relative to mineral soils.',
+  },
+  OH: {
+    symbol: 'OH',
+    name: 'Organic Clay / Organic Silt (High Plasticity)',
+    frictionAngle: 16,
+    cohesion: 8,
+    unitWeight: 14,
+    permeability: '1e-9 to 1e-7 m/s',
+    notes: 'Highly organic, plastic fine soil; settlement and durability concerns are usually critical.',
+  },
+  PT: {
+    symbol: 'PT',
+    name: 'Peat',
+    frictionAngle: 14,
+    cohesion: 5,
+    unitWeight: 11,
+    permeability: '1e-6 to 1e-4 m/s',
+    notes: 'Peat / highly organic soil; extremely compressible and usually unsuitable for direct foundation support without treatment.',
+  },
+};
+
+function isHostedBetaTemporarilyUnavailable(error: unknown): boolean {
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  return (
+    message.includes('provider is busy') ||
+    message.includes('rate limit') ||
+    message.includes('retry in about') ||
+    message.includes('timed out') ||
+    message.includes('upstream request failed')
+  );
+}
+
+function includesAny(haystack: string, needles: string[]): boolean {
+  return needles.some((needle) => haystack.includes(needle));
+}
+
+function classifySoilFromDescriptionHeuristically(
+  description: string,
+): SoilClassificationFromTextResult {
+  const normalized = description.toLowerCase().replace(/[^a-z0-9\s/-]+/g, ' ');
+  const hasClay = includesAny(normalized, [' clay', 'clayey', 'fat clay', 'lean clay']) || normalized.startsWith('clay');
+  const hasSilt = includesAny(normalized, [' silt', 'silty']) || normalized.startsWith('silt');
+  const hasSand = includesAny(normalized, [' sand', 'sandy']) || normalized.startsWith('sand');
+  const hasGravel = includesAny(normalized, [' gravel', 'gravelly', 'cobble', 'cobbly']) || normalized.startsWith('gravel');
+  const hasOrganic = includesAny(normalized, ['organic', 'organics', 'humic', 'humus']);
+  const hasPeat = includesAny(normalized, ['peat', 'peaty']);
+  const highPlasticity = includesAny(normalized, ['high plasticity', 'very plastic', 'fat clay', 'high pi']);
+  const lowPlasticity = includesAny(normalized, ['low plasticity', 'lean clay', 'lean silt', 'low pi']);
+  const wellGraded = includesAny(normalized, ['well graded', 'well-graded', 'wide gradation']);
+  const poorlyGraded = includesAny(normalized, ['poorly graded', 'poorly-graded', 'uniform']);
+  const lowPermeability = includesAny(normalized, ['low permeability', 'impermeable', 'low hydraulic conductivity']);
+  const highPermeability = includesAny(normalized, ['high permeability', 'free draining', 'freely draining']);
+  const softConsistency = includesAny(normalized, ['very soft', 'soft']);
+  const stiffConsistency = includesAny(normalized, ['very stiff', 'stiff', 'hard']);
+  const looseDensity = includesAny(normalized, ['very loose', 'loose']);
+  const denseDensity = includesAny(normalized, ['very dense', 'dense']);
+
+  let symbol: string | null = null;
+
+  if (hasPeat) {
+    symbol = 'PT';
+  } else if (hasOrganic && (hasClay || hasSilt)) {
+    symbol = highPlasticity ? 'OH' : 'OL';
+  } else if (hasClay && hasSilt) {
+    symbol = highPlasticity ? 'CH' : 'CL-ML';
+  } else if (hasClay) {
+    symbol = highPlasticity ? 'CH' : 'CL';
+  } else if (hasSilt) {
+    symbol = highPlasticity ? 'MH' : 'ML';
+  } else if (hasSand) {
+    if (hasClay) symbol = 'SC';
+    else if (hasSilt) symbol = 'SM';
+    else symbol = wellGraded && !poorlyGraded ? 'SW' : 'SP';
+  } else if (hasGravel) {
+    if (hasClay) symbol = 'GC';
+    else if (hasSilt) symbol = 'GM';
+    else symbol = wellGraded && !poorlyGraded ? 'GW' : 'GP';
+  }
+
+  const profile = symbol ? HEURISTIC_SOIL_PROFILES[symbol] : null;
+  const descriptorCount = [
+    hasClay || hasSilt || hasSand || hasGravel || hasOrganic || hasPeat,
+    highPlasticity || lowPlasticity,
+    lowPermeability || highPermeability,
+    softConsistency || stiffConsistency || looseDensity || denseDensity,
+  ].filter(Boolean).length;
+  const confidence = clampConfidence(symbol ? 58 + descriptorCount * 8 : 35, 0);
+  const warnings = ['Heuristic fallback used because hosted beta text classification was temporarily unavailable.'];
+
+  if (!symbol || !profile) {
+    warnings.push('Description does not contain enough standard soil descriptors to infer a reliable USCS group.');
+    return {
+      ...createParseSafety('failed', confidence, warnings),
+      description,
+      uscsSymbol: null,
+      uscsName: null,
+      estimatedProperties: {
+        frictionAngle: null,
+        cohesion: null,
+        unitWeight: null,
+        permeability: null,
+      },
+      engineeringNotes: 'Add dominant soil type, gradation/fines, plasticity, and consistency or density descriptors for a stronger deterministic fallback.',
+      rawLLMText: '',
+    };
+  }
+
+  if ((hasSand || hasGravel) && !wellGraded && !poorlyGraded && !hasSilt && !hasClay) {
+    warnings.push('Gradation was not described explicitly, so the clean coarse-grained classification is approximate.');
+  }
+
+  const permeability = lowPermeability
+    ? 'low permeability'
+    : highPermeability
+      ? 'high permeability'
+      : profile.permeability;
+
+  const notes = [
+    profile.notes,
+    softConsistency ? 'Description indicates soft consistency, so undrained strength and deformation control should be checked carefully.' : null,
+    stiffConsistency ? 'Description indicates stiff consistency, which may improve short-term bearing and excavation stand-up.' : null,
+    looseDensity ? 'Description indicates loose state, so settlement and contractive behavior should be checked.' : null,
+    denseDensity ? 'Description indicates dense state, which usually improves drained strength and reduces compressibility.' : null,
+  ].filter((value): value is string => Boolean(value)).join(' ');
+
+  return {
+    ...createParseSafety('parsed', confidence, warnings),
+    description,
+    uscsSymbol: profile.symbol,
+    uscsName: profile.name,
+    estimatedProperties: {
+      frictionAngle: profile.frictionAngle,
+      cohesion: profile.cohesion,
+      unitWeight: profile.unitWeight,
+      permeability,
+    },
+    engineeringNotes: notes,
+    rawLLMText: '',
+  };
+}
+
 export async function classifySoilFromDescription(
   description: string,
   config: LLMConfig,
@@ -513,12 +790,20 @@ Classify the soil and estimate engineering properties. Respond with ONLY a JSON 
   "warnings": ["<warning>", "<warning>"]
 }`;
 
-  const response = await generateText(prompt, config, {
-    systemPrompt: 'You are an expert geotechnical engineer. Classify soils based on verbal descriptions using USCS and estimate engineering properties. Respond with JSON only.',
-    temperature: 0.1,
-    jsonMode: true,
-    maxTokens: 700,
-  });
+  let response;
+  try {
+    response = await generateText(prompt, config, {
+      systemPrompt: 'You are an expert geotechnical engineer. Classify soils based on verbal descriptions using USCS and estimate engineering properties. Respond with JSON only.',
+      temperature: 0.1,
+      jsonMode: true,
+      maxTokens: 700,
+    });
+  } catch (error) {
+    if (isHostedBetaTemporarilyUnavailable(error)) {
+      return classifySoilFromDescriptionHeuristically(description);
+    }
+    throw error;
+  }
 
   const parsed = parseJsonObject(response.text);
   const warnings = [...parsed.warnings];

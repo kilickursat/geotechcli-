@@ -39,8 +39,12 @@ const releases = [
   {
     version: GEOTECHCLI_VERSION,
     date: '2026-04-14',
-    tag: '0.4.3 Release',
+    tag: '0.4.4 Release',
     changes: [
+      { type: 'fix', text: 'Deepened hosted-beta upstream retry and backoff behavior again so transient free-model overload windows are less likely to surface as immediate CLI failures' },
+      { type: 'feat', text: 'Added a local heuristic fallback for geotech ai-classify so descriptive soil classification can still return a USCS-style result when hosted-beta text is temporarily unavailable' },
+      { type: 'fix', text: 'Added deterministic fallback behavior for the first agent turn so provider saturation now yields a useful engineering limitation analysis instead of a blank agent failure' },
+      { type: 'fix', text: 'Added focused regression tests for the new ai-classify and agent fallback paths before releasing the patch' },
       { type: 'feat', text: 'Raised hosted-beta limits for installed geotechCLI clients while keeping stricter anonymous caps in place for the public beta proxy' },
       { type: 'fix', text: 'Added retry and backoff handling for transient upstream Z.AI 429 and gateway overload responses so simple AI commands recover more gracefully' },
       { type: 'fix', text: 'Extended hosted-beta timeout budgets for text, vision, and agent requests and translated raw aborts into clearer timeout messages in the CLI' },

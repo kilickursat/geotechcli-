@@ -38,6 +38,77 @@ interface ConversationMessage {
   content: string;
 }
 
+function isHostedBetaUnavailable(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes('provider is busy') ||
+    normalized.includes('rate limit') ||
+    normalized.includes('timed out') ||
+    normalized.includes('upstream request failed') ||
+    normalized.includes('retry in about')
+  );
+}
+
+function extractNumericValue(query: string, pattern: RegExp): number | null {
+  const match = query.match(pattern);
+  return match ? Number(match[1]) : null;
+}
+
+function buildDeterministicFallbackAnswer(userQuery: string): string {
+  const normalized = userQuery.toLowerCase();
+
+  if (/(tbm|epb|slurry|shield|tunnel boring)/.test(normalized)) {
+    const rpm = extractNumericValue(normalized, /(\d+(?:\.\d+)?)\s*rpm/);
+    const thrust = extractNumericValue(normalized, /(\d+(?:\.\d+)?)\s*k\s*n/);
+    const diameter =
+      extractNumericValue(normalized, /(\d+(?:\.\d+)?)\s*m\s*(?:diameter|tbm|tunnel)/) ??
+      extractNumericValue(normalized, /(\d+(?:\.\d+)?)\s*m\b/);
+    const hasSoftGround = /(clay|silt|sand|soft ground|soft soil)/.test(normalized);
+    const hasRockInputs = /(ucs|rqd|cai|joint spacing|jointspacing)/.test(normalized);
+
+    const lines = [
+      'Hosted beta was temporarily unavailable, so the agent switched to deterministic fallback reasoning instead of returning no analysis.',
+      '',
+      'Engineering assessment:',
+    ];
+
+    if (hasSoftGround || normalized.includes('epb')) {
+      lines.push('- The ground description points to soft-ground tunnelling, so EPB remains the appropriate screening-level machine class.');
+    }
+    if (rpm != null) {
+      lines.push(`- Provided cutterhead speed: ${rpm} rpm.`);
+    }
+    if (thrust != null) {
+      lines.push(`- Provided thrust: ${thrust} kN.`);
+    }
+
+    lines.push('');
+    lines.push('Deterministic limitation:');
+
+    if (diameter == null) {
+      lines.push('- Tunnel / TBM diameter is not provided, which is required for any defensible advance-rate estimate.');
+    }
+    if (hasSoftGround && !hasRockInputs) {
+      lines.push('- The current built-in TBM performance engine in geotechCLI is a rock disc-cutter model requiring diameter, UCS, and RQD-type inputs. It does not yet include a validated EPB-in-clay penetration model.');
+    } else if (!hasRockInputs) {
+      lines.push('- The current built-in TBM performance engine needs rock-mechanics inputs such as UCS and RQD before it can calculate penetration rate.');
+    }
+    lines.push('- RPM and thrust alone are not sufficient for a validated penetration-rate calculation in soft ground without diameter plus material/operational parameters.');
+    lines.push('');
+    lines.push('Next best deterministic path in geotechCLI:');
+    lines.push('- Use `geotech tunnel tbm-select --diameter <m> --ground soft_ground` for a machine-class recommendation.');
+    lines.push('- Use `geotech tunnel tbm-predict --diameter <m> --ucs <MPa> --rqd <percent> ...` only for the existing rock-TBM predictor.');
+    lines.push('- If you want EPB soft-ground penetration screening in-clay, that needs a new validated deterministic model to be added to the toolset.');
+
+    return lines.join('\n');
+  }
+
+  return [
+    'Hosted beta was temporarily unavailable, and this request does not currently have a direct deterministic fallback in geotechCLI.',
+    'Retry shortly, or reformulate the task as one of the built-in deterministic commands so the CLI can continue without the hosted model.',
+  ].join('\n\n');
+}
+
 // ---------------------------------------------------------------------------
 // System prompt
 // ---------------------------------------------------------------------------
@@ -183,6 +254,25 @@ export async function runAgent(
       });
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
+      if (iteration === 0 && isHostedBetaUnavailable(errMsg)) {
+        const fallbackThought: AgentStep = {
+          type: 'thought',
+          content: 'Hosted beta is temporarily unavailable. Switching to deterministic fallback reasoning.',
+          timestamp: Date.now(),
+        };
+        session.steps.push(fallbackThought);
+        onStep(fallbackThought);
+
+        const fallbackAnswer: AgentStep = {
+          type: 'answer',
+          content: buildDeterministicFallbackAnswer(userQuery),
+          timestamp: Date.now(),
+        };
+        session.steps.push(fallbackAnswer);
+        onStep(fallbackAnswer);
+        break;
+      }
+
       const step: AgentStep = {
         type: 'error',
         content: `LLM error: ${errMsg}`,

@@ -1,6 +1,6 @@
 {
   "name": "@geotechcli/web",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "private": true,
   "scripts": {
     "dev": "node ../../node_modules/next/dist/bin/next dev",

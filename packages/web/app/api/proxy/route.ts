@@ -83,6 +83,16 @@ async function delay(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function getRetryDelayMs(attempt: number, response?: Response | null): number {
+  const retryAfterHeader = response?.headers.get('retry-after');
+  const retryAfterSeconds = retryAfterHeader ? Number(retryAfterHeader) : Number.NaN;
+  if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+    return Math.min(retryAfterSeconds * 1000, 10_000);
+  }
+
+  return [1_500, 3_000, 4_500][attempt] ?? 4_500;
+}
+
 async function fetchUpstreamWithRetry(
   body: Record<string, unknown>,
   callType: 'text' | 'vision' | 'agent',
@@ -90,7 +100,7 @@ async function fetchUpstreamWithRetry(
   let lastResponse: Response | null = null;
   let lastError: unknown;
 
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
     try {
       const response = await fetch(ZAI_CHAT_COMPLETIONS_URL, {
         method: 'POST',
@@ -102,19 +112,23 @@ async function fetchUpstreamWithRetry(
         signal: AbortSignal.timeout(getUpstreamTimeoutMs(callType)),
       });
 
-      if (!isTransientUpstreamStatus(response.status) || attempt === 1) {
+      if (!isTransientUpstreamStatus(response.status) || attempt === 3) {
         return response;
       }
 
       lastResponse = response;
     } catch (err) {
       lastError = err;
-      if (attempt === 1) {
+      if (attempt === 3) {
         throw err;
       }
+      await delay(getRetryDelayMs(attempt));
+      continue;
     }
 
-    await delay(1_500 * (attempt + 1));
+    if (attempt < 3) {
+      await delay(getRetryDelayMs(attempt, lastResponse));
+    }
   }
 
   if (lastResponse) {

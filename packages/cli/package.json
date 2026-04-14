@@ -1,6 +1,6 @@
 {
   "name": "geotechcli",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "AI-native CLI for geotechnical engineering",
   "type": "module",
   "bin": {

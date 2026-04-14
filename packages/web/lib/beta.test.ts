@@ -148,7 +148,7 @@ describe('hosted beta controls', () => {
     expect(postRequestId).toMatch(/^gtbeta-/);
     expect(postBody.request_id).toBe(postRequestId);
     expect(postBody.error?.code).toBe('anonymous_request_rejected');
-  });
+  }, 15_000);
 
   it('retries transient upstream 429 responses for geotechcli clients', async () => {
     vi.stubEnv('ZHIPU_API_KEY', 'test-key');
