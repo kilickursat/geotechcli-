@@ -1,6 +1,5 @@
 import { Command } from 'commander';
 import { readFileSync, writeFileSync } from 'node:fs';
-import ora from 'ora';
 import chalk from 'chalk';
 import {
   buildLLMConfig,
@@ -34,17 +33,21 @@ import {
   type AgentSession,
   type SwarmStep,
   type SwarmSession,
+  type BoreholeInterpretation,
+  type BoreholeLayer,
 } from '@geotechcli/core';
-import { heading, keyValue, renderJSON, success, error, warn, renderTable } from '../ui/terminal.js';
+import { heading, keyValue, renderJSON, success, error, warn, renderTable, info } from '../ui/terminal.js';
 import { addGlobalFlags, getGlobalFlags } from '../util/flags.js';
 import {
   estimateHostedBetaVisionBodyBytes,
   formatByteSize,
   HOSTED_BETA_REQUEST_LIMIT_BYTES,
   readVisionInput,
+  readVisionPdfPageInputs,
   resolveStructuredOutputTarget,
   HOSTED_BETA_REQUEST_SAFE_BYTES,
   type VisionInput,
+  type VisionPdfPageInput,
 } from '../util/vision-output.js';
 
 async function checkQuota(_callType: 'llmCalls' | 'visionCalls' | 'agentCalls'): Promise<boolean> {
@@ -86,8 +89,8 @@ function describeVisionInput(file: VisionInput): void {
   console.log('');
   console.log(chalk.yellow('  PDF input detected.'));
   console.log(chalk.gray('    GLM vision works best with PNG or JPG images.'));
-  console.log(chalk.gray('    For PDFs, export a single page to PNG/JPG first, or split the PDF into smaller files.'));
-  console.log(chalk.gray('    The CLI will block oversized PDFs before upload to avoid the hosted-beta body limit.'));
+  console.log(chalk.gray('    For borehole logs, the CLI can split multi-page PDFs into page-level requests automatically.'));
+  console.log(chalk.gray('    Oversized PDF pages will still be blocked before upload to avoid the hosted-beta body limit.'));
   console.log('');
 }
 
@@ -159,6 +162,236 @@ function formatMaybe(value: string | number | null | undefined, suffix = ''): st
   return `${value}${suffix}`;
 }
 
+function startProgress(flags: { json?: boolean; quiet?: boolean }, text: string) {
+  if (flags.json || flags.quiet) {
+    return null;
+  }
+
+  info(text);
+  return {
+    succeed(message: string) {
+      success(message);
+    },
+    fail(message: string) {
+      error(message);
+    },
+  };
+}
+
+const SWARM_AGENT_LABELS: Record<'orchestrator' | 'interpretation' | 'simulation' | 'reviewer', string> = {
+  orchestrator: 'Mohr',
+  interpretation: 'Bieniawski',
+  simulation: 'Terzaghi',
+  reviewer: 'Hoek',
+};
+
+function formatToolPreview(args: Record<string, unknown> | undefined, limit: number): string {
+  if (!args) {
+    return '';
+  }
+
+  const serialized = JSON.stringify(args);
+  return serialized.length > limit ? `${serialized.slice(0, limit)}...` : serialized;
+}
+
+function renderWarningsCompact(warnings: string[]): void {
+  if (warnings.length === 0) return;
+
+  const uniqueWarnings = [...new Set(warnings.map((warning) => warning.trim()).filter(Boolean))];
+  const visibleWarnings = uniqueWarnings.slice(0, 5);
+  console.log(chalk.yellow('  Warnings:'));
+  for (const warning of visibleWarnings) {
+    console.log(chalk.yellow(`    - ${warning}`));
+  }
+  if (uniqueWarnings.length > visibleWarnings.length) {
+    console.log(chalk.yellow(`    - ${uniqueWarnings.length - visibleWarnings.length} more warning(s) omitted.`));
+  }
+}
+
+function renderParseSafetyCompact(result: {
+  parseStatus: string;
+  confidence: number;
+  warnings: string[];
+  canAutoProceed: boolean;
+}): void {
+  keyValue('Parse status', result.parseStatus);
+  keyValue('Confidence', `${result.confidence}%`);
+  keyValue('Auto proceed', result.canAutoProceed ? 'Yes' : 'No');
+  renderWarningsCompact(result.warnings);
+}
+
+function mergeBoreholeLayers(layers: BoreholeLayer[]): BoreholeLayer[] {
+  const deduped = new Map<string, BoreholeLayer>();
+
+  for (const layer of layers) {
+    const key = [
+      layer.depthFrom ?? 'na',
+      layer.depthTo ?? 'na',
+      (layer.description ?? '').trim().toLowerCase(),
+      (layer.uscsSymbol ?? '').trim().toUpperCase(),
+      layer.sptN ?? 'na',
+    ].join('|');
+
+    if (!deduped.has(key)) {
+      deduped.set(key, layer);
+    }
+  }
+
+  return [...deduped.values()].sort((left, right) => {
+    const leftDepth = left.depthFrom ?? Number.POSITIVE_INFINITY;
+    const rightDepth = right.depthFrom ?? Number.POSITIVE_INFINITY;
+    return leftDepth - rightDepth;
+  });
+}
+
+function mergeBoreholeInterpretations(
+  pages: Array<{ pageNumber: number; result: BoreholeInterpretation }>,
+  overrideBoreholeId?: string,
+): BoreholeInterpretation {
+  const validPages = pages.filter(({ result }) => result.layers.length > 0 || result.totalDepth != null || result.summary);
+  const sourcePages = validPages.length > 0 ? validPages : pages;
+  const mergedLayers = mergeBoreholeLayers(sourcePages.flatMap(({ result }) => result.layers));
+  const summaries = [...new Set(sourcePages.map(({ result }) => result.summary?.trim()).filter((value): value is string => Boolean(value)))];
+  const warnings = [...new Set(
+    pages.flatMap(({ pageNumber, result }) =>
+      result.warnings.map((warning) => `Page ${pageNumber}: ${warning}`),
+    ),
+  )];
+  const confidences = sourcePages.map(({ result }) => result.confidence);
+  const averageConfidence = confidences.length > 0
+    ? Math.round(confidences.reduce((sum, value) => sum + value, 0) / confidences.length)
+    : 0;
+  const totalDepth = sourcePages.reduce<number | null>((maxDepth, { result }) => {
+    if (result.totalDepth == null) return maxDepth;
+    return maxDepth == null ? result.totalDepth : Math.max(maxDepth, result.totalDepth);
+  }, null);
+  const waterTableDepth = sourcePages.reduce<number | null>((selected, { result }) => {
+    if (result.waterTableDepth == null) return selected;
+    return selected == null ? result.waterTableDepth : Math.min(selected, result.waterTableDepth);
+  }, null);
+  const parseStatus =
+    mergedLayers.length > 0 && totalDepth != null
+      ? 'parsed'
+      : mergedLayers.length > 0 || summaries.length > 0 || totalDepth != null
+        ? 'partial'
+        : 'failed';
+
+  return {
+    boreholeId:
+      overrideBoreholeId
+      ?? sourcePages.map(({ result }) => result.boreholeId).find((value) => value && value !== 'BH-unknown')
+      ?? 'BH-unknown',
+    totalDepth,
+    waterTableDepth,
+    layers: mergedLayers,
+    summary: summaries.length > 0 ? summaries.join(' ') : null,
+    rawLLMText: pages.map(({ pageNumber, result }) => `[Page ${pageNumber}]\n${result.rawLLMText}`).join('\n\n'),
+    latencyMs: pages.reduce((sum, { result }) => sum + result.latencyMs, 0),
+    parseStatus,
+    confidence: averageConfidence,
+    warnings,
+    canAutoProceed: parseStatus === 'parsed' && averageConfidence >= 70,
+  };
+}
+
+function handleCommandErrorClean(
+  err: unknown,
+  flags: { json?: boolean },
+  code = 'command_failed',
+): void {
+  const message = getErrorMessage(err);
+  process.exitCode = 1;
+
+  if (flags.json) {
+    renderJSON({ error: { code, message } });
+    return;
+  }
+
+  if (code.includes('vision') || code.includes('corebox') || code.includes('rmr') || code.includes('sensor') || code.includes('borehole')) {
+    const lowered = message.toLowerCase();
+    if (
+      lowered.includes('no content') ||
+      lowered.includes('empty') ||
+      lowered.includes('upstream') ||
+      lowered.includes('hosted beta proxy') ||
+      lowered.includes('too large for the hosted beta proxy') ||
+      lowered.includes('safe limit')
+    ) {
+      error(message);
+      console.log('');
+      console.log(chalk.gray('  Vision troubleshooting tips:'));
+      console.log(chalk.gray('    - Use PNG or JPG images (not PDF or BMP)'));
+      console.log(chalk.gray('    - Ensure the image is well-lit and clearly shows the subject'));
+      console.log(chalk.gray('    - Try a smaller image file (< 5 MB)'));
+      console.log(chalk.gray('    - Wait a moment and retry; the AI provider may be busy'));
+      console.log(chalk.gray('    - Run with --verbose to see the raw response'));
+      return;
+    }
+  }
+
+  error(message);
+}
+
+function renderAgentStepPlain(step: AgentStep, json: boolean, quiet = false): void {
+  if (json || quiet) return;
+
+  switch (step.type) {
+    case 'thought':
+      return;
+    case 'tool_call':
+      console.log(chalk.cyan(`  [Terzaghi] Tool: ${step.toolName}(${formatToolPreview(step.toolArgs, 120)})`));
+      return;
+    case 'tool_result':
+      if (step.toolResult?.success) {
+        console.log(chalk.green(`  [Terzaghi] Result: ${step.content}`));
+      } else {
+        console.log(chalk.red(`  [Terzaghi] Error: ${step.content}`));
+      }
+      return;
+    case 'answer':
+      return;
+    case 'error':
+      console.log(chalk.red(`  [Terzaghi] Error: ${step.content}`));
+      return;
+  }
+}
+
+function renderSwarmStepPlain(step: SwarmStep, json: boolean, quiet = false): void {
+  if (json || quiet) return;
+
+  const label = SWARM_AGENT_LABELS[step.agent] ?? step.agent;
+  const tag = `[${label}]`;
+
+  switch (step.type) {
+    case 'thought':
+      return;
+    case 'tool_call':
+      console.log(chalk.cyan(`  ${tag} Tool: ${step.toolName}(${formatToolPreview(step.toolArgs, 100)})`));
+      return;
+    case 'tool_result':
+      if (step.toolResult?.success) {
+        console.log(chalk.green(`  ${tag} Result: ${step.content.slice(0, 180)}`));
+      } else {
+        console.log(chalk.red(`  ${tag} Error: ${step.content.slice(0, 180)}`));
+      }
+      return;
+    case 'handoff':
+      console.log(chalk.magenta(`  ${tag} Handoff: ${step.content}`));
+      return;
+    case 'review':
+      console.log(chalk.green(`  ${tag} Review: ${step.content}`));
+      return;
+    case 'correction':
+      console.log(chalk.red(`  ${tag} Correction: ${step.content.slice(0, 200)}`));
+      return;
+    case 'answer':
+      return;
+    case 'error':
+      console.log(chalk.red(`  ${tag} Error: ${step.content}`));
+      return;
+  }
+}
+
 function sanitizeErrorMessage(message: string): string {
   return message.replace(
     /(?:Bearer |sk-|zhipu-|api[_-]?key[=: ]*)[^\s"'\]},]*/gi,
@@ -211,9 +444,14 @@ function handleCommandError(
 
 function renderWarnings(warnings: string[]): void {
   if (warnings.length === 0) return;
+  const uniqueWarnings = [...new Set(warnings.map((warning) => warning.trim()).filter(Boolean))];
+  const visibleWarnings = uniqueWarnings.slice(0, 5);
   console.log(chalk.yellow('  Warnings:'));
-  for (const warning of warnings) {
+  for (const warning of visibleWarnings) {
     console.log(chalk.yellow(`    - ${warning}`));
+  }
+  if (uniqueWarnings.length > visibleWarnings.length) {
+    console.log(chalk.yellow(`    - ${uniqueWarnings.length - visibleWarnings.length} more warning(s) omitted.`));
   }
 }
 
@@ -371,14 +609,14 @@ export function registerVisionCommand(program: Command): void {
 
   // Core box analysis
   const coreboxCmd = new Command('corebox')
-    .description('Analyze core box image → RQD, fracture spacing, weathering')
+    .description('Analyze a core box image for RQD, fracture spacing, and weathering')
     .argument('<image>', 'Path to core box image')
     .action(async (imagePath, opts) => {
       const flags = getGlobalFlags(opts);
 
       if (!(await checkQuota('visionCalls'))) return;
 
-      const spinner = flags.json ? null : ora({ text: 'Analyzing core box image...', indent: 2 }).start();
+      const spinner = startProgress(flags, 'Analyzing core box image...');
       try {
         const file = readVisionInput(imagePath);
         describeVisionInput(file);
@@ -396,7 +634,7 @@ export function registerVisionCommand(program: Command): void {
         if (flags.json) { renderJSON(result); return; }
 
         heading('Core Box Analysis');
-        renderParseSafety(result);
+        renderParseSafetyCompact(result);
         keyValue('RQD', formatMaybe(result.rqd, '%'));
         keyValue('Fracture spacing', formatMaybe(result.fractureSpacing));
         keyValue('Weathering grade', formatMaybe(result.weatheringGrade));
@@ -411,7 +649,7 @@ export function registerVisionCommand(program: Command): void {
         console.log('');
       } catch (err) {
         spinner?.fail('Analysis failed');
-        handleCommandError(err, flags, 'corebox_analysis_failed');
+        handleCommandErrorClean(err, flags, 'corebox_analysis_failed');
       }
     });
   addGlobalFlags(coreboxCmd);
@@ -419,14 +657,14 @@ export function registerVisionCommand(program: Command): void {
 
   // Hybrid RMR from image
   const rmrImageCmd = new Command('rmr')
-    .description('Hybrid RMR: vision extracts features → deterministic RMR scoring')
+    .description('Hybrid RMR: vision extracts features, then deterministic RMR scoring')
     .argument('<image>', 'Path to rock face / core image')
     .action(async (imagePath, opts) => {
       const flags = getGlobalFlags(opts);
 
       if (!(await checkQuota('visionCalls'))) return;
 
-      const spinner = flags.json ? null : ora({ text: 'Extracting rock mass parameters from image...', indent: 2 }).start();
+      const spinner = startProgress(flags, 'Extracting rock mass parameters from image...');
       try {
         const file = readVisionInput(imagePath);
         describeVisionInput(file);
@@ -444,7 +682,7 @@ export function registerVisionCommand(program: Command): void {
         if (flags.json) { renderJSON(result); return; }
 
         heading('Hybrid RMR Classification (Vision + Deterministic)');
-        renderParseSafety(result);
+        renderParseSafetyCompact(result);
 
         console.log('');
         console.log(chalk.gray('  Vision-extracted parameters:'));
@@ -467,7 +705,7 @@ export function registerVisionCommand(program: Command): void {
         console.log('');
       } catch (err) {
         spinner?.fail('RMR classification failed');
-        handleCommandError(err, flags, 'rmr_classification_failed');
+        handleCommandErrorClean(err, flags, 'rmr_classification_failed');
       }
     });
   addGlobalFlags(rmrImageCmd);
@@ -482,7 +720,7 @@ export function registerVisionCommand(program: Command): void {
 
       if (!(await checkQuota('visionCalls'))) return;
 
-      const spinner = flags.json ? null : ora({ text: 'Interpreting sensor data...', indent: 2 }).start();
+      const spinner = startProgress(flags, 'Interpreting sensor data...');
       try {
         const file = readVisionInput(imagePath);
         describeVisionInput(file);
@@ -499,8 +737,8 @@ export function registerVisionCommand(program: Command): void {
 
         if (flags.json) { renderJSON(result); return; }
 
-        heading(`Sensor Interpretation — ${result.sensorType ?? 'Unknown'}`);
-        renderParseSafety(result);
+        heading(`Sensor Interpretation - ${result.sensorType ?? 'Unknown'}`);
+        renderParseSafetyCompact(result);
         keyValue('Sensor type', formatMaybe(result.sensorType));
         keyValue('Measurements', formatMaybe(result.measurements));
         console.log('');
@@ -515,7 +753,7 @@ export function registerVisionCommand(program: Command): void {
         console.log('');
       } catch (err) {
         spinner?.fail('Sensor interpretation failed');
-        handleCommandError(err, flags, 'sensor_interpretation_failed');
+        handleCommandErrorClean(err, flags, 'sensor_interpretation_failed');
       }
     });
   addGlobalFlags(sensorCmd);
@@ -531,25 +769,76 @@ export function registerVisionCommand(program: Command): void {
 
       if (!(await checkQuota('visionCalls'))) return;
 
-      const spinner = flags.json ? null : ora({ text: 'Extracting borehole log data...', indent: 2 }).start();
+      const spinner = startProgress(flags, 'Extracting borehole log data...');
       try {
         const file = readVisionInput(filePath);
         describeVisionInput(file);
         const config = buildLLMConfig();
-        maybeCheckHostedBetaVisionPayload(config, file, {
+        const requestDetails = {
           prompt: 'Extract structured borehole log data.',
           systemPrompt: 'You are analyzing a geotechnical image.',
           temperature: 0.1,
           maxTokens: 900,
-        });
-        const result = await interpretBoreholeLog(file.base64, file.mimeType, config, opts.boreholeId);
+        };
 
-        spinner?.succeed(`Extraction complete: ${result.layers.length} layers (${result.latencyMs}ms)`);
+        let result: BoreholeInterpretation;
+        if (file.kind === 'pdf') {
+          const pageInputs = await readVisionPdfPageInputs(filePath);
+          if (!flags.json && !flags.quiet && pageInputs.length > 1) {
+            info(`PDF contains ${pageInputs.length} pages. Processing borehole log pages sequentially.`);
+          }
+
+          const pageResults: Array<{ pageNumber: number; result: BoreholeInterpretation }> = [];
+          const pageFailures: string[] = [];
+
+          for (const pageInput of pageInputs) {
+            if (!flags.json && !flags.quiet && pageInputs.length > 1) {
+              info(`Processing PDF page ${pageInput.pageNumber}/${pageInput.totalPages}...`);
+            }
+
+            try {
+              maybeCheckHostedBetaVisionPayload(config, pageInput, requestDetails);
+              const pageResult = await interpretBoreholeLog(
+                pageInput.base64,
+                pageInput.mimeType,
+                config,
+                opts.boreholeId,
+              );
+              pageResults.push({
+                pageNumber: pageInput.pageNumber,
+                result: pageResult,
+              });
+            } catch (pageError) {
+              pageFailures.push(`Page ${pageInput.pageNumber}: ${getErrorMessage(pageError)}`);
+            }
+          }
+
+          if (pageResults.length === 0) {
+            throw new Error(
+              pageFailures.length > 0
+                ? `No PDF pages could be processed successfully.\n${pageFailures.join('\n')}`
+                : 'No PDF pages could be processed successfully.',
+            );
+          }
+
+          result = mergeBoreholeInterpretations(pageResults, opts.boreholeId);
+          if (pageFailures.length > 0) {
+            result.warnings = [...result.warnings, ...pageFailures];
+          }
+
+          spinner?.succeed(
+            `Extraction complete: ${result.layers.length} layers from ${pageResults.length}/${pageInputs.length} page(s) (${result.latencyMs}ms)`,
+          );
+        } else {
+          maybeCheckHostedBetaVisionPayload(config, file, requestDetails);
+          result = await interpretBoreholeLog(file.base64, file.mimeType, config, opts.boreholeId);
+          spinner?.succeed(`Extraction complete: ${result.layers.length} layers (${result.latencyMs}ms)`);
+        }
 
         if (flags.json) { renderJSON(result); return; }
 
-        heading(`Borehole Log — ${result.boreholeId}`);
-        renderParseSafety(result);
+        heading(`Borehole Log - ${result.boreholeId}`);
+        renderParseSafetyCompact(result);
         keyValue('Total depth', formatMaybe(result.totalDepth, ' m'));
         keyValue('Water table', result.waterTableDepth != null ? `${result.waterTableDepth} m` : 'Not detected');
 
@@ -575,7 +864,7 @@ export function registerVisionCommand(program: Command): void {
         console.log('');
       } catch (err) {
         spinner?.fail('Extraction failed');
-        handleCommandError(err, flags, 'borehole_extraction_failed');
+        handleCommandErrorClean(err, flags, 'borehole_extraction_failed');
       }
     });
   addGlobalFlags(logCmd);
@@ -598,7 +887,7 @@ export function registerAIClassifyCommand(program: Command): void {
 
       if (!(await checkQuota('llmCalls'))) return;
 
-      const spinner = flags.json ? null : ora({ text: 'Classifying soil from description...', indent: 2 }).start();
+      const spinner = startProgress(flags, 'Classifying soil from description...');
       try {
         const config = buildLLMConfig();
         const result = await classifySoilFromDescription(description, config);
@@ -609,7 +898,7 @@ export function registerAIClassifyCommand(program: Command): void {
 
         heading('AI Soil Classification');
         keyValue('Input', `"${description}"`);
-        renderParseSafety(result);
+        renderParseSafetyCompact(result);
         keyValue('USCS symbol', formatMaybe(result.uscsSymbol));
         keyValue('USCS name', formatMaybe(result.uscsName));
         keyValue('Friction angle', formatMaybe(result.estimatedProperties.frictionAngle, ' deg'));
@@ -622,7 +911,7 @@ export function registerAIClassifyCommand(program: Command): void {
         console.log('');
       } catch (err) {
         spinner?.fail('Classification failed');
-        handleCommandError(err, flags, 'ai_classification_failed');
+        handleCommandErrorClean(err, flags, 'ai_classification_failed');
       }
     });
 
@@ -648,7 +937,7 @@ export function registerGBRCommand(program: Command): void {
 
       if (!(await checkQuota('llmCalls'))) return;
 
-      const spinner = flags.json ? null : ora({ text: `Querying GBR: "${question.slice(0, 50)}..."`, indent: 2 }).start();
+      const spinner = startProgress(flags, `Querying GBR: "${question.slice(0, 50)}..."`);
       try {
         const file = readVisionInput(opts.doc);
         describeVisionInput(file);
@@ -675,7 +964,7 @@ export function registerGBRCommand(program: Command): void {
         console.log('');
       } catch (err) {
         spinner?.fail('GBR query failed');
-        handleCommandError(err, flags, 'gbr_query_failed');
+        handleCommandErrorClean(err, flags, 'gbr_query_failed');
       }
     });
 
@@ -782,9 +1071,9 @@ function renderSwarmStep(step: SwarmStep, json: boolean, quiet: boolean = false)
 
 export function registerAgentCommand(program: Command): void {
   const cmd = new Command('agent')
-    .description('Agentic AI — reasons about your problem and executes real calculations')
+    .description('Agentic AI - reasons about your problem and executes real calculations')
     .argument('<task...>', 'Engineering task in natural language')
-    .option('--swarm', 'Use multi-agent swarm (Interpretation → Simulation → Reviewer)')
+    .option('--swarm', 'Use multi-agent swarm (Bieniawski -> Terzaghi -> Hoek)')
     .option('--project <id>', 'Load and persist context to a stored project')
     .action(async (taskParts: string[], opts) => {
       const flags = getGlobalFlags(opts);
@@ -796,9 +1085,9 @@ export function registerAgentCommand(program: Command): void {
       if (!flags.json) {
         console.log('');
       if (useSwarm) {
-        console.log(chalk.gray('  Swarm activated — Interpretation → Simulation → Reviewer'));
+        console.log(chalk.gray('  Swarm activated - Bieniawski, Terzaghi, and Hoek coordinated by Mohr'));
       } else {
-        console.log(chalk.gray('  Agent activated — planning and executing...'));
+        console.log(chalk.gray('  Agent activated - Terzaghi is planning and executing'));
       }
         console.log('');
       }
@@ -815,7 +1104,7 @@ export function registerAgentCommand(program: Command): void {
         if (useSwarm) {
           // Multi-agent swarm mode
           const session = await runSwarm(task, config, (step) => {
-            renderSwarmStep(step, flags.json, flags.quiet);
+            renderSwarmStepPlain(step, flags.json, flags.quiet);
           }, projectState?.context);
 
           const answer = session.steps.find((s) => s.type === 'answer');
@@ -853,7 +1142,7 @@ export function registerAgentCommand(program: Command): void {
             const toolCalls = session.steps.filter((s) => s.type === 'tool_call').length;
             const agents = [...new Set(session.steps.map((s) => s.agent))];
             console.log(chalk.gray(`  (${agents.length} agents, ${toolCalls} tools executed, review: ${session.reviewPassed ? 'PASSED' : 'ISSUES NOTED'}, ${session.totalTokens} tokens)`));
-            console.log(chalk.cyan('\n  Hint: To continue this session interactively, run: ') + chalk.white(`geotech chat${opts.project ? ` --project ${opts.project}` : ''}`));
+            console.log(chalk.cyan('\n  Continue interactively with: ') + chalk.white(`geotech chat${opts.project ? ` --project ${opts.project}` : ''}`));
           }
 
           if (flags.output && answer) {
@@ -883,7 +1172,7 @@ export function registerAgentCommand(program: Command): void {
         } else {
           // Single-agent ReAct mode (default)
           const session = await runAgent(task, config, (step) => {
-            renderAgentStep(step, flags.json, flags.quiet);
+            renderAgentStepPlain(step, flags.json, flags.quiet);
           }, projectState?.context);
 
           const answer = session.steps.find((s) => s.type === 'answer');
@@ -916,7 +1205,7 @@ export function registerAgentCommand(program: Command): void {
             console.log(answer.content);
             console.log('');
             console.log(chalk.gray(`  (${session.steps.filter((s) => s.type === 'tool_call').length} tools executed, ${session.totalTokens} tokens, ${session.totalLatencyMs}ms)`));
-            console.log(chalk.cyan('\n  Hint: To continue this session interactively, run: ') + chalk.white(`geotech chat${opts.project ? ` --project ${opts.project}` : ''}`));
+            console.log(chalk.cyan('\n  Continue interactively with: ') + chalk.white(`geotech chat${opts.project ? ` --project ${opts.project}` : ''}`));
           }
 
           if (flags.output && answer) {
@@ -948,7 +1237,7 @@ export function registerAgentCommand(program: Command): void {
           console.log('');
         }
       } catch (err) {
-        handleCommandError(err, flags, useSwarm ? 'swarm_failed' : 'agent_failed');
+        handleCommandErrorClean(err, flags, useSwarm ? 'swarm_failed' : 'agent_failed');
       }
     });
 
@@ -962,13 +1251,13 @@ export function registerAgentCommand(program: Command): void {
 
 export function registerChatCommand(program: Command): void {
   const cmd = new Command('chat')
-    .description('Interactive agentic session — type natural language, agent executes tools with memory')
+    .description('Interactive agentic session - type natural language, agent executes tools with memory')
     .option('--project <id>', 'Load and persist context to a stored project')
     .action(async (opts) => {
       const { createInterface } = await import('node:readline');
 
       console.log('');
-      console.log(chalk.bold.cyan('  geotech') + chalk.bold.white('CLI') + chalk.gray(' Agent — Interactive Mode'));
+      console.log(chalk.bold.cyan('  geotech') + chalk.bold.white('CLI') + chalk.gray(' Agent - Interactive Mode'));
       console.log(chalk.gray('  Type engineering questions. The agent will reason and execute calculations.'));
       console.log(chalk.gray('  Commands: /context (show memory), /clear (reset), /exit (quit)'));
       console.log('');
@@ -1070,7 +1359,7 @@ export function registerChatCommand(program: Command): void {
 
         try {
           const session = await conversation.ask(input, config, (step) => {
-            renderAgentStep(step, false, false);
+            renderAgentStepPlain(step, false, false);
           });
 
           if (projectState) {
@@ -1117,7 +1406,7 @@ export function registerReportCommand(program: Command): void {
     .action(async (opts) => {
       const flags = getGlobalFlags(opts);
       const useCaseFile = typeof opts.fromCaseFile === 'string' && opts.fromCaseFile.trim().length > 0;
-      let spinner: ReturnType<typeof ora> | null = null;
+      let spinner: ReturnType<typeof startProgress> = null;
       try {
         if (!useCaseFile && !opts.data) {
           throw new Error('Provide either --data <file> or --from-case-file <scenarioId>.');
@@ -1129,12 +1418,7 @@ export function registerReportCommand(program: Command): void {
           return;
         }
 
-        spinner = flags.json
-          ? null
-          : ora({
-            text: useCaseFile ? 'Assembling case-file report...' : 'Generating report...',
-            indent: 2,
-          }).start();
+        spinner = startProgress(flags, useCaseFile ? 'Assembling case-file report...' : 'Generating report...');
 
         const report = useCaseFile
           ? await generateReportFromCaseFile({
@@ -1190,7 +1474,7 @@ export function registerReportCommand(program: Command): void {
         console.log('');
       } catch (err) {
         spinner?.fail('Report generation failed');
-        handleCommandError(err, flags, 'report_generation_failed');
+        handleCommandErrorClean(err, flags, 'report_generation_failed');
       }
     });
 

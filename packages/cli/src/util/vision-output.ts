@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { extname } from 'node:path';
+import { PDFDocument } from 'pdf-lib';
 
 export const HOSTED_BETA_REQUEST_LIMIT_BYTES = 8 * 1024 * 1024;
 const HOSTED_BETA_REQUEST_MARGIN_BYTES = 32 * 1024;
@@ -27,6 +28,11 @@ export interface VisionInput {
   kind: VisionFileKind;
 }
 
+export interface VisionPdfPageInput extends VisionInput {
+  pageNumber: number;
+  totalPages: number;
+}
+
 export interface HostedBetaVisionRequestDetails {
   prompt: string;
   systemPrompt: string;
@@ -51,6 +57,34 @@ export function readVisionInput(filePath: string): VisionInput {
     ext,
     kind,
   };
+}
+
+export async function readVisionPdfPageInputs(filePath: string): Promise<VisionPdfPageInput[]> {
+  const buffer = readFileSync(filePath);
+  const source = await PDFDocument.load(buffer, { ignoreEncryption: true });
+  const totalPages = source.getPageCount();
+  const pageInputs: VisionPdfPageInput[] = [];
+
+  for (let index = 0; index < totalPages; index++) {
+    const pageDoc = await PDFDocument.create();
+    const [copiedPage] = await pageDoc.copyPages(source, [index]);
+    pageDoc.addPage(copiedPage);
+    const pageBytes = await pageDoc.save();
+    const pageBuffer = Buffer.from(pageBytes);
+
+    pageInputs.push({
+      base64: pageBuffer.toString('base64'),
+      mimeType: 'application/pdf',
+      fileBytes: pageBuffer.length,
+      filePath,
+      ext: 'pdf',
+      kind: 'pdf',
+      pageNumber: index + 1,
+      totalPages,
+    });
+  }
+
+  return pageInputs;
 }
 
 export function estimateHostedBetaVisionBodyBytes(details: HostedBetaVisionRequestDetails): number {

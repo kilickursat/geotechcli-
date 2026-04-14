@@ -114,7 +114,7 @@ These commands now use the hosted beta GLM path by default.
 | `geotech vision corebox` | Core box image analysis for RQD, fracture spacing, and weathering |
 | `geotech vision rmr` | Vision-assisted RMR workflow |
 | `geotech vision sensor` | Sensor and chart image interpretation |
-| `geotech vision log` | Borehole log image or PDF extraction |
+| `geotech vision log` | Borehole log extraction from images or multi-page PDFs |
 | `geotech ai-classify` | Natural language soil description to USCS and properties |
 | `geotech gbr chat` | GBR document question answering |
 | `geotech agent` | Multi-agent orchestration with optional project memory |
@@ -130,6 +130,19 @@ These commands now use the hosted beta GLM path by default.
 | `geotech export csv` | Export to CSV |
 | `geotech bridge detect` | Detect running PLAXIS, FLAC, or Rocscience processes |
 | `geotech bridge generate` | Generate automation scripts for supported software |
+
+Sample export fixtures are committed under `samples/exports/`:
+
+- `samples/exports/mock-boreholes.json`
+- `samples/exports/mock-liquefaction.json`
+
+Example export smoke checks:
+
+```bash
+geotech export geojson --input samples/exports/mock-boreholes.json --output boreholes.geojson
+geotech export dxf --input samples/exports/mock-boreholes.json --output profile.dxf
+geotech export csv --input samples/exports/mock-liquefaction.json --output data.csv
+```
 
 ## Global Flags
 

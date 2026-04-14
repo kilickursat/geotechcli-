@@ -3,6 +3,7 @@ import { generateChat } from '../llm/router.js';
 import { toolRegistry, type ToolResult } from './tools.js';
 import { validateToolArgs, formatViolations } from './guardrails.js';
 import { extractToolSafetyIssue, serializeContextForPrompt } from './safety.js';
+import { normalizeToolArgs } from './tool-normalization.js';
 
 // Side-effect imports: these files register tools into the shared registry
 import './filesystem-tools.js';
@@ -75,6 +76,7 @@ For every request, follow this loop:
 - Reference actual standards: Terzaghi, Meyerhof, Bieniawski, Barton, Boulanger & Idriss, etc.
 - Report tool results with proper units and significant figures.
 - If a tool returns parseStatus/confidence metadata with canAutoProceed=false, treat it as blocked evidence. Do not continue downstream deterministic calculations from it until you retry, request better input, or explain the limitation.
+- Normalize near-valid natural language inputs into the closest supported engineering enum before calling a tool. Example: "mixed face" should map to the TBM ground type "mixed".
 - When the analysis is complete, provide a clear engineering recommendation with supporting numbers.
 
 ## FINAL ANSWER
@@ -141,7 +143,7 @@ function compressMessages(messages: ConversationMessage[]): ConversationMessage[
 // Agent Brain
 // ---------------------------------------------------------------------------
 
-const MAX_ITERATIONS = 12;
+const MAX_ITERATIONS = 8;
 
 export async function runAgent(
   userQuery: string,
@@ -177,7 +179,7 @@ export async function runAgent(
     try {
       response = await generateChat(messages, config, {
         temperature: 0.2,
-        maxTokens: 2048,
+        maxTokens: 1600,
       });
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -223,6 +225,7 @@ export async function runAgent(
     let toolCall: { tool: string; args: Record<string, unknown> };
     try {
       toolCall = JSON.parse(toolCallMatch[1]);
+      toolCall.args = normalizeToolArgs(toolCall.tool, toolCall.args);
     } catch {
       const errStep: AgentStep = {
         type: 'error',
@@ -347,7 +350,7 @@ export async function runAgent(
     try {
       const finalResponse = await generateChat(messages, config, {
         temperature: 0.2,
-        maxTokens: 3000,
+        maxTokens: 1800,
       });
 
       session.totalTokens += finalResponse.usage.totalTokens;

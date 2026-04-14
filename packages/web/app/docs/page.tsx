@@ -126,7 +126,7 @@ geotech liquefaction --pga 0.25 --magnitude 7.5 --spt-profile site.csv
 geotech liquefaction --pga 0.3 --magnitude 7.0 --depth 5 --spt 12 --fines 15
 
 # Demo mode (built-in sample data)
-geotech liquefaction --pga 0.25 --magnitude 7.5
+geotech liquefaction --pga 0.25 --magnitude 7.5 --demo
 \`\`\``,
   },
   {
@@ -176,8 +176,11 @@ geotech vision rmr tunnel-face.jpg
 # Sensor data interpretation
 geotech vision sensor piezometer-chart.png
 
-# Borehole log extraction
-geotech vision log borehole-log.pdf
+# Borehole log extraction from image
+geotech vision log borehole-log.png
+
+# Multi-page borehole PDF processing
+geotech vision log Appendix-2A-Geotechnical-Report-Part-6.pdf
 \`\`\``,
   },
   {
@@ -204,14 +207,35 @@ geotech agent "analyze slope stability for 15m cut" --output slope-report.md
 
 \`\`\`bash
 # GeoJSON (for GIS)
-geotech export geojson --input results.json --output boreholes.geojson
+geotech export geojson --input samples/exports/mock-boreholes.json --output boreholes.geojson
 
 # AutoCAD DXF
-geotech export dxf --input boreholes.json --output profile.dxf
+geotech export dxf --input samples/exports/mock-boreholes.json --output profile.dxf
 
 # CSV spreadsheet
-geotech export csv --input results.json --output data.csv
+geotech export csv --input samples/exports/mock-liquefaction.json --output data.csv
 \`\`\``,
+  },
+  {
+    id: 'viz',
+    title: 'geotech viz',
+    content: `Interactive terminal visualization for saved JSON, CSV, and Excel data.
+
+\`\`\`bash
+# Inspect available series first
+geotech viz samples/visualization/geotech-viz-showcase.xlsx --list
+
+# Render the default chart in the terminal
+geotech viz samples/visualization/geotech-viz-showcase.csv
+
+# Plot saved JSON analysis data
+geotech viz result.json
+
+# Use command-level plotting where supported
+geotech settlement trough --volume-loss 1.5 --depth 18 --diameter 6.5 --plot
+\`\`\`
+
+This command is meant for quick engineering sanity checks in the terminal before exporting or reporting.`,
   },
   {
     id: 'bridge',

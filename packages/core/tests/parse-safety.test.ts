@@ -21,6 +21,14 @@ describe('Parse safety helpers', () => {
     expect(safety.warnings[0]).toContain('not valid JSON');
   });
 
+  it('extracts an embedded JSON object from a narrative response', () => {
+    const parsed = parseJsonObject('Here is the result: {"sensorType":"piezometer","confidence":62}');
+
+    expect(parsed.baseStatus).toBe('partial');
+    expect(parsed.value?.sensorType).toBe('piezometer');
+    expect(parsed.warnings[0]).toContain('extracted the JSON object');
+  });
+
   it('allows complete high-confidence results to auto proceed', () => {
     const safety = createParseSafety('parsed', 82, []);
     expect(safety.parseStatus).toBe('parsed');

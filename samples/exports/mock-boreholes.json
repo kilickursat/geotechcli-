@@ -1,0 +1,58 @@
+[
+  {
+    "id": "BH-01",
+    "boreholeId": "BH-01",
+    "lat": 35.6895,
+    "lng": 139.6917,
+    "x": 0,
+    "depth": 18,
+    "layers": [
+      {
+        "depthFrom": 0,
+        "depthTo": 2,
+        "description": "Fill, sandy gravel with silt",
+        "uscs": "GM"
+      },
+      {
+        "depthFrom": 2,
+        "depthTo": 8,
+        "description": "Soft to firm silty clay",
+        "uscs": "CL"
+      },
+      {
+        "depthFrom": 8,
+        "depthTo": 18,
+        "description": "Dense silty sand",
+        "uscs": "SM"
+      }
+    ]
+  },
+  {
+    "id": "BH-02",
+    "boreholeId": "BH-02",
+    "lat": 35.6899,
+    "lng": 139.6926,
+    "x": 12,
+    "depth": 22,
+    "layers": [
+      {
+        "depthFrom": 0,
+        "depthTo": 1.5,
+        "description": "Fill, sandy silt",
+        "uscs": "ML"
+      },
+      {
+        "depthFrom": 1.5,
+        "depthTo": 10,
+        "description": "Medium stiff clay",
+        "uscs": "CL"
+      },
+      {
+        "depthFrom": 10,
+        "depthTo": 22,
+        "description": "Very dense gravelly sand",
+        "uscs": "SW"
+      }
+    ]
+  }
+]

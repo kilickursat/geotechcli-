@@ -37,6 +37,24 @@ export function parseJsonObject(rawText: string): ParsedObjectResult {
     }
     return { value: parsed as Record<string, unknown>, baseStatus: 'parsed', warnings: [] };
   } catch {
+    const objectStart = cleaned.indexOf('{');
+    const objectEnd = cleaned.lastIndexOf('}');
+    if (objectStart >= 0 && objectEnd > objectStart) {
+      try {
+        const extracted = cleaned.slice(objectStart, objectEnd + 1);
+        const parsed = JSON.parse(extracted);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          return {
+            value: parsed as Record<string, unknown>,
+            baseStatus: 'partial',
+            warnings: ['Model response included extra text; extracted the JSON object from the response.'],
+          };
+        }
+      } catch {
+        // Fall through to the default invalid-JSON error.
+      }
+    }
+
     return {
       value: null,
       baseStatus: 'failed',

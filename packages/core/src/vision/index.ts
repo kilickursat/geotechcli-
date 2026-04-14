@@ -10,6 +10,7 @@ import {
   readNumber,
   readString,
   type ParseSafety,
+  type ParseStatus,
 } from './parse.js';
 
 export type { ParseSafety, ParseStatus } from './parse.js';
@@ -121,6 +122,143 @@ function asEnumValue<T extends readonly string[]>(
 
 function combineWarnings(base: string[], extra: string[]): string[] {
   return [...new Set([...base, ...extra])];
+}
+
+function splitSentences(rawText: string): string[] {
+  return rawText
+    .replace(/\s+/g, ' ')
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+}
+
+function firstMatchingSentence(
+  rawText: string,
+  predicate: (sentence: string) => boolean,
+): string | null {
+  return splitSentences(rawText).find(predicate) ?? null;
+}
+
+function inferSensorType(rawText: string): string | null {
+  const normalized = rawText.toLowerCase();
+  if (normalized.includes('piezometer')) return 'piezometer';
+  if (normalized.includes('inclinometer')) return 'inclinometer';
+  if (normalized.includes('extensometer')) return 'extensometer';
+  if (normalized.includes('load cell')) return 'load_cell';
+  if (normalized.includes('settlement plate')) return 'settlement_plate';
+  if (normalized.includes('tiltmeter')) return 'tiltmeter';
+  return null;
+}
+
+function inferSensorEvaluation(rawText: string): string | null {
+  const normalized = rawText.toLowerCase();
+  if (/(critical|alarm|urgent|failure|unsafe|exceed)/.test(normalized)) return 'critical';
+  if (/(warning|alert|watch|caution|elevated)/.test(normalized)) return 'warning';
+  if (/(normal|stable|within limit|acceptable|no significant movement)/.test(normalized)) return 'normal';
+  return null;
+}
+
+function extractSensorFallback(rawText: string): {
+  value: Record<string, unknown> | null;
+  baseStatus: ParseStatus;
+  warnings: string[];
+} {
+  if (!rawText.trim()) {
+    return { value: null, baseStatus: 'failed', warnings: [] };
+  }
+
+  const sensorType = inferSensorType(rawText);
+  const measurements = firstMatchingSentence(
+    rawText,
+    (sentence) => /\d/.test(sentence) || /(reading|pressure|head|displacement|settlement|movement|trend)/i.test(sentence),
+  );
+  const interpretation = firstMatchingSentence(
+    rawText,
+    (sentence) => /(indicat|show|suggest|trend|behavio|movement|response)/i.test(sentence),
+  ) ?? splitSentences(rawText)[0] ?? null;
+  const evaluation = inferSensorEvaluation(rawText);
+  const recommendations = firstMatchingSentence(
+    rawText,
+    (sentence) => /(recommend|should|monitor|inspect|review|action|recheck)/i.test(sentence),
+  );
+
+  const presentCount = [sensorType, measurements, interpretation, evaluation, recommendations]
+    .filter((value) => value != null && value !== '')
+    .length;
+
+  if (presentCount === 0) {
+    return { value: null, baseStatus: 'failed', warnings: [] };
+  }
+
+  return {
+    value: {
+      sensorType,
+      measurements,
+      interpretation,
+      evaluation,
+      recommendations,
+    },
+    baseStatus: 'partial',
+    warnings: ['Vision model returned narrative text; extracted partial structured sensor fields.'],
+  };
+}
+
+function inferUscsFromText(rawText: string): string | null {
+  const match = rawText.match(/\b(GW|GP|GM|GC|SW|SP|SM|SC|ML|CL|OL|MH|CH|OH|PT)\b/i);
+  return match ? match[1].toUpperCase() : null;
+}
+
+function extractBoreholeFallback(rawText: string, boreholeId?: string): {
+  value: Record<string, unknown> | null;
+  baseStatus: ParseStatus;
+  warnings: string[];
+} {
+  if (!rawText.trim()) {
+    return { value: null, baseStatus: 'failed', warnings: [] };
+  }
+
+  const layers: Array<Record<string, unknown>> = [];
+  const layerRegex = /(\d+(?:\.\d+)?)\s*(?:-|to)\s*(\d+(?:\.\d+)?)\s*m[:\s-]*([^\n.;]+)/gi;
+  for (const match of rawText.matchAll(layerRegex)) {
+    const description = match[3]?.trim() ?? '';
+    const sptMatch = description.match(/(?:spt|n)[-=\s:]*?(\d+(?:\.\d+)?)/i);
+    layers.push({
+      depthFrom: Number(match[1]),
+      depthTo: Number(match[2]),
+      description,
+      uscsSymbol: inferUscsFromText(description),
+      sptN: sptMatch ? Number(sptMatch[1]) : null,
+      waterContent: null,
+      notes: null,
+    });
+  }
+
+  const totalDepthMatch = rawText.match(/total depth[^0-9]*(\d+(?:\.\d+)?)\s*m/i)
+    ?? rawText.match(/depth[^0-9]*(\d+(?:\.\d+)?)\s*m/i);
+  const waterTableMatch = rawText.match(/water table[^0-9]*(\d+(?:\.\d+)?)\s*m/i)
+    ?? rawText.match(/gwl[^0-9]*(\d+(?:\.\d+)?)\s*m/i);
+  const boreholeMatch = rawText.match(/\bBH[-_\s]?[A-Z0-9]+\b/i);
+  const summary = firstMatchingSentence(
+    rawText,
+    (sentence) => /(summary|consist|encountered|profile|strata|predominant)/i.test(sentence),
+  ) ?? splitSentences(rawText)[0] ?? null;
+
+  const value: Record<string, unknown> = {};
+  if (boreholeMatch?.[0] || boreholeId) value.boreholeId = (boreholeMatch?.[0] ?? boreholeId)?.replace(/\s+/g, '');
+  if (totalDepthMatch?.[1]) value.totalDepth = Number(totalDepthMatch[1]);
+  if (waterTableMatch?.[1]) value.waterTableDepth = Number(waterTableMatch[1]);
+  if (layers.length > 0) value.layers = layers;
+  if (summary) value.summary = summary;
+
+  if (Object.keys(value).length === 0) {
+    return { value: null, baseStatus: 'failed', warnings: [] };
+  }
+
+  return {
+    value,
+    baseStatus: 'partial',
+    warnings: ['Vision model returned narrative text; extracted partial structured borehole fields.'],
+  };
 }
 
 export interface CoreBoxAnalysisResult extends ParseSafety {
@@ -487,16 +625,22 @@ Provide approximate values where necessary, but keep the structure complete.`;
     strictPrompt,
     softPrompt,
     'You are an expert geotechnical engineer extracting data from borehole log documents. Be precise with depths, descriptions, and test values. Respond with JSON only.',
-    2200,
+    1500,
   );
 
   const parsed = parseJsonObject(response.text);
-  const warnings = [...parsed.warnings];
-  const parsedLayers = Array.isArray(parsed.value?.layers)
-    ? (parsed.value?.layers as Record<string, unknown>[])
+  const narrativeFallback = extractBoreholeFallback(response.text, boreholeId);
+  const mergedValue = {
+    ...(narrativeFallback.value ?? {}),
+    ...(parsed.value ?? {}),
+  };
+  const baseStatus = parsed.baseStatus !== 'failed' ? parsed.baseStatus : narrativeFallback.baseStatus;
+  const warnings = [...parsed.warnings, ...narrativeFallback.warnings];
+  const parsedLayers = Array.isArray(mergedValue.layers)
+    ? (mergedValue.layers as Record<string, unknown>[])
     : [];
 
-  if (!Array.isArray(parsed.value?.layers)) {
+  if (!Array.isArray(mergedValue.layers)) {
     warnings.push('Missing or invalid "layers" array.');
   }
 
@@ -516,21 +660,21 @@ Provide approximate values where necessary, but keep the structure complete.`;
     return item;
   });
 
-  const totalDepth = readNumber(parsed.value, 'totalDepth', warnings);
+  const totalDepth = readNumber(mergedValue, 'totalDepth', warnings);
   const waterTableDepth =
-    parsed.value?.waterTableDepth == null
+    mergedValue.waterTableDepth == null
       ? null
-      : readNumber(parsed.value, 'waterTableDepth', warnings);
-  const summary = readString(parsed.value, 'summary', warnings);
+      : readNumber(mergedValue, 'waterTableDepth', warnings);
+  const summary = readString(mergedValue, 'summary', warnings);
   const resolvedBoreholeId =
-    readString(parsed.value, 'boreholeId', []) ?? boreholeId ?? 'BH-unknown';
+    readString(mergedValue, 'boreholeId', []) ?? boreholeId ?? 'BH-unknown';
   const confidence = clampConfidence(
-    parsed.value?.confidence,
-    parsed.baseStatus === 'parsed' ? 75 : 0,
+    mergedValue.confidence,
+    baseStatus === 'parsed' ? 75 : baseStatus === 'partial' ? 58 : 0,
   );
 
   const status = deriveParseStatus(
-    parsed.baseStatus,
+    baseStatus,
     [totalDepth, summary, layers.length > 0 ? 'layers' : null].filter((value) => value !== null)
       .length,
     3,
@@ -538,7 +682,7 @@ Provide approximate values where necessary, but keep the structure complete.`;
   const safety = createParseSafety(
     status,
     confidence,
-    combineWarnings(warnings, normalizeWarnings(parsed.value?.warnings)),
+    combineWarnings(warnings, normalizeWarnings(mergedValue.warnings)),
   );
 
   return {
@@ -619,23 +763,29 @@ If the display is partially unreadable, provide the best approximate interpretat
     strictPrompt,
     softPrompt,
     'You are an expert geotechnical instrumentation engineer. Interpret sensor data precisely.',
-    1100,
+    800,
   );
 
   const parsed = parseJsonObject(response.text);
-  const warnings = [...parsed.warnings];
-  const sensorType = readString(parsed.value, 'sensorType', warnings);
-  const measurements = readString(parsed.value, 'measurements', warnings);
-  const interpretation = readString(parsed.value, 'interpretation', warnings);
-  const evaluation = readString(parsed.value, 'evaluation', warnings);
-  const recommendations = readString(parsed.value, 'recommendations', warnings);
+  const narrativeFallback = extractSensorFallback(response.text);
+  const mergedValue = {
+    ...(narrativeFallback.value ?? {}),
+    ...(parsed.value ?? {}),
+  };
+  const baseStatus = parsed.baseStatus !== 'failed' ? parsed.baseStatus : narrativeFallback.baseStatus;
+  const warnings = [...parsed.warnings, ...narrativeFallback.warnings];
+  const sensorType = readString(mergedValue, 'sensorType', warnings);
+  const measurements = readString(mergedValue, 'measurements', warnings);
+  const interpretation = readString(mergedValue, 'interpretation', warnings);
+  const evaluation = readString(mergedValue, 'evaluation', warnings);
+  const recommendations = readString(mergedValue, 'recommendations', warnings);
   const confidence = clampConfidence(
-    parsed.value?.confidence,
-    parsed.baseStatus === 'parsed' ? 70 : 0,
+    mergedValue.confidence,
+    baseStatus === 'parsed' ? 70 : baseStatus === 'partial' ? 55 : 0,
   );
 
   const status = deriveParseStatus(
-    parsed.baseStatus,
+    baseStatus,
     [sensorType, measurements, interpretation, evaluation, recommendations].filter(
       (value) => value !== null,
     ).length,
@@ -644,7 +794,7 @@ If the display is partially unreadable, provide the best approximate interpretat
   const safety = createParseSafety(
     status,
     confidence,
-    combineWarnings(warnings, normalizeWarnings(parsed.value?.warnings)),
+    combineWarnings(warnings, normalizeWarnings(mergedValue.warnings)),
   );
 
   return {

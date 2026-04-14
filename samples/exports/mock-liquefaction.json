@@ -1,0 +1,38 @@
+{
+  "method": "boulanger-idriss-2014",
+  "earthquakeMagnitude": 7.5,
+  "pga": 0.28,
+  "estimatedSettlement": 26,
+  "layers": [
+    {
+      "depth": 2,
+      "sptN": 8,
+      "finesContent": 6,
+      "unitWeight": 18,
+      "factorOfSafety": 0.74,
+      "CSR": 0.22,
+      "CRR": 0.16,
+      "potential": "HIGH"
+    },
+    {
+      "depth": 4,
+      "sptN": 12,
+      "finesContent": 10,
+      "unitWeight": 18.5,
+      "factorOfSafety": 0.93,
+      "CSR": 0.19,
+      "CRR": 0.18,
+      "potential": "MODERATE"
+    },
+    {
+      "depth": 6,
+      "sptN": 18,
+      "finesContent": 18,
+      "unitWeight": 19,
+      "factorOfSafety": 1.21,
+      "CSR": 0.16,
+      "CRR": 0.21,
+      "potential": "LOW"
+    }
+  ]
+}

@@ -3,6 +3,7 @@ import { generateText, generateChat } from '../llm/router.js';
 import { toolRegistry, type ToolResult } from './tools.js';
 import { validateToolArgs, formatViolations } from './guardrails.js';
 import { extractToolSafetyIssue, serializeContextForPrompt } from './safety.js';
+import { normalizeToolArgs } from './tool-normalization.js';
 
 // Ensure all tools are registered
 import './filesystem-tools.js';
@@ -116,6 +117,7 @@ RULES:
 - Call tools to do real work; never estimate or guess data values.
 - If a tool result indicates canAutoProceed=false or low-confidence parsing, stop automatic handoff from that output until you retry or clearly mark the limitation.
 - When you derive reusable structured data or assumptions for a project, persist them with project memory tools.
+- Normalize near-valid user language into supported tool enums before calling tools when the engineering meaning is clear.
 - After processing all data, output a structured summary in this format:
 
 \`\`\`handoff
@@ -151,6 +153,7 @@ RULES:
 - Run ALL relevant calculations for the task.
 - If an upstream or tool result is blocked, incomplete, or low confidence, do not continue blindly. Retry, use a safer alternative, or pass the limitation to the reviewer.
 - Save significant reusable outputs back into project memory when a project context is available.
+- Normalize near-valid user language into supported tool enums before calling tools when the engineering meaning is clear.
 - After completing calculations, output a handoff to the Reviewer:
 
 \`\`\`handoff
@@ -225,7 +228,7 @@ async function runAgentLoop(
   systemPrompt: string,
   agentName: SwarmStep['agent'],
   onStep: SwarmCallback,
-  maxIter = 8,
+  maxIter = 6,
 ): Promise<{ output: string; context: Record<string, unknown>; tokens: number; latency: number }> {
   const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
     { role: 'system', content: systemPrompt },
@@ -241,7 +244,7 @@ async function runAgentLoop(
     try {
       response = await generateChat(messages, config, {
         temperature: 0.15,
-        maxTokens: 3000,
+        maxTokens: 1700,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -263,6 +266,7 @@ async function runAgentLoop(
 
       try {
         const call = JSON.parse(toolMatch[1]) as { tool: string; args: Record<string, unknown> };
+        call.args = normalizeToolArgs(call.tool, call.args);
         onStep({
           agent: agentName,
           type: 'tool_call',
@@ -545,7 +549,7 @@ export async function runSwarm(
   const finalResult = await generateText(
     `${contextBlock}Task: ${task}\n\nInterpretation output:\n${interpData}\n\nSimulation output:\n${simOutput}\n\nReview status: ${session.reviewPassed ? 'APPROVED' : 'APPROVED WITH NOTES'}\nCorrections applied: ${session.corrections.length > 0 ? session.corrections.join('; ') : 'None'}\n\nSynthesize the final engineering report.`,
     config,
-    { systemPrompt: orchestratorPrompt(), temperature: 0.2, maxTokens: 4000 },
+    { systemPrompt: orchestratorPrompt(), temperature: 0.2, maxTokens: 2200 },
   );
 
   session.totalTokens += finalResult.usage.totalTokens;

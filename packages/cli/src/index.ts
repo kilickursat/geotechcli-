@@ -74,9 +74,10 @@ registerBridgeCommand(program);
 registerConfigCommand(program);
 registerStatusCommand(program);
 
-// Show banner when invoked with no arguments
+// Show help when invoked with no arguments and exit cleanly.
 if (process.argv.length <= 2) {
-  banner();
+  program.outputHelp();
+  process.exit(0);
 }
 
 // ---------------------------------------------------------------------------
@@ -88,7 +89,10 @@ try {
   await program.parseAsync(process.argv);
 } catch (err) {
   if (err instanceof Error) {
-    if ('exitCode' in err && (err as any).exitCode === 0) {
+    if ('exitCode' in err && (err as { exitCode?: number }).exitCode === 0) {
+      process.exit(0);
+    }
+    if ('code' in err && (err as { code?: string }).code === 'commander.helpDisplayed') {
       process.exit(0);
     }
     const msg = err.message.replace(
