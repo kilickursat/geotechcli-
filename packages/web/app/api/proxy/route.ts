@@ -12,6 +12,7 @@ import {
   checkHostedBetaDailyLimit,
   createHostedBetaErrorResponse,
   extractClientIp,
+  getHostedBetaRequestLimit,
   isGeotechCliClient,
   getHostedBetaConfigIssue,
   getHostedBetaDefaultModel,
@@ -22,12 +23,12 @@ import {
   isIPRateLimitedMemory,
   validateAnonymousHostedBetaMessages,
   validateMessages,
-} from '@/lib/beta';
+} from '../../../lib/beta';
 import type {
   ProxyContentPart,
   ProxyMessage,
   ProxyRequestBody,
-} from '@/lib/beta';
+} from '../../../lib/beta';
 
 const MAX_BODY_SIZE_BYTES = 8 * 1024 * 1024;
 const MAX_TOKENS = 4096;
@@ -66,6 +67,61 @@ interface UpstreamResponse {
   error?: {
     message?: string;
   };
+}
+
+function getUpstreamTimeoutMs(callType: 'text' | 'vision' | 'agent'): number {
+  if (callType === 'agent') return 120_000;
+  if (callType === 'vision') return 90_000;
+  return 75_000;
+}
+
+function isTransientUpstreamStatus(status: number): boolean {
+  return status === 429 || status === 502 || status === 503 || status === 504;
+}
+
+async function delay(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchUpstreamWithRetry(
+  body: Record<string, unknown>,
+  callType: 'text' | 'vision' | 'agent',
+): Promise<Response> {
+  let lastResponse: Response | null = null;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const response = await fetch(ZAI_CHAT_COMPLETIONS_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${process.env.ZHIPU_API_KEY}`,
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(getUpstreamTimeoutMs(callType)),
+      });
+
+      if (!isTransientUpstreamStatus(response.status) || attempt === 1) {
+        return response;
+      }
+
+      lastResponse = response;
+    } catch (err) {
+      lastError = err;
+      if (attempt === 1) {
+        throw err;
+      }
+    }
+
+    await delay(1_500 * (attempt + 1));
+  }
+
+  if (lastResponse) {
+    return lastResponse;
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('Unknown hosted beta upstream failure.');
 }
 
 function secondsUntilUtcMidnight(): number {
@@ -308,15 +364,16 @@ export async function POST(request: NextRequest) {
   }
 
   const clientIp = extractClientIp(request.headers);
+  const perMinuteLimit = getHostedBetaRequestLimit(clientMode);
   const ipRateLimited = hasHostedBetaRedis()
     ? await isIPRateLimitedRedis(
         clientIp,
-        HOSTED_BETA_LIMITS.requestsPerMinutePerIp,
+        perMinuteLimit,
         60_000,
       )
     : isIPRateLimitedMemory(
         clientIp,
-        HOSTED_BETA_LIMITS.requestsPerMinutePerIp,
+        perMinuteLimit,
         60_000,
       );
 
@@ -337,6 +394,7 @@ export async function POST(request: NextRequest) {
   const dailyCheck = await checkHostedBetaDailyLimit({
     ip: clientIp,
     callType,
+    clientMode,
   });
 
   if (!dailyCheck.allowed) {
@@ -374,20 +432,18 @@ export async function POST(request: NextRequest) {
 
   let upstreamResponse: Response;
   try {
-    upstreamResponse = await fetch(ZAI_CHAT_COMPLETIONS_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${process.env.ZHIPU_API_KEY}`,
-      },
-      body: JSON.stringify(upstreamBody),
-      signal: AbortSignal.timeout(60_000),
-    });
+    upstreamResponse = await fetchUpstreamWithRetry(upstreamBody, callType);
   } catch (err) {
+    const detail =
+      err instanceof Error && /abort|timeout/i.test(err.message)
+        ? `The upstream ${callType} request timed out after ${Math.round(getUpstreamTimeoutMs(callType) / 1000)}s.`
+        : err instanceof Error
+          ? err.message
+          : String(err);
     return createHostedBetaErrorResponse(
       502,
       'Hosted beta upstream request failed.',
-      err instanceof Error ? err.message : String(err),
+      detail,
       { code: 'upstream_request_failed' },
       requestId,
       { mode: clientMode, version: clientVersion },
@@ -467,7 +523,7 @@ export async function POST(request: NextRequest) {
     beta: {
       callType,
       remaining_today: Math.max(0, dailyCheck.remaining - 1),
-      requests_per_minute_per_ip: HOSTED_BETA_LIMITS.requestsPerMinutePerIp,
+      requests_per_minute_per_ip: perMinuteLimit,
       latency_ms: Date.now() - start,
       body_size_bytes: body.rawSizeBytes,
     },

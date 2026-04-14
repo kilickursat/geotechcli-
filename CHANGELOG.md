@@ -1,5 +1,18 @@
 ﻿# Changelog
 
+## [0.4.3] - 2026-04-14
+
+### Hosted Beta Reliability
+
+- Increased hosted-beta limits for signed geotechCLI traffic while keeping stricter anonymous caps in place, so installed CLI users get more daily text, vision, and agent headroom during strong beta.
+- Added upstream retry/backoff for transient hosted model overload responses and longer upstream timeout budgets for text, vision, and agent calls in the beta proxy.
+- Raised the hosted-beta adapter minimum timeout budget in the CLI and translated raw aborts into clearer timeout messages.
+
+### Verification
+
+- Added focused hosted-beta regression coverage for client-mode limits, transient upstream retry behavior, and clearer timeout handling.
+- Kept core tests, CLI tests, web build, and release consistency checks green before shipping the patch release.
+
 ## [0.4.2] - 2026-04-14
 
 ### Engineering Visualization

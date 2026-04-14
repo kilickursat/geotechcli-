@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   checkHostedBetaDailyLimit,
+  getDailyLimitForClient,
+  getHostedBetaRequestLimit,
   inferHostedBetaCallType,
   incrementHostedBetaUsage,
   validateAnonymousHostedBetaMessages,
@@ -17,6 +19,16 @@ afterEach(() => {
 });
 
 describe('hosted beta controls', () => {
+  it('gives geotechcli clients more room than anonymous callers', async () => {
+    expect(getHostedBetaRequestLimit('geotechcli')).toBeGreaterThan(getHostedBetaRequestLimit('anonymous'));
+    expect(getDailyLimitForClient('text', 'geotechcli')).toBeGreaterThan(
+      getDailyLimitForClient('text', 'anonymous'),
+    );
+    expect(getDailyLimitForClient('agent', 'geotechcli')).toBeGreaterThan(
+      getDailyLimitForClient('agent', 'anonymous'),
+    );
+  });
+
   it('keys daily limits by ip and call type', async () => {
     const ip = '203.0.113.9';
 
@@ -33,6 +45,25 @@ describe('hosted beta controls', () => {
     const visionCheck = await checkHostedBetaDailyLimit({ ip, callType: 'vision' });
     expect(visionCheck.used).toBe(0);
     expect(visionCheck.fingerprint).not.toBe(textCheck.fingerprint);
+  });
+
+  it('separates daily usage buckets by client mode', async () => {
+    const ip = '198.51.100.4';
+    const anonymousCheck = await checkHostedBetaDailyLimit({
+      ip,
+      callType: 'text',
+      clientMode: 'anonymous',
+    });
+    await incrementHostedBetaUsage(anonymousCheck.fingerprint, 'text');
+
+    const cliCheck = await checkHostedBetaDailyLimit({
+      ip,
+      callType: 'text',
+      clientMode: 'geotechcli',
+    });
+
+    expect(cliCheck.used).toBe(0);
+    expect(cliCheck.limit).toBeGreaterThan(anonymousCheck.limit);
   });
 
   it('accepts CLI-style system prompts but rejects anonymous assistant turns', () => {
@@ -117,5 +148,72 @@ describe('hosted beta controls', () => {
     expect(postRequestId).toMatch(/^gtbeta-/);
     expect(postBody.request_id).toBe(postRequestId);
     expect(postBody.error?.code).toBe('anonymous_request_rejected');
+  });
+
+  it('retries transient upstream 429 responses for geotechcli clients', async () => {
+    vi.stubEnv('ZHIPU_API_KEY', 'test-key');
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            error: {
+              message: 'Rate limit reached for requests',
+            },
+          }),
+          {
+            status: 429,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            model: 'glm-4.7-flash',
+            choices: [
+              {
+                message: {
+                  content: 'USCS: CH',
+                },
+              },
+            ],
+            usage: {
+              prompt_tokens: 10,
+              completion_tokens: 4,
+              total_tokens: 14,
+            },
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      );
+    global.fetch = fetchMock as typeof fetch;
+
+    const route = await import('../app/api/proxy/route.js');
+    const request = new NextRequest('https://example.com/api/proxy', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-geotech-client': 'geotechcli',
+        'x-geotech-client-version': '0.4.2',
+      },
+      body: JSON.stringify({
+        messages: [{ role: 'user', content: 'Classify soft clay with high plasticity.' }],
+        model: 'glm-4.7-flash',
+      }),
+    });
+
+    const response = await route.POST(request);
+    const body = (await response.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(body.choices?.[0]?.message?.content).toBe('USCS: CH');
   });
 });

@@ -7,11 +7,27 @@ import { NextResponse } from 'next/server';
 
 export const STRONG_BETA_MODE = true;
 
-export const HOSTED_BETA_LIMITS = {
+const ANONYMOUS_HOSTED_BETA_LIMITS = {
   requestsPerMinutePerIp: 10,
   textPerDay: 25,
   visionPerDay: 5,
   agentPerDay: 3,
+} as const;
+
+const GEOTECHCLI_HOSTED_BETA_LIMITS = {
+  requestsPerMinutePerIp: 20,
+  textPerDay: 60,
+  visionPerDay: 12,
+  agentPerDay: 8,
+} as const;
+
+export const HOSTED_BETA_LIMITS = {
+  requestsPerMinutePerIp: GEOTECHCLI_HOSTED_BETA_LIMITS.requestsPerMinutePerIp,
+  textPerDay: GEOTECHCLI_HOSTED_BETA_LIMITS.textPerDay,
+  visionPerDay: GEOTECHCLI_HOSTED_BETA_LIMITS.visionPerDay,
+  agentPerDay: GEOTECHCLI_HOSTED_BETA_LIMITS.agentPerDay,
+  anonymous: ANONYMOUS_HOSTED_BETA_LIMITS,
+  geotechcli: GEOTECHCLI_HOSTED_BETA_LIMITS,
 } as const;
 
 export type HostedBetaCallType = 'text' | 'vision' | 'agent';
@@ -244,10 +260,24 @@ export function inferHostedBetaCallType(
   return 'text';
 }
 
-function getDailyLimit(callType: HostedBetaCallType): number {
-  if (callType === 'vision') return HOSTED_BETA_LIMITS.visionPerDay;
-  if (callType === 'agent') return HOSTED_BETA_LIMITS.agentPerDay;
-  return HOSTED_BETA_LIMITS.textPerDay;
+function getLimitProfile(clientMode: HostedBetaClientMode) {
+  return clientMode === 'geotechcli'
+    ? GEOTECHCLI_HOSTED_BETA_LIMITS
+    : ANONYMOUS_HOSTED_BETA_LIMITS;
+}
+
+export function getHostedBetaRequestLimit(clientMode: HostedBetaClientMode): number {
+  return getLimitProfile(clientMode).requestsPerMinutePerIp;
+}
+
+export function getDailyLimitForClient(
+  callType: HostedBetaCallType,
+  clientMode: HostedBetaClientMode,
+): number {
+  const profile = getLimitProfile(clientMode);
+  if (callType === 'vision') return profile.visionPerDay;
+  if (callType === 'agent') return profile.agentPerDay;
+  return profile.textPerDay;
 }
 
 function getRedisConfig() {
@@ -365,9 +395,11 @@ export async function incrementHostedBetaUsage(
 export async function checkHostedBetaDailyLimit(params: {
   ip: string;
   callType: HostedBetaCallType;
+  clientMode?: HostedBetaClientMode;
 }) {
-  const fingerprint = await hashIdentifier([params.ip, params.callType].join('|'));
-  const limit = getDailyLimit(params.callType);
+  const clientMode = params.clientMode ?? 'geotechcli';
+  const fingerprint = await hashIdentifier([params.ip, clientMode, params.callType].join('|'));
+  const limit = getDailyLimitForClient(params.callType, clientMode);
   const current = await getDailyUsageCount(fingerprint, params.callType);
 
   return {
@@ -381,8 +413,8 @@ export async function checkHostedBetaDailyLimit(params: {
 
 export function isIPRateLimitedMemory(
   ip: string,
-  maxRequests = HOSTED_BETA_LIMITS.requestsPerMinutePerIp,
-  windowMs = 60_000,
+  maxRequests: number = HOSTED_BETA_LIMITS.requestsPerMinutePerIp,
+  windowMs: number = 60_000,
 ): boolean {
   const store = getInMemoryStore();
   const now = Date.now();

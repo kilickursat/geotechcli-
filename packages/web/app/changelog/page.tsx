@@ -39,8 +39,13 @@ const releases = [
   {
     version: GEOTECHCLI_VERSION,
     date: '2026-04-14',
-    tag: '0.4.2 Release',
+    tag: '0.4.3 Release',
     changes: [
+      { type: 'feat', text: 'Raised hosted-beta limits for installed geotechCLI clients while keeping stricter anonymous caps in place for the public beta proxy' },
+      { type: 'fix', text: 'Added retry and backoff handling for transient upstream Z.AI 429 and gateway overload responses so simple AI commands recover more gracefully' },
+      { type: 'fix', text: 'Extended hosted-beta timeout budgets for text, vision, and agent requests and translated raw aborts into clearer timeout messages in the CLI' },
+      { type: 'fix', text: 'Separated daily usage fingerprints by client mode so geotechCLI traffic no longer burns through the same low anonymous bucket' },
+      { type: 'fix', text: 'Added focused hosted-beta regression tests covering client-mode limits, upstream retry behavior, and timeout handling before shipping the patch release' },
       { type: 'feat', text: 'Expanded terminal plotting so classify uscs, liquefaction, and pile now support direct engineering ASCII charts through the shared --plot flag' },
       { type: 'feat', text: 'Added geotech viz engineering presets for Mohr circle and Atterberg plasticity charts with field-friendly CLI inputs' },
       { type: 'feat', text: 'Added geotech viz file templates for compaction curves, grain-size distribution curves, and CPT-style plotting to speed up daily engineering review' },

@@ -88,4 +88,63 @@ describe('HostedBetaAdapter', () => {
       ),
     ).rejects.toThrow('Retry in about 42s');
   });
+
+  it('uses a longer minimum timeout budget for agent requests', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          model: 'glm-4.7-flash',
+          choices: [{ message: { content: 'OK' } }],
+          usage: {
+            prompt_tokens: 10,
+            completion_tokens: 4,
+            total_tokens: 14,
+          },
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
+    global.fetch = fetchMock as typeof fetch;
+
+    const adapter = new HostedBetaAdapter('https://beta.geotechcli.com/api/proxy');
+    await adapter.complete(
+      {
+        messages: [
+          { role: 'system', content: 'Use tools.' },
+          { role: 'user', content: 'Check this tunnel.' },
+          { role: 'assistant', content: 'Working...' },
+        ],
+      },
+      {
+        provider: 'hosted-beta',
+        apiKey: '',
+        timeout: 1_000,
+      },
+    );
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit & { signal?: AbortSignal }];
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('translates adapter timeout aborts into a clear message', async () => {
+    global.fetch = vi.fn().mockRejectedValue(new Error('The operation was aborted due to timeout')) as typeof fetch;
+
+    const adapter = new HostedBetaAdapter('https://beta.geotechcli.com/api/proxy');
+
+    await expect(
+      adapter.complete(
+        {
+          messages: [{ role: 'user', content: 'Hello' }],
+        },
+        {
+          provider: 'hosted-beta',
+          apiKey: '',
+          timeout: 1_000,
+        },
+      ),
+    ).rejects.toThrow('Hosted beta request timed out after 75s');
+  });
 });

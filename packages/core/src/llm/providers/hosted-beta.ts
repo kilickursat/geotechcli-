@@ -90,6 +90,12 @@ function formatHostedBetaError(status: number, data: HostedBetaResponse, fallbac
   return detail ? `${message} ${detail}`.trim() : message;
 }
 
+function getMinimumHostedBetaTimeoutMs(callType: HostedBetaCallType): number {
+  if (callType === 'agent') return 120_000;
+  if (callType === 'vision') return 90_000;
+  return 75_000;
+}
+
 export class HostedBetaAdapter implements ProviderAdapter {
   readonly name = 'hosted-beta' as const;
   readonly defaultModel = DEFAULT_LLM_MODEL;
@@ -109,6 +115,7 @@ export class HostedBetaAdapter implements ProviderAdapter {
     config: LLMConfig,
   ): Promise<CompletionResponse> {
     const callType = inferCallType(request);
+    const timeoutMs = Math.max(config.timeout ?? 60_000, getMinimumHostedBetaTimeoutMs(callType));
     const effectiveBaseUrl =
       config.baseUrl?.trim() ||
       process.env.GEOTECHCLI_PROXY_URL?.trim() ||
@@ -127,17 +134,25 @@ export class HostedBetaAdapter implements ProviderAdapter {
     };
 
     const start = Date.now();
-    const res = await fetch(effectiveBaseUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Geotech-Client': 'geotechcli',
-        'X-Geotech-Client-Version': GEOTECHCLI_VERSION,
-        'X-Geotech-Call-Type': callType,
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(config.timeout ?? 60_000),
-    });
+    let res: Response;
+    try {
+      res = await fetch(effectiveBaseUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Geotech-Client': 'geotechcli',
+          'X-Geotech-Client-Version': GEOTECHCLI_VERSION,
+          'X-Geotech-Call-Type': callType,
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (err) {
+      if (err instanceof Error && /abort|timeout/i.test(err.message)) {
+        throw new Error(`Hosted beta request timed out after ${Math.round(timeoutMs / 1000)}s.`);
+      }
+      throw err;
+    }
 
     let data: HostedBetaResponse = {};
     let fallbackError = 'Hosted beta AI request failed.';
