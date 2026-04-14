@@ -3,7 +3,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import ExcelJS from 'exceljs';
 import { afterEach, describe, expect, it } from 'vitest';
-import { buildChartsFromJson, loadVisualizationSource } from '../src/util/viz.js';
+import {
+  buildAtterbergChart,
+  buildChartsFromJson,
+  buildMohrCircleChart,
+  loadVisualizationSource,
+} from '../src/util/viz.js';
 
 describe('visualization utilities', () => {
   const tempDirs: string[] = [];
@@ -68,5 +73,76 @@ describe('visualization utilities', () => {
     const source = await loadVisualizationSource(workbookPath);
     expect(source.sourceType).toBe('xlsx');
     expect(source.charts.some((chart) => chart.title.includes('pile_profile sheet'))).toBe(true);
+  });
+
+  it('builds a Mohr circle preset chart', () => {
+    const chart = buildMohrCircleChart({
+      sigma1: 240,
+      sigma3: 80,
+      cohesion: 10,
+      frictionAngle: 28,
+    });
+
+    expect(chart.kind).toBe('xy');
+    expect(chart.xySeries?.some((series) => series.label === 'Mohr circle')).toBe(true);
+    expect(chart.note).toContain('radius');
+  });
+
+  it('builds an Atterberg chart and infers PI from PL', () => {
+    const chart = buildAtterbergChart({
+      liquidLimit: 55,
+      plasticLimit: 25,
+    });
+
+    expect(chart.kind).toBe('xy');
+    expect(chart.note).toContain('CH region');
+    expect(chart.xySeries?.some((series) => series.label === 'Sample point')).toBe(true);
+  });
+
+  it('loads compaction template charts from CSV data', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-viz-compaction-'));
+    tempDirs.push(dir);
+
+    const csvPath = join(dir, 'compaction.csv');
+    await writeFile(
+      csvPath,
+      [
+        'moisture_content,dry_density_kn_m3',
+        '8,16.8',
+        '10,17.7',
+        '12,18.5',
+        '14,19.1',
+        '16,19.4',
+      ].join('\n'),
+      'utf-8',
+    );
+
+    const source = await loadVisualizationSource(csvPath, { template: 'compaction' });
+    expect(source.charts[0]?.kind).toBe('xy');
+    expect(source.charts[0]?.title).toContain('compaction curve');
+  });
+
+  it('loads gradation template charts from CSV data', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-viz-gradation-'));
+    tempDirs.push(dir);
+
+    const csvPath = join(dir, 'gradation.csv');
+    await writeFile(
+      csvPath,
+      [
+        'particle_size_mm,percent_passing',
+        '0.075,8',
+        '0.15,14',
+        '0.3,27',
+        '0.6,46',
+        '1.18,63',
+        '2.36,78',
+      ].join('\n'),
+      'utf-8',
+    );
+
+    const source = await loadVisualizationSource(csvPath, { template: 'gradation' });
+    expect(source.charts[0]?.kind).toBe('xy');
+    expect(source.charts[0]?.xScale).toBe('log10');
   });
 });

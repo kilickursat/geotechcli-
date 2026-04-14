@@ -39,8 +39,12 @@ const releases = [
   {
     version: GEOTECHCLI_VERSION,
     date: '2026-04-14',
-    tag: '0.4.1 Release',
+    tag: '0.4.2 Release',
     changes: [
+      { type: 'feat', text: 'Expanded terminal plotting so classify uscs, liquefaction, and pile now support direct engineering ASCII charts through the shared --plot flag' },
+      { type: 'feat', text: 'Added geotech viz engineering presets for Mohr circle and Atterberg plasticity charts with field-friendly CLI inputs' },
+      { type: 'feat', text: 'Added geotech viz file templates for compaction curves, grain-size distribution curves, and CPT-style plotting to speed up daily engineering review' },
+      { type: 'feat', text: 'Committed new visualization showcase files for compaction, gradation, and CPT workflows and kept the docs in sync with the CLI surface' },
       { type: 'security', text: 'Closed agent sandbox escape paths, gated command execution more tightly, and hardened hosted-beta request handling for production-facing strong-beta use' },
       { type: 'fix', text: 'Corrected slope seismic regression behavior and locked the deterministic engineering suite back to a passing state' },
       { type: 'feat', text: 'Added additive case-file persistence, deterministic report assembly, conservative evidence records, and agent deliverable tools for report and export generation' },

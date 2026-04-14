@@ -77,12 +77,26 @@ Use `geotech viz` to explore saved analysis data directly in the terminal with A
 geotech viz samples/visualization/geotech-viz-showcase.csv
 geotech viz samples/visualization/geotech-viz-showcase.xlsx --list
 geotech viz result.json
+geotech viz --preset mohr-circle --sigma1 250 --sigma3 90 --cohesion 15 --phi 28
+geotech viz --preset atterberg --ll 55 --pl 25
+geotech viz samples/visualization/geotech-viz-compaction.csv --template compaction
+geotech viz samples/visualization/geotech-viz-gradation.csv --template gradation
 ```
 
 Showcase files are committed in:
 
 - `samples/visualization/geotech-viz-showcase.csv`
 - `samples/visualization/geotech-viz-showcase.xlsx`
+- `samples/visualization/geotech-viz-compaction.csv`
+- `samples/visualization/geotech-viz-gradation.csv`
+- `samples/visualization/geotech-viz-cpt.csv`
+
+Common daily-use chart shortcuts now include:
+
+- `geotech classify uscs --gravel 5 --sand 20 --fines 75 --ll 55 --pl 25 --plot`
+- `geotech liquefaction --pga 0.25 --magnitude 7.5 --demo --plot`
+- `geotech pile --diameter 0.8 --length 12 --su 45 --plot`
+- `geotech settlement trough --volume-loss 1.5 --depth 18 --diameter 6.5 --plot`
 
 ## Commands
 

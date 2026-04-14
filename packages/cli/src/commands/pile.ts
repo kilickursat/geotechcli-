@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { calculatePileCapacity } from '@geotechcli/core';
-import { heading, keyValue, renderJSON, renderTable, renderSteps, success } from '../ui/terminal.js';
+import { heading, keyValue, renderJSON, renderTable, renderSteps, renderXYPlot, success } from '../ui/terminal.js';
 import { addGlobalFlags, getGlobalFlags } from '../util/flags.js';
 import { readFileSync, writeFileSync } from 'node:fs';
 
@@ -77,6 +77,39 @@ export function registerPileCommand(program: Command): void {
             ['Depth (m)', 'Thick (m)', 'Soil', 'fs (kPa)', 'Qs (kN)'],
             result.shaftFrictionPerLayer.map((l) => [l.depth.toFixed(1), l.thickness.toFixed(1), l.soilType, l.unitShaftFriction, l.shaftResistance]),
           );
+        }
+
+        if (flags.plot && result.shaftFrictionPerLayer.length > 0) {
+          let cumulative = 0;
+          const orderedLayers = [...result.shaftFrictionPerLayer].sort((left, right) => left.depth - right.depth);
+          renderXYPlot([
+            {
+              label: 'Unit shaft friction',
+              points: orderedLayers.map((layer) => ({ x: layer.depth, y: layer.unitShaftFriction })),
+              style: 'line',
+              symbol: '*',
+            },
+            {
+              label: 'Shaft resistance',
+              points: orderedLayers.map((layer) => ({ x: layer.depth, y: layer.shaftResistance })),
+              style: 'line',
+              symbol: 'o',
+            },
+            {
+              label: 'Cumulative shaft resistance',
+              points: orderedLayers.map((layer) => {
+                cumulative += layer.shaftResistance;
+                return { x: layer.depth, y: cumulative };
+              }),
+              style: 'line',
+              symbol: '+',
+            },
+          ], {
+            height: 14,
+            title: 'Pile shaft resistance profile',
+            xLabel: 'Depth (m)',
+            yLabel: 'Value',
+          });
         }
 
         renderSteps(result.steps, flags.verbose);

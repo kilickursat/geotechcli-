@@ -47,7 +47,7 @@ const features = [
     ),
     colorClass: 'teal',
     name: 'Deterministic Engines',
-    desc: 'USCS, RMR89, Q-system, bearing capacity (4 methods), pile, slope, liquefaction, TBM, and retaining — validated calculation cores, no AI required.',
+    desc: 'USCS, RMR89, Q-system, bearing capacity (4 methods), pile, slope, liquefaction, TBM, retaining, and terminal engineering plots like Mohr circle, plasticity, compaction, and gradation.',
     tag: 'Live',
     tagColor: 'teal',
   },

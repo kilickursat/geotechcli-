@@ -1,5 +1,18 @@
 ﻿# Changelog
 
+## [0.4.2] - 2026-04-14
+
+### Engineering Visualization
+
+- Expanded terminal plotting beyond settlement so engineers can now render native ASCII plots directly from `classify uscs`, `liquefaction`, and `pile` using `--plot`.
+- Added preset engineering charts to `geotech viz`, including Mohr circle plotting and Atterberg plasticity chart plotting with common engineering inputs.
+- Added file templates to `geotech viz` for daily geotechnical chart workflows including compaction curves, grain-size distribution curves, and CPT-style depth plots.
+
+### Samples & Docs
+
+- Added committed visualization sample files for compaction, gradation, and CPT demos under `samples/visualization/`.
+- Updated CLI help, README, website docs, and website feature copy so the new plotting surface stays aligned across npm, GitHub, Cloudflare, and the live docs.
+
 ## [0.4.1] - 2026-04-14
 
 ### Release Alignment

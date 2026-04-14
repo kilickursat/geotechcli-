@@ -6,6 +6,7 @@ import {
   renderTable,
   renderSteps,
   renderJSON,
+  renderXYPlot,
   warn,
   success,
   error,
@@ -115,6 +116,35 @@ export function registerLiquefactionCommand(program: Command): void {
       );
 
       keyValue('Estimated settlement', `${result.estimatedSettlement} mm`);
+
+      if (flags.plot && result.layers.length > 0) {
+        const depthRows = [...result.layers].sort((left, right) => left.depth - right.depth);
+        renderXYPlot([
+          {
+            label: 'Factor of safety',
+            points: depthRows.map((layer) => ({ x: layer.depth, y: layer.factorOfSafety })),
+            style: 'line',
+            symbol: '*',
+          },
+          {
+            label: 'CSR',
+            points: depthRows.map((layer) => ({ x: layer.depth, y: layer.CSR })),
+            style: 'line',
+            symbol: 'o',
+          },
+          {
+            label: 'CRR',
+            points: depthRows.map((layer) => ({ x: layer.depth, y: layer.CRR })),
+            style: 'line',
+            symbol: '+',
+          },
+        ], {
+          height: 14,
+          title: 'Liquefaction depth profile',
+          xLabel: 'Depth (m)',
+          yLabel: 'Value',
+        });
+      }
 
       renderSteps(result.steps, flags.verbose);
 

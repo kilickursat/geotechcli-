@@ -127,6 +127,9 @@ geotech liquefaction --pga 0.3 --magnitude 7.0 --depth 5 --spt 12 --fines 15
 
 # Demo mode (built-in sample data)
 geotech liquefaction --pga 0.25 --magnitude 7.5 --demo
+
+# Render the depth profile directly in the terminal
+geotech liquefaction --pga 0.25 --magnitude 7.5 --demo --plot
 \`\`\``,
   },
   {
@@ -140,6 +143,9 @@ geotech classify rmr --ucs 85 --rqd 72 --spacing 0.4 --condition fair --gw dry
 
 # USCS (ASTM D2487)
 geotech classify uscs --gravel 12 --sand 58 --fines 30 --ll 42 --pi 18
+
+# Plot the sample on the plasticity chart
+geotech classify uscs --gravel 5 --sand 20 --fines 75 --ll 55 --pl 25 --plot
 
 # Q-system (Barton 1974)
 geotech classify q-system --rqd 80 --jn 6 --jr 1.5 --ja 2 --jw 0.66 --srf 1
@@ -231,7 +237,18 @@ geotech viz samples/visualization/geotech-viz-showcase.csv
 # Plot saved JSON analysis data
 geotech viz result.json
 
+# Common engineering presets
+geotech viz --preset mohr-circle --sigma1 250 --sigma3 90 --cohesion 15 --phi 28
+geotech viz --preset atterberg --ll 55 --pl 25
+
+# Common engineering file templates
+geotech viz samples/visualization/geotech-viz-compaction.csv --template compaction
+geotech viz samples/visualization/geotech-viz-gradation.csv --template gradation
+geotech viz samples/visualization/geotech-viz-cpt.csv --template cpt
+
 # Use command-level plotting where supported
+geotech classify uscs --gravel 5 --sand 20 --fines 75 --ll 55 --pl 25 --plot
+geotech liquefaction --pga 0.25 --magnitude 7.5 --demo --plot
 geotech settlement trough --volume-loss 1.5 --depth 18 --diameter 6.5 --plot
 \`\`\`
 

@@ -1,7 +1,8 @@
 import { Command } from 'commander';
 import { classifyRMR89, classifyUSCS, classifyQSystem } from '@geotechcli/core';
-import { heading, keyValue, renderSteps, renderJSON, success } from '../ui/terminal.js';
+import { heading, keyValue, renderSteps, renderJSON, renderXYPlot, success } from '../ui/terminal.js';
 import { addGlobalFlags, getGlobalFlags } from '../util/flags.js';
+import { buildAtterbergChart } from '../util/viz.js';
 import { writeFileSync } from 'node:fs';
 
 export function registerClassifyCommand(program: Command): void {
@@ -63,19 +64,25 @@ export function registerClassifyCommand(program: Command): void {
     .requiredOption('--sand <percent>', 'Sand fraction (%)', parseFloat)
     .requiredOption('--fines <percent>', 'Fines fraction (%)', parseFloat)
     .option('--ll <percent>', 'Liquid Limit (%)', parseFloat)
+    .option('--pl <percent>', 'Plastic Limit (%)', parseFloat)
     .option('--pi <percent>', 'Plasticity Index (%)', parseFloat)
     .option('--d10 <mm>', 'D10 particle size (mm)', parseFloat)
     .option('--d30 <mm>', 'D30 particle size (mm)', parseFloat)
     .option('--d60 <mm>', 'D60 particle size (mm)', parseFloat)
     .action((opts) => {
       const flags = getGlobalFlags(opts);
+      const plasticityIndex = opts.pi ?? (
+        opts.ll !== undefined && opts.pl !== undefined
+          ? opts.ll - opts.pl
+          : undefined
+      );
 
       const result = classifyUSCS({
         gravelPercent: opts.gravel,
         sandPercent: opts.sand,
         finesPercent: opts.fines,
         liquidLimit: opts.ll,
-        plasticityIndex: opts.pi,
+        plasticityIndex,
         d10: opts.d10,
         d30: opts.d30,
         d60: opts.d60,
@@ -87,8 +94,29 @@ export function registerClassifyCommand(program: Command): void {
       keyValue('Symbol', result.symbol);
       keyValue('Name', result.name);
       keyValue('Group', result.group);
+      if (opts.ll !== undefined) {
+        keyValue('Liquid limit', `${opts.ll}%`);
+      }
+      if (plasticityIndex !== undefined) {
+        keyValue('Plasticity index', `${plasticityIndex}%`);
+      }
 
       renderSteps(result.steps, flags.verbose);
+      if (flags.plot && opts.ll !== undefined && plasticityIndex !== undefined) {
+        const chart = buildAtterbergChart({
+          liquidLimit: opts.ll,
+          plasticityIndex,
+        });
+        renderXYPlot(chart.xySeries ?? [], {
+          height: 14,
+          title: chart.title,
+          xLabel: chart.xLabel,
+          yLabel: chart.yLabel,
+          xScale: chart.xScale,
+          xDomain: chart.xDomain,
+          yDomain: chart.yDomain,
+        });
+      }
       console.log('');
     });
 

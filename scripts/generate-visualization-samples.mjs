@@ -38,6 +38,36 @@ const pileProfile = [
   { depth_m: 12, unit_shaft_friction_kpa: 64, shaft_resistance_kn: 147, cumulative_shaft_kn: 670 },
 ];
 
+const compactionCurve = [
+  { moisture_content: 8, dry_density_kn_m3: 16.8 },
+  { moisture_content: 10, dry_density_kn_m3: 17.7 },
+  { moisture_content: 12, dry_density_kn_m3: 18.5 },
+  { moisture_content: 14, dry_density_kn_m3: 19.1 },
+  { moisture_content: 16, dry_density_kn_m3: 19.4 },
+  { moisture_content: 18, dry_density_kn_m3: 19.2 },
+  { moisture_content: 20, dry_density_kn_m3: 18.8 },
+];
+
+const gradationCurve = [
+  { particle_size_mm: 0.075, percent_passing: 8 },
+  { particle_size_mm: 0.15, percent_passing: 14 },
+  { particle_size_mm: 0.3, percent_passing: 27 },
+  { particle_size_mm: 0.6, percent_passing: 46 },
+  { particle_size_mm: 1.18, percent_passing: 63 },
+  { particle_size_mm: 2.36, percent_passing: 78 },
+  { particle_size_mm: 4.75, percent_passing: 92 },
+  { particle_size_mm: 9.5, percent_passing: 100 },
+];
+
+const cptProfile = [
+  { depth_m: 1, qc_mpa: 2.8, fs_kpa: 52, friction_ratio: 1.86 },
+  { depth_m: 2, qc_mpa: 4.3, fs_kpa: 58, friction_ratio: 1.35 },
+  { depth_m: 3, qc_mpa: 6.8, fs_kpa: 64, friction_ratio: 0.94 },
+  { depth_m: 4, qc_mpa: 8.9, fs_kpa: 71, friction_ratio: 0.8 },
+  { depth_m: 5, qc_mpa: 10.7, fs_kpa: 79, friction_ratio: 0.74 },
+  { depth_m: 6, qc_mpa: 12.9, fs_kpa: 86, friction_ratio: 0.67 },
+];
+
 function rowsToCsv(rows) {
   const headers = Object.keys(rows[0]);
   const lines = [
@@ -48,6 +78,9 @@ function rowsToCsv(rows) {
 }
 
 writeFileSync(resolve(outputDir, 'geotech-viz-showcase.csv'), rowsToCsv(settlementProfile), 'utf-8');
+writeFileSync(resolve(outputDir, 'geotech-viz-compaction.csv'), rowsToCsv(compactionCurve), 'utf-8');
+writeFileSync(resolve(outputDir, 'geotech-viz-gradation.csv'), rowsToCsv(gradationCurve), 'utf-8');
+writeFileSync(resolve(outputDir, 'geotech-viz-cpt.csv'), rowsToCsv(cptProfile), 'utf-8');
 
 const workbook = new ExcelJS.Workbook();
 workbook.creator = 'geotechCLI';
@@ -69,6 +102,9 @@ function addSheet(name, rows) {
 addSheet('settlement_profile', settlementProfile);
 addSheet('liquefaction_depth', liquefactionDepth);
 addSheet('pile_capacity_profile', pileProfile);
+addSheet('compaction_curve', compactionCurve);
+addSheet('gradation_curve', gradationCurve);
+addSheet('cpt_profile', cptProfile);
 
 await workbook.xlsx.writeFile(resolve(outputDir, 'geotech-viz-showcase.xlsx'));
 

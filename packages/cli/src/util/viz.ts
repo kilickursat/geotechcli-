@@ -1,20 +1,27 @@
 import { readFileSync } from 'node:fs';
 import { basename, extname } from 'node:path';
 import ExcelJS from 'exceljs';
+import type { XYSeriesSpec } from '../ui/terminal.js';
 
 export interface ChartSpec {
   id: string;
   title: string;
   xLabel: string;
   yLabel: string;
-  xValues: number[];
-  series: number[][];
-  labels: string[];
+  kind: 'series' | 'xy';
+  xValues?: number[];
+  series?: number[][];
+  labels?: string[];
+  xySeries?: XYSeriesSpec[];
+  xScale?: 'linear' | 'log10';
+  invertY?: boolean;
+  xDomain?: [number, number];
+  yDomain?: [number, number];
   note?: string;
 }
 
 export interface VisualizationSource {
-  sourceType: 'json' | 'csv' | 'xlsx';
+  sourceType: 'json' | 'csv' | 'xlsx' | 'preset';
   sourceName: string;
   charts: ChartSpec[];
 }
@@ -26,7 +33,21 @@ interface TableChartOptions {
   yColumns?: string[];
 }
 
+export interface MohrCircleOptions {
+  sigma1: number;
+  sigma3: number;
+  cohesion?: number;
+  frictionAngle?: number;
+}
+
+export interface AtterbergChartOptions {
+  liquidLimit: number;
+  plasticityIndex?: number;
+  plasticLimit?: number;
+}
+
 type TableRow = Record<string, string | number | boolean | null>;
+type TableTemplate = 'compaction' | 'gradation' | 'cpt';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -173,6 +194,50 @@ function inferNumericColumns(rows: TableRow[]): string[] {
   });
 }
 
+function normalizeHeader(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+function findColumn(headers: string[], aliases: string[]): string | undefined {
+  const aliasSet = new Set(aliases.map((alias) => normalizeHeader(alias)));
+  return headers.find((header) => aliasSet.has(normalizeHeader(header)));
+}
+
+function expandDomain(min: number, max: number): [number, number] {
+  if (min === max) {
+    const delta = Math.abs(min) > 1 ? Math.abs(min) * 0.1 : 1;
+    return [min - delta, max + delta];
+  }
+  return [min, max];
+}
+
+function buildXYChart(options: {
+  id: string;
+  title: string;
+  xLabel: string;
+  yLabel: string;
+  series: XYSeriesSpec[];
+  xScale?: 'linear' | 'log10';
+  invertY?: boolean;
+  xDomain?: [number, number];
+  yDomain?: [number, number];
+  note?: string;
+}): ChartSpec {
+  return {
+    id: options.id,
+    title: options.title,
+    xLabel: options.xLabel,
+    yLabel: options.yLabel,
+    kind: 'xy',
+    xySeries: options.series,
+    xScale: options.xScale ?? 'linear',
+    invertY: options.invertY,
+    xDomain: options.xDomain,
+    yDomain: options.yDomain,
+    note: options.note,
+  };
+}
+
 export function buildChartsFromTable(rows: TableRow[], options: TableChartOptions): ChartSpec[] {
   if (rows.length === 0) {
     return [];
@@ -187,9 +252,9 @@ export function buildChartsFromTable(rows: TableRow[], options: TableChartOption
     ? options.xColumn
     : numericColumns[0];
 
-  const yColumns = (options.yColumns?.length
+  const yColumns = options.yColumns?.length
     ? options.yColumns.filter((column) => numericColumns.includes(column) && column !== xColumn)
-    : numericColumns.filter((column) => column !== xColumn));
+    : numericColumns.filter((column) => column !== xColumn);
 
   if (yColumns.length === 0) {
     return [];
@@ -197,19 +262,13 @@ export function buildChartsFromTable(rows: TableRow[], options: TableChartOption
 
   const normalizedRows = rows
     .map((row, index) => {
-      const xValue = xColumn ? toFiniteNumber(row[xColumn]) : index + 1;
-      if (xValue === null) {
-        return null;
-      }
-
-      const mapped: TableRow = { __rowIndex: index + 1 };
+      const xValue = toFiniteNumber(row[xColumn]) ?? index + 1;
+      const mapped: TableRow = { __rowIndex: index + 1, __x: xValue };
       for (const key of Object.keys(row)) {
         mapped[key] = row[key];
       }
-      mapped.__x = xValue;
       return mapped;
     })
-    .filter((row): row is TableRow => row !== null)
     .sort((left, right) => Number(left.__x) - Number(right.__x));
 
   const xValues = normalizedRows.map((row) => Number(row.__x));
@@ -225,6 +284,7 @@ export function buildChartsFromTable(rows: TableRow[], options: TableChartOption
       title: `${titlePrefix}: ${yColumns.slice(0, 4).map(humanizeKey).join(', ')} vs ${humanizeKey(xColumn)}`,
       xLabel: humanizeKey(xColumn),
       yLabel: 'Value',
+      kind: 'series',
       xValues,
       series: combinedSeries,
       labels: yColumns.slice(0, 4).map(humanizeKey),
@@ -233,20 +293,279 @@ export function buildChartsFromTable(rows: TableRow[], options: TableChartOption
   }
 
   for (const column of yColumns) {
-    const series = normalizedRows.map((row) => toFiniteNumber(row[column]) ?? 0);
     charts.push({
       id: slugify(`${options.sourceName}-${xColumn}-${column}`),
       title: `${titlePrefix}: ${humanizeKey(column)} vs ${humanizeKey(xColumn)}`,
       xLabel: humanizeKey(xColumn),
       yLabel: humanizeKey(column),
+      kind: 'series',
       xValues,
-      series: [series],
+      series: [normalizedRows.map((row) => toFiniteNumber(row[column]) ?? 0)],
       labels: [humanizeKey(column)],
       note: `Samples: ${normalizedRows.length}`,
     });
   }
 
   return charts;
+}
+
+function buildCompactionChart(rows: TableRow[], sourceName: string): ChartSpec[] {
+  if (rows.length === 0) {
+    return [];
+  }
+
+  const headers = Object.keys(rows[0]);
+  const moistureColumn = findColumn(headers, [
+    'moisture_content',
+    'moisture_percent',
+    'water_content',
+    'water_content_percent',
+    'w',
+    'wc',
+  ]);
+  const densityColumn = findColumn(headers, [
+    'dry_density',
+    'dry_density_g_cm3',
+    'dry_density_kn_m3',
+    'dry_unit_weight',
+    'gamma_d',
+    'gd',
+  ]);
+
+  if (!moistureColumn || !densityColumn) {
+    return [];
+  }
+
+  const points = rows
+    .map((row) => ({
+      x: toFiniteNumber(row[moistureColumn]) ?? Number.NaN,
+      y: toFiniteNumber(row[densityColumn]) ?? Number.NaN,
+    }))
+    .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
+    .sort((left, right) => left.x - right.x);
+
+  if (points.length === 0) {
+    return [];
+  }
+
+  const optimumPoint = points.reduce((best, point) => (point.y > best.y ? point : best), points[0]);
+  return [
+    buildXYChart({
+      id: slugify(`${sourceName}-compaction-curve`),
+      title: `${sourceName}: Moisture-density compaction curve`,
+      xLabel: 'Moisture content (%)',
+      yLabel: humanizeKey(densityColumn),
+      series: [
+        { label: 'Compaction curve', points, style: 'line', symbol: '*' },
+        { label: 'Optimum point', points: [optimumPoint], style: 'scatter', symbol: 'o' },
+      ],
+      note: `Peak dry density ${optimumPoint.y.toFixed(2)} at moisture content ${optimumPoint.x.toFixed(2)}%`,
+    }),
+  ];
+}
+
+function buildGradationChart(rows: TableRow[], sourceName: string): ChartSpec[] {
+  if (rows.length === 0) {
+    return [];
+  }
+
+  const headers = Object.keys(rows[0]);
+  const sizeColumn = findColumn(headers, [
+    'particle_size_mm',
+    'grain_size_mm',
+    'diameter_mm',
+    'sieve_mm',
+    'opening_mm',
+    'size_mm',
+  ]);
+  const passingColumn = findColumn(headers, [
+    'percent_passing',
+    'passing_percent',
+    'percent_finer',
+    'finer_percent',
+    'passing',
+    'finer',
+  ]);
+
+  if (!sizeColumn || !passingColumn) {
+    return [];
+  }
+
+  const points = rows
+    .map((row) => ({
+      x: toFiniteNumber(row[sizeColumn]) ?? Number.NaN,
+      y: toFiniteNumber(row[passingColumn]) ?? Number.NaN,
+    }))
+    .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y) && point.x > 0)
+    .sort((left, right) => left.x - right.x);
+
+  if (points.length === 0) {
+    return [];
+  }
+
+  const [xMin, xMax] = expandDomain(Math.min(...points.map((point) => point.x)), Math.max(...points.map((point) => point.x)));
+
+  return [
+    buildXYChart({
+      id: slugify(`${sourceName}-gradation-curve`),
+      title: `${sourceName}: Grain-size distribution curve`,
+      xLabel: 'Particle size (mm)',
+      yLabel: 'Percent passing (%)',
+      xScale: 'log10',
+      xDomain: [xMin, xMax],
+      yDomain: [0, 100],
+      series: [{ label: 'Percent passing', points, style: 'line', symbol: '*' }],
+      note: 'Semilog gradation plot with logarithmic particle-size axis',
+    }),
+  ];
+}
+
+function buildCptCharts(rows: TableRow[], sourceName: string): ChartSpec[] {
+  if (rows.length === 0) {
+    return [];
+  }
+
+  const headers = Object.keys(rows[0]);
+  const depthColumn = findColumn(headers, ['depth', 'depth_m', 'z', 'elevation_depth']);
+  if (!depthColumn) {
+    return [];
+  }
+
+  const yColumns = [
+    findColumn(headers, ['qc', 'qc_mpa', 'tip_resistance', 'cone_resistance']),
+    findColumn(headers, ['fs', 'fs_kpa', 'friction_sleeve', 'sleeve_friction']),
+    findColumn(headers, ['rf', 'friction_ratio', 'rf_percent']),
+    findColumn(headers, ['u2', 'pore_pressure', 'pore_pressure_kpa']),
+    findColumn(headers, ['ic', 'soil_behavior_index']),
+  ].filter((value): value is string => Boolean(value));
+
+  if (yColumns.length === 0) {
+    return [];
+  }
+
+  return buildChartsFromTable(rows, {
+    sourceName: `${sourceName}-cpt`,
+    titlePrefix: 'CPT depth plots',
+    xColumn: depthColumn,
+    yColumns,
+  });
+}
+
+function buildChartsFromTemplate(rows: TableRow[], template: TableTemplate, sourceName: string): ChartSpec[] {
+  switch (template) {
+    case 'compaction':
+      return buildCompactionChart(rows, sourceName);
+    case 'gradation':
+      return buildGradationChart(rows, sourceName);
+    case 'cpt':
+      return buildCptCharts(rows, sourceName);
+    default:
+      return [];
+  }
+}
+
+function classifyPlasticityPoint(liquidLimit: number, plasticityIndex: number): string {
+  const aLine = 0.73 * (liquidLimit - 20);
+  if (liquidLimit < 50) {
+    if (plasticityIndex > aLine && plasticityIndex > 7) return 'CL region';
+    if (plasticityIndex < 4 || plasticityIndex < aLine) return 'ML region';
+    return 'CL-ML border';
+  }
+  return plasticityIndex > aLine ? 'CH region' : 'MH region';
+}
+
+export function buildAtterbergChart(options: AtterbergChartOptions): ChartSpec {
+  const liquidLimit = options.liquidLimit;
+  const plasticityIndex = options.plasticityIndex ?? (
+    options.plasticLimit !== undefined ? liquidLimit - options.plasticLimit : undefined
+  );
+
+  if (!Number.isFinite(liquidLimit)) {
+    throw new Error('Atterberg chart requires --ll / liquid limit.');
+  }
+  if (!Number.isFinite(plasticityIndex)) {
+    throw new Error('Atterberg chart requires either --pi or both --ll and --pl.');
+  }
+
+  const pi = Number(plasticityIndex);
+  const maxX = Math.max(100, liquidLimit + 10);
+  const maxY = Math.max(60, pi + 10);
+  const aLine = Array.from({ length: Math.max(2, Math.ceil(maxX - 20)) }, (_, index) => {
+    const ll = 20 + index;
+    return { x: ll, y: 0.73 * (ll - 20) };
+  });
+  const uLine = Array.from({ length: Math.max(2, Math.ceil(maxX - 8)) }, (_, index) => {
+    const ll = 8 + index;
+    return { x: ll, y: 0.9 * (ll - 8) };
+  });
+
+  return buildXYChart({
+    id: slugify(`atterberg-${liquidLimit}-${pi}`),
+    title: 'Atterberg plasticity chart',
+    xLabel: 'Liquid limit (%)',
+    yLabel: 'Plasticity index (%)',
+    xDomain: [0, maxX],
+    yDomain: [0, maxY],
+    series: [
+      { label: 'A-line', points: aLine, style: 'line', symbol: '*' },
+      { label: 'U-line', points: uLine, style: 'line', symbol: '+' },
+      { label: 'LL = 50', points: [{ x: 50, y: 0 }, { x: 50, y: maxY }], style: 'line', symbol: '|' },
+      { label: 'Sample point', points: [{ x: liquidLimit, y: pi }], style: 'scatter', symbol: 'o' },
+    ],
+    note: `${classifyPlasticityPoint(liquidLimit, pi)} | A-line PI = 0.73(LL - 20), U-line PI = 0.9(LL - 8)`,
+  });
+}
+
+export function buildMohrCircleChart(options: MohrCircleOptions): ChartSpec {
+  if (!Number.isFinite(options.sigma1) || !Number.isFinite(options.sigma3)) {
+    throw new Error('Mohr circle requires both --sigma1 and --sigma3.');
+  }
+
+  const sigma1 = Math.max(options.sigma1, options.sigma3);
+  const sigma3 = Math.min(options.sigma1, options.sigma3);
+  const center = (sigma1 + sigma3) / 2;
+  const radius = (sigma1 - sigma3) / 2;
+  const thetaSteps = 72;
+  const circle = Array.from({ length: thetaSteps + 1 }, (_, index) => {
+    const theta = (index / thetaSteps) * Math.PI * 2;
+    return {
+      x: center + radius * Math.cos(theta),
+      y: radius * Math.sin(theta),
+    };
+  });
+
+  const series: XYSeriesSpec[] = [
+    { label: 'Mohr circle', points: circle, style: 'line', symbol: '*' },
+    { label: 'Principal stresses', points: [{ x: sigma3, y: 0 }, { x: sigma1, y: 0 }], style: 'scatter', symbol: 'o' },
+    { label: 'Max shear', points: [{ x: center, y: radius }, { x: center, y: -radius }], style: 'scatter', symbol: 'x' },
+  ];
+
+  let maxEnvelope = radius;
+  if (Number.isFinite(options.cohesion) || Number.isFinite(options.frictionAngle)) {
+    const cohesion = options.cohesion ?? 0;
+    const frictionAngle = (options.frictionAngle ?? 0) * Math.PI / 180;
+    const maxX = Math.max(sigma1 * 1.1, sigma3 + radius * 2);
+    const envelope = Array.from({ length: 30 }, (_, index) => {
+      const x = (index / 29) * maxX;
+      return { x, y: cohesion + x * Math.tan(frictionAngle) };
+    });
+    maxEnvelope = Math.max(maxEnvelope, ...envelope.map((point) => point.y));
+    series.push({ label: 'Failure envelope', points: envelope, style: 'line', symbol: '+' });
+  }
+
+  const [xMin, xMax] = expandDomain(Math.min(0, sigma3 - radius * 0.2), Math.max(sigma1 + radius * 0.2, sigma1 * 1.1));
+  const yLimit = Math.max(radius, maxEnvelope) * 1.15 || 1;
+
+  return buildXYChart({
+    id: slugify(`mohr-circle-${sigma1}-${sigma3}`),
+    title: 'Mohr circle',
+    xLabel: 'Normal stress',
+    yLabel: 'Shear stress',
+    xDomain: [xMin, xMax],
+    yDomain: [-yLimit, yLimit],
+    series,
+    note: `Center = ${center.toFixed(2)}, radius = ${radius.toFixed(2)}, tau_max = ${radius.toFixed(2)}`,
+  });
 }
 
 export function buildChartsFromJson(data: unknown, sourceName: string): ChartSpec[] {
@@ -356,13 +675,26 @@ export function buildChartsFromJson(data: unknown, sourceName: string): ChartSpe
 
 export async function loadVisualizationSource(
   filePath: string,
-  options?: { sheetName?: string; xColumn?: string; yColumns?: string[] },
+  options?: { sheetName?: string; xColumn?: string; yColumns?: string[]; template?: TableTemplate },
 ): Promise<VisualizationSource> {
   const extension = extname(filePath).toLowerCase();
   const sourceName = basename(filePath, extension);
 
   if (extension === '.json') {
     const parsed = JSON.parse(readFileSync(filePath, 'utf-8')) as unknown;
+
+    if (options?.template && Array.isArray(parsed) && parsed.every((item) => isRecord(item))) {
+      const charts = buildChartsFromTemplate(parsed as TableRow[], options.template, sourceName);
+      if (charts.length === 0) {
+        throw new Error(`Template "${options.template}" could not find the expected columns in ${filePath}.`);
+      }
+      return {
+        sourceType: 'json',
+        sourceName,
+        charts,
+      };
+    }
+
     return {
       sourceType: 'json',
       sourceName,
@@ -371,14 +703,23 @@ export async function loadVisualizationSource(
   }
 
   if (extension === '.csv') {
-    return {
-      sourceType: 'csv',
-      sourceName,
-      charts: buildChartsFromTable(rowsFromCsv(readFileSync(filePath, 'utf-8')), {
+    const rows = rowsFromCsv(readFileSync(filePath, 'utf-8'));
+    const charts = options?.template
+      ? buildChartsFromTemplate(rows, options.template, sourceName)
+      : buildChartsFromTable(rows, {
         sourceName,
         xColumn: options?.xColumn,
         yColumns: options?.yColumns,
-      }),
+      });
+
+    if (options?.template && charts.length === 0) {
+      throw new Error(`Template "${options.template}" could not find the expected columns in ${filePath}.`);
+    }
+
+    return {
+      sourceType: 'csv',
+      sourceName,
+      charts,
     };
   }
 
@@ -393,14 +734,21 @@ export async function loadVisualizationSource(
       throw new Error(`Sheet "${options?.sheetName}" not found in ${filePath}.`);
     }
 
-    const charts = worksheets.flatMap((worksheet) =>
-      buildChartsFromTable(rowsFromWorksheet(worksheet), {
-        sourceName: `${sourceName}-${worksheet.name}`,
-        titlePrefix: `${worksheet.name} sheet`,
-        xColumn: options?.xColumn,
-        yColumns: options?.yColumns,
-      }),
-    );
+    const charts = worksheets.flatMap((worksheet) => {
+      const rows = rowsFromWorksheet(worksheet);
+      return options?.template
+        ? buildChartsFromTemplate(rows, options.template, `${sourceName}-${worksheet.name}`)
+        : buildChartsFromTable(rows, {
+          sourceName: `${sourceName}-${worksheet.name}`,
+          titlePrefix: `${worksheet.name} sheet`,
+          xColumn: options?.xColumn,
+          yColumns: options?.yColumns,
+        });
+    });
+
+    if (options?.template && charts.length === 0) {
+      throw new Error(`Template "${options.template}" could not find the expected columns in ${filePath}.`);
+    }
 
     return {
       sourceType: 'xlsx',
