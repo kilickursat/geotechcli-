@@ -50,6 +50,7 @@ const releases = [
       { type: 'fix', text: 'Added settlement trough and forgiving through aliases so the Peck plotting command matches the public examples and common user phrasing' },
       { type: 'fix', text: 'Export examples and committed mock datasets were added so GeoJSON, DXF, and CSV flows can be smoke-tested reliably' },
       { type: 'security', text: 'Updated Next.js to 15.5.15 and the Vitest toolchain to 4.1.4 so the release workspace installs cleanly with no npm audit vulnerabilities' },
+      { type: 'fix', text: 'Aligned GitHub Actions and Cloudflare release jobs to Node 22 and added the direct esbuild install required by the OpenNext Cloudflare bundler' },
       { type: 'fix', text: 'Aligned the public release surface on GLM-4.7-Flash text defaults and GLM-4.6V-Flash vision defaults across docs, CLI, and website copy' },
     ],
   },

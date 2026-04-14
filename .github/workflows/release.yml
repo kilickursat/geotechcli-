@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: npm }
+        with: { node-version: 22, cache: npm }
       - run: npm ci
       - run: npm run verify:consistency
       - run: npm test --workspace=packages/core
@@ -38,7 +38,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: npm, registry-url: 'https://registry.npmjs.org' }
+        with: { node-version: 22, cache: npm, registry-url: 'https://registry.npmjs.org' }
       - run: npm ci
       - run: npx turbo run build
       - name: Publish
@@ -55,7 +55,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: npm }
+        with: { node-version: 22, cache: npm }
       - run: npm ci
       - name: Deploy Worker
         run: npm run --workspace=@geotechcli/web deploy

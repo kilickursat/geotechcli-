@@ -19,6 +19,11 @@
 - Updated the CLI/core Vitest toolchain to `vitest@4.1.4`, clearing the transitive Vite audit findings from the repo install.
 - Brought `npm audit` back to a clean `0 vulnerabilities` result for the release workspace.
 
+### Release Infrastructure
+
+- Aligned GitHub Actions verification, publish, and Cloudflare deploy jobs to Node 22 so the current Vitest toolchain runs consistently in CI.
+- Added the direct `esbuild` install required by the OpenNext Cloudflare bundler so `build:cf` can resolve its server bundling dependency in Linux CI.
+
 ## [0.4.0] - 2026-04-14
 
 ### Release Alignment
