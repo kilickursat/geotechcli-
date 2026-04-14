@@ -39,7 +39,7 @@ const releases = [
   {
     version: GEOTECHCLI_VERSION,
     date: '2026-04-14',
-    tag: '0.4.0 Release Prep',
+    tag: '0.4.1 Release',
     changes: [
       { type: 'security', text: 'Closed agent sandbox escape paths, gated command execution more tightly, and hardened hosted-beta request handling for production-facing strong-beta use' },
       { type: 'fix', text: 'Corrected slope seismic regression behavior and locked the deterministic engineering suite back to a passing state' },
@@ -47,7 +47,9 @@ const releases = [
       { type: 'feat', text: 'Enabled PDF and DOCX exports for deterministic stored-case reports using dedicated layout generators' },
       { type: 'feat', text: 'Added terminal visualization with geotech viz plus committed CSV and Excel showcase samples for demos and quick plotting' },
       { type: 'feat', text: 'Borehole log vision can now process multi-page PDFs page by page and merge the extracted log output into one result' },
+      { type: 'fix', text: 'Added settlement trough and forgiving through aliases so the Peck plotting command matches the public examples and common user phrasing' },
       { type: 'fix', text: 'Export examples and committed mock datasets were added so GeoJSON, DXF, and CSV flows can be smoke-tested reliably' },
+      { type: 'security', text: 'Updated Next.js to 15.5.15 and the Vitest toolchain to 4.1.4 so the release workspace installs cleanly with no npm audit vulnerabilities' },
       { type: 'fix', text: 'Aligned the public release surface on GLM-4.7-Flash text defaults and GLM-4.6V-Flash vision defaults across docs, CLI, and website copy' },
     ],
   },

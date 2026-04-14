@@ -188,6 +188,8 @@ function registerImmediate(parent: Command): void {
 function registerTunnelSettlement(parent: Command): void {
   const cmd = new Command('tunnel')
     .description('Peck Gaussian settlement trough above tunnel excavation')
+    .alias('trough')
+    .alias('through')
     .requiredOption('--diameter <m>', 'Tunnel diameter D in meters')
     .requiredOption('--depth <m>', 'Depth to tunnel axis Z₀ in meters')
     .option('--volume-loss <%>', 'Volume loss Vl in % (default: 1.0)', '1.0')
@@ -254,11 +256,13 @@ export function registerSettlementCommands(program: Command): void {
     consolidation    Terzaghi 1D primary consolidation + time curve
     immediate        Schmertmann elastic + creep settlement
     tunnel           Peck Gaussian surface settlement trough
+    trough           Alias for the Peck Gaussian surface settlement trough command
 
   Examples:
     geotech settlement consolidation --cc 0.35 --e0 1.2 --thickness 5 --delta-sigma 80 --sigma0 100 --verbose
     geotech settlement immediate --stress 150 --width 2.5 --layers '[{"thickness":2,"Es":8000}]'
     geotech settlement tunnel --diameter 6 --depth 15 --volume-loss 1.5 --plot
+    geotech settlement trough --diameter 6 --depth 15 --volume-loss 1.5 --plot
 `);
 
   registerConsolidation(cmd);

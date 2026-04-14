@@ -1,5 +1,24 @@
 ﻿# Changelog
 
+## [0.4.1] - 2026-04-14
+
+### Release Alignment
+
+- Promoted the current strong-beta branch state to `0.4.1` so npm, the website, and shared metadata all point at the same published CLI surface.
+- Refreshed the public release notes so the website changelog reflects the `0.4.1` feature set instead of the earlier `0.4.0` release-prep label.
+
+### CLI & Vision Usability
+
+- Added `geotech settlement trough` plus the forgiving `through` alias for the Peck tunnel settlement command, so the plotting example now works directly from the installed CLI.
+- Kept `geotech viz` and the committed showcase/sample data in the published package path so terminal plotting is available after a fresh global install.
+- Added multi-page borehole PDF support in the vision log flow by splitting oversized PDFs into page-level extraction requests and merging the result back into one log output.
+
+### Dependency Security
+
+- Updated the deployed web app from vulnerable `next@15.5.14` to `next@15.5.15`.
+- Updated the CLI/core Vitest toolchain to `vitest@4.1.4`, clearing the transitive Vite audit findings from the repo install.
+- Brought `npm audit` back to a clean `0 vulnerabilities` result for the release workspace.
+
 ## [0.4.0] - 2026-04-14
 
 ### Release Alignment
