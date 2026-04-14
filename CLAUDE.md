@@ -52,7 +52,7 @@ npm run deploy --workspace=@geotechcli/web    # deploy to Cloudflare
 
 - No signup, billing, or paid entitlements — intentionally disabled
 - Hosted GLM beta is the default LLM provider (no user Z.AI key needed)
-- Default text model: `glm-5-turbo` | Default vision model: `glm-5v-turbo`
+- Default text model: `glm-4.7-flash` | Default vision model: `glm-4.6v-flash`
 - Proxy default: `https://beta.geotechcli.com/api/proxy`
 - Rate limiting: Redis-backed (Upstash) with in-memory fallback
 

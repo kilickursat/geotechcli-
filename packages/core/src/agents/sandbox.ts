@@ -12,7 +12,7 @@
 //   - /etc, /var, /usr, /proc, /sys, /dev system directories
 // ---------------------------------------------------------------------------
 
-import { resolve, sep } from 'node:path';
+import { dirname, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { existsSync, mkdirSync, realpathSync } from 'node:fs';
 
@@ -74,6 +74,29 @@ export interface SandboxCheck {
   error?: string;
 }
 
+function normalizeForPrefixCheck(value: string): string {
+  return value.replace(/\\/g, '/').toLowerCase();
+}
+
+function isWithinAllowedZones(targetPath: string, allowedZones: string[]): boolean {
+  return allowedZones.some((zone) => targetPath.startsWith(zone + sep) || targetPath === zone);
+}
+
+function findNearestExistingParent(targetPath: string): string | null {
+  let current = dirname(targetPath);
+  let previous = '';
+
+  while (current !== previous) {
+    if (existsSync(current)) {
+      return current;
+    }
+    previous = current;
+    current = dirname(current);
+  }
+
+  return existsSync(current) ? current : null;
+}
+
 // ---------------------------------------------------------------------------
 // Ensure workspace exists
 // ---------------------------------------------------------------------------
@@ -111,7 +134,6 @@ export function validatePath(
   extraAllowed?: string[],
 ): SandboxCheck {
   const resolved = resolve(targetPath);
-  const normalizeForPrefixCheck = (value: string) => value.replace(/\\/g, '/').toLowerCase();
   const normalizedInput = normalizeForPrefixCheck(targetPath);
   const normalizedResolved = normalizeForPrefixCheck(resolved);
 
@@ -162,9 +184,7 @@ export function validatePath(
 
   // For read: allow CWD, workspace, and extra
   // For write: allow CWD and workspace only
-  const isInAllowedZone = allowedZones.some((zone) => {
-    return resolved.startsWith(zone + sep) || resolved === zone;
-  });
+  const isInAllowedZone = isWithinAllowedZones(resolved, allowedZones);
 
   if (!isInAllowedZone) {
     return {
@@ -178,9 +198,7 @@ export function validatePath(
   if (existsSync(resolved)) {
     try {
       const realPath = realpathSync(resolved);
-      const realInAllowed = allowedZones.some(
-        (zone) => realPath.startsWith(zone + sep) || realPath === zone,
-      );
+      const realInAllowed = isWithinAllowedZones(realPath, allowedZones);
       if (!realInAllowed) {
         return {
           safe: false,
@@ -190,6 +208,24 @@ export function validatePath(
       }
     } catch {
       // Can't resolve symlink — proceed with caution (file may not exist yet for writes)
+    }
+  }
+
+  if (mode === 'write' && !existsSync(resolved)) {
+    const nearestExistingParent = findNearestExistingParent(resolved);
+    if (nearestExistingParent) {
+      try {
+        const realParent = realpathSync(nearestExistingParent);
+        if (!isWithinAllowedZones(realParent, allowedZones)) {
+          return {
+            safe: false,
+            resolved,
+            error: `Access denied: parent symlink resolves to "${realParent}" which is outside allowed directories.`,
+          };
+        }
+      } catch {
+        // Keep the earlier prefix and zone checks if parent realpath cannot be resolved.
+      }
     }
   }
 
@@ -216,44 +252,23 @@ export function validateWritePath(targetPath: string, extraAllowed?: string[]): 
  */
 export function validateShellCommand(command: string): SandboxCheck {
   const trimmed = command.trim();
-  const firstWord = trimmed.split(/\s+/)[0];
+  const parts = trimmed.split(/\s+/);
+  const firstWord = parts[0];
 
   // Allowed read-only commands
   const allowedCommands = ['ls', 'cat', 'head', 'tail', 'wc', 'find', 'grep', 'file', 'stat', 'du', 'pwd', 'echo'];
 
-  // Python: only with .py file, no -c/-m flags
-  if (firstWord === 'python' || firstWord === 'python3') {
-    const parts = trimmed.split(/\s+/);
-    const dangerousFlags = ['-c', '-m', '--command', '-W', '-X'];
-    const hasDangerousFlag = parts.some((p) => dangerousFlags.includes(p));
-    const hasScriptFile = parts.some((p) => p.endsWith('.py'));
-
-    if (hasDangerousFlag) {
-      return {
-        safe: false,
-        resolved: trimmed,
-        error: `Python flag "${parts.find((p) => dangerousFlags.includes(p))}" is blocked. Only "python script.py" is allowed.`,
-      };
-    }
-
-    if (!hasScriptFile) {
-      return {
-        safe: false,
-        resolved: trimmed,
-        error: 'Python must be invoked with a .py script file. Interactive/inline execution is blocked.',
-      };
-    }
-  } else if (!allowedCommands.includes(firstWord)) {
+  if (!allowedCommands.includes(firstWord)) {
     return {
       safe: false,
       resolved: trimmed,
-      error: `Command "${firstWord}" not allowed. Permitted: ${allowedCommands.join(', ')}, python <script.py>`,
+      error: `Command "${firstWord}" not allowed. Permitted: ${allowedCommands.join(', ')}`,
     };
   }
 
   // Block dangerous operators in any command
   const blockedOperators = [
-    '>', '>>', '|', '&&', '||', ';', '$(', '`',
+    '<', '>', '>>', '|', '&&', '||', ';', '$(', '`',
     'sudo', 'chmod', 'chown', 'chgrp',
     'rm ', 'rm\t', 'rmdir',
     'mv ', 'mv\t',
@@ -269,6 +284,49 @@ export function validateShellCommand(command: string): SandboxCheck {
         safe: false,
         resolved: trimmed,
         error: `Command contains blocked operator "${op.trim()}". Pipes, redirects, chaining, and destructive commands are not allowed.`,
+      };
+    }
+  }
+
+  if (firstWord === 'find') {
+    const blockedFindPredicates = ['-exec', '-execdir', '-ok', '-delete'];
+    for (const token of parts.slice(1)) {
+      if (blockedFindPredicates.some((predicate) => token === predicate || token.startsWith(predicate))) {
+        return {
+          safe: false,
+          resolved: trimmed,
+          error: `Command contains blocked find predicate "${token}". Command execution and destructive find operations are not allowed.`,
+        };
+      }
+    }
+  }
+
+  const nonOptionTokens = parts.slice(1).filter((token) => !token.startsWith('-'));
+  const validatePathToken = (token: string): SandboxCheck | null => {
+    if (/^\d+$/.test(token)) {
+      return null;
+    }
+
+    const pathCheck = validateReadPath(token);
+    return pathCheck.safe ? null : pathCheck;
+  };
+
+  let pathTokens: string[] = [];
+  if (['ls', 'cat', 'head', 'tail', 'wc', 'file', 'stat', 'du'].includes(firstWord)) {
+    pathTokens = nonOptionTokens;
+  } else if (firstWord === 'grep') {
+    pathTokens = nonOptionTokens.slice(1);
+  } else if (firstWord === 'find' && nonOptionTokens.length > 0) {
+    pathTokens = [nonOptionTokens[0]];
+  }
+
+  for (const token of pathTokens) {
+    const pathCheck = validatePathToken(token);
+    if (pathCheck && !pathCheck.safe) {
+      return {
+        safe: false,
+        resolved: trimmed,
+        error: `Command path "${token}" is not allowed. ${pathCheck.error}`,
       };
     }
   }

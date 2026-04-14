@@ -1,11 +1,11 @@
 {
-  "version": "0.3.0",
+  "version": "0.4.0",
   "defaults": {
     "provider": "hosted-beta",
-    "model": "glm-5.1",
-    "visionModel": "glm-5v-turbo"
+    "model": "glm-4.7-flash",
+    "visionModel": "glm-4.6v-flash"
   },
-  "proxyModels": ["glm-5.1", "glm-5v-turbo"],
+  "proxyModels": ["glm-4.7-flash", "glm-4.6v-flash"],
   "globalFlags": [
     {
       "key": "json",

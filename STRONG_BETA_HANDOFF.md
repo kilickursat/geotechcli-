@@ -52,8 +52,8 @@ What strong beta should not claim yet:
 ### Wave 2 completed
 
 - hosted beta was added as the default LLM provider for strong beta
-- hosted default text model is `glm-5-turbo`
-- hosted default vision model is `glm-5v-turbo`
+- hosted default text model is `glm-4.7-flash`
+- hosted default vision model is `glm-4.6v-flash`
 - hosted beta proxy route exists in the web app
 - anonymous rate limiting exists with Redis-backed production intent and in-memory local fallback
 - no end-user Z.AI key is required for the default beta flow
@@ -237,7 +237,7 @@ Expected shape:
 
 - `provider: "hosted-beta"`
 - `status: "ready"` or a clear degraded message
-- defaults showing `glm-5-turbo` and `glm-5v-turbo`
+- defaults showing `glm-4.7-flash` and `glm-4.6v-flash`
 
 ### 7. Validate CLI against the local proxy
 

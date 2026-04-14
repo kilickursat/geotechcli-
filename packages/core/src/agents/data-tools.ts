@@ -8,8 +8,8 @@ import {
   saveNamedDataset, saveDerivedParameter,
   addAssumption, addArtifact,
 } from '../storage/index.js';
+import { validateReadPath } from './sandbox.js';
 import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
 
 // ---------------------------------------------------------------------------
 // AGS Borehole Data Parser
@@ -29,7 +29,12 @@ toolRegistry.register(
     },
   },
   (args): ToolResult => {
-    const filePath = resolve(String(args.path));
+    const pathCheck = validateReadPath(String(args.path));
+    if (!pathCheck.safe) {
+      return { success: false, data: null, summary: '', error: pathCheck.error! };
+    }
+
+    const filePath = pathCheck.resolved;
     if (!existsSync(filePath)) {
       return { success: false, data: null, summary: '', error: `File not found: ${filePath}` };
     }
@@ -74,7 +79,12 @@ toolRegistry.register(
     },
   },
   (args): ToolResult => {
-    const filePath = resolve(String(args.path));
+    const pathCheck = validateReadPath(String(args.path));
+    if (!pathCheck.safe) {
+      return { success: false, data: null, summary: '', error: pathCheck.error! };
+    }
+
+    const filePath = pathCheck.resolved;
     if (!existsSync(filePath)) {
       return { success: false, data: null, summary: '', error: `File not found: ${filePath}` };
     }

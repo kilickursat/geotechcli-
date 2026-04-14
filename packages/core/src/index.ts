@@ -44,6 +44,36 @@ export {
   type SwarmCallback,
 } from './agents/swarm.js';
 export {
+  AGENT_STAGES,
+  SCENARIO_ARTIFACT_TYPES,
+  type AgentStage,
+  type EvidenceClass,
+  type EvidenceReference,
+  type EvidenceRecord,
+  type ScenarioArtifactType,
+  type ScenarioArtifact,
+  type ScenarioCaseFile,
+  type ScenarioArtifactPayloadMap,
+} from './agents/contracts.js';
+export {
+  ensureScenarioCaseFile,
+  loadScenarioCaseFile,
+  saveScenarioCaseFile,
+  persistScenarioArtifact,
+  listScenarioArtifacts,
+  loadLatestScenarioArtifact,
+  loadLatestScenarioArtifacts,
+  buildSwarmSessionProjectRecord,
+  persistSwarmCaseFile,
+} from './agents/case-file.js';
+export {
+  loadEvidenceRecord,
+  listEvidenceRecords,
+  persistEvidenceRecord,
+  persistArtifactEvidence,
+  persistCaseFileEvidence,
+} from './agents/evidence.js';
+export {
   toolRegistry,
   type ToolDefinition,
   type ToolResult,
@@ -67,7 +97,18 @@ export {
 } from './vision/index.js';
 
 // Report generation
-export { generateReport, renderReportAsPdf, renderReportAsDocx, type GeneratedReport, type ReportSection } from './report/index.js';
+export {
+  generateReport,
+  buildArtifactDrivenReport,
+  generateReportFromCaseFile,
+  renderReportAsPdf,
+  renderReportAsDocx,
+  type GeneratedReport,
+  type ReportSection,
+  type CaseFileGeneratedReport,
+  type CaseFileReportInput,
+  type GenerateStoredCaseFileReportOptions,
+} from './report/index.js';
 
 // Export formats
 export {

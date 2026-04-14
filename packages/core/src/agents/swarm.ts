@@ -30,52 +30,60 @@ export interface SwarmSession {
 
 export type SwarmCallback = (step: SwarmStep) => void;
 
-const INTERPRETATION_TOOLS = [
-  'read_file',
-  'list_directory',
-  'parse_csv',
-  'scan_project',
-  'parse_ags',
-  'parse_cpt',
-  'classify_uscs',
-  'classify_rmr89',
-  'classify_q_system',
-  'query_standards',
-  'project_save_dataset',
-  'project_save_parameter',
-  'project_add_assumption',
-];
+const ROLE_TOOL_ALLOWLIST = {
+  interpretation: [
+    'read_file',
+    'list_directory',
+    'parse_csv',
+    'scan_project',
+    'parse_ags',
+    'parse_cpt',
+    'classify_uscs',
+    'classify_rmr89',
+    'classify_q_system',
+    'query_standards',
+    'project_save_dataset',
+    'project_save_parameter',
+    'project_add_assumption',
+  ],
+  simulation: [
+    'calculate_bearing_capacity',
+    'calculate_liquefaction',
+    'predict_tbm_performance',
+    'select_tbm_type',
+    'predict_cutter_wear',
+    'calculate_tunnel_settlement',
+    'calculate_consolidation',
+    'calculate_schmertmann_settlement',
+    'calculate_pile_capacity',
+    'calculate_slope_stability',
+    'calculate_lateral_earth_pressure',
+    'plaxis_execute',
+    'plaxis_get_results',
+    'flac3d_execute',
+    'rocscience_execute',
+    'write_file',
+    'project_save_result',
+    'project_save_parameter',
+    'project_add_artifact',
+  ],
+  reviewer: [
+    'query_standards',
+    'project_load',
+  ],
+} as const;
 
-const SIMULATION_TOOLS = [
-  'calculate_bearing_capacity',
-  'calculate_liquefaction',
-  'predict_tbm_performance',
-  'select_tbm_type',
-  'predict_cutter_wear',
-  'calculate_tunnel_settlement',
-  'calculate_consolidation',
-  'calculate_schmertmann_settlement',
-  'calculate_pile_capacity',
-  'calculate_slope_stability',
-  'calculate_lateral_earth_pressure',
-  'plaxis_execute',
-  'plaxis_get_results',
-  'flac3d_execute',
-  'rocscience_execute',
-  'write_file',
-  'project_save_result',
-  'project_save_parameter',
-  'project_add_artifact',
-];
+type SwarmToolRole = keyof typeof ROLE_TOOL_ALLOWLIST;
 
-const REVIEWER_TOOLS = [
-  'query_standards',
-  'project_load',
-  'project_add_assumption',
-  'project_add_artifact',
-];
+export function getAllowedToolsForAgent(agent: SwarmStep['agent']): readonly string[] {
+  return agent === 'orchestrator' ? [] : ROLE_TOOL_ALLOWLIST[agent as SwarmToolRole];
+}
 
-function getToolDescriptionsFor(toolNames: string[]): string {
+export function isToolAllowedForAgent(agent: SwarmStep['agent'], toolName: string): boolean {
+  return getAllowedToolsForAgent(agent).includes(toolName);
+}
+
+function getToolDescriptionsFor(toolNames: readonly string[]): string {
   return toolRegistry
     .list()
     .filter((tool) => toolNames.includes(tool.name))
@@ -102,7 +110,7 @@ YOU HANDLE:
 - Saving structured datasets, derived parameters, and assumptions into project memory when a project context is available
 
 YOUR TOOLS:
-${getToolDescriptionsFor(INTERPRETATION_TOOLS)}
+${getToolDescriptionsFor(ROLE_TOOL_ALLOWLIST.interpretation)}
 
 RULES:
 - Call tools to do real work; never estimate or guess data values.
@@ -136,7 +144,7 @@ YOU HANDLE:
 - Saving results, derived parameters, and output artifacts to persistent project storage
 
 YOUR TOOLS:
-${getToolDescriptionsFor(SIMULATION_TOOLS)}
+${getToolDescriptionsFor(ROLE_TOOL_ALLOWLIST.simulation)}
 
 RULES:
 - Use the data provided by the Interpretation Agent; do not re-read files.
@@ -171,7 +179,7 @@ YOU CHECK:
 6. PARSE SAFETY: If any upstream result includes parseStatus/confidence/warnings or canAutoProceed=false, flag it explicitly and reject automatic conclusions that depend on that output.
 
 YOUR TOOLS:
-${getToolDescriptionsFor(REVIEWER_TOOLS)}
+${getToolDescriptionsFor(ROLE_TOOL_ALLOWLIST.reviewer)}
 
 OUTPUT FORMAT - you MUST output exactly one of:
 
@@ -276,6 +284,22 @@ async function runAgentLoop(
           messages.push({
             role: 'user',
             content: `[GUARDRAIL BLOCKED: ${call.tool}]\n${message}\nFix the parameters and retry.`,
+          });
+          continue;
+        }
+
+        if (!isToolAllowedForAgent(agentName, call.tool)) {
+          const allowedTools = getAllowedToolsForAgent(agentName);
+          onStep({
+            agent: agentName,
+            type: 'error',
+            content: `Blocked by role allowlist: ${call.tool}`,
+            toolName: call.tool,
+            timestamp: Date.now(),
+          });
+          messages.push({
+            role: 'user',
+            content: `[Role Allowlist Blocked: ${call.tool}]\nThe ${agentName} agent is not allowed to execute this tool.\nAllowed tools: ${allowedTools.length > 0 ? allowedTools.join(', ') : 'none'}.\nChoose an allowed tool or continue without tool use.`,
           });
           continue;
         }

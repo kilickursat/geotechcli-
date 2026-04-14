@@ -18,11 +18,21 @@ export type { ParseSafety, ParseStatus } from './parse.js';
 // Vision retry helper — handles upstream empty-content failures
 // ---------------------------------------------------------------------------
 
+function isRecoverableVisionEmptyResponse(error: unknown): boolean {
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  return (
+    message.includes('returned no content') ||
+    message.includes('did not contain assistant text') ||
+    message.includes('no completion choices') ||
+    message.includes('empty completion')
+  );
+}
+
 /**
  * Execute a vision call with automatic retry on empty/null response.
  * First attempt: strict JSON-only prompt at low temperature.
  * Second attempt: softer plain-text prompt at higher temperature, same image.
- * This handles GLM-5v-turbo returning empty content on the first call.
+ * This handles hosted-beta vision models returning empty content on the first call.
  */
 async function visionWithRetry(
   imageBase64: string,
@@ -45,19 +55,36 @@ async function visionWithRetry(
     if (r1.text && r1.text.trim().length > 10) {
       return { text: r1.text, latencyMs: r1.latencyMs, usedFallback: false };
     }
-  } catch {
-    // fall through to retry
+  } catch (error) {
+    if (!isRecoverableVisionEmptyResponse(error)) {
+      throw error;
+    }
   }
 
   // Attempt 2: softer plain text prompt
-  const r2 = await generateVision(softPrompt, imageBase64, mimeType, config, {
-    systemPrompt: systemPrompt + ' Be concise but thorough. You must provide values even if approximate.',
-    temperature: 0.3,
-    maxTokens: maxTokens + 200,
-  });
+  try {
+    const r2 = await generateVision(softPrompt, imageBase64, mimeType, config, {
+      systemPrompt:
+        systemPrompt + ' Be concise but thorough. You must provide values even if approximate.',
+      temperature: 0.3,
+      maxTokens: maxTokens + 200,
+    });
+
+    if (r2.text && r2.text.trim().length > 0) {
+      return {
+        text: r2.text,
+        latencyMs: Date.now() - start,
+        usedFallback: true,
+      };
+    }
+  } catch (error) {
+    if (!isRecoverableVisionEmptyResponse(error)) {
+      throw error;
+    }
+  }
 
   return {
-    text: r2.text,
+    text: '',
     latencyMs: Date.now() - start,
     usedFallback: true,
   };
@@ -424,7 +451,7 @@ export async function interpretBoreholeLog(
   config: LLMConfig,
   boreholeId?: string,
 ): Promise<BoreholeInterpretation> {
-  const prompt = `Extract structured data from this borehole log image. Respond with ONLY a JSON object:
+  const strictPrompt = `Extract structured data from this borehole log image. Respond with ONLY a JSON object:
 {
   "boreholeId": "<ID if visible, or 'BH-unknown'>",
   "totalDepth": <number in meters>,
@@ -445,11 +472,23 @@ export async function interpretBoreholeLog(
   "warnings": ["<warning>", "<warning>"]
 }`;
 
-  const response = await generateVision(prompt, imageBase64, mimeType, config, {
-    systemPrompt: 'You are an expert geotechnical engineer extracting data from borehole log documents. Be precise with depths, descriptions, and test values. Respond with JSON only.',
-    temperature: 0.1,
-    maxTokens: 2200,
-  });
+  const softPrompt = `Read this borehole log carefully and extract the key structured data:
+1. Borehole ID if visible
+2. Total depth in meters
+3. Water table depth if shown
+4. Each stratigraphic layer with depthFrom, depthTo, description, USCS symbol, SPT N, water content, and notes
+5. A brief engineering summary
+Provide approximate values where necessary, but keep the structure complete.`;
+
+  const response = await visionWithRetry(
+    imageBase64,
+    mimeType,
+    config,
+    strictPrompt,
+    softPrompt,
+    'You are an expert geotechnical engineer extracting data from borehole log documents. Be precise with depths, descriptions, and test values. Respond with JSON only.',
+    2200,
+  );
 
   const parsed = parseJsonObject(response.text);
   const warnings = [...parsed.warnings];
@@ -520,16 +559,21 @@ export async function queryGBRDocument(
   mimeType: string,
   config: LLMConfig,
 ): Promise<{ answer: string; latencyMs: number }> {
-  const response = await generateVision(
-    `Based on this Geotechnical Baseline Report, answer the following question:\n\n${question}\n\nProvide a concise, technically accurate answer with specific values and page/section references where possible.`,
+  const response = await visionWithRetry(
     documentBase64,
     mimeType,
     config,
-    {
-      systemPrompt: 'You are an expert geotechnical engineer analyzing a Geotechnical Baseline Report (GBR). Provide precise, actionable answers referencing specific data from the document.',
-      maxTokens: 2000,
-    },
+    `Based on this Geotechnical Baseline Report, answer the following question with a concise, technically accurate response and specific page/section references where possible:\n\n${question}`,
+    `Read this Geotechnical Baseline Report and answer the question directly:\n\n${question}\n\nUse specific values, limits, assumptions, and references if they are visible in the document.`,
+    'You are an expert geotechnical engineer analyzing a Geotechnical Baseline Report (GBR). Provide precise, actionable answers referencing specific data from the document.',
+    2000,
   );
+
+  if (!response.text.trim()) {
+    throw new Error(
+      'Hosted beta upstream returned no content. The document could not be interpreted. Try a smaller PNG or JPG export of the relevant pages.',
+    );
+  }
 
   return { answer: response.text, latencyMs: response.latencyMs };
 }
@@ -549,7 +593,7 @@ export async function interpretSensorImage(
   mimeType: string,
   config: LLMConfig,
 ): Promise<SensorInterpretation> {
-  const prompt = `Analyze this geotechnical sensor data image. Respond with ONLY a JSON object:
+  const strictPrompt = `Analyze this geotechnical sensor data image. Respond with ONLY a JSON object:
 {
   "sensorType": "<inclinometer|piezometer|extensometer|load_cell|settlement_plate|tiltmeter|other>",
   "measurements": "<key readings and values observed>",
@@ -560,11 +604,23 @@ export async function interpretSensorImage(
   "warnings": ["<warning>", "<warning>"]
 }`;
 
-  const response = await generateVision(prompt, imageBase64, mimeType, config, {
-    systemPrompt: 'You are an expert geotechnical instrumentation engineer. Interpret sensor data precisely.',
-    temperature: 0.1,
-    maxTokens: 1100,
-  });
+  const softPrompt = `Inspect this geotechnical instrumentation image and extract:
+1. Sensor type
+2. Key readings and visible values
+3. What the measurements indicate about ground or structural behavior
+4. Whether the condition appears normal, warning, or critical
+5. Recommended follow-up actions if any
+If the display is partially unreadable, provide the best approximate interpretation from the visible chart or text.`;
+
+  const response = await visionWithRetry(
+    imageBase64,
+    mimeType,
+    config,
+    strictPrompt,
+    softPrompt,
+    'You are an expert geotechnical instrumentation engineer. Interpret sensor data precisely.',
+    1100,
+  );
 
   const parsed = parseJsonObject(response.text);
   const warnings = [...parsed.warnings];

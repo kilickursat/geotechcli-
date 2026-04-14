@@ -14,7 +14,7 @@ describe('HostedBetaAdapter', () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
-          model: 'glm-5.1',
+          model: 'glm-4.7-flash',
           choices: [{ message: { content: 'OK' } }],
           usage: {
             prompt_tokens: 3,

@@ -54,6 +54,47 @@ assert(
   statusSource.includes('GEOTECHCLI_VERSION'),
   'CLI status command must use GEOTECHCLI_VERSION from shared metadata.',
 );
+assert(
+  statusSource.includes('probeHostedBetaHealth') && statusSource.includes('hosted_beta_health'),
+  'CLI status command must use hosted-beta health probing by default.',
+);
+assert(
+  statusSource.includes('--live') && statusSource.includes('live_completion'),
+  'CLI status command must keep the live completion probe behind --live.',
+);
+
+const liquefactionSource = readText('packages', 'cli', 'src', 'commands', 'liquefaction.ts');
+assert(
+  liquefactionSource.includes("option('--demo'") &&
+    liquefactionSource.includes('else if (opts.demo)'),
+  'Liquefaction command must require explicit --demo for built-in sample data.',
+);
+assert(
+  liquefactionSource.includes('No SPT profile provided. Use --spt-profile <file>, provide --depth/--spt, or pass --demo.'),
+  'Liquefaction command must fail clearly when no real input or --demo is provided.',
+);
+
+const exportSource = readText('packages', 'cli', 'src', 'commands', 'export.ts');
+assert(
+  exportSource.includes('Missing latitude/longitude') && exportSource.includes('Provide lat/lng or latitude/longitude fields'),
+  'GeoJSON export must reject missing coordinates instead of fabricating them.',
+);
+assert(
+  !exportSource.includes('35.0 + i') && !exportSource.includes('139.0 + i'),
+  'GeoJSON export must not inject fallback coordinates.',
+);
+
+const envExample = readText('.env.example');
+assert(
+  envExample.includes('GEOTECHCLI_PROXY_URL=https://beta.geotechcli.com/api/proxy') &&
+    envExample.includes('NEXT_PUBLIC_APP_URL=https://beta.geotechcli.com'),
+  '.env.example must point at the beta geotechcli.com host for both proxy and app URL.',
+);
+assert(
+  !envExample.includes('GEOTECHCLI_PROXY_URL=https://geotechcli.com/api/proxy') &&
+    !envExample.includes('NEXT_PUBLIC_APP_URL=https://geotechcli.com'),
+  '.env.example must not reference the legacy apex host.',
+);
 
 const docsSource = readText('packages', 'web', 'app', 'docs', 'page.tsx');
 assert(

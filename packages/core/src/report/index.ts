@@ -3,6 +3,13 @@ import { generateText } from '../llm/router.js';
 
 export { renderReportAsPdf } from './pdf.js';
 export { renderReportAsDocx } from './docx.js';
+export {
+  buildArtifactDrivenReport,
+  generateReportFromCaseFile,
+  type CaseFileGeneratedReport,
+  type CaseFileReportInput,
+  type GenerateStoredCaseFileReportOptions,
+} from './casefile.js';
 
 export interface ReportSection {
   title: string;

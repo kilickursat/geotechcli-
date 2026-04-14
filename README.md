@@ -27,7 +27,7 @@ geotechCLI is a terminal-first geotechnical engineering product that combines de
 
 - Deterministic commands are available now.
 - Hosted GLM beta access is available now with no user Z.AI key required.
-- Text defaults to `glm-5.1` and vision defaults to `glm-5v-turbo`.
+- Text defaults to `glm-4.7-flash` and vision defaults to `glm-4.6v-flash`.
 - Server-side rate limits protect the hosted beta credit pool.
 - Signup, billing, and paid entitlements are intentionally disabled on `strong-beta`.
 
@@ -134,8 +134,8 @@ Most calculation and analysis commands support:
 In `strong-beta`, AI commands default to the hosted beta provider, so a user does not need to bring a Z.AI key.
 
 - Default provider: `hosted-beta`
-- Default text model: `glm-5.1`
-- Default vision model: `glm-5v-turbo`
+- Default text model: `glm-4.7-flash`
+- Default vision model: `glm-4.6v-flash`
 
 ```bash
 # Confirm the strong-beta defaults

@@ -1,6 +1,15 @@
 import { Command } from 'commander';
 import { calculateLiquefaction } from '@geotechcli/core';
-import { heading, keyValue, renderTable, renderSteps, renderJSON, warn, success } from '../ui/terminal.js';
+import {
+  heading,
+  keyValue,
+  renderTable,
+  renderSteps,
+  renderJSON,
+  warn,
+  success,
+  error,
+} from '../ui/terminal.js';
 import { addGlobalFlags, getGlobalFlags } from '../util/flags.js';
 import { readFileSync, writeFileSync } from 'node:fs';
 
@@ -14,8 +23,10 @@ export function registerLiquefactionCommand(program: Command): void {
     .option('--depth <m>', 'Single layer depth (m)', parseFloat)
     .option('--spt <N>', 'Single layer SPT N-value', parseFloat)
     .option('--fines <percent>', 'Single layer fines content (%)', parseFloat, 5)
+    .option('--demo', 'Use the built-in demo SPT profile')
     .action((opts) => {
       const flags = getGlobalFlags(opts);
+      let source: 'user' | 'demo' = 'user';
 
       let layers: Array<{
         depth: number;
@@ -26,7 +37,6 @@ export function registerLiquefactionCommand(program: Command): void {
       }>;
 
       if (opts.sptProfile) {
-        // Parse CSV
         const csv = readFileSync(opts.sptProfile, 'utf-8');
         const lines = csv.trim().split('\n');
         const header = lines[0].toLowerCase();
@@ -41,7 +51,7 @@ export function registerLiquefactionCommand(program: Command): void {
             unitWeight: cols[3] ?? 18,
             waterTableDepth: cols[4] ?? 1,
           };
-        }).filter((l) => !isNaN(l.depth) && !isNaN(l.sptN));
+        }).filter((layer) => !isNaN(layer.depth) && !isNaN(layer.sptN));
       } else if (opts.depth && opts.spt !== undefined) {
         layers = [{
           depth: opts.depth,
@@ -50,8 +60,8 @@ export function registerLiquefactionCommand(program: Command): void {
           unitWeight: 18,
           waterTableDepth: 1,
         }];
-      } else {
-        // Demo layers
+      } else if (opts.demo) {
+        source = 'demo';
         layers = [
           { depth: 2.0, sptN: 8, finesContent: 15, unitWeight: 17, waterTableDepth: 1.5 },
           { depth: 4.5, sptN: 12, finesContent: 10, unitWeight: 18, waterTableDepth: 1.5 },
@@ -59,8 +69,12 @@ export function registerLiquefactionCommand(program: Command): void {
           { depth: 10.0, sptN: 22, finesContent: 5, unitWeight: 19, waterTableDepth: 1.5 },
         ];
         if (!flags.json) {
-          warn('No SPT profile provided — using demo data. Use --spt-profile <file> for real analysis.');
+          warn('Using demo data because --demo was provided. Use --spt-profile <file> for real analysis.');
         }
+      } else {
+        error('No SPT profile provided. Use --spt-profile <file>, provide --depth/--spt, or pass --demo.');
+        process.exitCode = 1;
+        return;
       }
 
       if (flags.dryRun) {
@@ -75,27 +89,28 @@ export function registerLiquefactionCommand(program: Command): void {
         pga: opts.pga,
         method: opts.method,
       });
+      const outputResult = source === 'demo' ? { ...result, source } : result;
 
       if (flags.json) {
-        renderJSON(result);
+        renderJSON(outputResult);
         return;
       }
 
       if (flags.quiet) {
-        const severe = result.layers.filter(l => l.potential === 'SEVERE' || l.potential === 'HIGH').length;
+        const severe = result.layers.filter((layer) => layer.potential === 'SEVERE' || layer.potential === 'HIGH').length;
         console.log(`${severe}/${result.layers.length}`);
         return;
       }
 
-      heading(`Liquefaction Analysis — ${result.method === 'boulanger-idriss-2014' ? 'Boulanger & Idriss (2014)' : 'NCEER Simplified'}`);
+      heading(`Liquefaction Analysis - ${result.method === 'boulanger-idriss-2014' ? 'Boulanger & Idriss (2014)' : 'NCEER Simplified'}`);
 
       keyValue('Earthquake magnitude (Mw)', opts.magnitude);
       keyValue('Peak ground acceleration', `${opts.pga}g`);
 
       renderTable(
-        ['Depth (m)', 'N₁₆₀', '(N₁)₆₀cs', 'CSR', 'CRR', 'FS', 'Potential'],
-        result.layers.map((l) => [
-          l.depth, l.N160, l.N160cs, l.CSR, l.CRR, l.factorOfSafety, l.potential,
+        ['Depth (m)', 'N160', '(N1)60cs', 'CSR', 'CRR', 'FS', 'Potential'],
+        result.layers.map((layer) => [
+          layer.depth, layer.N160, layer.N160cs, layer.CSR, layer.CRR, layer.factorOfSafety, layer.potential,
         ]),
       );
 
@@ -104,7 +119,7 @@ export function registerLiquefactionCommand(program: Command): void {
       renderSteps(result.steps, flags.verbose);
 
       if (flags.output) {
-        writeFileSync(flags.output, JSON.stringify(result, null, 2));
+        writeFileSync(flags.output, JSON.stringify(outputResult, null, 2));
         success(`Results saved to ${flags.output}`);
       }
 

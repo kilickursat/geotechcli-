@@ -4,11 +4,21 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 
 const releases = [
   {
+    version: 'strong-beta-model-refresh',
+    date: '2026-04-14',
+    tag: 'Hosted Model Update',
+    changes: [
+      { type: 'feat', text: 'Hosted beta text default switched to glm-4.7-flash to reduce shared credit burn during strong beta' },
+      { type: 'feat', text: 'Hosted beta vision default switched to glm-4.6v-flash for lower-cost image analysis during strong beta' },
+      { type: 'fix', text: 'Hosted proxy allowlist, CLI defaults, and docs were aligned to the new flash model IDs' },
+    ],
+  },
+  {
     version: 'strong-beta-wave2',
     date: '2026-04-03',
     tag: 'Hosted GLM Beta',
     changes: [
-      { type: 'feat', text: 'Hosted GLM beta gateway enabled for strong-beta with glm-5.1 and glm-5v-turbo defaults' },
+      { type: 'feat', text: 'Hosted GLM beta gateway enabled for strong-beta, with the public hosted defaults now standardized on glm-4.7-flash and glm-4.6v-flash' },
       { type: 'security', text: 'Proxy now validates requests, enforces model allowlists, and applies server-side rate limits before calling Z.AI' },
       { type: 'feat', text: 'CLI default provider switched to hosted-beta so users can try AI commands without bringing their own key' },
       { type: 'feat', text: 'Website, docs, and privacy copy updated to reflect hosted beta access with no-signup limits' },
@@ -23,21 +33,19 @@ const releases = [
       { type: 'feat', text: 'Website messaging rewritten around strong beta: deterministic CLI live, hosted anonymous GLM coming in a later wave' },
       { type: 'fix', text: 'Signup, checkout, usage, webhook, and hosted proxy endpoints disabled until the beta gateway is ready' },
       { type: 'fix', text: 'CLI AI flows now use the user configured provider directly in Wave 1, without fake registration walls' },
-      { type: 'feat', text: 'Default Z.AI models updated to glm-5.1 for text and glm-5v-turbo for vision' },
+      { type: 'feat', text: 'Hosted Z.AI defaults are now presented publicly as glm-4.7-flash for text and glm-4.6v-flash for vision' },
     ],
   },
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-04-12',
-    tag: 'Strong Beta Finalization',
+    date: '2026-04-14',
+    tag: '0.4.0 Release Prep',
     changes: [
-      { type: 'feat', text: 'Enabled PDF and DOCX exports for the report command using dedicated layout generators' },
-      { type: 'feat', text: 'Introduced seepage analysis engine (Dupuit-Forchheimer & Flow-net methods with piping checks)' },
-      { type: 'feat', text: 'Added settlement analysis engines (1D consolidation, Schmertmann elastic, and Peck excavation trough)' },
-      { type: 'feat', text: 'Branded GEOTECHCLI ASCII art banner added to terminal invocation' },
-      { type: 'fix', text: 'Added intelligent fallback recovery logic for upstream GLM vision empty-content errors' },
-      { type: 'fix', text: 'Ensured English-only response safety by intercepting and translating upstream API language tracebacks' },
-      { type: 'feat', text: 'Enhanced agent session UX with interactive prompts allowing continuation via the interactive chat REPL' },
+      { type: 'security', text: 'Closed agent sandbox escape paths, gated command execution more tightly, and hardened hosted-beta request handling for production-facing strong-beta use' },
+      { type: 'fix', text: 'Corrected slope seismic regression behavior and locked the deterministic engineering suite back to a passing state' },
+      { type: 'feat', text: 'Added additive case-file persistence, deterministic report assembly, conservative evidence records, and agent deliverable tools for report and export generation' },
+      { type: 'feat', text: 'Enabled PDF and DOCX exports for deterministic stored-case reports using dedicated layout generators' },
+      { type: 'fix', text: 'Aligned the public release surface on GLM-4.7-Flash text defaults and GLM-4.6V-Flash vision defaults across docs, CLI, and website copy' },
     ],
   },
   {
@@ -69,7 +77,7 @@ const releases = [
       { type: 'feat', text: 'GBR document Q&A with vision model' },
       { type: 'feat', text: 'Export to GeoJSON, DXF (AutoCAD), and CSV' },
       { type: 'feat', text: 'PLAXIS / FLAC / Rocscience bridge (detection + script generation)' },
-      { type: 'feat', text: 'LLM-agnostic provider layer: Zhipu GLM-5 (default), OpenAI, Anthropic, self-hosted' },
+      { type: 'feat', text: 'LLM-agnostic provider layer: Zhipu GLM family, OpenAI, Anthropic, and self-hosted backends' },
       { type: 'feat', text: 'Anti-abuse metering: 5 free AI calls for unregistered users, IP fingerprinting' },
       { type: 'feat', text: '--json, --verbose, --plot, --output global flags on every command' },
       { type: 'security', text: 'API keys never logged, echoed, or included in error messages' },

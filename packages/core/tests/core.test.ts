@@ -623,12 +623,12 @@ describe('Shell Command Sandbox', () => {
   it('Blocks python -c', () => {
     const check = validateShellCommand('python -c "import os"');
     expect(check.safe).toBe(false);
-    expect(check.error).toContain('-c');
+    expect(check.error).toContain('python');
   });
 
-  it('Allows python script.py', () => {
+  it('Blocks python script.py', () => {
     const check = validateShellCommand('python analysis.py');
-    expect(check.safe).toBe(true);
+    expect(check.safe).toBe(false);
   });
 
   it('Blocks pipe operators', () => {

@@ -11,8 +11,8 @@ const features = [
     ),
     colorClass: 'teal',
     name: 'Multi-Agent Orchestration',
-    desc: 'Geo, Foundation, Seismic, Tunnel, Slope, and Hydro agents collaborate autonomously — powered by GLM-5.1 via hosted beta. No key required.',
-    tag: 'GLM-5.1',
+    desc: 'Geo, Foundation, Seismic, Tunnel, Slope, and Hydro agents collaborate autonomously — powered by GLM-4.7-Flash via hosted beta. No key required.',
+    tag: 'GLM-4.7-Flash',
     tagColor: 'teal',
   },
   {
@@ -23,8 +23,8 @@ const features = [
     ),
     colorClass: 'cyan',
     name: 'Vision AI Workflows',
-    desc: 'Point a photo at a tunnel face, core box, or borehole log — GLM-5.1 Vision extracts RQD, fracture spacing, weathering, and USCS classification automatically.',
-    tag: 'GLM-5.1 Vision',
+    desc: 'Point a photo at a tunnel face, core box, or borehole log — GLM-4.6V-Flash extracts RQD, fracture spacing, weathering, and USCS classification automatically.',
+    tag: 'GLM-4.6V-Flash',
     tagColor: 'cyan',
   },
   {
@@ -73,7 +73,7 @@ const features = [
     colorClass: 'purple',
     name: 'AI Report Generation',
     desc: 'One command drafts a full geotechnical report from your analysis data — structured sections, engineering language, export to Markdown or JSON.',
-    tag: 'GLM-5.1',
+    tag: 'GLM-4.7-Flash',
     tagColor: 'purple',
   },
 ];

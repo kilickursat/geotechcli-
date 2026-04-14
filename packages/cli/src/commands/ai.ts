@@ -4,6 +4,7 @@ import ora from 'ora';
 import chalk from 'chalk';
 import {
   buildLLMConfig,
+  DEFAULT_LLM_VISION_MODEL,
   analyzeCoreBox,
   classifyRMRFromImage,
   classifySoilFromDescription,
@@ -22,8 +23,13 @@ import {
   saveDerivedParameter,
   setActiveAnalysisContext,
   generateReport,
+  generateReportFromCaseFile,
   renderReportAsPdf,
   renderReportAsDocx,
+  buildSwarmSessionProjectRecord,
+  persistSwarmCaseFile,
+  persistCaseFileEvidence,
+  type GeneratedReport,
   type AgentStep,
   type AgentSession,
   type SwarmStep,
@@ -31,6 +37,15 @@ import {
 } from '@geotechcli/core';
 import { heading, keyValue, renderJSON, success, error, warn, renderTable } from '../ui/terminal.js';
 import { addGlobalFlags, getGlobalFlags } from '../util/flags.js';
+import {
+  estimateHostedBetaVisionBodyBytes,
+  formatByteSize,
+  HOSTED_BETA_REQUEST_LIMIT_BYTES,
+  readVisionInput,
+  resolveStructuredOutputTarget,
+  HOSTED_BETA_REQUEST_SAFE_BYTES,
+  type VisionInput,
+} from '../util/vision-output.js';
 
 async function checkQuota(_callType: 'llmCalls' | 'visionCalls' | 'agentCalls'): Promise<boolean> {
   // Strong-beta hosted limits are enforced server-side by the beta proxy.
@@ -61,6 +76,82 @@ function loadImageBase64(filePath: string): { base64: string; mimeType: string }
     base64: buffer.toString('base64'),
     mimeType: mimeMap[ext] ?? 'image/png',
   };
+}
+
+function describeVisionInput(file: VisionInput): void {
+  if (file.kind !== 'pdf') {
+    return;
+  }
+
+  console.log('');
+  console.log(chalk.yellow('  PDF input detected.'));
+  console.log(chalk.gray('    GLM vision works best with PNG or JPG images.'));
+  console.log(chalk.gray('    For PDFs, export a single page to PNG/JPG first, or split the PDF into smaller files.'));
+  console.log(chalk.gray('    The CLI will block oversized PDFs before upload to avoid the hosted-beta body limit.'));
+  console.log('');
+}
+
+function ensureHostedBetaVisionPayloadWithinLimit(
+  file: VisionInput,
+  details: {
+    prompt: string;
+    systemPrompt: string;
+    model: string;
+    temperature?: number;
+    maxTokens?: number;
+  },
+): void {
+  const estimatedBytes = estimateHostedBetaVisionBodyBytes({
+    prompt: details.prompt,
+    systemPrompt: details.systemPrompt,
+    imageBase64: file.base64,
+    mimeType: file.mimeType,
+    model: details.model,
+    temperature: details.temperature,
+    maxTokens: details.maxTokens,
+    jsonMode: false,
+  });
+
+  if (estimatedBytes <= HOSTED_BETA_REQUEST_SAFE_BYTES) {
+    return;
+  }
+
+  const fileSize = formatByteSize(file.fileBytes);
+  const payloadSize = formatByteSize(estimatedBytes);
+  const limitSize = formatByteSize(HOSTED_BETA_REQUEST_SAFE_BYTES);
+  const capSize = formatByteSize(HOSTED_BETA_REQUEST_LIMIT_BYTES);
+  const baseMessage =
+    file.kind === 'pdf'
+      ? 'PDF vision inputs are uploaded as a single base64 payload and are too large for the hosted beta proxy.'
+      : 'Image vision inputs are uploaded as a single base64 payload and are too large for the hosted beta proxy.';
+  const mitigation =
+    file.kind === 'pdf'
+      ? 'Export one page as PNG or JPG, or split the PDF into smaller files, then retry.'
+      : 'Resize or crop the image to the relevant region, then retry.';
+
+  throw new Error(
+    `${baseMessage} File: ${file.filePath} (${fileSize}). Estimated request body: ${payloadSize}. Safe limit: ${limitSize}. Hosted beta cap: ${capSize}.\n${mitigation}`,
+  );
+}
+
+function maybeCheckHostedBetaVisionPayload(
+  config: ReturnType<typeof buildLLMConfig>,
+  file: VisionInput,
+  details: {
+    prompt: string;
+    systemPrompt: string;
+    temperature?: number;
+    maxTokens?: number;
+  },
+): void {
+  if (config.provider !== 'hosted-beta') {
+    return;
+  }
+
+  ensureHostedBetaVisionPayloadWithinLimit(file, {
+    ...details,
+    model: config.visionModelId ?? DEFAULT_LLM_VISION_MODEL,
+  });
 }
 
 function formatMaybe(value: string | number | null | undefined, suffix = ''): string {
@@ -94,7 +185,15 @@ function handleCommandError(
 
   // Provide specific guidance for common vision errors
   if (code.includes('vision') || code.includes('corebox') || code.includes('rmr') || code.includes('sensor') || code.includes('borehole')) {
-    if (message.toLowerCase().includes('no content') || message.toLowerCase().includes('empty') || message.toLowerCase().includes('upstream')) {
+    const lowered = message.toLowerCase();
+    if (
+      lowered.includes('no content') ||
+      lowered.includes('empty') ||
+      lowered.includes('upstream') ||
+      lowered.includes('hosted beta proxy') ||
+      lowered.includes('too large for the hosted beta proxy') ||
+      lowered.includes('safe limit')
+    ) {
       error(message);
       console.log('');
       console.log(chalk.gray('  Vision troubleshooting tips:'));
@@ -158,17 +257,34 @@ function persistSessionToProject(
     }
     : undefined;
 
-  addAgentSession(projectId, {
-    mode,
-    query,
-    answer,
-    summary: answer?.slice(0, 240) ?? `${mode} session for: ${query.slice(0, 120)}`,
-    stepCount: session.steps.length,
-    tokens: session.totalTokens,
-    latencyMs: session.totalLatencyMs,
-    context: session.context,
-    metadata: reviewMetadata,
-  });
+  if (mode === 'swarm') {
+    const swarmSession = session as SwarmSession;
+    addAgentSession(projectId, buildSwarmSessionProjectRecord(query, swarmSession, {
+      mode,
+      answer,
+      summary: answer?.slice(0, 240) ?? `${mode} session for: ${query.slice(0, 120)}`,
+      metadata: reviewMetadata,
+    }));
+
+    const caseFileResult = persistSwarmCaseFile(projectId, query, swarmSession);
+    const evidenceRecords = persistCaseFileEvidence(projectId, caseFileResult.scenarioId);
+    addNote(projectId, `Updated swarm case file "${caseFileResult.scenarioId}" from the latest session.`);
+    if (evidenceRecords.length > 0) {
+      addNote(projectId, `Captured ${evidenceRecords.length} evidence record${evidenceRecords.length === 1 ? '' : 's'} for scenario "${caseFileResult.scenarioId}".`);
+    }
+  } else {
+    addAgentSession(projectId, {
+      mode,
+      query,
+      answer,
+      summary: answer?.slice(0, 240) ?? `${mode} session for: ${query.slice(0, 120)}`,
+      stepCount: session.steps.length,
+      tokens: session.totalTokens,
+      latencyMs: session.totalLatencyMs,
+      context: session.context,
+      metadata: reviewMetadata,
+    });
+  }
 
   saveNamedDataset(projectId, {
     name: 'latest-agent-context',
@@ -223,6 +339,28 @@ function persistOutputArtifact(
   });
 }
 
+function buildAnalysisDocument(title: string, task: string, answer: string, mode: 'single' | 'swarm'): GeneratedReport {
+  const content = [
+    `## Task`,
+    task,
+    '',
+    `## ${mode === 'swarm' ? 'Swarm Report' : 'Analysis'}`,
+    answer,
+  ].join('\n');
+
+  return {
+    title,
+    sections: [
+      {
+        title: 'Summary',
+        content,
+      },
+    ],
+    fullMarkdown: `# ${title}\n\n${content}\n`,
+    latencyMs: 0,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Vision Commands
 // ---------------------------------------------------------------------------
@@ -242,9 +380,16 @@ export function registerVisionCommand(program: Command): void {
 
       const spinner = flags.json ? null : ora({ text: 'Analyzing core box image...', indent: 2 }).start();
       try {
-        const { base64, mimeType } = loadImageBase64(imagePath);
+        const file = readVisionInput(imagePath);
+        describeVisionInput(file);
         const config = buildLLMConfig();
-        const result = await analyzeCoreBox(base64, mimeType, config);
+        maybeCheckHostedBetaVisionPayload(config, file, {
+          prompt: 'Analyze this geotechnical image.',
+          systemPrompt: 'You are analyzing a geotechnical image.',
+          temperature: 0.1,
+          maxTokens: 900,
+        });
+        const result = await analyzeCoreBox(file.base64, file.mimeType, config);
 
         spinner?.succeed(`Analysis complete (${result.latencyMs}ms)`);
 
@@ -283,9 +428,16 @@ export function registerVisionCommand(program: Command): void {
 
       const spinner = flags.json ? null : ora({ text: 'Extracting rock mass parameters from image...', indent: 2 }).start();
       try {
-        const { base64, mimeType } = loadImageBase64(imagePath);
+        const file = readVisionInput(imagePath);
+        describeVisionInput(file);
         const config = buildLLMConfig();
-        const result = await classifyRMRFromImage(base64, mimeType, config);
+        maybeCheckHostedBetaVisionPayload(config, file, {
+          prompt: 'Estimate rock mass parameters from this image.',
+          systemPrompt: 'You are analyzing a geotechnical image.',
+          temperature: 0.1,
+          maxTokens: 700,
+        });
+        const result = await classifyRMRFromImage(file.base64, file.mimeType, config);
 
         spinner?.succeed(`RMR classification complete (${result.latencyMs}ms)`);
 
@@ -332,9 +484,16 @@ export function registerVisionCommand(program: Command): void {
 
       const spinner = flags.json ? null : ora({ text: 'Interpreting sensor data...', indent: 2 }).start();
       try {
-        const { base64, mimeType } = loadImageBase64(imagePath);
+        const file = readVisionInput(imagePath);
+        describeVisionInput(file);
         const config = buildLLMConfig();
-        const result = await interpretSensorImage(base64, mimeType, config);
+        maybeCheckHostedBetaVisionPayload(config, file, {
+          prompt: 'Interpret this sensor data image.',
+          systemPrompt: 'You are analyzing a geotechnical image.',
+          temperature: 0.1,
+          maxTokens: 700,
+        });
+        const result = await interpretSensorImage(file.base64, file.mimeType, config);
 
         spinner?.succeed(`Interpretation complete (${result.latencyMs}ms)`);
 
@@ -374,9 +533,16 @@ export function registerVisionCommand(program: Command): void {
 
       const spinner = flags.json ? null : ora({ text: 'Extracting borehole log data...', indent: 2 }).start();
       try {
-        const { base64, mimeType } = loadImageBase64(filePath);
+        const file = readVisionInput(filePath);
+        describeVisionInput(file);
         const config = buildLLMConfig();
-        const result = await interpretBoreholeLog(base64, mimeType, config, opts.boreholeId);
+        maybeCheckHostedBetaVisionPayload(config, file, {
+          prompt: 'Extract structured borehole log data.',
+          systemPrompt: 'You are analyzing a geotechnical image.',
+          temperature: 0.1,
+          maxTokens: 900,
+        });
+        const result = await interpretBoreholeLog(file.base64, file.mimeType, config, opts.boreholeId);
 
         spinner?.succeed(`Extraction complete: ${result.layers.length} layers (${result.latencyMs}ms)`);
 
@@ -484,9 +650,16 @@ export function registerGBRCommand(program: Command): void {
 
       const spinner = flags.json ? null : ora({ text: `Querying GBR: "${question.slice(0, 50)}..."`, indent: 2 }).start();
       try {
-        const { base64, mimeType } = loadImageBase64(opts.doc);
+        const file = readVisionInput(opts.doc);
+        describeVisionInput(file);
         const config = buildLLMConfig();
-        const result = await queryGBRDocument(question, base64, mimeType, config);
+        maybeCheckHostedBetaVisionPayload(config, file, {
+          prompt: 'Answer questions about this GBR document.',
+          systemPrompt: 'You are analyzing a geotechnical document image.',
+          temperature: 0.1,
+          maxTokens: 700,
+        });
+        const result = await queryGBRDocument(question, file.base64, file.mimeType, config);
 
         spinner?.succeed(`Answer ready (${result.latencyMs}ms)`);
 
@@ -684,9 +857,27 @@ export function registerAgentCommand(program: Command): void {
           }
 
           if (flags.output && answer) {
-            writeFileSync(flags.output, answer.content);
-            persistOutputArtifact(projectState?.id, 'swarm-report-file', 'swarm report output', flags.output, { task });
-            success(`Report saved to ${flags.output}`);
+            const outputTarget = resolveStructuredOutputTarget({
+              outputPath: flags.output,
+              defaultBaseName: 'swarm-report',
+            });
+
+            if (outputTarget.warning) {
+              warn(outputTarget.warning);
+            }
+
+            if (outputTarget.kind === 'pdf' || outputTarget.kind === 'docx') {
+              const document = buildAnalysisDocument('Swarm Report', task, answer.content, 'swarm');
+              const buffer = outputTarget.kind === 'pdf'
+                ? await renderReportAsPdf(document)
+                : await renderReportAsDocx(document);
+              writeFileSync(outputTarget.outputPath, buffer);
+            } else {
+              writeFileSync(outputTarget.outputPath, answer.content);
+            }
+
+            persistOutputArtifact(projectState?.id, 'swarm-report-file', 'swarm report output', outputTarget.outputPath, { task });
+            success(`Report saved to ${outputTarget.outputPath}`);
           }
 
         } else {
@@ -729,9 +920,27 @@ export function registerAgentCommand(program: Command): void {
           }
 
           if (flags.output && answer) {
-            writeFileSync(flags.output, answer.content);
-            persistOutputArtifact(projectState?.id, 'agent-report-file', 'agent analysis output', flags.output, { task });
-            success(`Report saved to ${flags.output}`);
+            const outputTarget = resolveStructuredOutputTarget({
+              outputPath: flags.output,
+              defaultBaseName: 'agent-analysis',
+            });
+
+            if (outputTarget.warning) {
+              warn(outputTarget.warning);
+            }
+
+            if (outputTarget.kind === 'pdf' || outputTarget.kind === 'docx') {
+              const document = buildAnalysisDocument('Agent Analysis', task, answer.content, 'single');
+              const buffer = outputTarget.kind === 'pdf'
+                ? await renderReportAsPdf(document)
+                : await renderReportAsDocx(document);
+              writeFileSync(outputTarget.outputPath, buffer);
+            } else {
+              writeFileSync(outputTarget.outputPath, answer.content);
+            }
+
+            persistOutputArtifact(projectState?.id, 'agent-report-file', 'agent analysis output', outputTarget.outputPath, { task });
+            success(`Report saved to ${outputTarget.outputPath}`);
           }
         }
 
@@ -898,51 +1107,86 @@ export function registerChatCommand(program: Command): void {
 export function registerReportCommand(program: Command): void {
   const cmd = new Command('report')
     .description('Generate AI-powered geotechnical report from analysis data')
-    .requiredOption('--data <file>', 'JSON file with analysis results')
+    .option('--data <file>', 'JSON file with analysis results')
+    .option('--from-case-file <scenarioId>', 'Assemble a deterministic report from a stored case file')
+    .option('--project-id <id>', 'Stored project id required with --from-case-file')
     .option('--type <type>', 'Report type: borehole|site-investigation|tunnel-design|foundation|slope|custom', 'site-investigation')
     .option('--project <name>', 'Project name')
     .option('--location <loc>', 'Project location')
     .option('--format <ext>', 'Export format: md|pdf|docx', 'md')
     .action(async (opts) => {
       const flags = getGlobalFlags(opts);
-
-      if (!(await checkQuota('llmCalls'))) return;
-
-      const spinner = flags.json ? null : ora({ text: 'Generating report...', indent: 2 }).start();
+      const useCaseFile = typeof opts.fromCaseFile === 'string' && opts.fromCaseFile.trim().length > 0;
+      let spinner: ReturnType<typeof ora> | null = null;
       try {
-        const data = JSON.parse(readFileSync(opts.data, 'utf-8'));
-        const config = buildLLMConfig();
+        if (!useCaseFile && !opts.data) {
+          throw new Error('Provide either --data <file> or --from-case-file <scenarioId>.');
+        }
+        if (useCaseFile && !opts.projectId) {
+          throw new Error('--project-id is required when using --from-case-file.');
+        }
+        if (!useCaseFile && !(await checkQuota('llmCalls'))) {
+          return;
+        }
 
-        const report = await generateReport(data, {
-          type: opts.type,
-          projectName: opts.project,
-          location: opts.location,
-        }, config);
+        spinner = flags.json
+          ? null
+          : ora({
+            text: useCaseFile ? 'Assembling case-file report...' : 'Generating report...',
+            indent: 2,
+          }).start();
 
-        spinner?.succeed(`Report generated: ${report.sections.length} sections (${report.latencyMs}ms)`);
+        const report = useCaseFile
+          ? await generateReportFromCaseFile({
+            projectId: opts.projectId,
+            scenarioId: opts.fromCaseFile,
+            projectName: opts.project,
+            location: opts.location,
+          })
+          : await (async () => {
+            const data = JSON.parse(readFileSync(opts.data, 'utf-8'));
+            const config = buildLLMConfig();
+            return generateReport(data, {
+              type: opts.type,
+              projectName: opts.project,
+              location: opts.location,
+            }, config);
+          })();
+
+        spinner?.succeed(
+          `${useCaseFile ? 'Case-file report assembled' : 'Report generated'}: ${report.sections.length} sections (${report.latencyMs}ms)`,
+        );
 
         if (flags.json) { renderJSON(report); return; }
 
-        const format = opts.format.toLowerCase();
-        let outputFile = flags.output;
-        
-        if (!outputFile) {
-          const baseName = (opts.project ? opts.project.replace(/\s+/g, '_') : 'report').toLowerCase();
-          outputFile = `${baseName}.${format}`;
+        const baseName = (
+          opts.project
+            ? opts.project.replace(/\s+/g, '_')
+            : useCaseFile
+              ? `${opts.projectId}_${opts.fromCaseFile}`
+              : 'report'
+        ).toLowerCase();
+        const outputTarget = resolveStructuredOutputTarget({
+          outputPath: flags.output,
+          requestedFormat: opts.format,
+          defaultBaseName: baseName,
+        });
+
+        if (outputTarget.warning) {
+          warn(outputTarget.warning);
         }
 
-        if (format === 'pdf') {
+        if (outputTarget.kind === 'pdf') {
           const buf = await renderReportAsPdf(report);
-          writeFileSync(outputFile, buf);
-        } else if (format === 'docx') {
+          writeFileSync(outputTarget.outputPath, buf);
+        } else if (outputTarget.kind === 'docx') {
           const buf = await renderReportAsDocx(report);
-          writeFileSync(outputFile, buf);
+          writeFileSync(outputTarget.outputPath, buf);
         } else {
-          // Default to markdown
-          writeFileSync(outputFile, report.fullMarkdown);
+          writeFileSync(outputTarget.outputPath, report.fullMarkdown);
         }
 
-        success(`Report saved to ${outputFile}`);
+        success(`Report saved to ${outputTarget.outputPath}`);
         console.log('');
       } catch (err) {
         spinner?.fail('Report generation failed');

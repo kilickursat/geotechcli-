@@ -8,6 +8,7 @@ import { extractToolSafetyIssue, serializeContextForPrompt } from './safety.js';
 import './filesystem-tools.js';
 import './bridge-tools.js';
 import './data-tools.js';
+import './deliverable-tools.js';
 
 // ---------------------------------------------------------------------------
 // Types

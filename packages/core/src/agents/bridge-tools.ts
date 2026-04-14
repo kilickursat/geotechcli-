@@ -1,6 +1,6 @@
 import { toolRegistry, type ToolResult } from './tools.js';
 import { execSync } from 'node:child_process';
-import { validateShellCommand } from './sandbox.js';
+import { validateReadPath, validateShellCommand } from './sandbox.js';
 
 // ---------------------------------------------------------------------------
 // PLAXIS Remote Scripting API
@@ -153,7 +153,7 @@ toolRegistry.register(
 toolRegistry.register(
   {
     name: 'run_command',
-    description: 'Execute a safe, read-only shell command. Only allows: ls, cat, head, tail, wc, find, grep, file, stat, du, pwd, echo, python <script.py>. No pipes, redirects, or chaining.',
+    description: 'Execute a safe, read-only shell command. Only allows: ls, cat, head, tail, wc, find, grep, file, stat, du, pwd, echo. Disabled by default in strong beta unless explicitly enabled.',
     parameters: {
       type: 'object',
       required: ['command'],
@@ -164,6 +164,15 @@ toolRegistry.register(
     },
   },
   (args): ToolResult => {
+    if (process.env.GEOTECHCLI_ENABLE_RUN_COMMAND !== '1') {
+      return {
+        success: false,
+        data: null,
+        summary: '',
+        error: 'run_command is disabled by default in strong beta. Set GEOTECHCLI_ENABLE_RUN_COMMAND=1 to opt in.',
+      };
+    }
+
     const command = String(args.command);
 
     // SANDBOX: validate command through centralized sandbox
@@ -173,7 +182,12 @@ toolRegistry.register(
     }
 
     try {
-      const cwd = args.cwd ? String(args.cwd) : process.cwd();
+      const cwdCheck = validateReadPath(args.cwd ? String(args.cwd) : process.cwd());
+      if (!cwdCheck.safe) {
+        return { success: false, data: null, summary: '', error: cwdCheck.error! };
+      }
+
+      const cwd = cwdCheck.resolved;
       const output = execSync(command, {
         cwd,
         timeout: 15_000,

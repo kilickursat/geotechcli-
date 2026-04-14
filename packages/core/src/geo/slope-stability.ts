@@ -117,10 +117,13 @@ function bishopAnalysis(
       if (height <= 0.01) continue;
 
       // Base angle
-      const alpha = Math.atan2(dx, Math.sqrt(Math.max(0, radius * radius - dx * dx)));
+      // Use the absolute base inclination for slice force resolution.
+      // The slip base angle magnitude controls driving/resisting terms;
+      // keeping signed left/right geometry here can create cancellation
+      // that makes pseudo-static loading appear stabilizing.
+      const alpha = Math.abs(Math.atan2(dx, Math.sqrt(Math.max(0, radius * radius - dx * dx))));
 
       // Determine soil properties at base of slice
-      let depth = ySurface - yBase;
       let cumThickness = 0;
       let c = layers[0].cohesion;
       let phi = layers[0].frictionAngle;
@@ -140,8 +143,6 @@ function bishopAnalysis(
       const W = gamma * height * sliceWidth + (xMid <= 0 ? surcharge * sliceWidth : 0);
 
       // Pore water pressure at base
-      const hwAboveBase = Math.max(0, (ySurface - gwt) > 0 ? Math.min(height, ySurface - gwt) : height);
-      const u = yBase < (ySurface - gwt) ? 0 : 9.81 * Math.max(0, (ySurface - gwt) - yBase + height);
       const uBase = yBase < ySurface - gwt ? 0 : 9.81 * Math.max(0, ySurface - gwt - yBase);
 
       const phiRad = degToRad(phi);
@@ -161,10 +162,12 @@ function bishopAnalysis(
       const S = (c * baseLength + (N - uBase * baseLength) * Math.tan(phiRad));
 
       // Driving force
-      const drivingForce = W * sinAlpha + kh * W * (height / 2) / radius;
+      // Pseudo-static horizontal acceleration adds a horizontal inertia term.
+      const seismicDrivingForce = kh > 0 ? kh * W * cosAlpha : 0;
+      const drivingForce = W * sinAlpha + seismicDrivingForce;
 
       sumResisting += S / mAlpha;
-      sumDriving += W * sinAlpha;
+      sumDriving += drivingForce;
 
       iterSlices.push({
         sliceNumber: i + 1,

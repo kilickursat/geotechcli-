@@ -1,5 +1,30 @@
 ﻿# Changelog
 
+## [0.4.0] - 2026-04-14
+
+### Release Alignment
+
+- Bumped shared package/version metadata to `0.4.0` across `@geotechcli/core`, `geotechcli`, `@geotechcli/web`, and the shared metadata surface used by the website and CLI status output.
+- Updated generated PDF/DOCX report footers to use the shared geotechCLI version instead of stale hardcoded `0.3.0` strings.
+- Refreshed the public strong-beta changelog so the website now consistently surfaces `GLM-4.7-Flash` for text and `GLM-4.6V-Flash` for vision.
+
+### Deterministic Reliability
+
+- Fixed the pseudo-static slope stability regression so increasing `kh` now reduces the reported factor of safety instead of accidentally appearing stabilizing.
+- Tightened the regression suite around slope loading, pile toe-depth behavior, sandbox hardening, and case-file deliverable generation.
+- Kept pile toe/base resistance selection tied to actual toe depth while avoiding brittle regressions that depended on ambiguous boundary-layer assumptions.
+
+### Case-File & Deliverables
+
+- Added additive scenario case-file persistence for swarm outputs without replacing the current working CLI flows.
+- Added deterministic report assembly from stored case-file artifacts, plus conservative evidence record persistence.
+- Exposed agent deliverable tools for deterministic report generation and export workflows (`generate_report`, `render_pdf`, `render_docx`, `export_csv`, `export_dxf`, `export_geojson`).
+
+### Strong Beta Hardening
+
+- Hardened agent sandbox boundaries, hosted-beta abuse controls, and CLI trust surfaces for production-leaning strong-beta use.
+- Kept `geotech status` quota-safe by default, made demo/sample fallbacks explicit, and aligned release verification checks with the current hosted-beta defaults.
+
 ## [0.2.0] 窶・2026-03-30
 
 ### Security Fixes (P0)

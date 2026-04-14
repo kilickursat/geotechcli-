@@ -15,6 +15,7 @@ export const HOSTED_BETA_LIMITS = {
 } as const;
 
 export type HostedBetaCallType = 'text' | 'vision' | 'agent';
+export type HostedBetaClientMode = 'anonymous' | 'geotechcli';
 
 export interface ProxyContentPart {
   type: 'text' | 'image_url';
@@ -109,6 +110,10 @@ export function isHostedBetaModel(model: string): boolean {
   return SUPPORTED_PROXY_MODELS.includes(model);
 }
 
+export function isGeotechCliClient(headers: Headers): boolean {
+  return headers.get('x-geotech-client')?.trim().toLowerCase() === 'geotechcli';
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -190,14 +195,34 @@ export function validateMessages(input: unknown): ProxyMessage[] {
   return messages;
 }
 
+export function validateAnonymousHostedBetaMessages(messages: ProxyMessage[]): void {
+  if (messages.length > 2) {
+    throw new Error('Anonymous hosted beta requests must contain at most a system prompt and one user message.');
+  }
+
+  if (messages.some((message) => message.role === 'assistant')) {
+    throw new Error('Anonymous hosted beta requests must not include assistant messages.');
+  }
+
+  const userCount = messages.filter((message) => message.role === 'user').length;
+  if (userCount !== 1) {
+    throw new Error('Anonymous hosted beta requests must contain exactly one user message.');
+  }
+
+  const systemCount = messages.filter((message) => message.role === 'system').length;
+  if (systemCount > 1) {
+    throw new Error('Anonymous hosted beta requests may include only one system message.');
+  }
+
+  if (messages.length === 2 && messages[0]?.role !== 'system') {
+    throw new Error('Anonymous hosted beta requests must place any system prompt before the user message.');
+  }
+}
+
 export function inferHostedBetaCallType(
   messages: ProxyMessage[],
   hint?: string | null,
 ): HostedBetaCallType {
-  if (hint === 'text' || hint === 'vision' || hint === 'agent') {
-    return hint;
-  }
-
   const hasImage = messages.some((message) =>
     Array.isArray(message.content) &&
     message.content.some((part) => part.type === 'image_url'),
@@ -210,6 +235,10 @@ export function inferHostedBetaCallType(
   const hasAssistantTurns = messages.some((message) => message.role === 'assistant');
   if (hasAssistantTurns || messages.length > 2) {
     return 'agent';
+  }
+
+  if (hint === 'text' || hint === 'vision' || hint === 'agent') {
+    return hint;
   }
 
   return 'text';
@@ -335,13 +364,9 @@ export async function incrementHostedBetaUsage(
 
 export async function checkHostedBetaDailyLimit(params: {
   ip: string;
-  userAgent?: string | null;
-  clientVersion?: string | null;
   callType: HostedBetaCallType;
 }) {
-  const fingerprint = await hashIdentifier(
-    [params.ip, params.userAgent ?? '', params.clientVersion ?? '', params.callType].join('|'),
-  );
+  const fingerprint = await hashIdentifier([params.ip, params.callType].join('|'));
   const limit = getDailyLimit(params.callType);
   const current = await getDailyUsageCount(fingerprint, params.callType);
 
@@ -373,14 +398,21 @@ export function createHostedBetaErrorResponse(
   message: string,
   detail: string,
   extra: Record<string, unknown> = {},
+  requestId?: string,
+  client?: {
+    mode: HostedBetaClientMode;
+    version?: string | null;
+  },
 ) {
   return NextResponse.json(
     {
+      request_id: requestId ?? `gtbeta-${crypto.randomUUID()}`,
       error: {
         message,
         detail,
         ...extra,
       },
+      client: client ?? { mode: 'anonymous' },
       beta: STRONG_BETA_MODE,
       provider: 'hosted-beta',
       defaults: {
@@ -393,6 +425,7 @@ export function createHostedBetaErrorResponse(
       status,
       headers: {
         'Cache-Control': 'no-store',
+        ...(requestId ? { 'X-Request-Id': requestId } : {}),
       },
     },
   );

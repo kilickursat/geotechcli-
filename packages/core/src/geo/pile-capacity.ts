@@ -62,6 +62,60 @@ function degToRad(deg: number): number {
   return (deg * Math.PI) / 180;
 }
 
+function getLayerAtDepth(layers: PileCapacityInput['layers'], depth: number) {
+  let cumulativeDepth = 0;
+
+  for (const layer of layers) {
+    cumulativeDepth += layer.thickness;
+    if (depth < cumulativeDepth) {
+      return layer;
+    }
+  }
+
+  return layers[layers.length - 1];
+}
+
+function calculateVerticalStress(depth: number, layers: PileCapacityInput['layers'], waterTableDepth: number): number {
+  let remainingDepth = Math.max(depth, 0);
+  let stress = 0;
+  let currentDepth = 0;
+
+  for (const layer of layers) {
+    if (remainingDepth <= 0) {
+      break;
+    }
+
+    const contributingThickness = Math.min(layer.thickness, remainingDepth);
+    const topDepth = currentDepth;
+    const bottomDepth = currentDepth + contributingThickness;
+    const aboveWaterThickness = Math.max(0, Math.min(bottomDepth, waterTableDepth) - topDepth);
+    const belowWaterThickness = contributingThickness - aboveWaterThickness;
+
+    stress += layer.unit_weight * aboveWaterThickness;
+    if (belowWaterThickness > 0) {
+      stress += Math.max(layer.unit_weight - 9.81, 0) * belowWaterThickness;
+    }
+
+    currentDepth += contributingThickness;
+    remainingDepth -= contributingThickness;
+  }
+
+  if (remainingDepth > 0) {
+    const lastLayer = layers[layers.length - 1];
+    const topDepth = currentDepth;
+    const bottomDepth = currentDepth + remainingDepth;
+    const aboveWaterThickness = Math.max(0, Math.min(bottomDepth, waterTableDepth) - topDepth);
+    const belowWaterThickness = remainingDepth - aboveWaterThickness;
+
+    stress += lastLayer.unit_weight * aboveWaterThickness;
+    if (belowWaterThickness > 0) {
+      stress += Math.max(lastLayer.unit_weight - 9.81, 0) * belowWaterThickness;
+    }
+  }
+
+  return stress;
+}
+
 // ---------------------------------------------------------------------------
 // α coefficients (Tomlinson 1971, updated API RP 2GEO)
 // ---------------------------------------------------------------------------
@@ -156,10 +210,8 @@ export function calculatePileCapacity(input: PileCapacityInput): PileCapacityRes
     const effectiveThickness = Math.min(layer.thickness, L - currentDepth);
     const midDepth = currentDepth + effectiveThickness / 2;
 
-    // Effective stress at mid-depth
-    const sigma_v = layer.unit_weight * midDepth;
-    const u = midDepth > gwt ? 9.81 * (midDepth - gwt) : 0;
-    const sigma_v_eff = Math.max(sigma_v - u, 1);
+    // Effective vertical stress at mid-depth, integrated layer-by-layer.
+    const sigma_v_eff = Math.max(calculateVerticalStress(midDepth, layers, gwt), 1);
 
     let fs = 0; // unit shaft friction (kPa)
 
@@ -212,10 +264,8 @@ export function calculatePileCapacity(input: PileCapacityInput): PileCapacityRes
   }
 
   // Base resistance
-  const baseLayer = layers[layers.length - 1];
-  const sigma_v_base = baseLayer.unit_weight * L;
-  const u_base = L > gwt ? 9.81 * (L - gwt) : 0;
-  const sigma_v_eff_base = Math.max(sigma_v_base - u_base, 1);
+  const baseLayer = getLayerAtDepth(layers, L);
+  const sigma_v_eff_base = Math.max(calculateVerticalStress(L, layers, gwt), 1);
 
   let Qb = 0;
 

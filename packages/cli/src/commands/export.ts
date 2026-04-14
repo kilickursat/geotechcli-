@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { exportGeoJSON, exportDXF, exportCSV, exportJSON, exportBoreholeProfileDXF } from '@geotechcli/core';
-import { heading, success, error, renderJSON } from '../ui/terminal.js';
+import { exportGeoJSON, exportCSV, exportBoreholeProfileDXF } from '@geotechcli/core';
+import { success, error } from '../ui/terminal.js';
 
 export function registerExportCommand(program: Command): void {
   const exp = new Command('export')
@@ -16,9 +16,21 @@ export function registerExportCommand(program: Command): void {
       try {
         const data = JSON.parse(readFileSync(opts.input, 'utf-8'));
         const features = Array.isArray(data) ? data : [data];
+        const missingCoordinates = features.filter(
+          (feature: any) =>
+            (feature.lat === undefined && feature.latitude === undefined) ||
+            (feature.lng === undefined && feature.longitude === undefined),
+        );
+
+        if (missingCoordinates.length > 0) {
+          throw new Error(
+            `Missing latitude/longitude for ${missingCoordinates.length} feature(s). Provide lat/lng or latitude/longitude fields before exporting GeoJSON.`,
+          );
+        }
+
         const geoJsonFeatures = features.map((f: any, i: number) => ({
-          lat: f.lat ?? f.latitude ?? 35.0 + i * 0.001,
-          lng: f.lng ?? f.longitude ?? 139.0 + i * 0.001,
+          lat: f.lat ?? f.latitude,
+          lng: f.lng ?? f.longitude,
           properties: f,
           name: f.id ?? f.boreholeId ?? `Feature-${i + 1}`,
         }));

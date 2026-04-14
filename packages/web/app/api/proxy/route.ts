@@ -12,6 +12,7 @@ import {
   checkHostedBetaDailyLimit,
   createHostedBetaErrorResponse,
   extractClientIp,
+  isGeotechCliClient,
   getHostedBetaConfigIssue,
   getHostedBetaDefaultModel,
   hasHostedBetaRedis,
@@ -19,6 +20,7 @@ import {
   inferHostedBetaCallType,
   isHostedBetaModel,
   isIPRateLimitedMemory,
+  validateAnonymousHostedBetaMessages,
   validateMessages,
 } from '@/lib/beta';
 import type {
@@ -201,20 +203,27 @@ async function parseProxyRequest(request: NextRequest): Promise<ProxyRequestBody
   };
 }
 
-function jsonResponse(body: Record<string, unknown>, status = 200) {
+function jsonResponse(body: Record<string, unknown>, status = 200, requestId?: string) {
   return NextResponse.json(body, {
     status,
     headers: {
       'Cache-Control': 'no-store',
+      ...(requestId ? { 'X-Request-Id': requestId } : {}),
     },
   });
 }
 
+function createRequestId(): string {
+  return `gtbeta-${crypto.randomUUID()}`;
+}
+
 export async function GET() {
+  const requestId = createRequestId();
   const issue = getHostedBetaConfigIssue();
 
   return jsonResponse(
     {
+      request_id: requestId,
       beta: STRONG_BETA_MODE,
       provider: 'hosted-beta',
       status: issue ? 'degraded' : 'ready',
@@ -229,10 +238,14 @@ export async function GET() {
       issue,
     },
     issue ? 503 : 200,
+    requestId,
   );
 }
 
 export async function POST(request: NextRequest) {
+  const requestId = createRequestId();
+  const clientMode = isGeotechCliClient(request.headers) ? 'geotechcli' : 'anonymous';
+  const clientVersion = request.headers.get('x-geotech-client-version')?.trim() || null;
   const configIssue = getHostedBetaConfigIssue();
   if (configIssue) {
     return createHostedBetaErrorResponse(
@@ -240,6 +253,8 @@ export async function POST(request: NextRequest) {
       'Hosted beta AI is unavailable.',
       configIssue,
       { code: 'hosted_beta_unavailable' },
+      requestId,
+      { mode: clientMode, version: clientVersion },
     );
   }
 
@@ -252,7 +267,24 @@ export async function POST(request: NextRequest) {
       'Invalid hosted beta request.',
       err instanceof Error ? err.message : String(err),
       { code: 'invalid_request' },
+      requestId,
+      { mode: clientMode, version: clientVersion },
     );
+  }
+
+  if (clientMode === 'anonymous') {
+    try {
+      validateAnonymousHostedBetaMessages(body.messages);
+    } catch (err) {
+      return createHostedBetaErrorResponse(
+        400,
+        'Anonymous hosted beta request rejected.',
+        err instanceof Error ? err.message : String(err),
+        { code: 'anonymous_request_rejected' },
+        requestId,
+        { mode: clientMode, version: clientVersion },
+      );
+    }
   }
 
   const callType = inferHostedBetaCallType(
@@ -270,6 +302,8 @@ export async function POST(request: NextRequest) {
         code: 'unsupported_model',
         requested_model: model,
       },
+      requestId,
+      { mode: clientMode, version: clientVersion },
     );
   }
 
@@ -295,13 +329,13 @@ export async function POST(request: NextRequest) {
         code: 'ip_rate_limited',
         retry_after_seconds: 60,
       },
+      requestId,
+      { mode: clientMode, version: clientVersion },
     );
   }
 
   const dailyCheck = await checkHostedBetaDailyLimit({
     ip: clientIp,
-    userAgent: request.headers.get('user-agent'),
-    clientVersion: request.headers.get('x-geotech-client-version'),
     callType,
   });
 
@@ -315,6 +349,8 @@ export async function POST(request: NextRequest) {
         remaining: 0,
         retry_after_seconds: secondsUntilUtcMidnight(),
       },
+      requestId,
+      { mode: clientMode, version: clientVersion },
     );
   }
 
@@ -353,6 +389,8 @@ export async function POST(request: NextRequest) {
       'Hosted beta upstream request failed.',
       err instanceof Error ? err.message : String(err),
       { code: 'upstream_request_failed' },
+      requestId,
+      { mode: clientMode, version: clientVersion },
     );
   }
 
@@ -380,6 +418,8 @@ export async function POST(request: NextRequest) {
       message,
       detail,
       { code: 'upstream_error' },
+      requestId,
+      { mode: clientMode, version: clientVersion },
     );
   }
 
@@ -391,17 +431,24 @@ export async function POST(request: NextRequest) {
       'Hosted beta upstream returned no content.',
       'The upstream completion response did not contain assistant text.',
       { code: 'empty_completion' },
+      requestId,
+      { mode: clientMode, version: clientVersion },
     );
   }
 
   await incrementHostedBetaUsage(dailyCheck.fingerprint, callType);
 
   return jsonResponse({
+    request_id: requestId,
     id: `gtbeta-${Date.now()}`,
     object: 'chat.completion',
     created: Math.floor(Date.now() / 1000),
     model: upstreamData.model ?? model,
     provider: 'hosted-beta',
+    client: {
+      mode: clientMode,
+      version: clientVersion,
+    },
     choices: [
       {
         index: 0,
@@ -424,5 +471,5 @@ export async function POST(request: NextRequest) {
       latency_ms: Date.now() - start,
       body_size_bytes: body.rawSizeBytes,
     },
-  });
+  }, 200, requestId);
 }

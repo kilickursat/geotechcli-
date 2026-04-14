@@ -157,7 +157,7 @@ export function Hero() {
           style={{ fontSize: 'clamp(16px,2vw,19px)' }}
         >
           Multi-agent orchestration, vision workflows, and AI reasoning powered by{' '}
-          <span style={{ color: 'var(--accent-teal)' }}>GLM-5.1</span> — combined with
+          <span style={{ color: 'var(--accent-teal)' }}>GLM-4.7-Flash</span> — combined with
           deterministic geotechnical engines. No provider key. No signup. One command.
         </p>
 
@@ -227,7 +227,7 @@ export function Hero() {
             <span style={{ color: 'var(--text-secondary)' }}>agent</span>{' '}
             <span style={{ color: 'var(--accent-cyan)' }}>&quot;evaluate foundation options for 12-story on soft clay&quot;</span>
             {'\n'}
-            <span style={{ color: 'var(--text-muted)' }}>⠋ Spawning Geo + Foundation + Seismic agents via GLM-5.1...</span>
+            <span style={{ color: 'var(--text-muted)' }}>⠋ Spawning Geo + Foundation + Seismic agents via GLM-4.7-Flash...</span>
             {'\n'}
             <span style={{ color: 'var(--text-muted)' }}>⠙ Geo agent: SPT N=8, clay CU=35 kPa, LL=52% identified</span>
             {'\n'}
