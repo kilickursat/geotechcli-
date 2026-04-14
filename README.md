@@ -69,6 +69,21 @@ geotech agent "evaluate foundation options for a 12-story building on soft clay"
 geotech export dxf --input boreholes.json --output profile.dxf
 ```
 
+## Interactive Visualization
+
+Use `geotech viz` to explore saved analysis data directly in the terminal with ASCII charts.
+
+```bash
+geotech viz samples/visualization/geotech-viz-showcase.csv
+geotech viz samples/visualization/geotech-viz-showcase.xlsx --list
+geotech viz result.json
+```
+
+Showcase files are committed in:
+
+- `samples/visualization/geotech-viz-showcase.csv`
+- `samples/visualization/geotech-viz-showcase.xlsx`
+
 ## Commands
 
 ### Deterministic
@@ -88,6 +103,7 @@ These commands are the public strong-beta foundation and are available now.
 | `geotech slope` | Slope stability using Bishop Simplified |
 | `geotech pile` | Pile capacity using alpha, beta, and SPT methods |
 | `geotech retaining` | Lateral earth pressure using Rankine and Coulomb |
+| `geotech viz` | Interactive terminal visualization for saved JSON, CSV, and Excel data |
 
 ### AI-Assisted
 

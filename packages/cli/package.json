@@ -17,16 +17,17 @@
   },
   "dependencies": {
     "@geotechcli/core": "*",
+    "asciichart": "^1.5.25",
+    "boxen": "^8.0.1",
     "chalk": "^5.4.0",
     "commander": "^13.1.0",
-    "ora": "^8.2.0",
-    "boxen": "^8.0.1",
-    "asciichart": "^1.5.25"
+    "exceljs": "^4.4.0",
+    "ora": "^8.2.0"
   },
   "devDependencies": {
+    "@types/asciichart": "^1.5.8",
     "typescript": "^5.7.0",
-    "vitest": "^3.1.0",
-    "@types/asciichart": "^1.5.8"
+    "vitest": "^3.1.0"
   },
   "files": [
     "dist"

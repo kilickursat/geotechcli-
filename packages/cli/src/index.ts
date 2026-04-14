@@ -16,6 +16,7 @@ import { registerSlopeCommand } from './commands/slope.js';
 import { registerRetainingCommand } from './commands/retaining.js';
 import { registerSettlementCommands } from './commands/settlement.js';
 import { registerSeepageCommand } from './commands/seepage.js';
+import { registerVizCommand } from './commands/viz.js';
 import {
   registerVisionCommand,
   registerAIClassifyCommand,
@@ -50,6 +51,7 @@ registerSettlementCommands(program);
 
 // Seepage
 registerSeepageCommand(program);
+registerVizCommand(program);
 
 // Tunnel engineering
 registerTunnelCommands(program);
