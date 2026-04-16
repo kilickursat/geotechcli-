@@ -40,7 +40,7 @@ npm run deploy --workspace=@geotechcli/web    # deploy to Cloudflare
 | File | Purpose |
 |------|---------|
 | `packages/core/src/config/index.ts` | LLM config, defaults, hosted-beta settings |
-| `packages/core/src/llm/providers/hosted-beta.ts` | Hosted GLM beta provider |
+| `packages/core/src/llm/providers/hosted-beta.ts` | Hosted Qwen beta provider (Modal) |
 | `packages/core/src/llm/middleware/metering.ts` | Rate limiting middleware |
 | `packages/web/app/api/proxy/route.ts` | Hosted beta proxy API route |
 | `packages/web/app/api/usage/route.ts` | Usage/rate-limit endpoint |
@@ -51,15 +51,16 @@ npm run deploy --workspace=@geotechcli/web    # deploy to Cloudflare
 ## Strong-Beta Constraints
 
 - No signup, billing, or paid entitlements — intentionally disabled
-- Hosted GLM beta is the default LLM provider (no user Z.AI key needed)
-- Default text model: `glm-4.7-flash` | Default vision model: `glm-4.6v-flash`
+- Hosted Qwen beta is the default LLM provider (no user API key needed)
+- Default text model: `Qwen/Qwen3.5-9B` | Default vision model: `Qwen/Qwen3.5-9B`
 - Proxy default: `https://beta.geotechcli.com/api/proxy`
 - Rate limiting: Redis-backed (Upstash) with in-memory fallback
 
 ## Required Secrets (never commit)
 
 ```
-ZHIPU_API_KEY
+MODAL_ENDPOINT_URL
+MODAL_API_TOKEN
 UPSTASH_REDIS_REST_URL
 UPSTASH_REDIS_REST_TOKEN
 NEXT_PUBLIC_APP_URL=https://beta.geotechcli.com

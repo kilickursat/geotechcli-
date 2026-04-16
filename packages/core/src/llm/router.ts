@@ -53,13 +53,13 @@ registry.register(
   }),
 );
 
-// "openai-compatible" catch-all for Qwen VPS, Ollama, vLLM, etc.
+// "openai-compatible" catch-all for Qwen on Modal, Ollama, vLLM, etc.
 registry.register(
   new OpenAICompatibleAdapter({
     name: 'openai-compatible',
     baseUrl: 'http://localhost:8000/v1', // default; overridden by config.baseUrl
-    defaultModel: 'qwen3.5-4b',
-    defaultVisionModel: 'qwen3.5-4b',
+    defaultModel: 'Qwen/Qwen3.5-9B',
+    defaultVisionModel: 'Qwen/Qwen3.5-9B',
   }),
 );
 

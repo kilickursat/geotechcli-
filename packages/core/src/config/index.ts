@@ -223,14 +223,14 @@ export function buildLLMConfig(): { provider: import('../llm/types.js').LLMProvi
       break;
   }
 
-  // Resolve base URL for openai-compatible (Qwen VPS)
+  // Resolve base URL for openai-compatible or hosted-beta
   let baseUrl = config.llm.base_url || undefined;
   if (provider === 'hosted-beta') {
     baseUrl =
       preferEnv(process.env.GEOTECHCLI_PROXY_URL, config.llm.base_url) ||
       'https://beta.geotechcli.com/api/proxy';
   } else if (provider === 'openai-compatible') {
-    baseUrl = preferEnv(process.env.QWEN_VPS_BASE_URL, config.llm.base_url) || undefined;
+    baseUrl = preferEnv(process.env.QWEN_VPS_BASE_URL, process.env.MODAL_ENDPOINT_URL, config.llm.base_url) || undefined;
   }
 
   // Resolve model overrides

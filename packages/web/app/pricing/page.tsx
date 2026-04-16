@@ -26,8 +26,8 @@ export default function PricingPage() {
             <div>
               <h3 className="font-semibold mb-2">How does AI work in this beta branch?</h3>
               <p className="text-[var(--text-secondary)] text-sm leading-relaxed">
-                AI commands now use hosted GLM beta access by default, so end users
-                do not need to bring their own Z.AI key. The current default model
+                AI commands now use hosted Qwen beta access by default, so end users
+                do not need to bring their own API key. The current default model
                 family is {DEFAULT_LLM_MODEL} for text and {DEFAULT_LLM_VISION_MODEL}{' '}
                 for vision, with server-side rate limits protecting the beta.
               </p>
@@ -44,7 +44,7 @@ export default function PricingPage() {
             <div>
               <h3 className="font-semibold mb-2">What LLM models are used by default?</h3>
               <p className="text-[var(--text-secondary)] text-sm leading-relaxed">
-                The strong-beta defaults are Zhipu {DEFAULT_LLM_MODEL} for text and{' '}
+                The strong-beta defaults are {DEFAULT_LLM_MODEL} for text and{' '}
                 {DEFAULT_LLM_VISION_MODEL} for vision analysis. These defaults are live on the hosted beta gateway today.
               </p>
             </div>
@@ -53,7 +53,7 @@ export default function PricingPage() {
               <p className="text-[var(--text-secondary)] text-sm leading-relaxed">
                 Yes. Strong beta already uses strict server-side rate limits and
                 anti-abuse controls so users can evaluate the product without
-                exhausting the hosted GLM credit pool.
+                exhausting the hosted compute budget.
               </p>
             </div>
           </div>

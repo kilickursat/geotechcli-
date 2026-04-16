@@ -107,8 +107,8 @@ export function isHostedBetaProduction(): boolean {
 }
 
 export function getHostedBetaConfigIssue(): string | null {
-  if (!process.env.ZHIPU_API_KEY?.trim()) {
-    return 'Hosted beta AI is not configured yet. Set ZHIPU_API_KEY on the server.';
+  if (!process.env.MODAL_ENDPOINT_URL?.trim()) {
+    return 'Hosted beta AI is not configured yet. Set MODAL_ENDPOINT_URL on the server.';
   }
 
   if (isHostedBetaProduction() && !hasHostedBetaRedis()) {

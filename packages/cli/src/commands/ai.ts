@@ -65,11 +65,11 @@ function loadImageBase64(filePath: string): { base64: string; mimeType: string }
     gif: 'image/gif', webp: 'image/webp', pdf: 'application/pdf',
   };
 
-  // Warn if user provides a PDF — GLM vision works best with PNG/JPG images.
+  // Warn if user provides a PDF — vision works best with PNG/JPG images.
   if (ext === 'pdf') {
     console.log('');
     console.log(chalk.yellow('  ⚠ PDF input detected.'));
-    console.log(chalk.gray('    GLM vision works best with image files (PNG or JPG).'));
+    console.log(chalk.gray('    Vision analysis works best with image files (PNG or JPG).'));
     console.log(chalk.gray('    For PDFs: extract a page as PNG first (e.g. with pdf2pic or a screenshot).'));
     console.log(chalk.gray('    Attempting analysis anyway — results may be incomplete.'));
     console.log('');
@@ -88,7 +88,7 @@ function describeVisionInput(file: VisionInput): void {
 
   console.log('');
   console.log(chalk.yellow('  PDF input detected.'));
-  console.log(chalk.gray('    GLM vision works best with PNG or JPG images.'));
+  console.log(chalk.gray('    Vision analysis works best with PNG or JPG images.'));
   console.log(chalk.gray('    For borehole logs, the CLI can split multi-page PDFs into page-level requests automatically.'));
   console.log(chalk.gray('    Oversized PDF pages will still be blocked before upload to avoid the hosted-beta body limit.'));
   console.log('');

@@ -32,9 +32,9 @@ import type {
 
 const MAX_BODY_SIZE_BYTES = 8 * 1024 * 1024;
 const MAX_TOKENS = 4096;
-const ZAI_CHAT_COMPLETIONS_URL =
-  process.env.ZAI_API_BASE_URL?.trim() ??
-  'https://api.z.ai/api/paas/v4/chat/completions';
+const MODAL_CHAT_COMPLETIONS_URL =
+  process.env.MODAL_ENDPOINT_URL?.trim() ??
+  'https://kursatkilic6648--geotechcli-qwen-serve.modal.run/v1/chat/completions';
 
 const HOSTED_BETA_SYSTEM_PROMPT = `You are the hosted beta AI backend for geotechCLI.
 Stay focused on geotechnical engineering tasks: soil mechanics, rock mechanics, foundations, tunnels, slopes, groundwater, instrumentation, and engineering reporting.
@@ -102,11 +102,13 @@ async function fetchUpstreamWithRetry(
 
   for (let attempt = 0; attempt < 4; attempt += 1) {
     try {
-      const response = await fetch(ZAI_CHAT_COMPLETIONS_URL, {
+      const response = await fetch(MODAL_CHAT_COMPLETIONS_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${process.env.ZHIPU_API_KEY}`,
+          ...(process.env.MODAL_API_TOKEN
+            ? { Authorization: `Bearer ${process.env.MODAL_API_TOKEN}` }
+            : {}),
         },
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(getUpstreamTimeoutMs(callType)),

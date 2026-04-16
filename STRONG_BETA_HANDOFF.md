@@ -27,7 +27,7 @@ What strong beta should provide now:
 - working landing page, docs, changelog, and privacy messaging
 - installable CLI
 - deterministic geotechnical commands available immediately
-- hosted GLM beta AI available without requiring end users to bring their own Z.AI key
+- hosted Qwen beta AI available without requiring end users to bring their own API key
 - server-side anonymous rate limits to protect shared credit
 - no signup required
 - no live billing or checkout
@@ -52,11 +52,11 @@ What strong beta should not claim yet:
 ### Wave 2 completed
 
 - hosted beta was added as the default LLM provider for strong beta
-- hosted default text model is `glm-4.7-flash`
-- hosted default vision model is `glm-4.6v-flash`
-- hosted beta proxy route exists in the web app
+- hosted default text model is `Qwen/Qwen3.5-9B`
+- hosted default vision model is `Qwen/Qwen3.5-9B`
+- hosted beta proxy route exists in the web app, forwarding to Modal.com
 - anonymous rate limiting exists with Redis-backed production intent and in-memory local fallback
-- no end-user Z.AI key is required for the default beta flow
+- no end-user API key is required for the default beta flow
 - CLI JSON output was cleaned up for safer scripting and automation
 
 ### Cloudflare deployment prep completed in repo
@@ -83,7 +83,7 @@ Completed repo changes:
   - `cf-typegen`
 - updated `packages/web/next.config.ts` for monorepo tracing with `outputFileTracingRoot`
 - added Cloudflare/OpenNext ignore entries in `.gitignore`
-- updated layout/footer/privacy/pricing/docs copy so the branch truthfully says hosted GLM beta is active now
+- updated layout/footer/privacy/pricing/docs copy so the branch truthfully says hosted Qwen beta is active now
 
 ### Cloudflare account/domain facts already known
 
@@ -170,7 +170,8 @@ Create a local env file for the web app:
 Use values like:
 
 ```env
-ZHIPU_API_KEY=...
+MODAL_ENDPOINT_URL=https://kursatkilic6648--geotechcli-qwen-serve.modal.run/v1/chat/completions
+MODAL_API_TOKEN=...
 UPSTASH_REDIS_REST_URL=...
 UPSTASH_REDIS_REST_TOKEN=...
 NEXT_PUBLIC_APP_URL=https://beta.geotechcli.com
@@ -237,7 +238,7 @@ Expected shape:
 
 - `provider: "hosted-beta"`
 - `status: "ready"` or a clear degraded message
-- defaults showing `glm-4.7-flash` and `glm-4.6v-flash`
+- defaults showing `Qwen/Qwen3.5-9B`
 
 ### 7. Validate CLI against the local proxy
 
@@ -271,7 +272,8 @@ Once the local build and validation are good, continue with Cloudflare.
 
 Set Worker secrets/vars for the deployed beta:
 
-- `ZHIPU_API_KEY`
+- `MODAL_ENDPOINT_URL`
+- `MODAL_API_TOKEN`
 - `UPSTASH_REDIS_REST_URL`
 - `UPSTASH_REDIS_REST_TOKEN`
 - `NEXT_PUBLIC_APP_URL=https://beta.geotechcli.com`

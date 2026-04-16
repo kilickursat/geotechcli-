@@ -11,8 +11,8 @@ const features = [
     ),
     colorClass: 'teal',
     name: 'Multi-Agent Orchestration',
-    desc: 'Geo, Foundation, Seismic, Tunnel, Slope, and Hydro agents collaborate autonomously — powered by GLM-4.7-Flash via hosted beta. No key required.',
-    tag: 'GLM-4.7-Flash',
+    desc: 'Geo, Foundation, Seismic, Tunnel, Slope, and Hydro agents collaborate autonomously — powered by Qwen3.5-9B via hosted beta on Modal. No key required.',
+    tag: 'Qwen3.5-9B',
     tagColor: 'teal',
   },
   {
@@ -23,8 +23,8 @@ const features = [
     ),
     colorClass: 'cyan',
     name: 'Vision AI Workflows',
-    desc: 'Point a photo at a tunnel face, core box, or borehole log — GLM-4.6V-Flash extracts RQD, fracture spacing, weathering, and USCS classification automatically.',
-    tag: 'GLM-4.6V-Flash',
+    desc: 'Point a photo at a tunnel face, core box, or borehole log — Qwen3.5-9B extracts RQD, fracture spacing, weathering, and USCS classification automatically.',
+    tag: 'Qwen3.5-9B',
     tagColor: 'cyan',
   },
   {
@@ -73,7 +73,7 @@ const features = [
     colorClass: 'purple',
     name: 'AI Report Generation',
     desc: 'One command drafts a full geotechnical report from your analysis data — structured sections, engineering language, export to Markdown or JSON.',
-    tag: 'GLM-4.7-Flash',
+    tag: 'Qwen3.5-9B',
     tagColor: 'purple',
   },
 ];
@@ -104,7 +104,7 @@ export function Features() {
         </Reveal>
         <Reveal delay={160}>
           <p className="text-[17px] text-[var(--text-secondary)] max-w-[460px] mx-auto leading-[1.7]">
-            Deterministic engines first. AI capabilities now live via hosted GLM beta.
+            Deterministic engines first. AI capabilities now live via hosted Qwen beta on Modal.
             Commercial stack gated behind later waves.
           </p>
         </Reveal>

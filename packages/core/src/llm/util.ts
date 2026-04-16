@@ -1,12 +1,11 @@
 // ---------------------------------------------------------------------------
 // Upstream error sanitizer — ensures all error messages shown to CLI users
 // are in English, regardless of what the upstream LLM provider returns.
-// Zhipu/Z.AI API returns Chinese-language error strings that must be
-// translated before surfacing to the user.
+// Covers legacy Zhipu/Z.AI Chinese errors and generic upstream failures.
 // ---------------------------------------------------------------------------
 
 const UPSTREAM_ERROR_MAP: Record<string, string> = {
-  // Zhipu / Z.AI known error strings (Chinese → English)
+  // Legacy Zhipu / Z.AI known error strings (Chinese → English)
   '图片输入格式/解析错误': 'Image input format or parsing error. Use PNG or JPG (avoid raw PDFs).',
   '请求参数错误': 'Invalid request parameters sent to the AI provider.',
   '模型不存在': 'The requested AI model does not exist on the provider.',

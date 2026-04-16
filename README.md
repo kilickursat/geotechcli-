@@ -26,8 +26,8 @@ geotechCLI is a terminal-first geotechnical engineering product that combines de
 ## Strong Beta Status
 
 - Deterministic commands are available now.
-- Hosted GLM beta access is available now with no user Z.AI key required.
-- Text defaults to `glm-4.7-flash` and vision defaults to `glm-4.6v-flash`.
+- Hosted Qwen beta access is available now with no user API key required.
+- Text and vision default to `Qwen/Qwen3.5-9B` served on Modal.com (NVIDIA L4 GPU).
 - Server-side rate limits protect the hosted beta credit pool.
 - Signup, billing, and paid entitlements are intentionally disabled on `strong-beta`.
 
@@ -121,7 +121,7 @@ These commands are the public strong-beta foundation and are available now.
 
 ### AI-Assisted
 
-These commands now use the hosted beta GLM path by default.
+These commands now use the hosted beta Qwen path by default.
 
 | Command | Description |
 |---------|-------------|
@@ -174,11 +174,11 @@ Most calculation and analysis commands support:
 
 ## LLM Configuration
 
-In `strong-beta`, AI commands default to the hosted beta provider, so a user does not need to bring a Z.AI key.
+In `strong-beta`, AI commands default to the hosted beta provider, so a user does not need to bring their own API key.
 
 - Default provider: `hosted-beta`
-- Default text model: `glm-4.7-flash`
-- Default vision model: `glm-4.6v-flash`
+- Default text model: `Qwen/Qwen3.5-9B`
+- Default vision model: `Qwen/Qwen3.5-9B`
 
 ```bash
 # Confirm the strong-beta defaults
@@ -217,11 +217,11 @@ geotech config set llm.model qwen3.5-4b
 | **Pro** | Coming Soon | Not active in this branch |
 | **Annual** | Coming Soon | Not active in this branch |
 
-Strong beta currently gives users deterministic commands plus hosted GLM beta access with limits. Managed commercial plans and entitlements come later.
+Strong beta currently gives users deterministic commands plus hosted Qwen beta access with limits. Managed commercial plans and entitlements come later.
 
 ## Security and Privacy
 
-- End users do not need to submit their own Z.AI key for hosted beta usage.
+- End users do not need to submit their own API key for hosted beta usage.
 - Hosted beta requests are forwarded for completion and are not intended to be stored as reusable prompt or file history on geotechCLI servers.
 - geotechCLI does not use prompts, uploaded project files, or outputs to train geotechCLI.
 - geotechCLI does not sell user engineering data.

@@ -107,7 +107,7 @@ export function registerConfigCommand(program: Command): void {
       setConfigValue('llm.model', '');
       setConfigValue('llm.vision_model', '');
       setConfigValue('llm.base_url', '');
-      success('Configuration reset to defaults (hosted beta glm-4.7-flash / glm-4.6v-flash).');
+      success('Configuration reset to defaults (hosted beta Qwen/Qwen3.5-9B).');
     });
 
   program.addCommand(config);

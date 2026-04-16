@@ -1,0 +1,59 @@
+name: Modal Deploy
+
+on:
+  push:
+    branches: [strong-beta]
+    paths:
+      - 'modal/**'
+      - '.github/workflows/modal-deploy.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: modal-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy Qwen to Modal
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Check Modal credentials
+        id: check
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: |
+          if [ -z "$MODAL_TOKEN_ID" ] || [ -z "$MODAL_TOKEN_SECRET" ]; then
+            echo "::warning::MODAL_TOKEN_ID or MODAL_TOKEN_SECRET is not set. Skipping Modal deploy."
+            echo "configured=false" >> $GITHUB_OUTPUT
+          else
+            echo "configured=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install Modal CLI
+        if: steps.check.outputs.configured == 'true'
+        run: pip install modal
+
+      - name: Deploy Qwen serving app
+        if: steps.check.outputs.configured == 'true'
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: modal deploy modal/serve_qwen.py
+
+      - name: Summary
+        if: always()
+        run: |
+          if [ "${{ steps.check.outputs.configured }}" = "true" ]; then
+            echo "### Modal deploy attempted" >> $GITHUB_STEP_SUMMARY
+            echo "Endpoint: https://kursatkilic6648--geotechcli-qwen-serve.modal.run" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### Modal deploy skipped" >> $GITHUB_STEP_SUMMARY
+            echo "Set the MODAL_TOKEN_ID and MODAL_TOKEN_SECRET repository secrets to enable automated Modal deploys." >> $GITHUB_STEP_SUMMARY
+          fi

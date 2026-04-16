@@ -14,7 +14,7 @@ describe('HostedBetaAdapter', () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
-          model: 'glm-4.7-flash',
+          model: 'Qwen/Qwen3.5-9B',
           choices: [{ message: { content: 'OK' } }],
           usage: {
             prompt_tokens: 3,
@@ -93,7 +93,7 @@ describe('HostedBetaAdapter', () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
-          model: 'glm-4.7-flash',
+          model: 'Qwen/Qwen3.5-9B',
           choices: [{ message: { content: 'OK' } }],
           usage: {
             prompt_tokens: 10,

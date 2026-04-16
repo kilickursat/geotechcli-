@@ -4,6 +4,28 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 
 const releases = [
   {
+    version: GEOTECHCLI_VERSION,
+    date: '2026-04-16',
+    tag: '0.4.5 Release',
+    changes: [
+      { type: 'feat', text: 'Cut 0.4.5 to publish the Qwen on Modal hosted beta stack as the installed release across npm, Cloudflare, and Modal' },
+      { type: 'feat', text: 'Added modal/serve_qwen.py deploying Qwen/Qwen3.5-9B on NVIDIA L4 GPU with a 10-minute idle freeze and per-IP abuse guards to protect the shared credit pool' },
+      { type: 'feat', text: 'Added a GitHub Actions workflow that automatically redeploys the Modal app when modal/** changes on strong-beta' },
+      { type: 'fix', text: 'Swapped the hosted beta proxy upstream from Zhipu/Z.AI to the Modal endpoint and switched the required env from ZHIPU_API_KEY to MODAL_ENDPOINT_URL while keeping anonymous rate limiting intact' },
+    ],
+  },
+  {
+    version: 'strong-beta-qwen-migration',
+    date: '2026-04-16',
+    tag: 'Qwen on Modal',
+    changes: [
+      { type: 'feat', text: 'Migrated hosted beta backend from GLM (Zhipu/Z.AI) to Qwen/Qwen3.5-9B served on Modal.com with NVIDIA L4 GPU' },
+      { type: 'feat', text: 'Modal deployment auto-scales to zero after 10 minutes idle to conserve GPU credits' },
+      { type: 'feat', text: 'Hosted beta text and vision defaults unified to Qwen/Qwen3.5-9B' },
+      { type: 'fix', text: 'Updated proxy, CLI defaults, docs, privacy, and website copy for the new model and provider' },
+    ],
+  },
+  {
     version: 'strong-beta-model-refresh',
     date: '2026-04-14',
     tag: 'Hosted Model Update',
@@ -16,10 +38,10 @@ const releases = [
   {
     version: 'strong-beta-wave2',
     date: '2026-04-03',
-    tag: 'Hosted GLM Beta',
+    tag: 'Hosted Qwen Beta',
     changes: [
-      { type: 'feat', text: 'Hosted GLM beta gateway enabled for strong-beta, with the public hosted defaults now standardized on glm-4.7-flash and glm-4.6v-flash' },
-      { type: 'security', text: 'Proxy now validates requests, enforces model allowlists, and applies server-side rate limits before calling Z.AI' },
+      { type: 'feat', text: 'Hosted beta gateway enabled for strong-beta with Qwen/Qwen3.5-9B on Modal' },
+      { type: 'security', text: 'Proxy now validates requests, enforces model allowlists, and applies server-side rate limits before calling upstream' },
       { type: 'feat', text: 'CLI default provider switched to hosted-beta so users can try AI commands without bringing their own key' },
       { type: 'feat', text: 'Website, docs, and privacy copy updated to reflect hosted beta access with no-signup limits' },
     ],
@@ -30,14 +52,14 @@ const releases = [
     tag: 'Strong Beta Branch',
     changes: [
       { type: 'feat', text: 'Public beta branch introduced for safe Cloudflare deployment trials' },
-      { type: 'feat', text: 'Website messaging rewritten around strong beta: deterministic CLI live, hosted anonymous GLM coming in a later wave' },
+      { type: 'feat', text: 'Website messaging rewritten around strong beta: deterministic CLI live, hosted anonymous AI coming in a later wave' },
       { type: 'fix', text: 'Signup, checkout, usage, webhook, and hosted proxy endpoints disabled until the beta gateway is ready' },
       { type: 'fix', text: 'CLI AI flows now use the user configured provider directly in Wave 1, without fake registration walls' },
-      { type: 'feat', text: 'Hosted Z.AI defaults are now presented publicly as glm-4.7-flash for text and glm-4.6v-flash for vision' },
+      { type: 'feat', text: 'Hosted beta defaults are Qwen/Qwen3.5-9B for both text and vision' },
     ],
   },
   {
-    version: GEOTECHCLI_VERSION,
+    version: '0.4.4',
     date: '2026-04-14',
     tag: '0.4.4 Release',
     changes: [
@@ -46,7 +68,7 @@ const releases = [
       { type: 'fix', text: 'Added deterministic fallback behavior for the first agent turn so provider saturation now yields a useful engineering limitation analysis instead of a blank agent failure' },
       { type: 'fix', text: 'Added focused regression tests for the new ai-classify and agent fallback paths before releasing the patch' },
       { type: 'feat', text: 'Raised hosted-beta limits for installed geotechCLI clients while keeping stricter anonymous caps in place for the public beta proxy' },
-      { type: 'fix', text: 'Added retry and backoff handling for transient upstream Z.AI 429 and gateway overload responses so simple AI commands recover more gracefully' },
+      { type: 'fix', text: 'Added retry and backoff handling for transient upstream 429 and gateway overload responses so simple AI commands recover more gracefully' },
       { type: 'fix', text: 'Extended hosted-beta timeout budgets for text, vision, and agent requests and translated raw aborts into clearer timeout messages in the CLI' },
       { type: 'fix', text: 'Separated daily usage fingerprints by client mode so geotechCLI traffic no longer burns through the same low anonymous bucket' },
       { type: 'fix', text: 'Added focused hosted-beta regression tests covering client-mode limits, upstream retry behavior, and timeout handling before shipping the patch release' },
@@ -64,7 +86,7 @@ const releases = [
       { type: 'fix', text: 'Export examples and committed mock datasets were added so GeoJSON, DXF, and CSV flows can be smoke-tested reliably' },
       { type: 'security', text: 'Updated Next.js to 15.5.15 and the Vitest toolchain to 4.1.4 so the release workspace installs cleanly with no npm audit vulnerabilities' },
       { type: 'fix', text: 'Aligned GitHub Actions and Cloudflare release jobs to Node 22 and added the direct esbuild install required by the OpenNext Cloudflare bundler' },
-      { type: 'fix', text: 'Aligned the public release surface on GLM-4.7-Flash text defaults and GLM-4.6V-Flash vision defaults across docs, CLI, and website copy' },
+      { type: 'fix', text: 'Aligned the public release surface on Qwen3.5-9B defaults across docs, CLI, and website copy' },
     ],
   },
   {
@@ -96,7 +118,7 @@ const releases = [
       { type: 'feat', text: 'GBR document Q&A with vision model' },
       { type: 'feat', text: 'Export to GeoJSON, DXF (AutoCAD), and CSV' },
       { type: 'feat', text: 'PLAXIS / FLAC / Rocscience bridge (detection + script generation)' },
-      { type: 'feat', text: 'LLM-agnostic provider layer: Zhipu GLM family, OpenAI, Anthropic, and self-hosted backends' },
+      { type: 'feat', text: 'LLM-agnostic provider layer: Qwen, OpenAI, Anthropic, Hugging Face, and self-hosted backends' },
       { type: 'feat', text: 'Anti-abuse metering: 5 free AI calls for unregistered users, IP fingerprinting' },
       { type: 'feat', text: '--json, --verbose, --plot, --output global flags on every command' },
       { type: 'security', text: 'API keys never logged, echoed, or included in error messages' },

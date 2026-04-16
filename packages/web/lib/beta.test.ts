@@ -112,7 +112,7 @@ describe('hosted beta controls', () => {
   });
 
   it('returns request ids on GET and anonymous POST rejections', async () => {
-    vi.stubEnv('ZHIPU_API_KEY', 'test-key');
+    vi.stubEnv('MODAL_ENDPOINT_URL', 'https://test--geotechcli-qwen-serve.modal.run/v1/chat/completions');
 
     const route = await import('../app/api/proxy/route.js');
 
@@ -151,7 +151,7 @@ describe('hosted beta controls', () => {
   }, 15_000);
 
   it('retries transient upstream 429 responses for geotechcli clients', async () => {
-    vi.stubEnv('ZHIPU_API_KEY', 'test-key');
+    vi.stubEnv('MODAL_ENDPOINT_URL', 'https://test--geotechcli-qwen-serve.modal.run/v1/chat/completions');
 
     const fetchMock = vi
       .fn()
@@ -171,7 +171,7 @@ describe('hosted beta controls', () => {
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
-            model: 'glm-4.7-flash',
+            model: 'Qwen/Qwen3.5-9B',
             choices: [
               {
                 message: {
@@ -203,7 +203,7 @@ describe('hosted beta controls', () => {
       },
       body: JSON.stringify({
         messages: [{ role: 'user', content: 'Classify soft clay with high plasticity.' }],
-        model: 'glm-4.7-flash',
+        model: 'Qwen/Qwen3.5-9B',
       }),
     });
 

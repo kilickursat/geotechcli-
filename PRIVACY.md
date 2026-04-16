@@ -8,7 +8,7 @@ In the current `strong-beta` branch:
 
 - No signup is required.
 - Deterministic commands run without an AI provider.
-- AI, vision, and agent commands use hosted GLM beta by default.
+- AI, vision, and agent commands use hosted Qwen beta by default.
 - Bring-your-own provider keys remain available only as an advanced override.
 
 ## What geotechCLI does not do
@@ -20,12 +20,12 @@ In the current `strong-beta` branch:
 
 ## What happens in strong beta
 
-Strong-beta AI commands use the hosted GLM gateway by default.
+Strong-beta AI commands use the hosted Qwen gateway on Modal by default.
 
 That means:
 
 - Requests are forwarded only for real-time completion.
-- End users do not need to provide their own Z.AI key for the default hosted path.
+- End users do not need to provide their own API key for the default hosted path.
 - geotechCLI applies server-side rate limits and abuse controls before calling the model provider.
 - Raw prompt and file content are not intended to be stored on geotechCLI servers as reusable history.
 
@@ -33,7 +33,7 @@ That means:
 
 A model response still requires sending the request to the model provider that generates it.
 
-- In strong beta, the default hosted provider path uses Z.AI.
+- In strong beta, the default hosted provider path uses Qwen3.5-9B on Modal.
 - If a user manually switches to another provider, that provider handles the request directly.
 - Provider-side handling follows that provider's API terms and privacy commitments in addition to geotechCLI server behavior.
 

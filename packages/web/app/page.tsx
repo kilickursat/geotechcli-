@@ -25,7 +25,7 @@ export default function HomePage() {
           <span style={{ color: 'var(--accent-teal)' }}>world&apos;s first agentic AI CLI</span>
           {' '}purpose-built for geotechnical engineering — combining deterministic calculation
           engines with{' '}
-          <span style={{ color: 'var(--accent-cyan)' }}>GLM-4.7-Flash multi-agent orchestration</span>,
+          <span style={{ color: 'var(--accent-cyan)' }}>Qwen3.5-9B multi-agent orchestration</span>,
           vision workflows, and AI-drafted reports in a single terminal interface.
         </p>
       </section>
