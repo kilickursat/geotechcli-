@@ -10,9 +10,9 @@ Serves `Qwen/Qwen3.5-9B` on an NVIDIA L4 GPU via [Modal](https://modal.com).
    modal setup
    ```
 
-2. Create a Hugging Face secret in Modal (name: `geotechcli-hf-secret`):
+2. Create a Hugging Face secret in Modal (name: `HF_TOKEN`):
    - Go to https://modal.com/secrets
-   - Create a secret named `geotechcli-hf-secret` with key `HF_TOKEN` set to your HF token
+   - Create a secret named `HF_TOKEN` with key `HF_TOKEN` set to your HF token
 
 3. Deploy:
    ```bash

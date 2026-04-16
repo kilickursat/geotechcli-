@@ -44,7 +44,7 @@ MODEL_DIR = "/models"
     container_idle_timeout=IDLE_TIMEOUT_SECONDS,
     timeout=600,
     allow_concurrent_inputs=16,
-    secrets=[modal.Secret.from_name("geotechcli-hf-secret")],
+    secrets=[modal.Secret.from_name("HF_TOKEN")],
 )
 @modal.asgi_app()
 def serve():
