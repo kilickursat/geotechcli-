@@ -321,6 +321,161 @@ export function renderSteps(steps: string[], verbose: boolean): void {
   }
 }
 
+function stripInlineMarkup(value: string): string {
+  return value
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/`([^`]+)`/g, '$1');
+}
+
+function terminalContentWidth(defaultWidth = 96): number {
+  const columns = process.stdout.columns ?? defaultWidth;
+  return Math.max(48, Math.min(110, columns - 6));
+}
+
+function wrapMarkdownText(text: string, width: number): string[] {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return [''];
+  }
+
+  const tokens = trimmed.split(/\s+/);
+  const lines: string[] = [];
+  let current = '';
+  let currentVisible = 0;
+
+  for (const token of tokens) {
+    const tokenVisible = stripInlineMarkup(token).length;
+    if (!current) {
+      current = token;
+      currentVisible = tokenVisible;
+      continue;
+    }
+
+    if (currentVisible + 1 + tokenVisible <= width) {
+      current += ` ${token}`;
+      currentVisible += 1 + tokenVisible;
+      continue;
+    }
+
+    lines.push(current);
+    current = token;
+    currentVisible = tokenVisible;
+  }
+
+  if (current) {
+    lines.push(current);
+  }
+
+  return lines;
+}
+
+function formatInlineMarkup(value: string): string {
+  return value
+    .replace(/`([^`]+)`/g, (_, inner: string) => chalk.cyan(inner))
+    .replace(/\*\*([^*]+)\*\*/g, (_, inner: string) => chalk.whiteBright.bold(inner));
+}
+
+function parseMarkdownTableRow(line: string): string[] {
+  return line
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map((cell) => cell.trim());
+}
+
+function isMarkdownTableSeparator(line: string): boolean {
+  return /^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$/.test(line);
+}
+
+function renderWrappedLine(
+  text: string,
+  prefix: string,
+  continuationPrefix: string,
+  color: (value: string) => string = chalk.white,
+): void {
+  const visiblePrefix = stripAnsi(prefix).length;
+  const visibleContinuationPrefix = stripAnsi(continuationPrefix).length;
+  const width = terminalContentWidth();
+  const wrapped = wrapMarkdownText(text, Math.max(18, width - visiblePrefix));
+
+  wrapped.forEach((line, index) => {
+    const linePrefix = index === 0 ? prefix : continuationPrefix;
+    const lineWidth = Math.max(18, width - (index === 0 ? visiblePrefix : visibleContinuationPrefix));
+    const segments = index === 0 ? [line] : wrapMarkdownText(line, lineWidth);
+    for (const segment of segments) {
+      console.log(linePrefix + color(formatInlineMarkup(segment)));
+    }
+  });
+}
+
+function renderSectionHeading(text: string): void {
+  const clean = stripInlineMarkup(text).replace(/:+$/, '').trim();
+  if (!clean) return;
+  console.log('');
+  console.log(chalk.cyanBright.bold(`  ${clean}`));
+  console.log(chalk.gray(`  ${'─'.repeat(Math.min(clean.length + 2, 42))}`));
+}
+
+export function renderRichText(markdown: string): void {
+  const lines = markdown.replace(/\r\n/g, '\n').split('\n');
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      console.log('');
+      continue;
+    }
+
+    if (trimmed.startsWith('|') && index + 1 < lines.length && isMarkdownTableSeparator(lines[index + 1])) {
+      const header = parseMarkdownTableRow(trimmed);
+      const rows: string[][] = [];
+      index += 2;
+      while (index < lines.length && lines[index].trim().startsWith('|')) {
+        rows.push(parseMarkdownTableRow(lines[index]));
+        index += 1;
+      }
+      index -= 1;
+      renderTable(header, rows);
+      continue;
+    }
+
+    const markdownHeading = trimmed.match(/^#{1,6}\s+(.+)$/);
+    if (markdownHeading) {
+      renderSectionHeading(markdownHeading[1]);
+      continue;
+    }
+
+    const sectionHeading = trimmed.match(/^\*\*(.+)\*\*:?$/);
+    if (sectionHeading) {
+      renderSectionHeading(sectionHeading[1]);
+      continue;
+    }
+
+    const numbered = line.match(/^(\s*)(\d+)\.\s+(.+)$/);
+    if (numbered) {
+      const indent = '  ' + ' '.repeat(Math.min(4, numbered[1].length));
+      const prefix = chalk.cyanBright(`${indent}${numbered[2]}. `);
+      const continuationPrefix = `${indent}${' '.repeat(numbered[2].length + 2)}`;
+      renderWrappedLine(numbered[3], prefix, continuationPrefix);
+      continue;
+    }
+
+    const bullet = line.match(/^(\s*)-\s+(.+)$/);
+    if (bullet) {
+      const indent = '  ' + ' '.repeat(Math.min(6, bullet[1].length));
+      const prefix = chalk.blueBright(`${indent}• `);
+      const continuationPrefix = `${indent}  `;
+      renderWrappedLine(bullet[2], prefix, continuationPrefix, chalk.white);
+      continue;
+    }
+
+    renderWrappedLine(trimmed, '  ', '  ', chalk.white);
+  }
+}
+
 export function renderJSON(data: unknown): void {
   const sanitized = JSON.parse(JSON.stringify(data, (key, value) => {
     if (/api.?key|token|secret|password/i.test(key)) {

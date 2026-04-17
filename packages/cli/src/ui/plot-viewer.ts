@@ -204,18 +204,18 @@ function buildHtml(payload: BrowserPayload): string {
   <title>${payload.headline}</title>
   <style>
     :root {
-      --bg: #07111d;
-      --bg-panel: rgba(10, 17, 29, 0.78);
-      --bg-panel-strong: rgba(8, 14, 24, 0.96);
-      --bg-soft: rgba(15, 23, 42, 0.72);
-      --line: rgba(148, 163, 184, 0.16);
-      --line-strong: rgba(125, 211, 252, 0.22);
-      --text: #e6edf8;
-      --muted: #93a4bb;
-      --accent: #2dd4bf;
-      --accent-alt: #60a5fa;
-      --accent-warm: #f59e0b;
-      --shadow: 0 24px 80px rgba(2, 8, 23, 0.45);
+      --bg: #f6f9fe;
+      --bg-panel: rgba(255, 255, 255, 0.92);
+      --bg-panel-strong: rgba(255, 255, 255, 0.98);
+      --bg-soft: rgba(244, 247, 252, 0.96);
+      --line: rgba(20, 86, 240, 0.10);
+      --line-strong: rgba(20, 86, 240, 0.18);
+      --text: #1d2736;
+      --muted: #5e6b7b;
+      --accent: #1456f0;
+      --accent-alt: #3daeff;
+      --accent-warm: #ea5ec1;
+      --shadow: 0 18px 48px rgba(28, 48, 86, 0.10);
     }
 
     * {
@@ -226,11 +226,11 @@ function buildHtml(payload: BrowserPayload): string {
       margin: 0;
       min-height: 100vh;
       background:
-        radial-gradient(circle at top right, rgba(45, 212, 191, 0.12), transparent 22rem),
-        radial-gradient(circle at top left, rgba(96, 165, 250, 0.12), transparent 20rem),
-        linear-gradient(180deg, #081220 0%, #040a12 100%);
+        radial-gradient(circle at top right, rgba(61, 174, 255, 0.16), transparent 20rem),
+        radial-gradient(circle at top left, rgba(234, 94, 193, 0.10), transparent 18rem),
+        linear-gradient(180deg, #fbfdff 0%, #f2f6fb 100%);
       color: var(--text);
-      font-family: "Aptos", "Segoe UI Variable", "Segoe UI", sans-serif;
+      font-family: "DM Sans", "Segoe UI Variable", "Segoe UI", sans-serif;
     }
 
     .shell {
@@ -249,7 +249,9 @@ function buildHtml(payload: BrowserPayload): string {
       padding: 22px 24px;
       border: 1px solid var(--line-strong);
       border-radius: 24px;
-      background: linear-gradient(135deg, rgba(12, 19, 31, 0.9), rgba(7, 12, 21, 0.78));
+      background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(248, 251, 255, 0.94)),
+        radial-gradient(circle at top right, rgba(61, 174, 255, 0.08), transparent 14rem);
       box-shadow: var(--shadow);
       animation: rise 420ms ease-out both;
     }
@@ -274,10 +276,11 @@ function buildHtml(payload: BrowserPayload): string {
 
     .headline {
       margin: 0;
+      font-family: "Outfit", "Segoe UI Variable", "Segoe UI", sans-serif;
       font-size: clamp(32px, 4vw, 54px);
-      line-height: 1.02;
+      line-height: 1.08;
       letter-spacing: -0.04em;
-      font-weight: 650;
+      font-weight: 600;
     }
 
     .subhead {
@@ -298,7 +301,7 @@ function buildHtml(payload: BrowserPayload): string {
       padding: 14px 16px;
       border-radius: 18px;
       border: 1px solid var(--line);
-      background: rgba(255, 255, 255, 0.02);
+      background: rgba(255, 255, 255, 0.92);
     }
 
     .summary-card span {
@@ -313,6 +316,7 @@ function buildHtml(payload: BrowserPayload): string {
 
     .summary-card strong {
       display: block;
+      font-family: "Outfit", "Segoe UI Variable", "Segoe UI", sans-serif;
       font-size: 16px;
       color: var(--text);
       font-weight: 620;
@@ -333,7 +337,6 @@ function buildHtml(payload: BrowserPayload): string {
       border: 1px solid var(--line);
       background: var(--bg-panel);
       box-shadow: var(--shadow);
-      backdrop-filter: blur(18px);
     }
 
     .sidebar {
@@ -361,9 +364,9 @@ function buildHtml(payload: BrowserPayload): string {
 
     .chart-button {
       padding: 14px 15px;
-      border-radius: 18px;
+      border-radius: 20px;
       border: 1px solid var(--line);
-      background: rgba(15, 23, 42, 0.46);
+      background: rgba(249, 251, 255, 0.98);
       color: var(--text);
       text-align: left;
       cursor: pointer;
@@ -372,20 +375,21 @@ function buildHtml(payload: BrowserPayload): string {
 
     .chart-button:hover {
       transform: translateY(-1px);
-      border-color: rgba(96, 165, 250, 0.35);
-      background: rgba(15, 23, 42, 0.72);
+      border-color: rgba(61, 174, 255, 0.32);
+      background: rgba(255, 255, 255, 1);
     }
 
     .chart-button.active {
-      border-color: rgba(45, 212, 191, 0.45);
+      border-color: rgba(20, 86, 240, 0.26);
       background:
-        linear-gradient(135deg, rgba(45, 212, 191, 0.12), rgba(96, 165, 250, 0.1)),
-        rgba(12, 18, 29, 0.92);
-      box-shadow: inset 0 0 0 1px rgba(45, 212, 191, 0.1);
+        linear-gradient(135deg, rgba(20, 86, 240, 0.06), rgba(61, 174, 255, 0.10)),
+        rgba(255, 255, 255, 0.98);
+      box-shadow: inset 0 0 0 1px rgba(20, 86, 240, 0.06);
     }
 
     .chart-button strong {
       display: block;
+      font-family: "Outfit", "Segoe UI Variable", "Segoe UI", sans-serif;
       font-size: 14px;
       line-height: 1.45;
       margin-bottom: 5px;
@@ -423,6 +427,7 @@ function buildHtml(payload: BrowserPayload): string {
 
     .canvas-header h2 {
       margin: 0 0 6px;
+      font-family: "Outfit", "Segoe UI Variable", "Segoe UI", sans-serif;
       font-size: clamp(22px, 2.6vw, 34px);
       line-height: 1.08;
       letter-spacing: -0.03em;
@@ -444,8 +449,8 @@ function buildHtml(payload: BrowserPayload): string {
       gap: 8px;
       padding: 10px 12px;
       border-radius: 999px;
-      border: 1px solid rgba(45, 212, 191, 0.28);
-      background: rgba(45, 212, 191, 0.08);
+      border: 1px solid rgba(20, 86, 240, 0.18);
+      background: rgba(20, 86, 240, 0.06);
       color: var(--accent);
       font-size: 12px;
       font-weight: 700;
@@ -459,18 +464,18 @@ function buildHtml(payload: BrowserPayload): string {
       height: 8px;
       border-radius: 999px;
       background: var(--accent);
-      box-shadow: 0 0 16px rgba(45, 212, 191, 0.55);
+      box-shadow: 0 0 14px rgba(20, 86, 240, 0.28);
     }
 
     #chartHost {
       min-height: 540px;
       height: 62vh;
-      border-radius: 24px;
+      border-radius: 22px;
       overflow: hidden;
-      border: 1px solid rgba(96, 165, 250, 0.16);
+      border: 1px solid rgba(20, 86, 240, 0.10);
       background:
-        linear-gradient(180deg, rgba(8, 13, 22, 0.94), rgba(6, 11, 18, 0.88)),
-        radial-gradient(circle at top, rgba(96, 165, 250, 0.1), transparent 18rem);
+        linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 250, 255, 0.98)),
+        radial-gradient(circle at top, rgba(61, 174, 255, 0.08), transparent 18rem);
     }
 
     .details-grid {
@@ -483,7 +488,7 @@ function buildHtml(payload: BrowserPayload): string {
       padding: 14px 16px;
       border-radius: 18px;
       border: 1px solid var(--line);
-      background: rgba(255, 255, 255, 0.02);
+      background: rgba(255, 255, 255, 0.96);
     }
 
     .detail-card span {
@@ -498,6 +503,7 @@ function buildHtml(payload: BrowserPayload): string {
 
     .detail-card strong {
       display: block;
+      font-family: "Outfit", "Segoe UI Variable", "Segoe UI", sans-serif;
       font-size: 14px;
       line-height: 1.5;
       font-weight: 620;
@@ -508,9 +514,9 @@ function buildHtml(payload: BrowserPayload): string {
     .note-panel {
       padding: 16px 18px;
       border-radius: 20px;
-      border: 1px solid rgba(245, 158, 11, 0.18);
-      background: rgba(245, 158, 11, 0.06);
-      color: #f9d787;
+      border: 1px solid rgba(234, 94, 193, 0.14);
+      background: rgba(234, 94, 193, 0.05);
+      color: #6f2b59;
       font-size: 13px;
       line-height: 1.75;
     }
@@ -610,7 +616,7 @@ function buildHtml(payload: BrowserPayload): string {
   <script>${echartsSource}</script>
   <script>
     const payload = ${embeddedPayload};
-    const palette = ['#2dd4bf', '#60a5fa', '#f59e0b', '#fb7185', '#a78bfa', '#22c55e'];
+    const palette = ['#1456f0', '#3daeff', '#ea5ec1', '#ff8a4c', '#2f9b76', '#8f6ef5'];
     const sourceLabel = document.getElementById('sourceLabel');
     const sourceType = document.getElementById('sourceType');
     const chartCount = document.getElementById('chartCount');
@@ -651,14 +657,16 @@ function buildHtml(payload: BrowserPayload): string {
           data: series.points.map((point) => [point.x, point.y]),
           smooth: series.style !== 'scatter',
           showSymbol: series.style === 'scatter' || series.points.length <= 40,
-          symbolSize: series.style === 'scatter' ? 9 : 7,
+          symbolSize: series.style === 'scatter' ? 8 : 6,
           lineStyle: {
-            width: 2.6,
-            shadowBlur: 14,
-            shadowColor: palette[index % palette.length] + '55'
+            width: 2.4,
+            shadowBlur: 8,
+            shadowColor: palette[index % palette.length] + '22'
           },
           itemStyle: {
-            color: palette[index % palette.length]
+            color: palette[index % palette.length],
+            borderColor: '#ffffff',
+            borderWidth: 1
           },
           emphasis: {
             focus: 'series'
@@ -671,15 +679,17 @@ function buildHtml(payload: BrowserPayload): string {
         name: series.label,
         data: series.values.map((value, pointIndex) => [chart.xValues[pointIndex] ?? pointIndex + 1, value]),
         smooth: true,
-        showSymbol: series.values.length <= 40,
-        symbolSize: 7,
+        showSymbol: series.values.length <= 32,
+        symbolSize: 6,
         lineStyle: {
-          width: 2.6,
-          shadowBlur: 14,
-          shadowColor: palette[index % palette.length] + '55'
+          width: 2.4,
+          shadowBlur: 8,
+          shadowColor: palette[index % palette.length] + '22'
         },
         itemStyle: {
-          color: palette[index % palette.length]
+          color: palette[index % palette.length],
+          borderColor: '#ffffff',
+          borderWidth: 1
         },
         emphasis: {
           focus: 'series'
@@ -693,38 +703,55 @@ function buildHtml(payload: BrowserPayload): string {
         animationDuration: 480,
         color: palette,
         legend: {
+          type: 'scroll',
           top: 10,
-          right: 18,
+          left: 18,
+          right: 112,
           textStyle: {
-            color: '#a9b6c7',
-            fontSize: 12
+            color: '#4f5f72',
+            fontSize: 12,
+            fontWeight: 500
+          },
+          pageIconColor: '#1456f0',
+          pageIconInactiveColor: 'rgba(20, 86, 240, 0.24)',
+          pageTextStyle: {
+            color: '#5e6b7b'
           }
         },
         tooltip: {
           trigger: 'axis',
+          confine: true,
           axisPointer: {
             type: 'cross',
             label: {
-              backgroundColor: '#09111d'
+              backgroundColor: '#1456f0',
+              color: '#ffffff'
+            },
+            lineStyle: {
+              color: 'rgba(20, 86, 240, 0.20)'
             }
           },
-          backgroundColor: 'rgba(3, 8, 16, 0.94)',
-          borderColor: 'rgba(96, 165, 250, 0.26)',
+          backgroundColor: 'rgba(255, 255, 255, 0.98)',
+          borderColor: 'rgba(20, 86, 240, 0.14)',
           borderWidth: 1,
           textStyle: {
-            color: '#e6edf8'
+            color: '#1d2736'
           },
           padding: [10, 12],
-          extraCssText: 'box-shadow:0 18px 48px rgba(2,8,23,0.48);border-radius:14px;'
+          extraCssText: 'box-shadow:0 16px 42px rgba(28,48,86,0.12);border-radius:14px;'
         },
         grid: {
-          top: 68,
-          right: 28,
-          bottom: 82,
-          left: 72
+          top: 84,
+          right: 24,
+          bottom: 46,
+          left: 66,
+          containLabel: true
         },
         toolbox: {
+          top: 10,
           right: 18,
+          itemGap: 12,
+          itemSize: 15,
           feature: {
             saveAsImage: {
               title: 'Save PNG',
@@ -735,38 +762,41 @@ function buildHtml(payload: BrowserPayload): string {
             }
           },
           iconStyle: {
-            borderColor: '#7dd3fc'
+            borderColor: '#1456f0'
           }
         },
         xAxis: {
           type: chart.xScale === 'log10' ? 'log' : 'value',
           name: chart.xLabel,
           nameLocation: 'middle',
-          nameGap: 42,
+          nameGap: 34,
           min: chart.xDomain ? chart.xDomain[0] : null,
           max: chart.xDomain ? chart.xDomain[1] : null,
           axisLabel: {
-            color: '#90a2b7'
+            color: '#5e6b7b',
+            margin: 12,
+            hideOverlap: true
           },
           nameTextStyle: {
-            color: '#cdd8e7',
-            fontWeight: 600
+            color: '#32465a',
+            fontWeight: 600,
+            fontSize: 12
           },
           axisLine: {
             lineStyle: {
-              color: 'rgba(148,163,184,0.26)'
+              color: 'rgba(20, 86, 240, 0.14)'
             }
           },
           splitLine: {
             lineStyle: {
-              color: 'rgba(148,163,184,0.10)'
+              color: 'rgba(20, 86, 240, 0.08)'
             }
           },
           minorSplitLine: chart.xScale === 'log10'
             ? {
                 show: true,
                 lineStyle: {
-                  color: 'rgba(148,163,184,0.06)'
+                  color: 'rgba(20, 86, 240, 0.04)'
                 }
               }
             : undefined
@@ -774,25 +804,28 @@ function buildHtml(payload: BrowserPayload): string {
         yAxis: {
           type: 'value',
           name: chart.yLabel,
-          nameGap: 54,
+          nameGap: 42,
           inverse: Boolean(chart.invertY),
           min: chart.yDomain ? chart.yDomain[0] : null,
           max: chart.yDomain ? chart.yDomain[1] : null,
           axisLabel: {
-            color: '#90a2b7'
+            color: '#5e6b7b',
+            margin: 10,
+            hideOverlap: true
           },
           nameTextStyle: {
-            color: '#cdd8e7',
-            fontWeight: 600
+            color: '#32465a',
+            fontWeight: 600,
+            fontSize: 12
           },
           axisLine: {
             lineStyle: {
-              color: 'rgba(148,163,184,0.26)'
+              color: 'rgba(20, 86, 240, 0.14)'
             }
           },
           splitLine: {
             lineStyle: {
-              color: 'rgba(148,163,184,0.10)'
+              color: 'rgba(20, 86, 240, 0.08)'
             }
           }
         },
@@ -805,17 +838,6 @@ function buildHtml(payload: BrowserPayload): string {
           {
             type: 'inside',
             orient: 'vertical'
-          },
-          {
-            type: 'slider',
-            bottom: 22,
-            height: 14,
-            borderColor: 'rgba(148,163,184,0.12)',
-            fillerColor: 'rgba(45,212,191,0.16)',
-            backgroundColor: 'rgba(15,23,42,0.52)',
-            textStyle: {
-              color: '#6c7d92'
-            }
           }
         ],
         series: buildSeries(chart)
@@ -844,10 +866,9 @@ function buildHtml(payload: BrowserPayload): string {
 
     function buildChartSubtitle(chart) {
       const parts = [
-        chart.xLabel + ' on X',
-        chart.yLabel + ' on Y',
         chart.xScale === 'log10' ? 'logarithmic X scale' : 'linear X scale',
-        chart.invertY ? 'inverted Y axis' : 'standard Y axis'
+        chart.invertY ? 'inverted depth view' : 'standard axis direction',
+        chart.series.length + ' plotted series'
       ];
       return parts.join(' | ');
     }

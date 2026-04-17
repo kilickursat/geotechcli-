@@ -238,6 +238,64 @@ function buildXYChart(options: {
   };
 }
 
+function inferUnitToken(column: string): string | null {
+  const tokens = column
+    .toLowerCase()
+    .replace(/([a-z])([A-Z])/g, '$1_$2')
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+
+  const compoundUnits = [
+    ['kn', 'm3'],
+    ['g', 'cm3'],
+  ];
+
+  for (const parts of compoundUnits) {
+    for (let index = 0; index <= tokens.length - parts.length; index += 1) {
+      if (parts.every((part, offset) => tokens[index + offset] === part)) {
+        return parts.join('_');
+      }
+    }
+  }
+
+  const simpleUnits = new Set([
+    'percent',
+    'pct',
+    'ratio',
+    'kpa',
+    'mpa',
+    'gpa',
+    'kn',
+    'mn',
+    'mm',
+    'cm',
+    'm',
+    's',
+    'sec',
+    'min',
+    'hr',
+    'hour',
+  ]);
+
+  for (let index = tokens.length - 1; index >= 0; index -= 1) {
+    if (simpleUnits.has(tokens[index])) {
+      return tokens[index];
+    }
+  }
+
+  return null;
+}
+
+function canBuildCombinedOverview(columns: string[]): boolean {
+  if (columns.length < 2) {
+    return false;
+  }
+
+  const inferredUnits = columns.map(inferUnitToken);
+  const firstUnit = inferredUnits[0];
+  return Boolean(firstUnit) && inferredUnits.every((unit) => unit === firstUnit);
+}
+
 export function buildChartsFromTable(rows: TableRow[], options: TableChartOptions): ChartSpec[] {
   if (rows.length === 0) {
     return [];
@@ -278,7 +336,7 @@ export function buildChartsFromTable(rows: TableRow[], options: TableChartOption
     .slice(0, 4)
     .map((column) => normalizedRows.map((row) => toFiniteNumber(row[column]) ?? 0));
 
-  if (combinedSeries.length > 1) {
+  if (combinedSeries.length > 1 && canBuildCombinedOverview(yColumns.slice(0, 4))) {
     charts.push({
       id: slugify(`${options.sourceName}-${xColumn}-overview`),
       title: `${titlePrefix}: ${yColumns.slice(0, 4).map(humanizeKey).join(', ')} vs ${humanizeKey(xColumn)}`,
@@ -443,11 +501,46 @@ function buildCptCharts(rows: TableRow[], sourceName: string): ChartSpec[] {
     return [];
   }
 
-  return buildChartsFromTable(rows, {
-    sourceName: `${sourceName}-cpt`,
-    titlePrefix: 'CPT depth plots',
-    xColumn: depthColumn,
-    yColumns,
+  const pointsByColumn = yColumns.map((column) => ({
+    column,
+    points: rows
+      .map((row) => ({
+        x: toFiniteNumber(row[column]) ?? Number.NaN,
+        y: toFiniteNumber(row[depthColumn]) ?? Number.NaN,
+      }))
+      .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
+      .sort((left, right) => left.y - right.y),
+  })).filter((entry) => entry.points.length > 0);
+
+  if (pointsByColumn.length === 0) {
+    return [];
+  }
+
+  const allDepths = pointsByColumn.flatMap((entry) => entry.points.map((point) => point.y));
+  const [depthMin, depthMax] = expandDomain(Math.min(...allDepths), Math.max(...allDepths));
+
+  return pointsByColumn.map((entry, index) => {
+    const allValues = entry.points.map((point) => point.x);
+    const [valueMin, valueMax] = expandDomain(Math.min(...allValues), Math.max(...allValues));
+
+    return buildXYChart({
+      id: slugify(`${sourceName}-cpt-${entry.column}`),
+      title: `CPT depth plots: ${humanizeKey(entry.column)} vs ${humanizeKey(depthColumn)}`,
+      xLabel: humanizeKey(entry.column),
+      yLabel: humanizeKey(depthColumn),
+      invertY: true,
+      xDomain: [valueMin, valueMax],
+      yDomain: [depthMin, depthMax],
+      series: [
+        {
+          label: humanizeKey(entry.column),
+          points: entry.points,
+          style: 'line',
+          symbol: ['*', 'o', '+', 'x', '#'][index % 5],
+        },
+      ],
+      note: `Depth-aligned CPT profile with ${entry.points.length} samples`,
+    });
   });
 }
 

@@ -1,4 +1,15 @@
-﻿# Changelog
+# Changelog
+
+## [0.4.10] - 2026-04-17
+
+### CLI Presentation + Plot Studio Polish
+
+- Added a terminal-rich text renderer for agent, swarm, and chat answers so markdown-like sections, bullets, tables, and inline code now read like a deliberate engineering brief instead of raw LLM text.
+- Refined the interactive plot viewer with a lighter product-style surface, tighter legend/toolbox spacing, contained axis labels, and inside-only zoom so the old bottom slider no longer crowds the chart frame.
+- Shortened chart subtitles and improved viewer typography so the plot itself keeps visual priority instead of being squeezed by surrounding chrome.
+- Made generic visualization imports more conservative by skipping mixed-unit overview charts unless the selected series share a clear unit signature.
+- Upgraded CPT template plotting to emit true inverted depth profiles instead of generic table graphs.
+- Split pile browser plots into separate unit shaft friction, shaft resistance, and cumulative resistance views, and corrected liquefaction chart domains so factor-of-safety plots are no longer scaled by blow counts.
 
 ## [0.4.9] - 2026-04-17
 
@@ -198,4 +209,3 @@ Initial release. See README for full feature list.
 - **Webhook idempotency** 窶・Stripe webhook handler now tracks processed event IDs in memory (24-hour TTL with hourly cleanup). Duplicate events are detected by `event.id` and acknowledged without re-processing. Prevents double-activation of subscriptions or double-downgrades from retry deliveries. For multi-instance deployments, swap the `Map` for Redis `SET` + `EXPIRE`.
 - **ReAct brain 竊・proper message arrays** 窶・`brain.ts` completely rewritten. Replaces string concatenation (`conversationHistory += ...`) with a proper `ChatMessage[]` array using alternating `user`/`assistant` roles. New `generateChat()` function in the LLM router accepts multi-turn message arrays directly. Context window management: when conversation exceeds ~10K tokens, older tool exchanges are automatically compressed into a summary message (keeps system prompt, user query, and last 4 messages intact). Tool result data is compacted (no pretty-print, truncated at 3K chars) to save tokens.
 - **Swarm agent loop also fixed** 窶・`swarm.ts` `runAgentLoop` rewritten with the same message-array pattern. All 3 swarm agents (interpretation, simulation, reviewer) now use proper multi-turn conversations instead of string concatenation.
-

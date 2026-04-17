@@ -37,7 +37,7 @@ import {
   type BoreholeInterpretation,
   type BoreholeLayer,
 } from '@geotechcli/core';
-import { heading, keyValue, renderJSON, success, error, warn, renderTable, info } from '../ui/terminal.js';
+import { heading, keyValue, renderJSON, renderRichText, success, error, warn, renderTable, info } from '../ui/terminal.js';
 import { addGlobalFlags, getGlobalFlags } from '../util/flags.js';
 import {
   estimateHostedBetaVisionBodyBytes,
@@ -1277,7 +1277,7 @@ export function registerAgentCommand(program: Command): void {
             liveStatus?.succeed('Mohr and the specialists finished the analysis.');
             console.log('');
             heading('Swarm Report');
-            console.log(answer.content);
+            renderRichText(answer.content);
             console.log('');
             const toolCalls = session.steps.filter((s) => s.type === 'tool_call').length;
             const agents = [...new Set(session.steps.map((s) => s.agent))];
@@ -1348,7 +1348,7 @@ export function registerAgentCommand(program: Command): void {
             liveStatus?.succeed('Terzaghi finished the analysis.');
             console.log('');
             heading('Agent Analysis');
-            console.log(answer.content);
+            renderRichText(answer.content);
             console.log('');
             console.log(chalk.gray(`  (${session.steps.filter((s) => s.type === 'tool_call').length} tools executed, ${session.totalTokens} tokens, ${session.totalLatencyMs}ms)`));
             console.log(chalk.cyan('\n  Continue interactively with: ') + chalk.white(`geotech chat${opts.project ? ` --project ${opts.project}` : ''}`));
@@ -1524,7 +1524,7 @@ export function registerChatCommand(program: Command): void {
           if (answer) {
             liveStatus?.succeed('Terzaghi is ready.');
             console.log('');
-            console.log(chalk.white(answer.content));
+            renderRichText(answer.content);
             console.log('');
             console.log(chalk.gray(`  (${session.steps.filter((s) => s.type === 'tool_call').length} tools, ${session.totalTokens} tokens)`));
           } else {

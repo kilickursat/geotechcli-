@@ -13,22 +13,26 @@ function buildPilePlotSource(
   let cumulative = 0;
   const orderedLayers = [...result.shaftFrictionPerLayer].sort((left, right) => left.depth - right.depth);
   const maxDepth = Math.max(...orderedLayers.map((layer) => layer.depth));
-  const maxValue = Math.max(
-    ...orderedLayers.map((layer) => Math.max(layer.unitShaftFriction, layer.shaftResistance)),
-  );
+  const maxUnitShaftFriction = Math.max(...orderedLayers.map((layer) => layer.unitShaftFriction));
+  const maxShaftResistance = Math.max(...orderedLayers.map((layer) => layer.shaftResistance));
+  const cumulativeProfile = orderedLayers.map((layer) => {
+    cumulative += layer.shaftResistance;
+    return { x: cumulative, y: layer.depth };
+  });
+  const maxCumulativeResistance = Math.max(...cumulativeProfile.map((point) => point.x));
 
   return {
     sourceType: 'preset',
     sourceName: 'pile-capacity-profile',
     charts: [
       {
-        id: 'pile-shaft-vs-depth',
-        title: 'Pile shaft resistance vs depth',
-        xLabel: 'Resistance',
+        id: 'pile-unit-shaft-friction-vs-depth',
+        title: 'Pile unit shaft friction vs depth',
+        xLabel: 'Unit shaft friction (kPa)',
         yLabel: 'Depth (m)',
         kind: 'xy',
         invertY: true,
-        xDomain: [0, Math.max(10, Math.ceil(maxValue + 5))],
+        xDomain: [0, Math.max(10, Math.ceil(maxUnitShaftFriction + 5))],
         yDomain: [0, Math.max(maxDepth + 1, 1)],
         xySeries: [
           {
@@ -37,6 +41,19 @@ function buildPilePlotSource(
             style: 'line',
             symbol: '*',
           },
+        ],
+        note: 'Depth-aligned unit shaft friction profile derived from the current pile geometry and method.',
+      },
+      {
+        id: 'pile-shaft-resistance-vs-depth',
+        title: 'Pile shaft resistance vs depth',
+        xLabel: 'Shaft resistance (kN)',
+        yLabel: 'Depth (m)',
+        kind: 'xy',
+        invertY: true,
+        xDomain: [0, Math.max(10, Math.ceil(maxShaftResistance + 5))],
+        yDomain: [0, Math.max(maxDepth + 1, 1)],
+        xySeries: [
           {
             label: 'Shaft resistance',
             points: orderedLayers.map((layer) => ({ x: layer.shaftResistance, y: layer.depth })),
@@ -44,7 +61,7 @@ function buildPilePlotSource(
             symbol: 'o',
           },
         ],
-        note: 'Depth-aligned shaft resistance profile for the current pile geometry and method.',
+        note: 'Layer-by-layer shaft resistance contribution in force units.',
       },
       {
         id: 'pile-cumulative-vs-depth',
@@ -53,14 +70,12 @@ function buildPilePlotSource(
         yLabel: 'Depth (m)',
         kind: 'xy',
         invertY: true,
+        xDomain: [0, Math.max(10, Math.ceil(maxCumulativeResistance + 5))],
         yDomain: [0, Math.max(maxDepth + 1, 1)],
         xySeries: [
           {
             label: 'Cumulative shaft resistance',
-            points: orderedLayers.map((layer) => {
-              cumulative += layer.shaftResistance;
-              return { x: cumulative, y: layer.depth };
-            }),
+            points: cumulativeProfile,
             style: 'line',
             symbol: '+',
           },
@@ -155,7 +170,7 @@ export function registerPileCommand(program: Command): void {
                 sourceLabel: 'pile capacity profile',
                 outputPath: flags.saveHtml,
                 open: flags.openInteractivePlot,
-                focusChartId: 'pile-shaft-vs-depth',
+                focusChartId: 'pile-unit-shaft-friction-vs-depth',
                 headline: 'Pile Plot Viewer',
               });
               success(

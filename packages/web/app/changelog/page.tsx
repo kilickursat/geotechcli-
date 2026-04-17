@@ -8,6 +8,18 @@ const releases = [
     date: '2026-04-17',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added a terminal-rich text renderer for geotech agent, swarm, and chat answers so sections, bullets, tables, and inline tool names render as a cleaner engineering brief instead of raw markdown' },
+      { type: 'feat', text: 'Refined the interactive plot viewer with a lighter product-style surface, scrollable legends, contained labels, and inside-only zoom so the old thick bottom slider no longer crowds the plot area' },
+      { type: 'fix', text: 'Shortened chart subtitles and adjusted chart spacing so the actual engineering plot keeps priority over surrounding viewer chrome on narrower screens' },
+      { type: 'fix', text: 'Skipped mixed-unit overview charts for generic CSV and workbook plots unless the overlaid series share a clear unit signature' },
+      { type: 'fix', text: 'Promoted CPT templates to true inverted depth profiles, split pile browser plots into separate force and stress views, and corrected liquefaction chart domains so factor-of-safety charts are no longer stretched by blow-count ranges' },
+    ],
+  },
+  {
+    version: '0.4.9',
+    date: '2026-04-17',
+    tag: '0.4.9 Release',
+    changes: [
       { type: 'fix', text: 'Generic hosted-beta transport failures like Hosted beta AI request failed, empty upstream content, and fetch failed are now treated as temporary first-turn availability issues instead of surfacing a raw chat error and then continuing down a second answer path' },
       { type: 'feat', text: 'Added a live terminal status controller for geotech agent and geotech chat so users see Terzaghi actively thinking, calling tools, and reviewing results while the response is being prepared' },
       { type: 'fix', text: 'Kept the underlying agent workflow unchanged for evidence-backed requests while making the waiting experience feel active and more trustworthy during long hosted responses' },

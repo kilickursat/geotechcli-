@@ -75,6 +75,27 @@ describe('visualization utilities', () => {
     expect(source.charts.some((chart) => chart.title.includes('pile_profile sheet'))).toBe(true);
   });
 
+  it('avoids mixed-unit overview charts for generic table sources', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-viz-mixed-units-'));
+    tempDirs.push(dir);
+
+    const csvPath = join(dir, 'mixed-units.csv');
+    await writeFile(
+      csvPath,
+      [
+        'depth_m,unit_shaft_friction_kpa,cumulative_shaft_kn',
+        '0,18,42',
+        '4,34,183',
+        '8,49,392',
+      ].join('\n'),
+      'utf-8',
+    );
+
+    const source = await loadVisualizationSource(csvPath);
+    expect(source.charts.some((chart) => chart.yLabel === 'Value')).toBe(false);
+    expect(source.charts).toHaveLength(2);
+  });
+
   it('builds a Mohr circle preset chart', () => {
     const chart = buildMohrCircleChart({
       sigma1: 240,
@@ -144,5 +165,28 @@ describe('visualization utilities', () => {
     const source = await loadVisualizationSource(csvPath, { template: 'gradation' });
     expect(source.charts[0]?.kind).toBe('xy');
     expect(source.charts[0]?.xScale).toBe('log10');
+  });
+
+  it('loads CPT template charts as inverted depth profiles', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-viz-cpt-'));
+    tempDirs.push(dir);
+
+    const csvPath = join(dir, 'cpt.csv');
+    await writeFile(
+      csvPath,
+      [
+        'depth_m,qc_mpa,fs_kpa,rf_percent',
+        '1,2.4,45,1.2',
+        '3,5.8,82,1.4',
+        '5,7.1,96,1.3',
+      ].join('\n'),
+      'utf-8',
+    );
+
+    const source = await loadVisualizationSource(csvPath, { template: 'cpt' });
+    expect(source.charts.length).toBeGreaterThanOrEqual(3);
+    expect(source.charts.every((chart) => chart.kind === 'xy')).toBe(true);
+    expect(source.charts.every((chart) => chart.invertY)).toBe(true);
+    expect(source.charts.every((chart) => chart.yLabel.includes('Depth'))).toBe(true);
   });
 });

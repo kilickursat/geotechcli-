@@ -22,9 +22,9 @@ function buildLiquefactionPlotSource(
 ): VisualizationSource {
   const depthRows = [...result.layers].sort((left, right) => left.depth - right.depth);
   const maxDepth = Math.max(...depthRows.map((layer) => layer.depth));
-  const maxResistance = Math.max(
-    ...depthRows.map((layer) => Math.max(layer.CSR, layer.CRR, layer.factorOfSafety, layer.N160cs)),
-  );
+  const maxFactorOfSafety = Math.max(...depthRows.map((layer) => layer.factorOfSafety));
+  const maxCyclicRatio = Math.max(...depthRows.map((layer) => Math.max(layer.CSR, layer.CRR)));
+  const maxBlowCount = Math.max(...depthRows.map((layer) => Math.max(layer.N160, layer.N160cs)));
 
   return {
     sourceType: 'preset',
@@ -37,7 +37,7 @@ function buildLiquefactionPlotSource(
         yLabel: 'Depth (m)',
         kind: 'xy',
         invertY: true,
-        xDomain: [0, Math.max(2, Math.ceil(maxResistance + 0.25))],
+        xDomain: [0, Math.max(2, Math.ceil(maxFactorOfSafety + 0.25))],
         yDomain: [0, Math.max(maxDepth + 1, 1)],
         xySeries: [
           {
@@ -56,7 +56,7 @@ function buildLiquefactionPlotSource(
         yLabel: 'Depth (m)',
         kind: 'xy',
         invertY: true,
-        xDomain: [0, Math.max(0.5, Math.ceil(maxResistance * 10) / 10)],
+        xDomain: [0, Math.max(0.5, Math.ceil(maxCyclicRatio * 10) / 10)],
         yDomain: [0, Math.max(maxDepth + 1, 1)],
         xySeries: [
           {
@@ -81,7 +81,7 @@ function buildLiquefactionPlotSource(
         yLabel: 'Depth (m)',
         kind: 'xy',
         invertY: true,
-        xDomain: [0, Math.max(10, Math.ceil(maxResistance + 5))],
+        xDomain: [0, Math.max(10, Math.ceil(maxBlowCount + 5))],
         yDomain: [0, Math.max(maxDepth + 1, 1)],
         xySeries: [
           {
