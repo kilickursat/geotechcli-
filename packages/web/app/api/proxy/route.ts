@@ -69,6 +69,18 @@ interface UpstreamResponse {
   };
 }
 
+function stripReasoningPreamble(content: string): string {
+  const trimmed = content.trim();
+  const closingTag = '</think>';
+  const closingIndex = trimmed.lastIndexOf(closingTag);
+
+  if (closingIndex === -1) {
+    return trimmed;
+  }
+
+  return trimmed.slice(closingIndex + closingTag.length).trim();
+}
+
 function getUpstreamTimeoutMs(callType: 'text' | 'vision' | 'agent'): number {
   if (callType === 'agent') return 120_000;
   if (callType === 'vision') return 90_000;
@@ -496,7 +508,9 @@ export async function POST(request: NextRequest) {
   }
 
   const choice = upstreamData.choices?.[0];
-  const content = choice?.message?.content?.trim();
+  const content = choice?.message?.content
+    ? stripReasoningPreamble(choice.message.content)
+    : '';
   if (!content) {
     return createHostedBetaErrorResponse(
       502,
