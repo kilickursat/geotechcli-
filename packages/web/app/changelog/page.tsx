@@ -6,7 +6,7 @@ const releases = [
   {
     version: GEOTECHCLI_VERSION,
     date: '2026-04-17',
-    tag: '0.4.5 Release',
+    tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
       { type: 'fix', text: 'Switched hosted beta to the native vLLM OpenAI-compatible server on Modal so text and image chat completions share the same contract and the broken modal-http invalid function call path is removed' },
       { type: 'fix', text: 'Kept hosted beta on Qwen/Qwen3.5-9B as the shared hybrid multimodal model instead of drifting to a separate Qwen2.5-VL default' },

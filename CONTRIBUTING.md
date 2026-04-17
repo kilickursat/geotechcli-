@@ -9,8 +9,8 @@ geotechCLI uses this branch flow:
 | Branch | Purpose | Protected |
 |--------|---------|-----------|
 | `master` | Default development branch. All normal work lands here first. | Recommended |
-| `strong-beta` | Public beta branch for Cloudflare beta deploys and beta validation. | Yes |
-| `main` | Stable production branch for the website and stable npm releases. | Yes |
+| `strong-beta` | Public beta branch for Cloudflare beta deploys and the automated npm release path used for current public beta drops. | Yes |
+| `main` | Stable production branch for final promotion, stable website traffic, and release tags. | Yes |
 | `feature/*` | Focused work branches opened from `master`. | No |
 | `hotfix/*` | Emergency fixes branched from `main`, then merged back into `main` and `master`. | Same as `main` |
 
@@ -39,7 +39,7 @@ When the beta has passed smoke checks and manual review, open:
 # PR: strong-beta -> main
 ```
 
-Only `main` should serve stable production traffic or stable npm releases.
+`strong-beta` is the branch that currently drives the public beta website and automated npm release pipeline. Promote `strong-beta -> main` after beta validation when you want the same version to be reflected as the stable branch state and tagged release.
 
 ## Minimum Validation
 

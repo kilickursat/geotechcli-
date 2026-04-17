@@ -1,5 +1,24 @@
 ﻿# Changelog
 
+## [0.4.6] - 2026-04-17
+
+### Hosted Beta + Release Alignment
+
+- Published the current strong-beta hosted-beta fixes as a versioned release so npm, the CLI, shared metadata, and the beta website stop drifting apart.
+- Switched the CLI and web workspace manifests away from wildcard `@geotechcli/core` dependencies so published packages resolve against the matching core release instead of floating to whichever core version is latest on npm.
+- Added release verification checks that fail CI if internal workspace package versions drift or if wildcard internal dependencies are reintroduced.
+
+### Qwen / Modal Reliability
+
+- Kept hosted beta on `Qwen/Qwen3.5-9B` for both text and vision so the public proxy, CLI defaults, and Modal deployment stay aligned on one hybrid multimodal model.
+- Corrected the Modal vLLM launcher and pinned the served runtime to the available `vllm==0.18.1` line so the deployment path matches Modal's package mirror and current Qwen3.5 support.
+- Expanded deploy smoke checks and reduced stale hosted-beta agent prompt budgets so installed users are less likely to hit the old context-window crash path.
+
+### Interactive Plotting + User Experience
+
+- Kept the new interactive browser plot viewer in the packaged CLI release so `--plot`, `--save-html`, and `--no-open` ship together instead of only existing in the repo state.
+- Preserved terminal fallbacks for engineers working in SSH, CI, or air-gapped environments while making the default plotting experience much closer to a real engineering chart.
+
 ## [0.4.4] - 2026-04-14
 
 ### Hosted Beta Fallbacks

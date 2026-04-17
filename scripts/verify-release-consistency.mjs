@@ -21,6 +21,10 @@ const metadata = readJson('packages', 'core', 'src', 'meta', 'metadata.json');
 const cliPkg = readJson('packages', 'cli', 'package.json');
 const corePkg = readJson('packages', 'core', 'package.json');
 const webPkg = readJson('packages', 'web', 'package.json');
+const lockfile = readJson('package-lock.json');
+const lockCliPkg = lockfile.packages?.['packages/cli'];
+const lockCorePkg = lockfile.packages?.['packages/core'];
+const lockWebPkg = lockfile.packages?.['packages/web'];
 
 for (const pkg of [cliPkg, corePkg, webPkg]) {
   assert(
@@ -28,6 +32,26 @@ for (const pkg of [cliPkg, corePkg, webPkg]) {
     `Package ${pkg.name} version ${pkg.version} does not match shared metadata version ${metadata.version}.`,
   );
 }
+
+assert(
+  cliPkg.dependencies?.['@geotechcli/core'] === corePkg.version,
+  `CLI dependency on @geotechcli/core must be pinned exactly to ${corePkg.version}, found ${cliPkg.dependencies?.['@geotechcli/core']}.`,
+);
+assert(
+  webPkg.dependencies?.['@geotechcli/core'] === corePkg.version,
+  `Web dependency on @geotechcli/core must be pinned exactly to ${corePkg.version}, found ${webPkg.dependencies?.['@geotechcli/core']}.`,
+);
+assert(lockCliPkg?.version === cliPkg.version, `package-lock.json CLI version ${lockCliPkg?.version} does not match package version ${cliPkg.version}.`);
+assert(lockCorePkg?.version === corePkg.version, `package-lock.json core version ${lockCorePkg?.version} does not match package version ${corePkg.version}.`);
+assert(lockWebPkg?.version === webPkg.version, `package-lock.json web version ${lockWebPkg?.version} does not match package version ${webPkg.version}.`);
+assert(
+  lockCliPkg?.dependencies?.['@geotechcli/core'] === corePkg.version,
+  `package-lock.json CLI dependency on @geotechcli/core must be pinned exactly to ${corePkg.version}, found ${lockCliPkg?.dependencies?.['@geotechcli/core']}.`,
+);
+assert(
+  lockWebPkg?.dependencies?.['@geotechcli/core'] === corePkg.version,
+  `package-lock.json web dependency on @geotechcli/core must be pinned exactly to ${corePkg.version}, found ${lockWebPkg?.dependencies?.['@geotechcli/core']}.`,
+);
 
 const readme = readText('README.md');
 assert(
