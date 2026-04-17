@@ -8,6 +8,17 @@ const releases = [
     date: '2026-04-17',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Replaced the narrow foundation-only shortcut with a catalog-driven geotechnical intake layer that screens multiple analysis families before calling the hosted model' },
+      { type: 'fix', text: 'Under-specified foundation, soil classification, and liquefaction prompts now return immediate engineering data requirements instead of burning a long hosted-beta round trip' },
+      { type: 'fix', text: 'Project metadata and notes alone no longer suppress agent intake; only real evidence such as soil profiles, datasets, derived parameters, or active analysis context can bypass it' },
+      { type: 'fix', text: 'Added regression coverage to keep metadata-only project sessions from slipping past intake while still allowing evidence-backed project context to reach hosted beta normally' },
+    ],
+  },
+  {
+    version: '0.4.7',
+    date: '2026-04-17',
+    tag: '0.4.7 Release',
+    changes: [
       { type: 'fix', text: 'Added an immediate deterministic screening answer for under-specified foundation and soil-profile agent prompts so the CLI responds instantly instead of waiting on hosted-beta just to request missing data' },
       { type: 'fix', text: 'Improved the hosted-beta fallback for the same foundation-screening prompts so transient provider issues now return a useful engineering checklist instead of the generic no-fallback message' },
       { type: 'fix', text: 'Switched hosted beta to the native vLLM OpenAI-compatible server on Modal so text and image chat completions share the same contract and the broken modal-http invalid function call path is removed' },

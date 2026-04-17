@@ -4,6 +4,10 @@ import { toolRegistry, type ToolResult } from './tools.js';
 import { validateToolArgs, formatViolations } from './guardrails.js';
 import { extractToolSafetyIssue, serializeContextForPrompt } from './safety.js';
 import { normalizeToolArgs } from './tool-normalization.js';
+import {
+  buildGeotechnicalFallbackAnswer,
+  buildGeotechnicalPreflightAnswer,
+} from './intake.js';
 
 // Side-effect imports: these files register tools into the shared registry
 import './filesystem-tools.js';
@@ -113,35 +117,18 @@ function buildDeterministicPreflightAnswer(
   config: LLMConfig,
   sessionContext?: Record<string, unknown>,
 ): string | null {
-  if (config.provider !== 'hosted-beta') {
-    return null;
-  }
-
-  if (hasProjectContextData(sessionContext)) {
-    return null;
-  }
-
-  const needsFoundationScreening = hasFoundationScreeningIntent(userQuery) || hasClassificationIntent(userQuery);
-  if (!needsFoundationScreening) {
-    return null;
-  }
-
-  if (hasActionableSoilData(userQuery)) {
-    return null;
-  }
-
-  return buildFoundationDataRequestAnswer(userQuery);
+  return buildGeotechnicalPreflightAnswer(userQuery, config, sessionContext);
 }
 
-function buildDeterministicFallbackAnswer(userQuery: string): string {
+function buildDeterministicFallbackAnswer(
+  userQuery: string,
+  sessionContext?: Record<string, unknown>,
+): string {
   const normalized = userQuery.toLowerCase();
 
-  if ((hasFoundationScreeningIntent(userQuery) || hasClassificationIntent(userQuery)) && !hasActionableSoilData(userQuery)) {
-    return [
-      'Hosted beta was temporarily unavailable, so geotechCLI switched to a deterministic screening response instead of returning a blank agent failure.',
-      '',
-      buildFoundationDataRequestAnswer(userQuery),
-    ].join('\n');
+  const intakeFallback = buildGeotechnicalFallbackAnswer(userQuery, sessionContext);
+  if (intakeFallback) {
+    return intakeFallback;
   }
 
   if (/(tbm|epb|slurry|shield|tunnel boring)/.test(normalized)) {
@@ -393,7 +380,7 @@ export async function runAgent(
 
         const fallbackAnswer: AgentStep = {
           type: 'answer',
-          content: buildDeterministicFallbackAnswer(userQuery),
+          content: buildDeterministicFallbackAnswer(userQuery, sessionContext),
           timestamp: Date.now(),
         };
         session.steps.push(fallbackAnswer);

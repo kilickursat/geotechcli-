@@ -6,6 +6,24 @@ import { classifySoilFromDescription } from '../src/vision/index.js';
 describe('AI fallback behavior', () => {
   const originalFetch = global.fetch;
 
+  function hostedBetaSuccessResponse(content: string): Response {
+    return new Response(
+      JSON.stringify({
+        model: 'Qwen/Qwen3.5-9B',
+        choices: [{ message: { role: 'assistant', content } }],
+        usage: {
+          prompt_tokens: 120,
+          completion_tokens: 30,
+          total_tokens: 150,
+        },
+      }),
+      {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      },
+    );
+  }
+
   afterEach(() => {
     global.fetch = originalFetch;
     vi.restoreAllMocks();
@@ -67,15 +85,18 @@ describe('AI fallback behavior', () => {
         timeout: 1000,
       },
       () => {},
+      {
+        soilProfiles: [{ boreholeId: 'BH-1', layers: [{ thickness: 3, soilType: 'clay' }] }],
+      },
     );
 
     const answer = session.steps.find((step) => step.type === 'answer');
-    expect(answer?.content).toMatch(/deterministic fallback/i);
+    expect(answer?.content).toMatch(/deterministic fallback reasoning/i);
     expect(answer?.content).toMatch(/EPB/);
     expect(answer?.content).toMatch(/diameter is not provided/i);
   });
 
-  it('returns an immediate deterministic screening answer for under-specified foundation requests', async () => {
+  it('returns an immediate geotechnical intake answer for under-specified foundation requests', async () => {
     global.fetch = vi.fn() as typeof fetch;
 
     const session = await runAgent(
@@ -90,40 +111,75 @@ describe('AI fallback behavior', () => {
 
     const answer = session.steps.find((step) => step.type === 'answer');
     expect(answer?.content).toMatch(/12-story/i);
-    expect(answer?.content).toMatch(/needs site investigation data first/i);
+    expect(answer?.content).toMatch(/Foundation screening \/ selection/i);
+    expect(answer?.content).toMatch(/Soil classification/i);
+    expect(answer?.content).toMatch(/Minimum inputs still needed/i);
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  it('returns a useful deterministic fallback for foundation requests when hosted beta is unavailable', async () => {
-    global.fetch = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          error: {
-            message: 'Hosted beta provider is busy right now.',
-            detail: 'Rate limit reached for requests',
-          },
-        }),
-        {
-          status: 503,
-          headers: { 'Content-Type': 'application/json' },
-        },
-      ),
-    ) as typeof fetch;
+  it('returns an immediate geotechnical intake answer for under-specified liquefaction requests', async () => {
+    global.fetch = vi.fn() as typeof fetch;
 
     const session = await runAgent(
-      'recommend foundation type for a 12-story building using the soil profile',
+      'assess liquefaction potential for this site during a major earthquake',
       {
         provider: 'hosted-beta',
         apiKey: '',
         timeout: 1000,
       },
       () => {},
-      { importedDataset: { id: 'bh-1', summary: 'placeholder context to bypass preflight' } },
     );
 
     const answer = session.steps.find((step) => step.type === 'answer');
-    expect(answer?.content).toMatch(/temporarily unavailable/i);
-    expect(answer?.content).toMatch(/site investigation data/i);
-    expect(answer?.content).toMatch(/calculate_bearing_capacity/i);
+    expect(answer?.content).toMatch(/Liquefaction assessment/i);
+    expect(answer?.content).toMatch(/Earthquake magnitude and PGA/i);
+    expect(answer?.content).toMatch(/SPT or CPT data by depth/i);
+    expect(global.fetch).not.toHaveBeenCalled();
   });
+
+  it('does not let metadata-only project context disable the geotechnical intake screen', async () => {
+    global.fetch = vi.fn() as typeof fetch;
+
+    const session = await runAgent(
+      'recommend foundation type for a 12-story building',
+      {
+        provider: 'hosted-beta',
+        apiKey: '',
+        timeout: 1000,
+      },
+      () => {},
+      {
+        projectMeta: { id: 'demo-project', name: 'Demo Project' },
+        recentNotes: [{ text: 'Kickoff note only' }],
+      },
+    );
+
+    const answer = session.steps.find((step) => step.type === 'answer');
+    expect(answer?.content).toMatch(/Foundation screening \/ selection/i);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('allows the hosted model to run when relevant project evidence exists in context', async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      hostedBetaSuccessResponse('Use the uploaded borehole and load data to continue the assessment.'),
+    ) as typeof fetch;
+
+    const session = await runAgent(
+      'recommend foundation type for a 12-story building',
+      {
+        provider: 'hosted-beta',
+        apiKey: '',
+        timeout: 1000,
+      },
+      () => {},
+      {
+        soilProfiles: [{ boreholeId: 'BH-1', layers: [{ thickness: 2, soilType: 'clay' }] }],
+      },
+    );
+
+    const answer = session.steps.find((step) => step.type === 'answer');
+    expect(answer?.content).toMatch(/uploaded borehole/i);
+    expect(global.fetch).toHaveBeenCalled();
+  });
+
 });

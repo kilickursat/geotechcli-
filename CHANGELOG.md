@@ -1,5 +1,14 @@
 ﻿# Changelog
 
+## [0.4.8] - 2026-04-17
+
+### Agent Intake + Project Context
+
+- Replaced the narrow foundation-only agent shortcut with a catalog-driven geotechnical intake layer that screens multiple analysis families including foundation selection, soil classification, liquefaction, slope stability, retaining walls, pile capacity, TBM performance, tunnel settlement, and rock mass classification.
+- Under-specified engineering requests now return immediate minimum-data requirements in domain language instead of waiting on hosted beta to restate missing inputs after a long round trip.
+- Tightened the project-context bypass so metadata and notes alone no longer suppress intake; only actual evidence such as soil profiles, named datasets, derived parameters, or active analysis context can bypass the screen.
+- Added regression coverage for foundation and liquefaction intake, metadata-only project context, and evidence-backed project context so the fast path stays geotechnical and does not silently disable the hosted model when real data exists.
+
 ## [0.4.7] - 2026-04-17
 
 ### Agent Reliability + Responsiveness
