@@ -81,7 +81,7 @@ function getHostedSwarmMaxTokens(config: LLMConfig, phase: 'loop' | 'final'): nu
     return phase === 'loop' ? 1700 : 2200;
   }
 
-  return phase === 'loop' ? 900 : 1200;
+  return phase === 'loop' ? 700 : 900;
 }
 
 export function getAllowedToolsForAgent(agent: SwarmStep['agent']): readonly string[] {

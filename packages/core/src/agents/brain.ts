@@ -43,7 +43,7 @@ function getHostedAgentMaxTokens(config: LLMConfig, phase: 'loop' | 'final'): nu
     return phase === 'loop' ? 1600 : 1800;
   }
 
-  return phase === 'loop' ? 900 : 1100;
+  return phase === 'loop' ? 700 : 900;
 }
 
 function isHostedBetaUnavailable(message: string): boolean {
