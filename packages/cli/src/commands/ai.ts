@@ -201,7 +201,11 @@ function summarizeStatusText(text: string, limit = 78): string {
   return `${normalized.slice(0, Math.max(0, limit - 3)).trimEnd()}...`;
 }
 
-function createLiveStatusController(options: { kind: 'single' | 'swarm'; enabled: boolean }) {
+function createLiveStatusController(options: {
+  kind: 'single' | 'swarm';
+  enabled: boolean;
+  provider?: string;
+}) {
   if (!options.enabled || !process.stdout.isTTY) {
     return null;
   }
@@ -214,9 +218,34 @@ function createLiveStatusController(options: { kind: 'single' | 'swarm'; enabled
     discardStdin: false,
   }).start();
 
+  const hostedBetaWarmupHints =
+    options.provider === 'hosted-beta'
+      ? [
+          {
+            afterMs: 20_000,
+            text: 'Hosted model on Modal.com GPU may still be warming up...',
+          },
+          {
+            afterMs: 95_000,
+            text: 'Still waiting on the Modal.com GPU response. geotechCLI will fall back if the timeout budget is exceeded.',
+          },
+        ]
+      : [];
+
   let rotationIndex = 0;
   let holdUntil = 0;
+  let lastProgressAt = Date.now();
+  let warmupHintIndex = 0;
   const interval = setInterval(() => {
+    if (warmupHintIndex < hostedBetaWarmupHints.length) {
+      const hint = hostedBetaWarmupHints[warmupHintIndex];
+      if (Date.now() - lastProgressAt >= hint.afterMs) {
+        pin(hint.text, 6_000);
+        warmupHintIndex += 1;
+        return;
+      }
+    }
+
     if (Date.now() < holdUntil) {
       return;
     }
@@ -233,8 +262,14 @@ function createLiveStatusController(options: { kind: 'single' | 'swarm'; enabled
     holdUntil = Date.now() + holdMs;
   }
 
+  function markProgress() {
+    lastProgressAt = Date.now();
+    warmupHintIndex = 0;
+  }
+
   return {
     onAgentStep(step: AgentStep) {
+      markProgress();
       switch (step.type) {
         case 'thought':
           pin(`Terzaghi: ${summarizeStatusText(step.content, 84)}`);
@@ -250,7 +285,9 @@ function createLiveStatusController(options: { kind: 'single' | 'swarm'; enabled
           }
           break;
         case 'error':
-          if (/temporarily unavailable|request failed|fetch failed|timed out|retry/i.test(step.content)) {
+          if (/modal\.com gpu|warming up|timeout budget|timed out/i.test(step.content)) {
+            pin('Hosted model on Modal.com GPU is warming up or slow. Terzaghi is switching paths...');
+          } else if (/temporarily unavailable|request failed|fetch failed|retry/i.test(step.content)) {
             pin('Hosted beta hit a bump. Terzaghi is recovering...');
           } else {
             pin('Terzaghi hit an issue and is adjusting the analysis...');
@@ -261,6 +298,7 @@ function createLiveStatusController(options: { kind: 'single' | 'swarm'; enabled
       }
     },
     onSwarmStep(step: SwarmStep) {
+      markProgress();
       const label = SWARM_AGENT_LABELS[step.agent] ?? step.agent;
       switch (step.type) {
         case 'thought':
@@ -286,7 +324,11 @@ function createLiveStatusController(options: { kind: 'single' | 'swarm'; enabled
           pin(`${label} is correcting the analysis...`);
           break;
         case 'error':
-          pin(`${label} hit an issue and is recovering...`);
+          if (/modal\.com gpu|warming up|timeout budget|timed out/i.test(step.content)) {
+            pin(`Hosted model on Modal.com GPU is warming up or slow. ${label} is switching paths...`);
+          } else {
+            pin(`${label} hit an issue and is recovering...`);
+          }
           break;
         case 'answer':
           break;
@@ -1235,6 +1277,7 @@ export function registerAgentCommand(program: Command): void {
         liveStatus = createLiveStatusController({
           kind: useSwarm ? 'swarm' : 'single',
           enabled: showLiveStatus,
+          provider: config.provider,
         });
 
         if (useSwarm) {
@@ -1509,6 +1552,7 @@ export function registerChatCommand(program: Command): void {
         const liveStatus = createLiveStatusController({
           kind: 'single',
           enabled: true,
+          provider: config.provider,
         });
 
         try {

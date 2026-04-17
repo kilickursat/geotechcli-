@@ -217,4 +217,51 @@ describe('hosted beta controls', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(body.choices?.[0]?.message?.content).toBe('USCS: CH');
   });
+
+  it('does not retry upstream agent requests after a transient failure', async () => {
+    vi.stubEnv('MODAL_ENDPOINT_URL', 'https://test--geotechcli-qwen-serve.modal.run/v1/chat/completions');
+
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: {
+            message: 'Rate limit reached for requests',
+          },
+        }),
+        {
+          status: 429,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
+    global.fetch = fetchMock as typeof fetch;
+
+    const route = await import('../app/api/proxy/route.js');
+    const request = new NextRequest('https://example.com/api/proxy', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-geotech-client': 'geotechcli',
+        'x-geotech-client-version': '0.4.11',
+        'x-geotech-call-type': 'agent',
+      },
+      body: JSON.stringify({
+        messages: [
+          { role: 'user', content: 'Assess this tunnel alignment.' },
+          { role: 'assistant', content: 'Interim planning step.' },
+          { role: 'user', content: 'Continue with the next geotechnical step.' },
+        ],
+        model: DEFAULT_LLM_MODEL,
+      }),
+    });
+
+    const response = await route.POST(request);
+    const body = (await response.json()) as {
+      error?: { message?: string; detail?: string };
+    };
+
+    expect(response.status).toBe(503);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(body.error?.message).toMatch(/provider is busy/i);
+  });
 });

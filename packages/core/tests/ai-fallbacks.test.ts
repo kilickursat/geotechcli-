@@ -123,6 +123,41 @@ describe('AI fallback behavior', () => {
     expect(answer?.content).toMatch(/EPB/);
   });
 
+  it('explains modal warmup or timeout budget exhaustion on the first agent turn', async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: {
+            message: 'Hosted model on Modal.com GPU timed out.',
+            detail: 'Hosted model on Modal.com GPU is warming up or the upstream agent request exceeded the 240s timeout budget.',
+          },
+        }),
+        {
+          status: 504,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    ) as typeof fetch;
+
+    const session = await runAgent(
+      'calculate penetration rate of EPB TBM if the rpm is 10 rpm, and clay zone with 1500 kN thrust',
+      {
+        provider: 'hosted-beta',
+        apiKey: '',
+        timeout: 1000,
+      },
+      () => {},
+      {
+        soilProfiles: [{ boreholeId: 'BH-1', layers: [{ thickness: 3, soilType: 'clay' }] }],
+      },
+    );
+
+    const answer = session.steps.find((step) => step.type === 'answer');
+    expect(answer?.content).toMatch(/Modal\.com GPU/i);
+    expect(answer?.content).toMatch(/timeout budget/i);
+    expect(answer?.content).toMatch(/EPB/);
+  });
+
   it('returns an immediate geotechnical intake answer for under-specified foundation requests', async () => {
     global.fetch = vi.fn() as typeof fetch;
 

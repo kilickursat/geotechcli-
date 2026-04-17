@@ -91,7 +91,7 @@ function formatHostedBetaError(status: number, data: HostedBetaResponse, fallbac
 }
 
 function getMinimumHostedBetaTimeoutMs(callType: HostedBetaCallType): number {
-  if (callType === 'agent') return 120_000;
+  if (callType === 'agent') return 255_000;
   if (callType === 'vision') return 90_000;
   return 75_000;
 }

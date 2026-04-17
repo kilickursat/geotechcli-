@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.11] - 2026-04-17
+
+### Hosted Beta Warmup Messaging + Budget-Safe Timeout Handling
+
+- Raised hosted-beta agent timeout budgets to better match real Modal cold-start behavior, so the CLI is less likely to give up before the Qwen server is actually ready.
+- Changed first-turn fallback wording to explicitly say when the Modal.com GPU is warming up or the timeout budget was exceeded, instead of incorrectly implying the hosted stack is simply down.
+- Added live terminal wait states for hosted-beta sessions so `geotech agent` and `geotech chat` can surface a clearer "Modal.com GPU may still be warming up" message while users wait.
+- Limited hosted agent proxy calls to a single upstream attempt instead of multi-retrying cold starts, which reduces wasted L4 time and keeps the timeout path more honest for your current budget.
+- Added regression coverage for Modal warmup/timeout fallback wording and for the no-retry agent proxy behavior.
+
 ## [0.4.10] - 2026-04-17
 
 ### CLI Presentation + Plot Studio Polish

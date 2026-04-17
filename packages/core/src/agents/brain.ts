@@ -65,6 +65,21 @@ function isHostedBetaUnavailable(message: string): boolean {
   );
 }
 
+type HostedFallbackMode = 'temporary' | 'warming_timeout';
+
+function getHostedFallbackMode(message: string): HostedFallbackMode {
+  const normalized = message.toLowerCase();
+  if (
+    normalized.includes('timed out') ||
+    normalized.includes('timeout budget') ||
+    normalized.includes('warming up') ||
+    normalized.includes('modal.com gpu')
+  ) {
+    return 'warming_timeout';
+  }
+  return 'temporary';
+}
+
 function extractNumericValue(query: string, pattern: RegExp): number | null {
   const match = query.match(pattern);
   return match ? Number(match[1]) : null;
@@ -127,8 +142,13 @@ function buildDeterministicPreflightAnswer(
 function buildDeterministicFallbackAnswer(
   userQuery: string,
   sessionContext?: Record<string, unknown>,
+  mode: HostedFallbackMode = 'temporary',
 ): string {
   const normalized = userQuery.toLowerCase();
+  const fallbackLead =
+    mode === 'warming_timeout'
+      ? 'Hosted model on Modal.com GPU is warming up or exceeded the current timeout budget, so the agent switched to deterministic fallback reasoning instead of returning no analysis.'
+      : 'Hosted beta was temporarily unavailable, so the agent switched to deterministic fallback reasoning instead of returning no analysis.';
 
   const intakeFallback = buildGeotechnicalFallbackAnswer(userQuery, sessionContext);
   if (intakeFallback) {
@@ -145,7 +165,7 @@ function buildDeterministicFallbackAnswer(
     const hasRockInputs = /(ucs|rqd|cai|joint spacing|jointspacing)/.test(normalized);
 
     const lines = [
-      'Hosted beta was temporarily unavailable, so the agent switched to deterministic fallback reasoning instead of returning no analysis.',
+      fallbackLead,
       '',
       'Engineering assessment:',
     ];
@@ -182,7 +202,9 @@ function buildDeterministicFallbackAnswer(
   }
 
   return [
-    'Hosted beta was temporarily unavailable, and this request does not currently have a direct deterministic fallback in geotechCLI.',
+    mode === 'warming_timeout'
+      ? 'Hosted model on Modal.com GPU is warming up or exceeded the current timeout budget, and this request does not currently have a direct deterministic fallback in geotechCLI.'
+      : 'Hosted beta was temporarily unavailable, and this request does not currently have a direct deterministic fallback in geotechCLI.',
     'Retry shortly, or reformulate the task as one of the built-in deterministic commands so the CLI can continue without the hosted model.',
   ].join('\n\n');
 }
@@ -374,9 +396,13 @@ export async function runAgent(
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       if (iteration === 0 && isHostedBetaUnavailable(errMsg)) {
+        const fallbackMode = getHostedFallbackMode(errMsg);
         const fallbackThought: AgentStep = {
           type: 'thought',
-          content: 'Hosted beta is temporarily unavailable. Switching to deterministic fallback reasoning.',
+          content:
+            fallbackMode === 'warming_timeout'
+              ? 'Hosted model on Modal.com GPU is warming up or hit the current timeout budget. Switching to deterministic fallback reasoning.'
+              : 'Hosted beta is temporarily unavailable. Switching to deterministic fallback reasoning.',
           timestamp: Date.now(),
         };
         session.steps.push(fallbackThought);
@@ -384,7 +410,7 @@ export async function runAgent(
 
         const fallbackAnswer: AgentStep = {
           type: 'answer',
-          content: buildDeterministicFallbackAnswer(userQuery, sessionContext),
+          content: buildDeterministicFallbackAnswer(userQuery, sessionContext, fallbackMode),
           timestamp: Date.now(),
         };
         session.steps.push(fallbackAnswer);

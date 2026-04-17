@@ -8,6 +8,18 @@ const releases = [
     date: '2026-04-17',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'fix', text: 'Raised hosted-beta agent timeout budgets to better match real Modal cold starts so the CLI is less likely to fall back before the Qwen server is actually ready' },
+      { type: 'fix', text: 'Changed first-turn fallback messaging to explicitly say when the Modal.com GPU is warming up or the timeout budget was exceeded instead of implying the hosted stack is simply unavailable' },
+      { type: 'feat', text: 'Added live waiting hints for hosted-beta sessions so geotech agent and geotech chat can show a clearer Modal.com GPU warmup message while users wait' },
+      { type: 'fix', text: 'Limited hosted agent proxy calls to a single upstream attempt instead of retrying cold starts, reducing wasted L4 GPU time and keeping timeout behavior more honest for the current budget' },
+      { type: 'fix', text: 'Added regression coverage for Modal warmup and timeout fallback wording plus the no-retry hosted agent proxy path' },
+    ],
+  },
+  {
+    version: '0.4.10',
+    date: '2026-04-17',
+    tag: '0.4.10 Release',
+    changes: [
       { type: 'feat', text: 'Added a terminal-rich text renderer for geotech agent, swarm, and chat answers so sections, bullets, tables, and inline tool names render as a cleaner engineering brief instead of raw markdown' },
       { type: 'feat', text: 'Refined the interactive plot viewer with a lighter product-style surface, scrollable legends, contained labels, and inside-only zoom so the old thick bottom slider no longer crowds the plot area' },
       { type: 'fix', text: 'Shortened chart subtitles and adjusted chart spacing so the actual engineering plot keeps priority over surrounding viewer chrome on narrower screens' },

@@ -82,9 +82,15 @@ function stripReasoningPreamble(content: string): string {
 }
 
 function getUpstreamTimeoutMs(callType: 'text' | 'vision' | 'agent'): number {
-  if (callType === 'agent') return 120_000;
+  if (callType === 'agent') return 240_000;
   if (callType === 'vision') return 90_000;
   return 75_000;
+}
+
+function getUpstreamAttemptCount(callType: 'text' | 'vision' | 'agent'): number {
+  // Keep agent requests to a single long-budget attempt so we do not burn extra
+  // Modal GPU time retrying an abandoned cold start after the CLI has already moved on.
+  return callType === 'agent' ? 1 : 4;
 }
 
 function isTransientUpstreamStatus(status: number): boolean {
@@ -111,8 +117,9 @@ async function fetchUpstreamWithRetry(
 ): Promise<Response> {
   let lastResponse: Response | null = null;
   let lastError: unknown;
+  const maxAttempts = getUpstreamAttemptCount(callType);
 
-  for (let attempt = 0; attempt < 4; attempt += 1) {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     try {
       const response = await fetch(MODAL_CHAT_COMPLETIONS_URL, {
         method: 'POST',
@@ -126,21 +133,21 @@ async function fetchUpstreamWithRetry(
         signal: AbortSignal.timeout(getUpstreamTimeoutMs(callType)),
       });
 
-      if (!isTransientUpstreamStatus(response.status) || attempt === 3) {
+      if (!isTransientUpstreamStatus(response.status) || attempt === maxAttempts - 1) {
         return response;
       }
 
       lastResponse = response;
     } catch (err) {
       lastError = err;
-      if (attempt === 3) {
+      if (attempt === maxAttempts - 1) {
         throw err;
       }
       await delay(getRetryDelayMs(attempt));
       continue;
     }
 
-    if (attempt < 3) {
+    if (attempt < maxAttempts - 1) {
       await delay(getRetryDelayMs(attempt, lastResponse));
     }
   }
@@ -462,17 +469,20 @@ export async function POST(request: NextRequest) {
   try {
     upstreamResponse = await fetchUpstreamWithRetry(upstreamBody, callType);
   } catch (err) {
+    const timedOut = err instanceof Error && /abort|timeout/i.test(err.message);
     const detail =
-      err instanceof Error && /abort|timeout/i.test(err.message)
-        ? `The upstream ${callType} request timed out after ${Math.round(getUpstreamTimeoutMs(callType) / 1000)}s.`
+      timedOut
+        ? `Hosted model on Modal.com GPU is warming up or the upstream ${callType} request exceeded the ${Math.round(getUpstreamTimeoutMs(callType) / 1000)}s timeout budget.`
         : err instanceof Error
           ? err.message
           : String(err);
     return createHostedBetaErrorResponse(
-      502,
-      'Hosted beta upstream request failed.',
+      timedOut ? 504 : 502,
+      timedOut
+        ? 'Hosted model on Modal.com GPU timed out.'
+        : 'Hosted beta upstream request failed.',
       detail,
-      { code: 'upstream_request_failed' },
+      { code: timedOut ? 'upstream_timeout' : 'upstream_request_failed' },
       requestId,
       { mode: clientMode, version: clientVersion },
     );
