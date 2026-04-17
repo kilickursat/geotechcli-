@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { HostedBetaAdapter } from '../src/llm/providers/hosted-beta.js';
+import { DEFAULT_LLM_MODEL } from '../src/meta/index.js';
 
 describe('HostedBetaAdapter', () => {
   const originalFetch = global.fetch;
@@ -14,7 +15,7 @@ describe('HostedBetaAdapter', () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
-          model: 'Qwen/Qwen3.5-9B',
+          model: DEFAULT_LLM_MODEL,
           choices: [{ message: { content: 'OK' } }],
           usage: {
             prompt_tokens: 3,
@@ -93,7 +94,7 @@ describe('HostedBetaAdapter', () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
-          model: 'Qwen/Qwen3.5-9B',
+          model: DEFAULT_LLM_MODEL,
           choices: [{ message: { content: 'OK' } }],
           usage: {
             prompt_tokens: 10,

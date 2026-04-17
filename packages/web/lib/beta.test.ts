@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_LLM_MODEL } from '@geotechcli/core/meta';
 
 import {
   checkHostedBetaDailyLimit,
@@ -170,8 +171,8 @@ describe('hosted beta controls', () => {
       )
       .mockResolvedValueOnce(
         new Response(
-          JSON.stringify({
-            model: 'Qwen/Qwen3.5-9B',
+        JSON.stringify({
+            model: DEFAULT_LLM_MODEL,
             choices: [
               {
                 message: {
@@ -203,7 +204,7 @@ describe('hosted beta controls', () => {
       },
       body: JSON.stringify({
         messages: [{ role: 'user', content: 'Classify soft clay with high plasticity.' }],
-        model: 'Qwen/Qwen3.5-9B',
+        model: DEFAULT_LLM_MODEL,
       }),
     });
 

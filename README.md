@@ -27,7 +27,7 @@ geotechCLI is a terminal-first geotechnical engineering product that combines de
 
 - Deterministic commands are available now.
 - Hosted Qwen beta access is available now with no user API key required.
-- Text and vision default to `Qwen/Qwen3.5-9B` served on Modal.com (NVIDIA L4 GPU).
+- Text and vision default to `Qwen/Qwen2.5-VL-7B-Instruct` served on Modal.com (NVIDIA L4 GPU).
 - Server-side rate limits protect the hosted beta credit pool.
 - Signup, billing, and paid entitlements are intentionally disabled on `strong-beta`.
 
@@ -71,7 +71,7 @@ geotech export dxf --input boreholes.json --output profile.dxf
 
 ## Interactive Visualization
 
-Use `geotech viz` to explore saved analysis data directly in the terminal with ASCII charts.
+Use `geotech viz` to open browser-grade interactive engineering plots from saved analysis data, with terminal ASCII fallback available when needed.
 
 ```bash
 geotech viz samples/visualization/geotech-viz-showcase.csv
@@ -81,7 +81,10 @@ geotech viz --preset mohr-circle --sigma1 250 --sigma3 90 --cohesion 15 --phi 28
 geotech viz --preset atterberg --ll 55 --pl 25
 geotech viz samples/visualization/geotech-viz-compaction.csv --template compaction
 geotech viz samples/visualization/geotech-viz-gradation.csv --template gradation
+geotech viz samples/visualization/geotech-viz-showcase.csv --save-html review.html --no-open
 ```
+
+Set `GEOTECHCLI_PLOT_MODE=ascii` if you want to force terminal charts instead of opening the browser viewer.
 
 Showcase files are committed in:
 
@@ -97,6 +100,8 @@ Common daily-use chart shortcuts now include:
 - `geotech liquefaction --pga 0.25 --magnitude 7.5 --demo --plot`
 - `geotech pile --diameter 0.8 --length 12 --su 45 --plot`
 - `geotech settlement trough --volume-loss 1.5 --depth 18 --diameter 6.5 --plot`
+
+Any `--plot`-capable command can also use `--save-html <file>` and `--no-open` to export the browser viewer without launching it.
 
 ## Commands
 
@@ -117,7 +122,7 @@ These commands are the public strong-beta foundation and are available now.
 | `geotech slope` | Slope stability using Bishop Simplified |
 | `geotech pile` | Pile capacity using alpha, beta, and SPT methods |
 | `geotech retaining` | Lateral earth pressure using Rankine and Coulomb |
-| `geotech viz` | Interactive terminal visualization for saved JSON, CSV, and Excel data |
+| `geotech viz` | Interactive browser visualization for saved JSON, CSV, and Excel data |
 
 ### AI-Assisted
 
@@ -165,7 +170,9 @@ Most calculation and analysis commands support:
 | Flag | Description |
 |------|-------------|
 | `--json` | Raw JSON output for scripting and automation |
-| `--plot` | Render ASCII charts in the terminal |
+| `--plot` | Open an interactive engineering plot viewer with terminal fallback |
+| `--save-html <file>` | Write the interactive plot viewer to a specific HTML file |
+| `--no-open` | Generate interactive plot HTML without launching a browser |
 | `--verbose` | Show step-by-step calculation details |
 | `--quiet` | Suppress non-essential output |
 | `--dry-run` | Show what would be calculated without executing |
@@ -177,8 +184,8 @@ Most calculation and analysis commands support:
 In `strong-beta`, AI commands default to the hosted beta provider, so a user does not need to bring their own API key.
 
 - Default provider: `hosted-beta`
-- Default text model: `Qwen/Qwen3.5-9B`
-- Default vision model: `Qwen/Qwen3.5-9B`
+- Default text model: `Qwen/Qwen2.5-VL-7B-Instruct`
+- Default vision model: `Qwen/Qwen2.5-VL-7B-Instruct`
 
 ```bash
 # Confirm the strong-beta defaults
@@ -205,7 +212,7 @@ geotech config set llm.api_key sk-ant-...
 # Optional advanced override: self-hosted OpenAI-compatible endpoint
 geotech config set llm.provider openai-compatible
 geotech config set llm.base_url http://localhost:11434/v1
-geotech config set llm.model qwen3.5-4b
+geotech config set llm.model Qwen/Qwen2.5-VL-7B-Instruct
 ```
 
 ## Pricing

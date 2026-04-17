@@ -1,6 +1,6 @@
 # Modal Deployment — geotechCLI Qwen Backend
 
-Serves `Qwen/Qwen3.5-9B` on an NVIDIA L4 GPU via [Modal](https://modal.com).
+Serves `Qwen/Qwen2.5-VL-7B-Instruct` on an NVIDIA L4 GPU via [Modal](https://modal.com).
 
 ## Setup
 
@@ -35,13 +35,13 @@ Serves `Qwen/Qwen3.5-9B` on an NVIDIA L4 GPU via [Modal](https://modal.com).
 ## Cost Control
 
 - **Idle timeout**: 10 minutes. The GPU container freezes after 10 minutes with no requests.
-- **Rate limiting**: 30 req/min per IP, 200 req/day per IP (in-memory, per container).
-- **Cold start**: ~60-90 seconds on first request after freeze. Model weights are cached in a Modal Volume.
+- **Cold start**: initial warm-up happens on first request after freeze. Hugging Face and vLLM caches are persisted in Modal Volumes.
+- **Request limiting**: handled by the Cloudflare hosted-beta proxy so the Modal server can stay OpenAI-compatible.
 
 ## Environment
 
 - GPU: NVIDIA L4
 - Runtime: vLLM
-- Model: Qwen/Qwen3.5-9B
-- Max context: 8192 tokens
+- Model: Qwen/Qwen2.5-VL-7B-Instruct
+- Max context: 4096 tokens
 - Max output: 4096 tokens

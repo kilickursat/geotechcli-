@@ -12,7 +12,96 @@ import {
   error,
 } from '../ui/terminal.js';
 import { addGlobalFlags, getGlobalFlags } from '../util/flags.js';
+import { renderInteractiveVisualization, shouldUseBrowserPlots } from '../ui/plot-viewer.js';
 import { readFileSync, writeFileSync } from 'node:fs';
+import type { VisualizationSource } from '../util/viz.js';
+
+function buildLiquefactionPlotSource(
+  result: ReturnType<typeof calculateLiquefaction>,
+  source: 'user' | 'demo',
+): VisualizationSource {
+  const depthRows = [...result.layers].sort((left, right) => left.depth - right.depth);
+  const maxDepth = Math.max(...depthRows.map((layer) => layer.depth));
+  const maxResistance = Math.max(
+    ...depthRows.map((layer) => Math.max(layer.CSR, layer.CRR, layer.factorOfSafety, layer.N160cs)),
+  );
+
+  return {
+    sourceType: 'preset',
+    sourceName: source === 'demo' ? 'liquefaction-demo' : 'liquefaction-profile',
+    charts: [
+      {
+        id: 'liquefaction-safety-vs-depth',
+        title: 'Liquefaction factor of safety vs depth',
+        xLabel: 'Factor of safety',
+        yLabel: 'Depth (m)',
+        kind: 'xy',
+        invertY: true,
+        xDomain: [0, Math.max(2, Math.ceil(maxResistance + 0.25))],
+        yDomain: [0, Math.max(maxDepth + 1, 1)],
+        xySeries: [
+          {
+            label: 'Factor of safety',
+            points: depthRows.map((layer) => ({ x: layer.factorOfSafety, y: layer.depth })),
+            style: 'line',
+            symbol: '*',
+          },
+        ],
+        note: `FS below 1.0 indicates likely triggering. Estimated settlement = ${result.estimatedSettlement} mm.`,
+      },
+      {
+        id: 'liquefaction-cyclic-ratios-vs-depth',
+        title: 'CSR and CRR vs depth',
+        xLabel: 'Cyclic stress / resistance ratio',
+        yLabel: 'Depth (m)',
+        kind: 'xy',
+        invertY: true,
+        xDomain: [0, Math.max(0.5, Math.ceil(maxResistance * 10) / 10)],
+        yDomain: [0, Math.max(maxDepth + 1, 1)],
+        xySeries: [
+          {
+            label: 'CSR',
+            points: depthRows.map((layer) => ({ x: layer.CSR, y: layer.depth })),
+            style: 'line',
+            symbol: 'o',
+          },
+          {
+            label: 'CRR',
+            points: depthRows.map((layer) => ({ x: layer.CRR, y: layer.depth })),
+            style: 'line',
+            symbol: '+',
+          },
+        ],
+        note: 'Compare cyclic demand (CSR) against cyclic resistance (CRR) at each depth.',
+      },
+      {
+        id: 'liquefaction-corrected-spt-vs-depth',
+        title: 'Corrected SPT resistance vs depth',
+        xLabel: 'Corrected blow count',
+        yLabel: 'Depth (m)',
+        kind: 'xy',
+        invertY: true,
+        xDomain: [0, Math.max(10, Math.ceil(maxResistance + 5))],
+        yDomain: [0, Math.max(maxDepth + 1, 1)],
+        xySeries: [
+          {
+            label: 'N160',
+            points: depthRows.map((layer) => ({ x: layer.N160, y: layer.depth })),
+            style: 'line',
+            symbol: '*',
+          },
+          {
+            label: '(N1)60cs',
+            points: depthRows.map((layer) => ({ x: layer.N160cs, y: layer.depth })),
+            style: 'line',
+            symbol: 'o',
+          },
+        ],
+        note: 'Corrected penetration resistance profile used in the triggering calculation.',
+      },
+    ],
+  };
+}
 
 export function registerLiquefactionCommand(program: Command): void {
   const cmd = new Command('liquefaction')
@@ -119,31 +208,80 @@ export function registerLiquefactionCommand(program: Command): void {
 
       if (flags.plot && result.layers.length > 0) {
         const depthRows = [...result.layers].sort((left, right) => left.depth - right.depth);
-        renderXYPlot([
-          {
-            label: 'Factor of safety',
-            points: depthRows.map((layer) => ({ x: layer.depth, y: layer.factorOfSafety })),
-            style: 'line',
-            symbol: '*',
-          },
-          {
-            label: 'CSR',
-            points: depthRows.map((layer) => ({ x: layer.depth, y: layer.CSR })),
-            style: 'line',
-            symbol: 'o',
-          },
-          {
-            label: 'CRR',
-            points: depthRows.map((layer) => ({ x: layer.depth, y: layer.CRR })),
-            style: 'line',
-            symbol: '+',
-          },
-        ], {
-          height: 14,
-          title: 'Liquefaction depth profile',
-          xLabel: 'Depth (m)',
-          yLabel: 'Value',
-        });
+        const wantsBrowserPlot = Boolean(flags.saveHtml) || shouldUseBrowserPlots();
+        if (wantsBrowserPlot) {
+          try {
+            const plot = renderInteractiveVisualization(
+              buildLiquefactionPlotSource(result, source),
+              {
+                sourceLabel: source === 'demo' ? 'demo liquefaction profile' : 'liquefaction profile',
+                outputPath: flags.saveHtml,
+                open: flags.openInteractivePlot,
+                focusChartId: 'liquefaction-safety-vs-depth',
+                headline: 'Liquefaction Plot Viewer',
+              },
+            );
+            success(
+              plot.opened
+                ? `Interactive plot viewer opened in your browser: ${plot.htmlPath}`
+                : `Interactive plot viewer saved to ${plot.htmlPath}`,
+            );
+          } catch {
+            renderXYPlot([
+              {
+                label: 'Factor of safety',
+                points: depthRows.map((layer) => ({ x: layer.factorOfSafety, y: layer.depth })),
+                style: 'line',
+                symbol: '*',
+              },
+              {
+                label: 'CSR',
+                points: depthRows.map((layer) => ({ x: layer.CSR, y: layer.depth })),
+                style: 'line',
+                symbol: 'o',
+              },
+              {
+                label: 'CRR',
+                points: depthRows.map((layer) => ({ x: layer.CRR, y: layer.depth })),
+                style: 'line',
+                symbol: '+',
+              },
+            ], {
+              height: 14,
+              title: 'Liquefaction depth profile',
+              xLabel: 'Value',
+              yLabel: 'Depth (m)',
+              invertY: true,
+            });
+          }
+        } else {
+          renderXYPlot([
+            {
+              label: 'Factor of safety',
+              points: depthRows.map((layer) => ({ x: layer.factorOfSafety, y: layer.depth })),
+              style: 'line',
+              symbol: '*',
+            },
+            {
+              label: 'CSR',
+              points: depthRows.map((layer) => ({ x: layer.CSR, y: layer.depth })),
+              style: 'line',
+              symbol: 'o',
+            },
+            {
+              label: 'CRR',
+              points: depthRows.map((layer) => ({ x: layer.CRR, y: layer.depth })),
+              style: 'line',
+              symbol: '+',
+            },
+          ], {
+            height: 14,
+            title: 'Liquefaction depth profile',
+            xLabel: 'Value',
+            yLabel: 'Depth (m)',
+            invertY: true,
+          });
+        }
       }
 
       renderSteps(result.steps, flags.verbose);

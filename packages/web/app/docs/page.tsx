@@ -76,7 +76,7 @@ geotech config set llm.api_key sk-ant-...
 # Self-hosted model (e.g. Qwen on VPS)
 geotech config set llm.provider openai-compatible
 geotech config set llm.base_url http://your-vps:8000/v1
-geotech config set llm.model qwen3.5-4b
+geotech config set llm.model Qwen/Qwen2.5-VL-7B-Instruct
 
 # Reset to defaults
 geotech config reset
@@ -128,7 +128,7 @@ geotech liquefaction --pga 0.3 --magnitude 7.0 --depth 5 --spt 12 --fines 15
 # Demo mode (built-in sample data)
 geotech liquefaction --pga 0.25 --magnitude 7.5 --demo
 
-# Render the depth profile directly in the terminal
+# Open the interactive depth profile viewer
 geotech liquefaction --pga 0.25 --magnitude 7.5 --demo --plot
 \`\`\``,
   },
@@ -225,13 +225,13 @@ geotech export csv --input samples/exports/mock-liquefaction.json --output data.
   {
     id: 'viz',
     title: 'geotech viz',
-    content: `Interactive terminal visualization for saved JSON, CSV, and Excel data.
+    content: `Interactive browser visualization for saved JSON, CSV, and Excel data.
 
 \`\`\`bash
 # Inspect available series first
 geotech viz samples/visualization/geotech-viz-showcase.xlsx --list
 
-# Render the default chart in the terminal
+# Open the default interactive viewer
 geotech viz samples/visualization/geotech-viz-showcase.csv
 
 # Plot saved JSON analysis data
@@ -245,6 +245,10 @@ geotech viz --preset atterberg --ll 55 --pl 25
 geotech viz samples/visualization/geotech-viz-compaction.csv --template compaction
 geotech viz samples/visualization/geotech-viz-gradation.csv --template gradation
 geotech viz samples/visualization/geotech-viz-cpt.csv --template cpt
+geotech viz samples/visualization/geotech-viz-showcase.csv --save-html review.html --no-open
+
+# Force terminal fallback if you do not want a browser window
+GEOTECHCLI_PLOT_MODE=ascii geotech viz samples/visualization/geotech-viz-showcase.csv
 
 # Use command-level plotting where supported
 geotech classify uscs --gravel 5 --sand 20 --fines 75 --ll 55 --pl 25 --plot
@@ -252,7 +256,7 @@ geotech liquefaction --pga 0.25 --magnitude 7.5 --demo --plot
 geotech settlement trough --volume-loss 1.5 --depth 18 --diameter 6.5 --plot
 \`\`\`
 
-This command is meant for quick engineering sanity checks in the terminal before exporting or reporting.`,
+This command is meant for quick engineering review in an interactive browser workspace before exporting or reporting. Set \`GEOTECHCLI_PLOT_MODE=ascii\` to keep the older terminal-only workflow.`,
   },
   {
     id: 'bridge',
@@ -305,7 +309,7 @@ export default function DocsPage() {
       <main className="pt-24 px-12 pb-16 max-w-[900px]">
         <h1 className="text-4xl font-bold tracking-tight mb-4">Strong Beta Docs</h1>
         <p className="text-[var(--text-secondary)] text-base mb-12">
-          Strong beta reference for geotechCLI commands, hosted Qwen defaults, and optional advanced provider overrides.
+          Strong beta reference for geotechCLI commands, hosted multimodal Qwen defaults, and optional advanced provider overrides.
         </p>
 
         {/* Table of contents */}

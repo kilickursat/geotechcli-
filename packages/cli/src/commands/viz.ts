@@ -8,8 +8,13 @@ import {
   renderChart,
   renderMultiChart,
   renderXYPlot,
+  success,
   warn,
 } from '../ui/terminal.js';
+import {
+  renderInteractiveVisualization,
+  shouldUseBrowserPlots,
+} from '../ui/plot-viewer.js';
 import {
   buildAtterbergChart,
   buildMohrCircleChart,
@@ -71,6 +76,14 @@ function renderVisualization(chart: ChartSpec, height: number): void {
       label: `${labels[0] ?? chart.yLabel} (${chart.xLabel})`,
     });
   }
+}
+
+function reportInteractivePlot(htmlPath: string, opened: boolean): void {
+  success(
+    opened
+      ? `Interactive plot viewer opened in your browser: ${htmlPath}`
+      : `Interactive plot viewer saved to ${htmlPath}`,
+  );
 }
 
 function printChartCatalog(charts: ChartSpec[]): void {
@@ -151,7 +164,7 @@ function loadPresetSource(preset: string, opts: Record<string, unknown>): Visual
 
 export function registerVizCommand(program: Command): void {
   const cmd = new Command('viz')
-    .description('Interactive terminal visualization for saved data, engineering presets, and geotechnical chart templates')
+    .description('Interactive geotechnical visualization for saved data, engineering presets, and browser-grade plots')
     .argument('[file]', 'Visualization source file (.json, .csv, .xlsx)')
     .option('--chart <id>', 'Render a specific chart id directly')
     .option('--list', 'List available charts without rendering')
@@ -161,6 +174,9 @@ export function registerVizCommand(program: Command): void {
     .option('--y <columns>', 'Comma-separated Y columns for tabular inputs')
     .option('--height <rows>', 'Chart height in terminal rows', (value) => parseInt(value, 10), 12)
     .option('--template <name>', 'File template: compaction | gradation | cpt')
+    .option('--terminal', 'Force terminal rendering instead of the browser plot viewer')
+    .option('--save-html <file>', 'Write the interactive viewer to a specific HTML file')
+    .option('--no-open', 'Generate HTML without launching a browser')
     .option('--preset <name>', 'Preset chart: mohr-circle | atterberg')
     .option('--sigma1 <kPa>', 'Major principal stress for Mohr circle preset', (value) => parseFloat(value))
     .option('--sigma3 <kPa>', 'Minor principal stress for Mohr circle preset', (value) => parseFloat(value))
@@ -221,11 +237,45 @@ export function registerVizCommand(program: Command): void {
         if (!match) {
           throw new Error(`Chart "${opts.chart}" not found. Run "geotech viz ${filePath ?? `--preset ${opts.preset}`} --list" to inspect available chart ids.`);
         }
+        const singleChartSource = { ...source, charts: [match] };
+        const wantsBrowser = Boolean(opts.saveHtml) || shouldUseBrowserPlots({ terminal: Boolean(opts.terminal) });
+        if (wantsBrowser) {
+          try {
+            const plot = renderInteractiveVisualization(singleChartSource, {
+              sourceLabel: opts.preset ? `preset:${opts.preset}` : String(filePath),
+              outputPath: opts.saveHtml,
+              open: opts.open,
+              focusChartId: match.id,
+              headline: match.title,
+            });
+            reportInteractivePlot(plot.htmlPath, plot.opened);
+            return;
+          } catch (error) {
+            warn(`Interactive viewer failed (${error instanceof Error ? error.message : String(error)}). Falling back to terminal rendering.`);
+          }
+        }
+
         renderVisualization(match, opts.height);
         return;
       }
 
-      if (opts.all || source.charts.length === 1 || !input.isTTY) {
+      const wantsBrowser = Boolean(opts.saveHtml) || shouldUseBrowserPlots({ terminal: Boolean(opts.terminal) });
+      if (wantsBrowser) {
+        try {
+          const plot = renderInteractiveVisualization(source, {
+            sourceLabel: opts.preset ? `preset:${opts.preset}` : String(filePath),
+            outputPath: opts.saveHtml,
+            open: opts.open,
+            headline: source.charts.length === 1 ? source.charts[0].title : 'Interactive Plot Viewer',
+          });
+          reportInteractivePlot(plot.htmlPath, plot.opened);
+          return;
+        } catch (error) {
+          warn(`Interactive viewer failed (${error instanceof Error ? error.message : String(error)}). Falling back to terminal rendering.`);
+        }
+      }
+
+      if (opts.all || source.charts.length === 1 || !input.isTTY || opts.terminal) {
         if (!input.isTTY && source.charts.length > 1 && !opts.all) {
           warn('Interactive mode is unavailable in this shell. Rendering the first chart only.');
           renderVisualization(source.charts[0], opts.height);

@@ -6,6 +6,11 @@ on:
     paths:
       - 'modal/**'
       - '.github/workflows/modal-deploy.yml'
+      - 'packages/core/src/meta/**'
+      - 'packages/web/app/api/proxy/**'
+      - 'packages/web/lib/beta.ts'
+      - 'README.md'
+      - '.env.example'
   workflow_dispatch:
 
 concurrency:
@@ -40,12 +45,39 @@ jobs:
         if: steps.check.outputs.configured == 'true'
         run: pip install modal
 
-      - name: Deploy Qwen serving app
+      - name: Deploy hosted beta Modal app
         if: steps.check.outputs.configured == 'true'
         env:
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
         run: modal deploy modal/serve_qwen.py
+
+      - name: Smoke check hosted beta endpoint
+        if: steps.check.outputs.configured == 'true'
+        run: |
+          python - <<'PY'
+          import time
+          import urllib.error
+          import urllib.request
+
+          url = "https://kursatkilic6648--geotechcli-qwen-serve.modal.run/health"
+          last_error = None
+
+          for attempt in range(1, 11):
+            try:
+              with urllib.request.urlopen(url, timeout=45) as response:
+                payload = response.read().decode("utf-8")
+                print(payload)
+                if response.status == 200:
+                  break
+                last_error = RuntimeError(f"Unexpected status code: {response.status}")
+            except (urllib.error.URLError, TimeoutError, RuntimeError) as exc:
+              last_error = exc
+              print(f"Attempt {attempt}/10 failed: {exc}")
+              time.sleep(15)
+          else:
+            raise SystemExit(f"Hosted beta smoke check failed: {last_error}")
+          PY
 
       - name: Summary
         if: always()
@@ -53,6 +85,7 @@ jobs:
           if [ "${{ steps.check.outputs.configured }}" = "true" ]; then
             echo "### Modal deploy attempted" >> $GITHUB_STEP_SUMMARY
             echo "Endpoint: https://kursatkilic6648--geotechcli-qwen-serve.modal.run" >> $GITHUB_STEP_SUMMARY
+            echo "Health: /health" >> $GITHUB_STEP_SUMMARY
           else
             echo "### Modal deploy skipped" >> $GITHUB_STEP_SUMMARY
             echo "Set the MODAL_TOKEN_ID and MODAL_TOKEN_SECRET repository secrets to enable automated Modal deploys." >> $GITHUB_STEP_SUMMARY

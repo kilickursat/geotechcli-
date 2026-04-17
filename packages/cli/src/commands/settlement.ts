@@ -14,14 +14,99 @@ import {
   keyValue,
   renderJSON,
   renderTable,
-  renderChart,
+  renderXYPlot,
   success,
   warn,
   renderSteps,
   heading,
 } from '../ui/terminal.js';
 import { addGlobalFlags, getGlobalFlags } from '../util/flags.js';
+import { renderInteractiveVisualization, shouldUseBrowserPlots } from '../ui/plot-viewer.js';
 import { writeFileSync } from 'node:fs';
+import type { VisualizationSource } from '../util/viz.js';
+
+function buildConsolidationPlotSource(
+  result: ReturnType<typeof calculateConsolidation>,
+): VisualizationSource {
+  return {
+    sourceType: 'preset',
+    sourceName: 'consolidation-time-curve',
+    charts: [
+      {
+        id: 'consolidation-settlement-vs-time',
+        title: 'Settlement vs time',
+        xLabel: 'Time (years)',
+        yLabel: 'Settlement (mm)',
+        kind: 'xy',
+        xySeries: [
+          {
+            label: 'Settlement',
+            points: (result.timeSettlement ?? []).map((entry) => ({
+              x: entry.timeYears,
+              y: entry.settlement,
+            })),
+            style: 'line',
+            symbol: '*',
+          },
+        ],
+        note: 'Primary consolidation settlement accumulation over time.',
+      },
+      {
+        id: 'consolidation-degree-vs-time',
+        title: 'Degree of consolidation vs time',
+        xLabel: 'Time (years)',
+        yLabel: 'Consolidation (%)',
+        kind: 'xy',
+        yDomain: [0, 100],
+        xySeries: [
+          {
+            label: 'Degree of consolidation',
+            points: (result.timeSettlement ?? []).map((entry) => ({
+              x: entry.timeYears,
+              y: entry.consolidation * 100,
+            })),
+            style: 'line',
+            symbol: 'o',
+          },
+        ],
+        note: 'Average degree of consolidation derived from the same Tv curve.',
+      },
+    ],
+  };
+}
+
+function buildTunnelTroughPlotSource(
+  result: ReturnType<typeof calculatePeckSettlement>,
+): VisualizationSource {
+  const profile = [...result.profile].sort((left, right) => left.x - right.x);
+  const xMin = Math.min(...profile.map((point) => point.x));
+  const xMax = Math.max(...profile.map((point) => point.x));
+
+  return {
+    sourceType: 'preset',
+    sourceName: 'settlement-trough',
+    charts: [
+      {
+        id: 'settlement-trough-profile',
+        title: 'Transverse settlement trough profile',
+        xLabel: 'Offset from tunnel centerline (m)',
+        yLabel: 'Settlement (mm)',
+        kind: 'xy',
+        invertY: true,
+        xDomain: [xMin, xMax],
+        xySeries: [
+          {
+            label: 'Settlement',
+            points: profile.map((point) => ({ x: point.x, y: point.settlement })),
+            style: 'line',
+            symbol: '*',
+          },
+        ],
+        note: `Smax = ${result.maxSettlement} mm, inflection point i = ${result.inflectionPoint} m, trough width 2.5i = ${result.troughWidth} m.`,
+      },
+    ],
+  };
+}
 
 function handleError(err: unknown, flags: { json: boolean; verbose: boolean }) {
   const msg = err instanceof Error ? err.message : String(err);
@@ -93,10 +178,63 @@ function registerConsolidation(parent: Command): void {
           );
 
           if (flags.plot) {
-            renderChart(
-              result.timeSettlement.map(r => r.settlement),
-              { label: 'Settlement over time (mm)', height: 10 },
-            );
+            const wantsBrowserPlot = Boolean(flags.saveHtml) || shouldUseBrowserPlots();
+            if (wantsBrowserPlot) {
+              try {
+                const plot = renderInteractiveVisualization(buildConsolidationPlotSource(result), {
+                  sourceLabel: 'consolidation time curve',
+                  outputPath: flags.saveHtml,
+                  open: flags.openInteractivePlot,
+                  focusChartId: 'consolidation-settlement-vs-time',
+                  headline: 'Consolidation Plot Viewer',
+                });
+                success(
+                  plot.opened
+                    ? `Interactive plot viewer opened in your browser: ${plot.htmlPath}`
+                    : `Interactive plot viewer saved to ${plot.htmlPath}`,
+                );
+              } catch {
+                renderXYPlot(
+                  [
+                    {
+                      label: 'Settlement',
+                      points: result.timeSettlement.map((entry) => ({
+                        x: entry.timeYears,
+                        y: entry.settlement,
+                      })),
+                      style: 'line',
+                      symbol: '*',
+                    },
+                  ],
+                  {
+                    title: 'Settlement over time',
+                    xLabel: 'Time (years)',
+                    yLabel: 'Settlement (mm)',
+                    height: 10,
+                  },
+                );
+              }
+            } else {
+              renderXYPlot(
+                [
+                  {
+                    label: 'Settlement',
+                    points: result.timeSettlement.map((entry) => ({
+                      x: entry.timeYears,
+                      y: entry.settlement,
+                    })),
+                    style: 'line',
+                    symbol: '*',
+                  },
+                ],
+                {
+                  title: 'Settlement over time',
+                  xLabel: 'Time (years)',
+                  yLabel: 'Settlement (mm)',
+                  height: 10,
+                },
+              );
+            }
           }
         }
 
@@ -222,8 +360,60 @@ function registerTunnelSettlement(parent: Command): void {
         renderSteps(result.steps, flags.verbose);
 
         if (flags.plot && result.profile.length > 0) {
-          const vals = result.profile.map(p => p.settlement);
-          renderChart(vals, { label: `Settlement trough (max = ${result.maxSettlement} mm)`, height: 10 });
+          const orderedProfile = [...result.profile].sort((left, right) => left.x - right.x);
+          const wantsBrowserPlot = Boolean(flags.saveHtml) || shouldUseBrowserPlots();
+          if (wantsBrowserPlot) {
+            try {
+              const plot = renderInteractiveVisualization(buildTunnelTroughPlotSource(result), {
+                sourceLabel: 'settlement trough',
+                outputPath: flags.saveHtml,
+                open: flags.openInteractivePlot,
+                focusChartId: 'settlement-trough-profile',
+                headline: 'Settlement Trough Plot Viewer',
+              });
+              success(
+                plot.opened
+                  ? `Interactive plot viewer opened in your browser: ${plot.htmlPath}`
+                  : `Interactive plot viewer saved to ${plot.htmlPath}`,
+              );
+            } catch {
+              renderXYPlot(
+                [
+                  {
+                    label: 'Settlement',
+                    points: orderedProfile.map((point) => ({ x: point.x, y: point.settlement })),
+                    style: 'line',
+                    symbol: '*',
+                  },
+                ],
+                {
+                  title: `Settlement trough (max = ${result.maxSettlement} mm)`,
+                  xLabel: 'Offset from tunnel centerline (m)',
+                  yLabel: 'Settlement (mm)',
+                  invertY: true,
+                  height: 10,
+                },
+              );
+            }
+          } else {
+            renderXYPlot(
+              [
+                {
+                  label: 'Settlement',
+                  points: orderedProfile.map((point) => ({ x: point.x, y: point.settlement })),
+                  style: 'line',
+                  symbol: '*',
+                },
+              ],
+              {
+                title: `Settlement trough (max = ${result.maxSettlement} mm)`,
+                xLabel: 'Offset from tunnel centerline (m)',
+                yLabel: 'Settlement (mm)',
+                invertY: true,
+                height: 10,
+              },
+            );
+          }
         }
 
         if (!flags.quiet) {

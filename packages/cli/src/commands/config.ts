@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { loadConfig, setConfigValue, getConfigValue } from '@geotechcli/core';
+import { DEFAULT_LLM_MODEL } from '@geotechcli/core/meta';
 import { heading, keyValue, success, error, dim, renderJSON } from '../ui/terminal.js';
 import chalk from 'chalk';
 
@@ -107,7 +108,7 @@ export function registerConfigCommand(program: Command): void {
       setConfigValue('llm.model', '');
       setConfigValue('llm.vision_model', '');
       setConfigValue('llm.base_url', '');
-      success('Configuration reset to defaults (hosted beta Qwen/Qwen3.5-9B).');
+      success(`Configuration reset to defaults (hosted beta ${DEFAULT_LLM_MODEL}).`);
     });
 
   program.addCommand(config);

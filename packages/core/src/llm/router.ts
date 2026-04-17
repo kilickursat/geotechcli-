@@ -11,6 +11,7 @@ import { OpenAICompatibleAdapter } from './providers/openai-compatible.js';
 import { AnthropicAdapter } from './providers/anthropic.js';
 import { HuggingFaceAdapter } from './providers/huggingface.js';
 import { HostedBetaAdapter } from './providers/hosted-beta.js';
+import { DEFAULT_LLM_MODEL, DEFAULT_LLM_VISION_MODEL } from '../meta/index.js';
 
 // ---------------------------------------------------------------------------
 // Provider registry — singleton, adapters registered once at startup
@@ -58,8 +59,8 @@ registry.register(
   new OpenAICompatibleAdapter({
     name: 'openai-compatible',
     baseUrl: 'http://localhost:8000/v1', // default; overridden by config.baseUrl
-    defaultModel: 'Qwen/Qwen3.5-9B',
-    defaultVisionModel: 'Qwen/Qwen3.5-9B',
+    defaultModel: DEFAULT_LLM_MODEL,
+    defaultVisionModel: DEFAULT_LLM_VISION_MODEL,
   }),
 );
 

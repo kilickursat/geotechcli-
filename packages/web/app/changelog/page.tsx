@@ -5,13 +5,13 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 const releases = [
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-04-16',
+    date: '2026-04-17',
     tag: '0.4.5 Release',
     changes: [
-      { type: 'feat', text: 'Cut 0.4.5 to publish the Qwen on Modal hosted beta stack as the installed release across npm, Cloudflare, and Modal' },
-      { type: 'feat', text: 'Added modal/serve_qwen.py deploying Qwen/Qwen3.5-9B on NVIDIA L4 GPU with a 10-minute idle freeze and per-IP abuse guards to protect the shared credit pool' },
-      { type: 'feat', text: 'Added a GitHub Actions workflow that automatically redeploys the Modal app when modal/** changes on strong-beta' },
-      { type: 'fix', text: 'Swapped the hosted beta proxy upstream from Zhipu/Z.AI to the Modal endpoint and switched the required env from ZHIPU_API_KEY to MODAL_ENDPOINT_URL while keeping anonymous rate limiting intact' },
+      { type: 'fix', text: 'Switched hosted beta to the native vLLM OpenAI-compatible server on Modal so text and image chat completions share the same contract and the broken modal-http invalid function call path is removed' },
+      { type: 'feat', text: 'Upgraded hosted beta defaults to Qwen/Qwen2.5-VL-7B-Instruct so the shared backend can handle both standard LLM requests and real vision inputs' },
+      { type: 'feat', text: 'Expanded the Modal deploy workflow to watch hosted-beta contract files and added a post-deploy /health smoke check to catch drift immediately' },
+      { type: 'feat', text: 'Replaced ASCII-first plotting with an interactive browser plot viewer for geotech viz and command-level --plot flows, while keeping terminal fallback available' },
     ],
   },
   {

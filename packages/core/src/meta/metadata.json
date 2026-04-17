@@ -2,10 +2,10 @@
   "version": "0.4.5",
   "defaults": {
     "provider": "hosted-beta",
-    "model": "Qwen/Qwen3.5-9B",
-    "visionModel": "Qwen/Qwen3.5-9B"
+    "model": "Qwen/Qwen2.5-VL-7B-Instruct",
+    "visionModel": "Qwen/Qwen2.5-VL-7B-Instruct"
   },
-  "proxyModels": ["Qwen/Qwen3.5-9B"],
+  "proxyModels": ["Qwen/Qwen2.5-VL-7B-Instruct"],
   "globalFlags": [
     {
       "key": "json",
@@ -15,7 +15,17 @@
     {
       "key": "plot",
       "option": "--plot",
-      "description": "Render terminal chart"
+      "description": "Open an interactive engineering plot viewer (browser, with terminal fallback)"
+    },
+    {
+      "key": "saveHtml",
+      "option": "--save-html <file>",
+      "description": "Write the interactive plot viewer to a specific HTML file"
+    },
+    {
+      "key": "noOpen",
+      "option": "--no-open",
+      "description": "Generate interactive plot HTML without launching a browser"
     },
     {
       "key": "verbose",

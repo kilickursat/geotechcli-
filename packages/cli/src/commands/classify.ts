@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { classifyRMR89, classifyUSCS, classifyQSystem } from '@geotechcli/core';
 import { heading, keyValue, renderSteps, renderJSON, renderXYPlot, success } from '../ui/terminal.js';
 import { addGlobalFlags, getGlobalFlags } from '../util/flags.js';
+import { renderInteractiveVisualization, shouldUseBrowserPlots } from '../ui/plot-viewer.js';
 import { buildAtterbergChart } from '../util/viz.js';
 import { writeFileSync } from 'node:fs';
 
@@ -107,15 +108,50 @@ export function registerClassifyCommand(program: Command): void {
           liquidLimit: opts.ll,
           plasticityIndex,
         });
-        renderXYPlot(chart.xySeries ?? [], {
-          height: 14,
-          title: chart.title,
-          xLabel: chart.xLabel,
-          yLabel: chart.yLabel,
-          xScale: chart.xScale,
-          xDomain: chart.xDomain,
-          yDomain: chart.yDomain,
-        });
+        const wantsBrowserPlot = Boolean(flags.saveHtml) || shouldUseBrowserPlots();
+        if (wantsBrowserPlot) {
+          try {
+            const plot = renderInteractiveVisualization(
+              {
+                sourceType: 'preset',
+                sourceName: 'atterberg',
+                charts: [chart],
+              },
+              {
+                sourceLabel: 'preset:atterberg',
+                outputPath: flags.saveHtml,
+                open: flags.openInteractivePlot,
+                focusChartId: chart.id,
+                headline: chart.title,
+              },
+            );
+            success(
+              plot.opened
+                ? `Interactive plot viewer opened in your browser: ${plot.htmlPath}`
+                : `Interactive plot viewer saved to ${plot.htmlPath}`,
+            );
+          } catch {
+            renderXYPlot(chart.xySeries ?? [], {
+              height: 14,
+              title: chart.title,
+              xLabel: chart.xLabel,
+              yLabel: chart.yLabel,
+              xScale: chart.xScale,
+              xDomain: chart.xDomain,
+              yDomain: chart.yDomain,
+            });
+          }
+        } else {
+          renderXYPlot(chart.xySeries ?? [], {
+            height: 14,
+            title: chart.title,
+            xLabel: chart.xLabel,
+            yLabel: chart.yLabel,
+            xScale: chart.xScale,
+            xDomain: chart.xDomain,
+            yDomain: chart.yDomain,
+          });
+        }
       }
       console.log('');
     });

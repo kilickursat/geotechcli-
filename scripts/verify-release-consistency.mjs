@@ -91,9 +91,15 @@ assert(
   '.env.example must point at the beta geotechcli.com host for both proxy and app URL.',
 );
 assert(
+  envExample.includes('MODAL_ENDPOINT_URL=') &&
+    envExample.includes('MODAL_API_TOKEN='),
+  '.env.example must document the Modal hosted-beta endpoint and optional bearer token.',
+);
+assert(
   !envExample.includes('GEOTECHCLI_PROXY_URL=https://geotechcli.com/api/proxy') &&
-    !envExample.includes('NEXT_PUBLIC_APP_URL=https://geotechcli.com'),
-  '.env.example must not reference the legacy apex host.',
+    !envExample.includes('NEXT_PUBLIC_APP_URL=https://geotechcli.com') &&
+    !envExample.includes('ZAI_API_BASE_URL='),
+  '.env.example must not reference the legacy apex host or the retired Z.AI upstream.',
 );
 
 const docsSource = readText('packages', 'web', 'app', 'docs', 'page.tsx');
