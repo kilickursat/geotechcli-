@@ -76,6 +76,14 @@ const ROLE_TOOL_ALLOWLIST = {
 
 type SwarmToolRole = keyof typeof ROLE_TOOL_ALLOWLIST;
 
+function getHostedSwarmMaxTokens(config: LLMConfig, phase: 'loop' | 'final'): number {
+  if (config.provider !== 'hosted-beta') {
+    return phase === 'loop' ? 1700 : 2200;
+  }
+
+  return phase === 'loop' ? 900 : 1200;
+}
+
 export function getAllowedToolsForAgent(agent: SwarmStep['agent']): readonly string[] {
   return agent === 'orchestrator' ? [] : ROLE_TOOL_ALLOWLIST[agent as SwarmToolRole];
 }
@@ -244,7 +252,7 @@ async function runAgentLoop(
     try {
       response = await generateChat(messages, config, {
         temperature: 0.15,
-        maxTokens: 1700,
+        maxTokens: getHostedSwarmMaxTokens(config, 'loop'),
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -549,7 +557,7 @@ export async function runSwarm(
   const finalResult = await generateText(
     `${contextBlock}Task: ${task}\n\nInterpretation output:\n${interpData}\n\nSimulation output:\n${simOutput}\n\nReview status: ${session.reviewPassed ? 'APPROVED' : 'APPROVED WITH NOTES'}\nCorrections applied: ${session.corrections.length > 0 ? session.corrections.join('; ') : 'None'}\n\nSynthesize the final engineering report.`,
     config,
-    { systemPrompt: orchestratorPrompt(), temperature: 0.2, maxTokens: 2200 },
+    { systemPrompt: orchestratorPrompt(), temperature: 0.2, maxTokens: getHostedSwarmMaxTokens(config, 'final') },
   );
 
   session.totalTokens += finalResult.usage.totalTokens;

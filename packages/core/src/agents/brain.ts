@@ -38,6 +38,14 @@ interface ConversationMessage {
   content: string;
 }
 
+function getHostedAgentMaxTokens(config: LLMConfig, phase: 'loop' | 'final'): number {
+  if (config.provider !== 'hosted-beta') {
+    return phase === 'loop' ? 1600 : 1800;
+  }
+
+  return phase === 'loop' ? 900 : 1100;
+}
+
 function isHostedBetaUnavailable(message: string): boolean {
   const normalized = message.toLowerCase();
   return (
@@ -250,7 +258,7 @@ export async function runAgent(
     try {
       response = await generateChat(messages, config, {
         temperature: 0.2,
-        maxTokens: 1600,
+        maxTokens: getHostedAgentMaxTokens(config, 'loop'),
       });
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -440,7 +448,7 @@ export async function runAgent(
     try {
       const finalResponse = await generateChat(messages, config, {
         temperature: 0.2,
-        maxTokens: 1800,
+        maxTokens: getHostedAgentMaxTokens(config, 'final'),
       });
 
       session.totalTokens += finalResponse.usage.totalTokens;
