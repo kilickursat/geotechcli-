@@ -62,8 +62,87 @@ function extractNumericValue(query: string, pattern: RegExp): number | null {
   return match ? Number(match[1]) : null;
 }
 
+function extractStoryCount(query: string): number | null {
+  const match = query.match(/(\d+)\s*-\s*story|(\d+)\s*story|(\d+)\s*-\s*storey|(\d+)\s*storey/i);
+  if (!match) return null;
+  const value = match[1] ?? match[2] ?? match[3] ?? match[4];
+  return value ? Number(value) : null;
+}
+
+function hasProjectContextData(sessionContext?: Record<string, unknown>): boolean {
+  return Boolean(sessionContext && Object.keys(sessionContext).length > 0);
+}
+
+function hasFoundationScreeningIntent(query: string): boolean {
+  return /(foundation|footing|raft|mat foundation|spread footing|pile|caisson|shallow foundation|deep foundation)/i.test(query);
+}
+
+function hasClassificationIntent(query: string): boolean {
+  return /(classify|classification|soil profile|uscs)/i.test(query);
+}
+
+function hasActionableSoilData(query: string): boolean {
+  return /(?:\bspt\b|\bcpt\b|\bn[- ]?value\b|\bn60\b|\bn160\b|\bqc\b|\bfs\b|\bu2\b|\bborehole\b|\bags\b|grain size|liquid limit|plastic limit|plasticity|atterberg|water table|groundwater|\bdepth\b|\blayer\b|\bstratum\b|\bcu\b|\bsu\b|\bphi\b|φ|friction angle|cohesion|unit weight|\bgamma\b|bearing capacity|settlement|\bclay\b|\bsilt\b|\bsand\b|\bgravel\b|\bpeat\b|\brock\b)/i.test(query);
+}
+
+function buildFoundationDataRequestAnswer(userQuery: string): string {
+  const storyCount = extractStoryCount(userQuery);
+  const buildingLabel = storyCount != null ? `${storyCount}-story` : 'proposed';
+
+  return [
+    `A defensible soil classification and foundation recommendation for a ${buildingLabel} building needs site investigation data first.`,
+    '',
+    'Provide at least:',
+    '- Borehole or CPT profile with layer depths and descriptions',
+    '- SPT N-values or CPT qc/fs/u2 values by depth',
+    '- Grain size distribution and/or Atterberg limits for USCS classification',
+    '- Groundwater depth',
+    '- Approximate column loads or footing / raft loading',
+    '',
+    'Once you have that, geotechCLI can proceed with deterministic steps:',
+    '- `classify_uscs` for soil classification',
+    '- `calculate_bearing_capacity` for shallow foundation screening',
+    '- `calculate_pile_capacity` if deep foundations are being considered',
+    '',
+    'If you already have borehole data, rerun the agent with the key numbers or attach an `.ags` / `.csv` file path.',
+  ].join('\n');
+}
+
+function buildDeterministicPreflightAnswer(
+  userQuery: string,
+  config: LLMConfig,
+  sessionContext?: Record<string, unknown>,
+): string | null {
+  if (config.provider !== 'hosted-beta') {
+    return null;
+  }
+
+  if (hasProjectContextData(sessionContext)) {
+    return null;
+  }
+
+  const needsFoundationScreening = hasFoundationScreeningIntent(userQuery) || hasClassificationIntent(userQuery);
+  if (!needsFoundationScreening) {
+    return null;
+  }
+
+  if (hasActionableSoilData(userQuery)) {
+    return null;
+  }
+
+  return buildFoundationDataRequestAnswer(userQuery);
+}
+
 function buildDeterministicFallbackAnswer(userQuery: string): string {
   const normalized = userQuery.toLowerCase();
+
+  if ((hasFoundationScreeningIntent(userQuery) || hasClassificationIntent(userQuery)) && !hasActionableSoilData(userQuery)) {
+    return [
+      'Hosted beta was temporarily unavailable, so geotechCLI switched to a deterministic screening response instead of returning a blank agent failure.',
+      '',
+      buildFoundationDataRequestAnswer(userQuery),
+    ].join('\n');
+  }
 
   if (/(tbm|epb|slurry|shield|tunnel boring)/.test(normalized)) {
     const rpm = extractNumericValue(normalized, /(\d+(?:\.\d+)?)\s*rpm/);
@@ -265,6 +344,18 @@ export async function runAgent(
     totalTokens: 0,
     totalLatencyMs: 0,
   };
+
+  const preflightAnswer = buildDeterministicPreflightAnswer(userQuery, config, sessionContext);
+  if (preflightAnswer) {
+    const answerStep: AgentStep = {
+      type: 'answer',
+      content: preflightAnswer,
+      timestamp: Date.now(),
+    };
+    session.steps.push(answerStep);
+    onStep(answerStep);
+    return session;
+  }
 
   const messages: ConversationMessage[] = [
     { role: 'system', content: buildSystemPrompt(config) },

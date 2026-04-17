@@ -8,6 +8,8 @@ const releases = [
     date: '2026-04-17',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'fix', text: 'Added an immediate deterministic screening answer for under-specified foundation and soil-profile agent prompts so the CLI responds instantly instead of waiting on hosted-beta just to request missing data' },
+      { type: 'fix', text: 'Improved the hosted-beta fallback for the same foundation-screening prompts so transient provider issues now return a useful engineering checklist instead of the generic no-fallback message' },
       { type: 'fix', text: 'Switched hosted beta to the native vLLM OpenAI-compatible server on Modal so text and image chat completions share the same contract and the broken modal-http invalid function call path is removed' },
       { type: 'fix', text: 'Kept hosted beta on Qwen/Qwen3.5-9B as the shared hybrid multimodal model instead of drifting to a separate Qwen2.5-VL default' },
       { type: 'fix', text: 'Corrected the Modal vLLM launcher to pass --limit-mm-per-prompt as JSON so the current vllm serve CLI accepts multimodal limits during deploy' },

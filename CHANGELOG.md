@@ -1,5 +1,13 @@
 ﻿# Changelog
 
+## [0.4.7] - 2026-04-17
+
+### Agent Reliability + Responsiveness
+
+- Added an immediate deterministic screening response for under-specified foundation / soil-profile agent prompts so geotechCLI no longer burns a long hosted-beta round trip just to ask for missing borehole data.
+- Improved the hosted-beta fallback path for the same foundation-screening class of requests, so transient provider issues now return a useful engineering checklist instead of the generic "no direct deterministic fallback" message.
+- Added regression coverage to ensure the fast-path skips hosted-beta entirely for missing-data foundation prompts and still returns a useful fallback if the provider is temporarily unavailable.
+
 ## [0.4.6] - 2026-04-17
 
 ### Hosted Beta + Release Alignment
