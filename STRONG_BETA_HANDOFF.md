@@ -1,332 +1,253 @@
 # Strong Beta Handoff
 
-Date: 2026-04-06
+Date: 2026-04-17
 Branch: `strong-beta`
 Repo: `https://github.com/kilickursat/geotechcli-.git`
-Target beta host: `beta.geotechcli.com`
-Production host later: `geotechcli.com`
+Current branch head: `7ef7a51`
+Current release in repo: `0.4.11`
+Beta host: `https://beta.geotechcli.com`
+Hosted model: `Qwen/Qwen3.5-9B`
+Hosted runtime: Modal.com `L4` GPU, autoscale-to-zero enabled
 
-This file is the restart point for continuing strong-beta work on another computer.
-Use it on your personal PC so we can continue the Cloudflare deploy without needing out-of-sandbox execution on the company machine.
+This file is the current restart point for continuing strong-beta work on another machine.
 
 ## Purpose
 
-The `strong-beta` branch is the safe public beta branch for geotechCLI.
-It is meant to be honest, usable, and deployable without pretending that the full production SaaS stack is already finished.
+The `strong-beta` branch is the truthful public beta branch for geotechCLI.
+It should feel usable and serious without pretending that the full production SaaS stack is already complete.
 
 Intended branch roles:
 
-- `master` = ongoing development
+- `master` = active development
 - `strong-beta` = public beta branch
-- `main` = future protected production branch
+- `main` = later protected production branch
 
 ## Strong-Beta Product Contract
 
-What strong beta should provide now:
+What strong beta provides now:
 
-- working landing page, docs, changelog, and privacy messaging
-- installable CLI
-- deterministic geotechnical commands available immediately
-- hosted Qwen beta AI available without requiring end users to bring their own API key
-- server-side anonymous rate limits to protect shared credit
-- no signup required
+- public landing page, docs, changelog, and privacy pages
+- installable CLI through npm
+- deterministic geotechnical commands
+- hosted Qwen beta AI without requiring end users to bring their own API key
+- hosted text and vision routed through the beta proxy
+- anonymous rate limiting and daily usage controls
+- no signup requirement
 - no live billing or checkout
 
 What strong beta should not claim yet:
 
+- production-grade uptime guarantees
 - real user accounts
 - Supabase-backed signup
 - live Stripe billing
 - production entitlements or subscriptions
-- full production reliability promises
 
-## What Has Been Completed
+## Current Architecture
 
-### Wave 1 completed
+### CLI + Core
 
-- website and pricing were reshaped to behave like a truthful beta instead of a fake finished SaaS
-- privacy messaging was added and strengthened across the UI and docs
-- broken signup, billing, and checkout expectations were removed from the public beta surface
-- CI consistency checks and smoke checks were repaired and pushed
+- `packages/cli` is the published CLI surface
+- `packages/core` contains deterministic engineering logic, hosted-beta routing, agent orchestration, intake/preflight logic, and shared metadata
+- default provider is `hosted-beta`
+- default text model is `Qwen/Qwen3.5-9B`
+- default vision model is `Qwen/Qwen3.5-9B`
 
-### Wave 2 completed
+### Web + Proxy
 
-- hosted beta was added as the default LLM provider for strong beta
-- hosted default text model is `Qwen/Qwen3.5-9B`
-- hosted default vision model is `Qwen/Qwen3.5-9B`
-- hosted beta proxy route exists in the web app, forwarding to Modal.com
-- anonymous rate limiting exists with Redis-backed production intent and in-memory local fallback
-- no end-user API key is required for the default beta flow
-- CLI JSON output was cleaned up for safer scripting and automation
+- `packages/web` is the Next.js + OpenNext + Cloudflare beta site
+- `packages/web/app/api/proxy/route.ts` is the hosted-beta proxy
+- proxy forwards to Modal's OpenAI-compatible vLLM endpoint
+- proxy still retries transient text and vision failures, but agent requests are now single-attempt to avoid wasting L4 time during cold starts
 
-### Cloudflare deployment prep completed in repo
+### Modal
 
-The repo has been prepared for a Cloudflare Workers deployment path.
+- hosted model is served from `modal/serve_qwen.py`
+- current deployment target is `Qwen/Qwen3.5-9B`
+- GPU target is `L4`
+- autoscale-to-zero is enabled with a `scaledown_window` of `600` seconds
+- cold starts are expected and accepted for now because the current budget is constrained
 
-Completed repo changes:
+## Budget Posture
 
-- added Worker-safe core subpath exports in `packages/core/package.json`
-  - `@geotechcli/core/meta`
-  - `@geotechcli/core/db/redis`
-- switched web imports away from the top-level `@geotechcli/core` barrel where needed
-- changed hosted-beta defaults from apex host to beta host
-  - proxy default is now `https://beta.geotechcli.com/api/proxy`
-- updated CLI/README/beta-facing links from apex to beta host where appropriate for this branch
-- added Cloudflare/OpenNext files:
-  - `packages/web/wrangler.jsonc`
-  - `packages/web/open-next.config.ts`
-- updated `packages/web/package.json` with Cloudflare/OpenNext scripts:
-  - `build:cf`
-  - `preview`
-  - `deploy`
-  - `cf:check`
-  - `cf-typegen`
-- updated `packages/web/next.config.ts` for monorepo tracing with `outputFileTracingRoot`
-- added Cloudflare/OpenNext ignore entries in `.gitignore`
-- updated layout/footer/privacy/pricing/docs copy so the branch truthfully says hosted Qwen beta is active now
+Important constraint:
 
-### Cloudflare account/domain facts already known
+- budget is roughly `$30`
+- current GPU is `L4` at roughly `$0.80/hour`
+- do not switch to always-warm behavior by default
+- do not add retries or scaling patterns that silently multiply GPU time
 
-- Cloudflare zone `geotechcli.com` has already been added to the account
-- intended beta deployment hostname is `beta.geotechcli.com`
-- no Worker deployment should be assumed complete from this company machine
+Recent budget-safe work:
+
+- agent proxy calls are single-attempt instead of multi-retry
+- warmup and timeout messaging is now explicit instead of misleading
+- agent timeout budgets were raised to better match actual Modal cold-start behavior, but without adding extra upstream attempts
+
+## What Was Completed Across 0.4.6 to 0.4.11
+
+### Release + pipeline alignment
+
+- workspace packages were version-aligned and internal package pins were tightened
+- release consistency checks were strengthened
+- versioned release flow was cleaned up so npm/site/CLI metadata stay aligned when a real version bump is pushed
+
+### Hosted beta + Modal reliability
+
+- hosted beta was standardized on `Qwen/Qwen3.5-9B`
+- old broken `modal-http` path was removed in favor of the vLLM OpenAI-compatible server
+- Modal vLLM deploy path was corrected for current package availability and multimodal flag syntax
+- Cloudflare beta site and CLI defaults were aligned to the same hosted model
+
+### Agent behavior
+
+- under-specified geotechnical prompts now hit a domain-driven intake/preflight layer instead of wasting a long hosted round trip
+- foundation, liquefaction, tunnel/TBM, and related geotechnical prompt families now return immediate data requirements when evidence is missing
+- evidence-backed requests still go through the hosted model
+- generic first-turn hosted failures now fall back more cleanly
+- `geotech chat` and `geotech agent` now show live waiting states instead of feeling frozen
+
+### UX + plotting
+
+- CLI answer rendering was upgraded from raw markdown-like output to richer terminal presentation
+- interactive browser plot viewer replaced the old ASCII-first experience for supported flows
+- plot layout, labels, legends, and viewer chrome were cleaned up significantly
+
+### Latest 0.4.11 changes
+
+- first-turn hosted fallback now explicitly says when the Modal.com GPU is warming up or the timeout budget was exceeded
+- live CLI waiting states now mention Modal warmup during slow hosted responses
+- hosted-beta agent timeout budgets were raised to better match real cold starts
+- proxy agent calls now use a single upstream attempt, which is better for the current L4 budget
+- regression coverage was added for warmup/timeout fallback wording and no-retry agent proxy behavior
+
+## What Was Verified Locally Before The 0.4.11 Push
+
+These checks passed locally on the latest repo state:
+
+```powershell
+npm run verify:consistency
+npm run --workspace=@geotechcli/core test
+node .\node_modules\vitest\vitest.mjs run --pool threads packages/web/lib/beta.test.ts
+npm run --workspace=geotechcli build
+npm run --workspace=@geotechcli/web build
+npm run smoke:web
+```
+
+Notes:
+
+- `packages/web/lib/beta.test.ts` needed `--pool threads` in this Windows environment because default Vitest worker spawning hit an `EPERM` process-spawn issue
+- repo head was pushed successfully to `origin/strong-beta`
+
+## Current Remote State
+
+As of this handoff:
+
+- remote `strong-beta` head should be `7ef7a51`
+- latest repo release version is `0.4.11`
+- GitHub Actions should handle npm publish and beta-site deployment from the version commit
+
+What still needs remote verification after a push:
+
+- npm shows `geotechcli@0.4.11`
+- beta site changelog reflects `0.4.11`
+- hosted-beta path on the deployed site is healthy after the pipeline completes
 
 ## Important Files
 
-Core and CLI beta defaults:
+### Hosted beta + agent logic
 
-- `packages/core/src/config/index.ts`
+- `packages/core/src/agents/brain.ts`
+- `packages/core/src/agents/intake.ts`
 - `packages/core/src/llm/providers/hosted-beta.ts`
-- `packages/core/src/llm/middleware/metering.ts`
-- `packages/core/tests/config.test.ts`
+- `packages/core/src/config/index.ts`
+- `packages/core/src/meta/metadata.json`
+- `modal/serve_qwen.py`
+
+### CLI UX
+
+- `packages/cli/src/commands/ai.ts`
 - `packages/cli/src/ui/terminal.ts`
+- `packages/cli/src/ui/plot-viewer.ts`
+- `packages/cli/src/util/viz.ts`
 
-Web beta and proxy behavior:
+### Web + proxy
 
-- `packages/web/lib/beta.ts`
 - `packages/web/app/api/proxy/route.ts`
-- `packages/web/app/api/usage/route.ts`
-- `packages/web/app/layout.tsx`
-- `packages/web/components/Footer.tsx`
-- `packages/web/components/Pricing.tsx`
-- `packages/web/app/pricing/page.tsx`
-- `packages/web/app/docs/page.tsx`
+- `packages/web/lib/beta.ts`
 - `packages/web/app/changelog/page.tsx`
-
-Cloudflare deployment files:
-
-- `packages/web/package.json`
-- `packages/web/next.config.ts`
+- `packages/web/app/docs/page.tsx`
+- `packages/web/app/pricing/page.tsx`
 - `packages/web/wrangler.jsonc`
 - `packages/web/open-next.config.ts`
-- `packages/core/package.json`
 
-Repo guidance/docs:
+### Release + docs
 
+- `CHANGELOG.md`
 - `README.md`
-- `PRIVACY.md`
-- `STRONG_BETA_HANDOFF.md`
+- `scripts/verify-release-consistency.mjs`
+- `.github/workflows/release.yml`
+- `.github/workflows/modal-deploy.yml`
 
-## What Was Safely Verified On The Company PC
+## Recommended Restart Steps
 
-The following commands passed fully inside the sandbox:
-
-```powershell
-& 'C:\Program Files\nodejs\npm.cmd' run verify:consistency
-& 'C:\Program Files\nodejs\npm.cmd' run smoke:web
-& 'C:\Program Files\nodejs\npm.cmd' run build --workspace=@geotechcli/core
-```
-
-These are green as of this handoff.
-
-## What Was Intentionally Not Done On The Company PC
-
-Because this is a company-managed machine, we intentionally avoided relying on out-of-sandbox execution for final deployment steps.
-
-That means these steps are still pending:
-
-- final `build:cf` validation on a personal machine
-- final `wrangler check` validation on a personal machine
-- Cloudflare Worker deployment
-- Cloudflare Worker secret configuration
-- custom-domain activation for `beta.geotechcli.com`
-- public post-deploy smoke testing
-
-## Why The Personal PC Is Needed
-
-Two reasons:
-
-- safety and company policy: we should not broaden machine access on the company PC unless clearly allowed
-- deployment/runtime validation: OpenNext and Wrangler are better validated in a less restricted environment, and deployment itself involves Cloudflare credentials and outbound network activity
-
-## Local Environment Expectations On Personal PC
-
-### Required local secrets for hosted beta testing
-
-Create a local env file for the web app:
-
-- `packages/web/.env.local`
-
-Use values like:
-
-```env
-MODAL_ENDPOINT_URL=https://kursatkilic6648--geotechcli-qwen-serve.modal.run/v1/chat/completions
-MODAL_API_TOKEN=...
-UPSTASH_REDIS_REST_URL=...
-UPSTASH_REDIS_REST_TOKEN=...
-NEXT_PUBLIC_APP_URL=https://beta.geotechcli.com
-```
-
-Optional override for local proxy testing from the CLI:
-
-```powershell
-$env:GEOTECHCLI_PROXY_URL="http://127.0.0.1:3000/api/proxy"
-```
-
-Do not commit any secret files.
-
-## Exact Next Steps On Personal PC
-
-### 1. Clone and switch to strong-beta
+When resuming work on another machine:
 
 ```powershell
 git clone https://github.com/kilickursat/geotechcli-.git
 cd geotechcli-
 git checkout strong-beta
-```
-
-### 2. Install dependencies cleanly
-
-```powershell
+git rev-parse --short HEAD
+git status --short --branch
 npm ci
 ```
 
-### 3. Re-run the safe baseline checks
+Then re-run the current baseline:
 
 ```powershell
 npm run verify:consistency
+npm run --workspace=@geotechcli/core test
+node .\node_modules\vitest\vitest.mjs run --pool threads packages/web/lib/beta.test.ts
+npm run --workspace=geotechcli build
+npm run --workspace=@geotechcli/web build
 npm run smoke:web
-npm run build --workspace=@geotechcli/core
 ```
 
-### 4. Validate the Cloudflare build path
+If checking the live deployed state after CI finishes:
 
-From the repo root:
+1. Confirm npm version:
 
 ```powershell
-npm run build:cf --workspace=@geotechcli/web
-npm run cf:check --workspace=@geotechcli/web
+npm view geotechcli version
 ```
 
-If these pass, the repo is ready for preview/deploy steps.
-
-### 5. Preview locally if desired
+2. Confirm beta branch head:
 
 ```powershell
-npm run preview --workspace=@geotechcli/web
+git ls-remote origin refs/heads/strong-beta
 ```
 
-### 6. Verify hosted beta proxy health locally
-
-If the Next app is running locally, check:
+3. Confirm beta proxy health:
 
 ```powershell
-Invoke-RestMethod http://127.0.0.1:3000/api/proxy -Method GET
+Invoke-RestMethod https://beta.geotechcli.com/api/proxy -Method GET
 ```
 
-Expected shape:
-
-- `provider: "hosted-beta"`
-- `status: "ready"` or a clear degraded message
-- defaults showing `Qwen/Qwen3.5-9B`
-
-### 7. Validate CLI against the local proxy
-
-In a second PowerShell window:
+4. Confirm one installed CLI check after npm publish:
 
 ```powershell
-$env:GEOTECHCLI_PROXY_URL="http://127.0.0.1:3000/api/proxy"
-$env:GEOTECHCLI_CONFIG_DIR="$PWD\.tmp-geotechcli-validation"
-node .\packages\cli\dist\index.js status --json
-node .\packages\cli\dist\index.js ai-classify "brown sand with some gravel" --json
-node .\packages\cli\dist\index.js agent "Estimate the bearing capacity of a strip footing with width 2 m, embedment 1.5 m, unit weight 18 kN/m3, phi 30 deg, c 0 kPa. Keep assumptions brief." --json
+geotech --version
+geotech status --json
 ```
 
-### 8. Validate one vision flow
+## Operational Notes
 
-```powershell
-node .\packages\cli\dist\index.js vision rmr .\path\to\image.jpg --json
-```
+- Do not manually stop the deployed Modal app if you want automatic cold-start recovery; let autoscaling idle it down naturally
+- If the app is only idle-scaled down, the next hosted request should start it again
+- If the app is undeployed or manually stopped at the deployment level, the CLI cannot recover automatically
+- Cold starts are expected to be slow; this is acceptable for now given the budget posture
+- The goal of the latest fix was to make that slowness honest, less misleading, and less wasteful
 
-### 9. Validate rate limits
+## End-of-Day Summary
 
-Confirm that:
-
-- burst requests trigger the per-minute protection
-- repeated calls trigger the daily limit
-- JSON mode responses remain structured when limits are hit
-
-### 10. Configure Cloudflare for beta deploy
-
-Once the local build and validation are good, continue with Cloudflare.
-
-Set Worker secrets/vars for the deployed beta:
-
-- `MODAL_ENDPOINT_URL`
-- `MODAL_API_TOKEN`
-- `UPSTASH_REDIS_REST_URL`
-- `UPSTASH_REDIS_REST_TOKEN`
-- `NEXT_PUBLIC_APP_URL=https://beta.geotechcli.com`
-
-Then deploy the beta Worker and attach the custom domain:
-
-- Worker name planned in repo: `geotechcli-strong-beta`
-- custom domain target: `beta.geotechcli.com`
-
-### 11. Post-deploy smoke checks
-
-After deployment, verify:
-
-- home page
-- docs page
-- pricing page
-- privacy page
-- `GET /api/proxy`
-- one text hosted-beta call
-- one vision hosted-beta call
-- rate-limit behavior
-
-## Recommended Deployment Posture
-
-If the personal-PC validation is clean:
-
-- deploy `strong-beta`
-- keep pricing as `Coming Soon`
-- keep signup and billing disabled
-- present this honestly as a strong beta
-- keep apex `geotechcli.com` for later production/main rollout
-
-If validation is not clean:
-
-- do not force public hosted-beta deployment
-- either fix the proxy/build/runtime issue first
-- or fall back temporarily to a docs + deterministic-only beta posture
-
-## Secrets And Safety Notes
-
-- never commit real secrets
-- keep `.env.local` local only
-- do not put secrets into `NEXT_PUBLIC_*` variables
-- use the company PC only for repo-safe work
-- use the personal PC for the actual Cloudflare build/deploy flow
-
-## Restart Instruction
-
-When resuming on the personal PC, start by reading this file first, then run:
-
-```powershell
-git rev-parse --short HEAD
-git status --short --branch
-```
-
-That confirms you are on the expected handoff point before continuing the deployment work.
+The repo is in a good stopping state.
+`0.4.11` is committed and pushed, local verification is green, hosted-beta warmup behavior is more honest, and the current fixes were made with the Modal budget in mind.
