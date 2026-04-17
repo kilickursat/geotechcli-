@@ -31,7 +31,7 @@ interface HFChatResponse {
  * Users can specify ANY model from the Hugging Face Hub:
  *   - meta-llama/Llama-3.1-8B-Instruct
  *   - mistralai/Mistral-7B-Instruct-v0.3
- *   - Qwen/Qwen2.5-VL-7B-Instruct (vision)
+ *   - Qwen/Qwen3.5-9B (vision)
  *   - deepseek-ai/DeepSeek-V3
  *   - google/gemma-2-27b-it
  *   - etc.
@@ -52,7 +52,7 @@ interface HFChatResponse {
 export class HuggingFaceAdapter implements ProviderAdapter {
   readonly name = 'huggingface' as const;
   readonly defaultModel = 'meta-llama/Llama-3.1-8B-Instruct';
-  readonly defaultVisionModel = 'Qwen/Qwen2.5-VL-7B-Instruct';
+  readonly defaultVisionModel = 'Qwen/Qwen3.5-9B';
 
   private readonly baseUrl: string;
 

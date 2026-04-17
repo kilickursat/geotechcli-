@@ -63,7 +63,7 @@ geotech config set llm.model meta-llama/Llama-3.1-8B-Instruct:cerebras
 geotech config set llm.model deepseek-ai/DeepSeek-V3:cheapest
 
 # HF vision model for geotech vision commands
-geotech config set llm.vision_model Qwen/Qwen2.5-VL-7B-Instruct
+geotech config set llm.vision_model Qwen/Qwen3.5-9B
 
 # OpenAI — advanced beta with your own key
 geotech config set llm.provider openai
@@ -76,7 +76,7 @@ geotech config set llm.api_key sk-ant-...
 # Self-hosted model (e.g. Qwen on VPS)
 geotech config set llm.provider openai-compatible
 geotech config set llm.base_url http://your-vps:8000/v1
-geotech config set llm.model Qwen/Qwen2.5-VL-7B-Instruct
+geotech config set llm.model Qwen/Qwen3.5-9B
 
 # Reset to defaults
 geotech config reset

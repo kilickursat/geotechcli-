@@ -27,7 +27,7 @@ geotechCLI is a terminal-first geotechnical engineering product that combines de
 
 - Deterministic commands are available now.
 - Hosted Qwen beta access is available now with no user API key required.
-- Text and vision default to `Qwen/Qwen2.5-VL-7B-Instruct` served on Modal.com (NVIDIA L4 GPU).
+- Text and vision default to `Qwen/Qwen3.5-9B` served on Modal.com (NVIDIA L4 GPU).
 - Server-side rate limits protect the hosted beta credit pool.
 - Signup, billing, and paid entitlements are intentionally disabled on `strong-beta`.
 
@@ -184,8 +184,8 @@ Most calculation and analysis commands support:
 In `strong-beta`, AI commands default to the hosted beta provider, so a user does not need to bring their own API key.
 
 - Default provider: `hosted-beta`
-- Default text model: `Qwen/Qwen2.5-VL-7B-Instruct`
-- Default vision model: `Qwen/Qwen2.5-VL-7B-Instruct`
+- Default text model: `Qwen/Qwen3.5-9B`
+- Default vision model: `Qwen/Qwen3.5-9B`
 
 ```bash
 # Confirm the strong-beta defaults
@@ -212,7 +212,7 @@ geotech config set llm.api_key sk-ant-...
 # Optional advanced override: self-hosted OpenAI-compatible endpoint
 geotech config set llm.provider openai-compatible
 geotech config set llm.base_url http://localhost:11434/v1
-geotech config set llm.model Qwen/Qwen2.5-VL-7B-Instruct
+geotech config set llm.model Qwen/Qwen3.5-9B
 ```
 
 ## Pricing

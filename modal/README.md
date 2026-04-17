@@ -1,6 +1,6 @@
 # Modal Deployment — geotechCLI Qwen Backend
 
-Serves `Qwen/Qwen2.5-VL-7B-Instruct` on an NVIDIA L4 GPU via [Modal](https://modal.com).
+Serves `Qwen/Qwen3.5-9B` on an NVIDIA L4 GPU via [Modal](https://modal.com).
 
 ## Setup
 
@@ -42,6 +42,6 @@ Serves `Qwen/Qwen2.5-VL-7B-Instruct` on an NVIDIA L4 GPU via [Modal](https://mod
 
 - GPU: NVIDIA L4
 - Runtime: vLLM
-- Model: Qwen/Qwen2.5-VL-7B-Instruct
+- Model: Qwen/Qwen3.5-9B
 - Max context: 4096 tokens
 - Max output: 4096 tokens

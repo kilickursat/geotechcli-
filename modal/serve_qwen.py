@@ -1,5 +1,5 @@
 """
-Modal deployment for Qwen/Qwen2.5-VL-7B-Instruct - geotechCLI hosted beta backend.
+Modal deployment for Qwen/Qwen3.5-9B - geotechCLI hosted beta backend.
 
 Runs the native vLLM OpenAI-compatible server so the Cloudflare proxy can
 forward both text and image chat completions without a custom translation
@@ -18,7 +18,7 @@ import subprocess
 
 import modal
 
-MODEL_ID = "Qwen/Qwen2.5-VL-7B-Instruct"
+MODEL_ID = "Qwen/Qwen3.5-9B"
 GPU = "L4"
 IDLE_TIMEOUT_SECONDS = 600
 STARTUP_TIMEOUT_SECONDS = 15 * 60
@@ -30,7 +30,7 @@ vllm_cache = modal.Volume.from_name("geotechcli-vllm-cache", create_if_missing=T
 vllm_image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install(
-        "vllm>=0.8.0",
+        "vllm>=0.11.0",
         "huggingface_hub[hf_transfer]",
     )
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})
@@ -72,7 +72,7 @@ def serve():
         "--max-model-len",
         "4096",
         "--limit-mm-per-prompt",
-        "image=4",
+        '{"image": 4}',
         "--trust-remote-code",
         "--enforce-eager",
         "--generation-config",

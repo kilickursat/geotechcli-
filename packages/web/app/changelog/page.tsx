@@ -9,7 +9,8 @@ const releases = [
     tag: '0.4.5 Release',
     changes: [
       { type: 'fix', text: 'Switched hosted beta to the native vLLM OpenAI-compatible server on Modal so text and image chat completions share the same contract and the broken modal-http invalid function call path is removed' },
-      { type: 'feat', text: 'Upgraded hosted beta defaults to Qwen/Qwen2.5-VL-7B-Instruct so the shared backend can handle both standard LLM requests and real vision inputs' },
+      { type: 'fix', text: 'Kept hosted beta on Qwen/Qwen3.5-9B as the shared hybrid multimodal model instead of drifting to a separate Qwen2.5-VL default' },
+      { type: 'fix', text: 'Corrected the Modal vLLM launcher to pass --limit-mm-per-prompt as JSON so the current vllm serve CLI accepts multimodal limits during deploy' },
       { type: 'feat', text: 'Expanded the Modal deploy workflow to watch hosted-beta contract files and added a post-deploy /health smoke check to catch drift immediately' },
       { type: 'feat', text: 'Replaced ASCII-first plotting with an interactive browser plot viewer for geotech viz and command-level --plot flows, while keeping terminal fallback available' },
     ],

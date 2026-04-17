@@ -52,8 +52,8 @@ What strong beta should not claim yet:
 ### Wave 2 completed
 
 - hosted beta was added as the default LLM provider for strong beta
-- hosted default text model is `Qwen/Qwen2.5-VL-7B-Instruct`
-- hosted default vision model is `Qwen/Qwen2.5-VL-7B-Instruct`
+- hosted default text model is `Qwen/Qwen3.5-9B`
+- hosted default vision model is `Qwen/Qwen3.5-9B`
 - hosted beta proxy route exists in the web app, forwarding to Modal.com
 - anonymous rate limiting exists with Redis-backed production intent and in-memory local fallback
 - no end-user API key is required for the default beta flow
@@ -238,7 +238,7 @@ Expected shape:
 
 - `provider: "hosted-beta"`
 - `status: "ready"` or a clear degraded message
-- defaults showing `Qwen/Qwen2.5-VL-7B-Instruct`
+- defaults showing `Qwen/Qwen3.5-9B`
 
 ### 7. Validate CLI against the local proxy
 
