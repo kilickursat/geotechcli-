@@ -30,7 +30,7 @@ vllm_cache = modal.Volume.from_name("geotechcli-vllm-cache", create_if_missing=T
 vllm_image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install(
-        "vllm>=0.18.2,<0.19",
+        "vllm==0.18.1",
         "huggingface_hub[hf_transfer]",
     )
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})
