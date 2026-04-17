@@ -8,6 +8,17 @@ const releases = [
     date: '2026-04-17',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'fix', text: 'Generic hosted-beta transport failures like Hosted beta AI request failed, empty upstream content, and fetch failed are now treated as temporary first-turn availability issues instead of surfacing a raw chat error and then continuing down a second answer path' },
+      { type: 'feat', text: 'Added a live terminal status controller for geotech agent and geotech chat so users see Terzaghi actively thinking, calling tools, and reviewing results while the response is being prepared' },
+      { type: 'fix', text: 'Kept the underlying agent workflow unchanged for evidence-backed requests while making the waiting experience feel active and more trustworthy during long hosted responses' },
+      { type: 'fix', text: 'Broadened tunnelling intake detection so UCS, water inflow, face, and machine-selection prompts now short-circuit into the data-requirements screen even when users do not explicitly say TBM or tunnel' },
+    ],
+  },
+  {
+    version: '0.4.8',
+    date: '2026-04-17',
+    tag: '0.4.8 Release',
+    changes: [
       { type: 'feat', text: 'Replaced the narrow foundation-only shortcut with a catalog-driven geotechnical intake layer that screens multiple analysis families before calling the hosted model' },
       { type: 'fix', text: 'Under-specified foundation, soil classification, and liquefaction prompts now return immediate engineering data requirements instead of burning a long hosted-beta round trip' },
       { type: 'fix', text: 'Project metadata and notes alone no longer suppress agent intake; only real evidence such as soil profiles, datasets, derived parameters, or active analysis context can bypass it' },

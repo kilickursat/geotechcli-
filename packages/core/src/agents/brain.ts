@@ -57,7 +57,11 @@ function isHostedBetaUnavailable(message: string): boolean {
     normalized.includes('rate limit') ||
     normalized.includes('timed out') ||
     normalized.includes('upstream request failed') ||
-    normalized.includes('retry in about')
+    normalized.includes('retry in about') ||
+    normalized.includes('hosted beta ai request failed') ||
+    normalized.includes('hosted beta upstream returned no content') ||
+    normalized.includes('empty completion') ||
+    normalized.includes('fetch failed')
   );
 }
 

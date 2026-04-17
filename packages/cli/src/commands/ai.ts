@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { readFileSync, writeFileSync } from 'node:fs';
 import chalk from 'chalk';
+import ora from 'ora';
 import {
   buildLLMConfig,
   DEFAULT_LLM_VISION_MODEL,
@@ -174,6 +175,134 @@ function startProgress(flags: { json?: boolean; quiet?: boolean }, text: string)
     },
     fail(message: string) {
       error(message);
+    },
+  };
+}
+
+const SINGLE_AGENT_STATUS_ROTATION = [
+  'Terzaghi is thinking through the request...',
+  'Discussing the next engineering step with Terzaghi...',
+  'Checking whether deterministic tools are needed...',
+  'Preparing the next geotechnical action...',
+];
+
+const SWARM_STATUS_ROTATION = [
+  'Mohr is coordinating Bieniawski, Terzaghi, and Hoek...',
+  'Discussing site interpretation with Bieniawski...',
+  'Asking Terzaghi to simulate the engineering response...',
+  'Waiting for Hoek to review the engineering judgment...',
+];
+
+function summarizeStatusText(text: string, limit = 78): string {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= limit) {
+    return normalized;
+  }
+  return `${normalized.slice(0, Math.max(0, limit - 3)).trimEnd()}...`;
+}
+
+function createLiveStatusController(options: { kind: 'single' | 'swarm'; enabled: boolean }) {
+  if (!options.enabled || !process.stdout.isTTY) {
+    return null;
+  }
+
+  const rotation =
+    options.kind === 'swarm' ? SWARM_STATUS_ROTATION : SINGLE_AGENT_STATUS_ROTATION;
+  const spinner = ora({
+    text: rotation[0],
+    indent: 2,
+    discardStdin: false,
+  }).start();
+
+  let rotationIndex = 0;
+  let holdUntil = 0;
+  const interval = setInterval(() => {
+    if (Date.now() < holdUntil) {
+      return;
+    }
+    rotationIndex = (rotationIndex + 1) % rotation.length;
+    spinner.text = rotation[rotationIndex];
+  }, 1600);
+
+  function stopRotation() {
+    clearInterval(interval);
+  }
+
+  function pin(text: string, holdMs = 2400) {
+    spinner.text = text;
+    holdUntil = Date.now() + holdMs;
+  }
+
+  return {
+    onAgentStep(step: AgentStep) {
+      switch (step.type) {
+        case 'thought':
+          pin(`Terzaghi: ${summarizeStatusText(step.content, 84)}`);
+          break;
+        case 'tool_call':
+          pin(`Asking Terzaghi to run ${step.toolName ?? 'the next tool'}...`);
+          break;
+        case 'tool_result':
+          if (step.toolResult?.success) {
+            pin(`Terzaghi is reviewing ${step.toolName ?? 'tool'} results...`);
+          } else {
+            pin('Terzaghi hit a tool issue and is adjusting the approach...');
+          }
+          break;
+        case 'error':
+          if (/temporarily unavailable|request failed|fetch failed|timed out|retry/i.test(step.content)) {
+            pin('Hosted beta hit a bump. Terzaghi is recovering...');
+          } else {
+            pin('Terzaghi hit an issue and is adjusting the analysis...');
+          }
+          break;
+        case 'answer':
+          break;
+      }
+    },
+    onSwarmStep(step: SwarmStep) {
+      const label = SWARM_AGENT_LABELS[step.agent] ?? step.agent;
+      switch (step.type) {
+        case 'thought':
+          pin(`${label} is thinking through the next engineering step...`);
+          break;
+        case 'tool_call':
+          pin(`Asking ${label} to run ${step.toolName ?? 'the next tool'}...`);
+          break;
+        case 'tool_result':
+          if (step.toolResult?.success) {
+            pin(`${label} is reviewing ${step.toolName ?? 'tool'} results...`);
+          } else {
+            pin(`${label} hit a tool issue and is adjusting the analysis...`);
+          }
+          break;
+        case 'handoff':
+          pin(`Mohr is coordinating the next specialist handoff...`);
+          break;
+        case 'review':
+          pin(`${label} is reviewing the engineering judgment...`);
+          break;
+        case 'correction':
+          pin(`${label} is correcting the analysis...`);
+          break;
+        case 'error':
+          pin(`${label} hit an issue and is recovering...`);
+          break;
+        case 'answer':
+          break;
+      }
+    },
+    succeed(message: string) {
+      stopRotation();
+      spinner.succeed(message);
+    },
+    fail(message: string) {
+      stopRotation();
+      spinner.fail(message);
+    },
+    stop() {
+      stopRotation();
+      spinner.stop();
     },
   };
 }
@@ -1079,6 +1208,7 @@ export function registerAgentCommand(program: Command): void {
       const flags = getGlobalFlags(opts);
       const task = taskParts.join(' ');
       const useSwarm = opts.swarm === true;
+      const showLiveStatus = !flags.json && !flags.quiet && !flags.verbose;
 
       if (!(await checkQuota('agentCalls'))) return;
 
@@ -1092,6 +1222,7 @@ export function registerAgentCommand(program: Command): void {
         console.log('');
       }
 
+      let liveStatus: ReturnType<typeof createLiveStatusController> = null;
       try {
         const config = buildLLMConfig();
         const projectState = loadProjectState(opts.project);
@@ -1101,10 +1232,18 @@ export function registerAgentCommand(program: Command): void {
           console.log('');
         }
 
+        liveStatus = createLiveStatusController({
+          kind: useSwarm ? 'swarm' : 'single',
+          enabled: showLiveStatus,
+        });
+
         if (useSwarm) {
           // Multi-agent swarm mode
           const session = await runSwarm(task, config, (step) => {
-            renderSwarmStepPlain(step, flags.json, flags.quiet);
+            liveStatus?.onSwarmStep(step);
+            if (flags.verbose) {
+              renderSwarmStepPlain(step, flags.json, flags.quiet);
+            }
           }, projectState?.context);
 
           const answer = session.steps.find((s) => s.type === 'answer');
@@ -1135,6 +1274,7 @@ export function registerAgentCommand(program: Command): void {
           }
 
           if (answer) {
+            liveStatus?.succeed('Mohr and the specialists finished the analysis.');
             console.log('');
             heading('Swarm Report');
             console.log(answer.content);
@@ -1143,6 +1283,8 @@ export function registerAgentCommand(program: Command): void {
             const agents = [...new Set(session.steps.map((s) => s.agent))];
             console.log(chalk.gray(`  (${agents.length} agents, ${toolCalls} tools executed, review: ${session.reviewPassed ? 'PASSED' : 'ISSUES NOTED'}, ${session.totalTokens} tokens)`));
             console.log(chalk.cyan('\n  Continue interactively with: ') + chalk.white(`geotech chat${opts.project ? ` --project ${opts.project}` : ''}`));
+          } else {
+            liveStatus?.stop();
           }
 
           if (flags.output && answer) {
@@ -1172,7 +1314,10 @@ export function registerAgentCommand(program: Command): void {
         } else {
           // Single-agent ReAct mode (default)
           const session = await runAgent(task, config, (step) => {
-            renderAgentStepPlain(step, flags.json, flags.quiet);
+            liveStatus?.onAgentStep(step);
+            if (flags.verbose) {
+              renderAgentStepPlain(step, flags.json, flags.quiet);
+            }
           }, projectState?.context);
 
           const answer = session.steps.find((s) => s.type === 'answer');
@@ -1200,12 +1345,15 @@ export function registerAgentCommand(program: Command): void {
           }
 
           if (answer) {
+            liveStatus?.succeed('Terzaghi finished the analysis.');
             console.log('');
             heading('Agent Analysis');
             console.log(answer.content);
             console.log('');
             console.log(chalk.gray(`  (${session.steps.filter((s) => s.type === 'tool_call').length} tools executed, ${session.totalTokens} tokens, ${session.totalLatencyMs}ms)`));
             console.log(chalk.cyan('\n  Continue interactively with: ') + chalk.white(`geotech chat${opts.project ? ` --project ${opts.project}` : ''}`));
+          } else {
+            liveStatus?.stop();
           }
 
           if (flags.output && answer) {
@@ -1237,6 +1385,7 @@ export function registerAgentCommand(program: Command): void {
           console.log('');
         }
       } catch (err) {
+        liveStatus?.fail(useSwarm ? 'Swarm analysis failed.' : 'Terzaghi could not complete the request.');
         handleCommandErrorClean(err, flags, useSwarm ? 'swarm_failed' : 'agent_failed');
       }
     });
@@ -1259,6 +1408,7 @@ export function registerChatCommand(program: Command): void {
       console.log('');
       console.log(chalk.bold.cyan('  geotech') + chalk.bold.white('CLI') + chalk.gray(' Agent - Interactive Mode'));
       console.log(chalk.gray('  Type engineering questions. The agent will reason and execute calculations.'));
+      console.log(chalk.gray('  Live status updates will appear while Terzaghi is thinking and calling tools.'));
       console.log(chalk.gray('  Commands: /context (show memory), /clear (reset), /exit (quit)'));
       console.log('');
 
@@ -1356,10 +1506,14 @@ export function registerChatCommand(program: Command): void {
         }
 
         console.log('');
+        const liveStatus = createLiveStatusController({
+          kind: 'single',
+          enabled: true,
+        });
 
         try {
           const session = await conversation.ask(input, config, (step) => {
-            renderAgentStepPlain(step, false, false);
+            liveStatus?.onAgentStep(step);
           });
 
           if (projectState) {
@@ -1368,12 +1522,16 @@ export function registerChatCommand(program: Command): void {
 
           const answer = session.steps.find((s) => s.type === 'answer');
           if (answer) {
+            liveStatus?.succeed('Terzaghi is ready.');
             console.log('');
             console.log(chalk.white(answer.content));
             console.log('');
             console.log(chalk.gray(`  (${session.steps.filter((s) => s.type === 'tool_call').length} tools, ${session.totalTokens} tokens)`));
+          } else {
+            liveStatus?.stop();
           }
         } catch (err) {
+          liveStatus?.fail('Terzaghi could not complete the request.');
           error(err instanceof Error ? err.message : String(err));
         }
 

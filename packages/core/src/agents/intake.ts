@@ -67,13 +67,13 @@ function buildProjectDescriptor(query: string): string {
 }
 
 function hasEngineeringWorkIntent(query: string): boolean {
-  return /\b(?:classify|classification|recommend|design|size|calculate|assess|analyse|analyze|evaluate|check|estimate|predict|select|screen|determine|compare|verify|capacity|settlement|stability|liquefaction|earth pressure|penetration|support recommendation|what foundation|which foundation)\b/i.test(
+  return /\b(?:classify|classification|recommend|design|size|calculate|assess|analyse|analyze|evaluate|check|estimate|predict|select|screen|determine|compare|verify|capacity|settlement|stability|liquefaction|earth pressure|penetration|support recommendation|what foundation|which foundation|what type|which type|what machine|which machine)\b/i.test(
     query,
   );
 }
 
 function isGeotechnicalDomainQuery(query: string): boolean {
-  return /\b(?:soil|rock|foundation|footing|raft|pile|bearing|settlement|liquefaction|slope|retaining|earth pressure|tunnel|tbm|groundwater|seepage|geotechnical|uscs|rmr|q-system)\b/i.test(
+  return /\b(?:soil|rock|foundation|footing|raft|pile|bearing|settlement|liquefaction|slope|retaining|earth pressure|tunnel|tbm|groundwater|seepage|geotechnical|uscs|rmr|q-system|ucs|rqd|cai|joint spacing|water inflow|face pressure|excavation face)\b/i.test(
     query,
   );
 }
@@ -108,7 +108,7 @@ function collectEvidenceGroups(query: string): Set<EvidenceGroup> {
     },
     {
       group: 'groundwater',
-      pattern: /\b(?:groundwater|water table|gwt|phreatic|pore pressure|seepage|drawdown)\b/i,
+      pattern: /\b(?:groundwater|water table|gwt|phreatic|pore pressure|seepage|drawdown|water inflow|inflow)\b/i,
     },
     {
       group: 'loads_structure',
@@ -135,7 +135,7 @@ function collectEvidenceGroups(query: string): Set<EvidenceGroup> {
     },
     {
       group: 'machine_ops',
-      pattern: /\b(?:rpm|thrust|torque|cutterhead|cutters?|advance rate|penetration rate)\b/i,
+      pattern: /\b(?:rpm|thrust|torque|cutterhead|cutters?|advance rate|penetration rate|face pressure|water inflow)\b/i,
     },
     {
       group: 'rock_mass',
@@ -343,7 +343,7 @@ const INTAKE_RULES: IntakeRule[] = [
     id: 'tbm_performance',
     label: 'TBM performance / selection',
     intentPattern:
-      /\b(?:tbm|epb|slurry|shield|cutter wear|penetration rate|advance rate|machine selection|tbm select|tbm predict)\b/i,
+      /\b(?:tbm|epb|slurry|shield|cutter wear|penetration rate|advance rate|machine selection|tbm select|tbm predict|machine type|boring machine|excavation face|face pressure|water inflow)\b/i,
     toolNames: ['select_tbm_type', 'predict_tbm_performance', 'predict_cutter_wear'],
     isSatisfied: (groups, query) =>
       (groups.has('tunnel_geometry') || /\b(?:diameter)\b/i.test(query)) &&

@@ -1,5 +1,14 @@
 ﻿# Changelog
 
+## [0.4.9] - 2026-04-17
+
+### Chat Reliability + Live Status
+
+- Treated generic hosted-beta transport failures such as `Hosted beta AI request failed.`, empty upstream content, and `fetch failed` as temporary availability issues on the first agent turn so chat no longer emits a raw LLM error and then continues down a second response path.
+- Added a live terminal status controller for `geotech agent` and `geotech chat` so users now see active reasoning states such as Terzaghi thinking, calling tools, or reviewing results while waiting.
+- Kept the underlying agent/tool workflow unchanged for evidence-backed requests, while making the waiting experience feel active instead of static and making first-turn hosted-beta failures resolve more cleanly.
+- Broadened the tunnelling intake signals so prompts framed around UCS, water inflow, excavation face, and machine selection now hit the immediate intake screen even when the user does not explicitly say `TBM` or `tunnel`.
+
 ## [0.4.8] - 2026-04-17
 
 ### Agent Intake + Project Context

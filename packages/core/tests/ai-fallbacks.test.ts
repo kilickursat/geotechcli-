@@ -96,6 +96,33 @@ describe('AI fallback behavior', () => {
     expect(answer?.content).toMatch(/diameter is not provided/i);
   });
 
+  it('treats generic hosted-beta transport failures as temporary unavailability on the first agent turn', async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      new Response('', {
+        status: 502,
+      }),
+    ) as typeof fetch;
+
+    const session = await runAgent(
+      'calculate penetration rate of EPB TBM if the rpm is 10 rpm, and clay zone with 1500 kN thrust',
+      {
+        provider: 'hosted-beta',
+        apiKey: '',
+        timeout: 1000,
+      },
+      () => {},
+      {
+        soilProfiles: [{ boreholeId: 'BH-1', layers: [{ thickness: 3, soilType: 'clay' }] }],
+      },
+    );
+
+    const errorStep = session.steps.find((step) => step.type === 'error');
+    const answer = session.steps.find((step) => step.type === 'answer');
+    expect(errorStep).toBeUndefined();
+    expect(answer?.content).toMatch(/temporarily unavailable/i);
+    expect(answer?.content).toMatch(/EPB/);
+  });
+
   it('returns an immediate geotechnical intake answer for under-specified foundation requests', async () => {
     global.fetch = vi.fn() as typeof fetch;
 
@@ -134,6 +161,26 @@ describe('AI fallback behavior', () => {
     expect(answer?.content).toMatch(/Liquefaction assessment/i);
     expect(answer?.content).toMatch(/Earthquake magnitude and PGA/i);
     expect(answer?.content).toMatch(/SPT or CPT data by depth/i);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('returns an immediate tunnelling intake answer when machine-selection prompts omit diameter and explicit tbm wording', async () => {
+    global.fetch = vi.fn() as typeof fetch;
+
+    const session = await runAgent(
+      'If UCS is 150 MPa, and there is water inflow 3L/h on the face what type of machine do we need to use',
+      {
+        provider: 'hosted-beta',
+        apiKey: '',
+        timeout: 1000,
+      },
+      () => {},
+    );
+
+    const answer = session.steps.find((step) => step.type === 'answer');
+    expect(answer?.content).toMatch(/TBM performance \/ selection/i);
+    expect(answer?.content).toMatch(/TBM or tunnel diameter/i);
+    expect(answer?.content).toMatch(/predict_tbm_performance/i);
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
