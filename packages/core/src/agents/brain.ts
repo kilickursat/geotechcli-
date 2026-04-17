@@ -121,7 +121,36 @@ function buildDeterministicFallbackAnswer(userQuery: string): string {
 // System prompt
 // ---------------------------------------------------------------------------
 
-function buildSystemPrompt(): string {
+function buildCompactSystemPrompt(): string {
+  const tools = toolRegistry
+    .list()
+    .map((tool) => `- ${tool.name}: ${tool.description}`)
+    .join('\n');
+
+  return `You are geotechCLI Agent, a geotechnical engineering assistant that must use real tools for calculations.
+
+Available tools:
+${tools}
+
+Tool call format:
+\`\`\`tool
+{"tool":"<tool_name>","args":{...}}
+\`\`\`
+
+Rules:
+- Use tools for calculations instead of inventing numbers.
+- Keep assumptions brief and explicit when inputs are incomplete.
+- Interpret tool outputs in engineering terms with units.
+- If a tool result is blocked, low confidence, or canAutoProceed=false, do not continue blindly.
+- When finished, provide a concise engineering answer in prose with key results, assumptions, and recommendations.
+- Do not output a tool call in the final answer.`;
+}
+
+function buildSystemPrompt(config?: LLMConfig): string {
+  if (config?.provider === 'hosted-beta') {
+    return buildCompactSystemPrompt();
+  }
+
   const toolDescriptions = toolRegistry.toToolDescriptions();
 
   return `You are geotechCLI Agent, an expert geotechnical engineering AI that solves problems by EXECUTING real calculations, not just describing them.
@@ -238,7 +267,7 @@ export async function runAgent(
   };
 
   const messages: ConversationMessage[] = [
-    { role: 'system', content: buildSystemPrompt() },
+    { role: 'system', content: buildSystemPrompt(config) },
   ];
 
   const serializedContext = serializeContextForPrompt(sessionContext);
