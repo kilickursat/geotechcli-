@@ -5,8 +5,21 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 const releases = [
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-04-17',
+    date: '2026-04-19',
     tag: `${GEOTECHCLI_VERSION} Release`,
+    changes: [
+      { type: 'fix', text: 'Added strong-beta release guardrails so public beta pushes now require a new shared version and verify GitHub, npm, Cloudflare, and Modal release surfaces together' },
+      { type: 'feat', text: 'Removed the Modal deploy path filter so versioned strong-beta releases always refresh the hosted Qwen runtime instead of silently skipping the Modal workflow' },
+      { type: 'feat', text: 'Extended the strong-beta skill runner with compatibility adapters for the remaining EPB tunnel workspace bundles so tunnel skills now share the same trusted install, sandbox, and artifact pipeline as the rest of the catalog' },
+      { type: 'feat', text: 'Approved the remaining EPB tunnel skills for strong-beta execution after end-to-end certification against their bundled example inputs' },
+      { type: 'fix', text: 'Fixed skill run workspace naming so back-to-back skill executions cannot collide in the same millisecond and corrupt output bundles' },
+      { type: 'fix', text: 'Expanded skill runtime regression coverage so the full tunnel workspace compatibility set stays aligned with the strong-beta approval catalog' },
+    ],
+  },
+  {
+    version: '0.4.11',
+    date: '2026-04-17',
+    tag: '0.4.11 Release',
     changes: [
       { type: 'fix', text: 'Raised hosted-beta agent timeout budgets to better match real Modal cold starts so the CLI is less likely to fall back before the Qwen server is actually ready' },
       { type: 'fix', text: 'Changed first-turn fallback messaging to explicitly say when the Modal.com GPU is warming up or the timeout budget was exceeded instead of implying the hosted stack is simply unavailable' },

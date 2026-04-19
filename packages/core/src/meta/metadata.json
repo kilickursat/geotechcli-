@@ -1,5 +1,5 @@
 {
-  "version": "0.4.11",
+  "version": "0.4.12",
   "defaults": {
     "provider": "hosted-beta",
     "model": "Qwen/Qwen3.5-9B",

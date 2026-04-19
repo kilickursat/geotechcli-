@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.4.12] - 2026-04-19
+
+### Strong-Beta Skills Phase 2 + Release Guardrails
+
+- Added strong-beta skill release guardrails so public `strong-beta` pushes now require a new shared version and must verify GitHub, npm, Cloudflare, and Modal release surfaces instead of treating a repo push as the full release.
+- Removed the path-filter restriction on the Modal deploy workflow so versioned beta releases always refresh the hosted Qwen runtime instead of silently skipping Modal when related files were not matched.
+- Added a standardized legacy-skill compatibility layer for the EPB tunnel workspace so the remaining tunnel skills can run through the same trusted install, sandbox, artifact, and case-file pipeline as the rest of the skill catalog.
+- Promoted the remaining EPB tunnel skills including face support, conditioning/clogging, production ring cycle, mixed-face transition planning, and settlement control to approved strong-beta execution after end-to-end certification against their bundled example inputs.
+- Fixed skill run workspace naming so back-to-back skill executions cannot collide in the same millisecond and corrupt generated output bundles.
+- Expanded skill runtime regression coverage to certify the full tunnel workspace compatibility set and keep approval status aligned with the executable contract.
+
 ## [0.4.11] - 2026-04-17
 
 ### Hosted Beta Warmup Messaging + Budget-Safe Timeout Handling

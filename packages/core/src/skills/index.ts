@@ -8,8 +8,8 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
+import { createHash, randomUUID } from 'node:crypto';
 import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, extname, join, relative, resolve } from 'node:path';
 
@@ -114,6 +114,23 @@ export interface SkillRunResult {
 
 interface SkillManifestData extends InstalledSkill {}
 
+interface LegacySkillInputBinding {
+  flag: string;
+  fileName: string;
+}
+
+interface StandardSkillExecutionProfile {
+  contract: 'input-dir-output-dir';
+}
+
+interface LegacySkillExecutionProfile {
+  contract: 'legacy-file-inputs';
+  inputBindings: LegacySkillInputBinding[];
+  candidateArtifactTypes: string[];
+}
+
+type SkillExecutionProfile = StandardSkillExecutionProfile | LegacySkillExecutionProfile;
+
 const MANIFEST_FILENAME = '.geotechcli-skill.json';
 const SUPPORTED_SKILL_FILE_EXTENSIONS = new Set([
   '.py',
@@ -137,6 +154,65 @@ const SYSTEM_ENV_KEYS = [
   'LANG',
   'LC_ALL',
 ];
+const DEFAULT_SKILL_EXECUTION_PROFILE: SkillExecutionProfile = {
+  contract: 'input-dir-output-dir',
+};
+const SKILL_EXECUTION_PROFILES: Record<string, SkillExecutionProfile> = {
+  'epb-conditioning-clogging': {
+    contract: 'legacy-file-inputs',
+    inputBindings: [
+      { flag: '--ground-model', fileName: 'ground_model.json' },
+      { flag: '--machine-config', fileName: 'machine_config.json' },
+      { flag: '--alignment-zones', fileName: 'alignment_zones.csv' },
+    ],
+    candidateArtifactTypes: ['assumptions', 'results', 'issues-and-corrections'],
+  },
+  'epb-face-support-window': {
+    contract: 'legacy-file-inputs',
+    inputBindings: [
+      { flag: '--ground-model', fileName: 'ground_model.json' },
+      { flag: '--machine-config', fileName: 'machine_config.json' },
+      { flag: '--alignment-zones', fileName: 'alignment_zones.csv' },
+    ],
+    candidateArtifactTypes: ['results', 'review-checklist', 'acceptance-status'],
+  },
+  'epb-production-and-ring-cycle': {
+    contract: 'legacy-file-inputs',
+    inputBindings: [
+      { flag: '--monitoring', fileName: 'monitoring.csv' },
+      { flag: '--machine-config', fileName: 'machine_config.json' },
+    ],
+    candidateArtifactTypes: ['results', 'final-report', 'review-checklist'],
+  },
+  'epb-soft-ground-screening': {
+    contract: 'legacy-file-inputs',
+    inputBindings: [
+      { flag: '--ground-model', fileName: 'ground_model.json' },
+      { flag: '--machine-config', fileName: 'machine_config.json' },
+      { flag: '--alignment-zones', fileName: 'alignment_zones.csv' },
+    ],
+    candidateArtifactTypes: ['ground-model', 'analysis-plan', 'results'],
+  },
+  'mixed-face-transition-planning': {
+    contract: 'legacy-file-inputs',
+    inputBindings: [
+      { flag: '--ground-model', fileName: 'ground_model.json' },
+      { flag: '--machine-config', fileName: 'machine_config.json' },
+      { flag: '--alignment-zones', fileName: 'alignment_zones.csv' },
+    ],
+    candidateArtifactTypes: ['analysis-plan', 'results', 'review-checklist', 'issues-and-corrections'],
+  },
+  'soft-ground-settlement-observational-control': {
+    contract: 'legacy-file-inputs',
+    inputBindings: [
+      { flag: '--ground-model', fileName: 'ground_model.json' },
+      { flag: '--machine-config', fileName: 'machine_config.json' },
+      { flag: '--alignment-zones', fileName: 'alignment_zones.csv' },
+      { flag: '--monitoring', fileName: 'monitoring.csv' },
+    ],
+    candidateArtifactTypes: ['results', 'review-checklist', 'acceptance-status', 'issues-and-corrections'],
+  },
+};
 
 function getSkillsDirFallback(): string {
   return join(
@@ -784,6 +860,221 @@ function parseJsonFile(path: string): Record<string, unknown> | undefined {
   return JSON.parse(readFileSync(path, 'utf-8')) as Record<string, unknown>;
 }
 
+function getSkillExecutionProfile(name: string): SkillExecutionProfile {
+  return SKILL_EXECUTION_PROFILES[name] ?? DEFAULT_SKILL_EXECUTION_PROFILE;
+}
+
+function asNonEmptyString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    .map((item) => item.trim());
+}
+
+function asFiniteNumber(value: unknown): number | undefined {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : undefined;
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function normalizeCriticalRisks(value: unknown): string[] {
+  return asStringArray(value).filter((item) => {
+    const token = item.trim().toLowerCase();
+    return token !== 'none' && token !== 'no critical risks' && token !== 'no critical risk';
+  });
+}
+
+function getLegacyAssessmentScope(payload: Record<string, unknown>): { count: number; noun: string } {
+  if (Array.isArray(payload.zone_results)) {
+    return { count: payload.zone_results.length, noun: 'zone' };
+  }
+
+  const totalRings = asFiniteNumber(payload.total_rings);
+  if (totalRings != null) {
+    return { count: totalRings, noun: 'ring' };
+  }
+
+  return { count: 0, noun: 'item' };
+}
+
+function pluralize(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
+
+function buildLegacyProjectSummary(
+  skill: InstalledSkill,
+  payload: Record<string, unknown>,
+  overallRecommendation: string | undefined,
+  assessmentCount: number,
+  assessmentNoun: string,
+  criticalRiskCount: number,
+  missingInputCount: number,
+): string {
+  const targetRings = asFiniteNumber(payload.target_rings);
+  const avgCycle = asFiniteNumber(payload.avg_cycle_min);
+  const metRingTarget = payload.met_ring_target === true
+    ? 'met'
+    : payload.met_ring_target === false
+      ? 'missed'
+      : undefined;
+  const lead = overallRecommendation
+    ? `${skill.displayName} overall recommendation: ${overallRecommendation}.`
+    : assessmentNoun === 'ring'
+      ? `${skill.displayName} reviewed ${pluralize(assessmentCount, 'ring')}${targetRings != null ? ` against a target of ${targetRings}` : ''}${avgCycle != null ? ` with an average cycle of ${avgCycle.toFixed(1)} minutes` : ''}${metRingTarget ? ` and ${metRingTarget} the ring target` : ''}.`
+      : `${skill.displayName} evaluated ${pluralize(assessmentCount, assessmentNoun)}.`;
+  const risk = criticalRiskCount > 0
+    ? ` Flagged ${pluralize(criticalRiskCount, 'critical risk')}.`
+    : ' No critical risks were flagged.';
+  const missing = missingInputCount > 0
+    ? ` ${pluralize(missingInputCount, 'missing input')} still need confirmation.`
+    : '';
+  return `${lead}${risk}${missing}`.trim();
+}
+
+function buildLegacyRunSummary(
+  overallRecommendation: string | undefined,
+  criticalRiskCount: number,
+  missingInputCount: number,
+  assessmentCount: number,
+  assessmentNoun: string,
+): string {
+  const parts: string[] = [];
+  if (overallRecommendation) {
+    parts.push(`overall recommendation ${overallRecommendation}`);
+  }
+  parts.push(`${pluralize(assessmentCount, assessmentNoun)} assessed`);
+  if (criticalRiskCount > 0) {
+    parts.push(`${pluralize(criticalRiskCount, 'critical risk')} flagged`);
+  }
+  if (missingInputCount > 0) {
+    parts.push(`${pluralize(missingInputCount, 'missing input')} remain`);
+  }
+  return parts.join('; ') + '.';
+}
+
+function normalizeLegacySkillHandoff(
+  skill: InstalledSkill,
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  const criticalRisks = normalizeCriticalRisks(payload.critical_risks);
+  const missingInputs = asStringArray(payload.missing_inputs);
+  const assessmentScope = getLegacyAssessmentScope(payload);
+  const overallRecommendation =
+    asNonEmptyString(payload.overall_recommendation) ?? asNonEmptyString(payload.recommendation);
+  const projectSummary =
+    asNonEmptyString(payload.project_summary) ??
+    buildLegacyProjectSummary(
+      skill,
+      payload,
+      overallRecommendation,
+      assessmentScope.count,
+      assessmentScope.noun,
+      criticalRisks.length,
+      missingInputs.length,
+    );
+  const summary =
+    asNonEmptyString(payload.summary) ??
+    buildLegacyRunSummary(
+      overallRecommendation,
+      criticalRisks.length,
+      missingInputs.length,
+      assessmentScope.count,
+      assessmentScope.noun,
+    );
+
+  return {
+    ...payload,
+    skill: payload.skill ?? skill.name,
+    project_summary: projectSummary,
+    summary,
+  };
+}
+
+function buildLegacyArtifactMap(
+  skill: InstalledSkill,
+  profile: LegacySkillExecutionProfile,
+  swarmHandoff: Record<string, unknown>,
+): Record<string, unknown> {
+  const missingInputs = asStringArray(swarmHandoff.missing_inputs);
+  const recommendedNextTools = asStringArray(swarmHandoff.recommended_next_tools);
+  const criticalRisks = normalizeCriticalRisks(swarmHandoff.critical_risks);
+
+  return {
+    skill: skill.name,
+    execution_contract: profile.contract,
+    named_dataset_keys: [
+      `skill:${skill.name}:swarm_handoff`,
+      `skill:${skill.name}:artifact_map`,
+    ],
+    derived_parameters: [],
+    assumption_records: missingInputs.map((item) => ({
+      type: 'missing_input',
+      detail: item,
+    })),
+    candidate_case_file_artifact_types: profile.candidateArtifactTypes,
+    recommended_next_tools: recommendedNextTools,
+    critical_risks: criticalRisks,
+  };
+}
+
+function runLegacyFileInputSkill(
+  skill: InstalledSkill,
+  inputDir: string,
+  outputDir: string,
+  profile: LegacySkillExecutionProfile,
+  swarmHandoffPath: string,
+  engineeringReportPath: string,
+  caseFileArtifactMapPath: string,
+): SpawnSyncReturns<string> {
+  const args = [skill.entryScript as string];
+
+  for (const binding of profile.inputBindings) {
+    const inputPath = join(inputDir, binding.fileName);
+    if (!isFile(inputPath)) {
+      throw new Error(
+        `Skill "${skill.name}" requires ${binding.fileName} in the input directory for ${binding.flag}.`,
+      );
+    }
+    args.push(binding.flag, inputPath);
+  }
+
+  args.push('--output-json', swarmHandoffPath, '--output-markdown', engineeringReportPath);
+
+  const result: SpawnSyncReturns<string> = spawnSync(getSkillsRuntimeConfig().pythonPath, args, {
+    cwd: skill.installPath,
+    encoding: 'utf-8',
+    timeout: 90_000,
+    env: buildPythonEnv(),
+  });
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  if (result.status === 0) {
+    const rawHandoff = parseJsonFile(swarmHandoffPath);
+    if (rawHandoff) {
+      const normalized = normalizeLegacySkillHandoff(skill, rawHandoff);
+      writeFileSync(swarmHandoffPath, JSON.stringify(normalized, null, 2) + '\n');
+      writeFileSync(
+        caseFileArtifactMapPath,
+        JSON.stringify(buildLegacyArtifactMap(skill, profile, normalized), null, 2) + '\n',
+      );
+    }
+  }
+
+  return result;
+}
+
 function buildSkillRunSummary(
   skill: InstalledSkill,
   success: boolean,
@@ -852,7 +1143,9 @@ export function runInstalledSkill(name: string, options: SkillRunOptions): Skill
     throw new Error(`Input directory not found: ${inputDir}`);
   }
 
-  const runDir = ensureDirectory(join(ensureWorkspace(), 'skills', 'runs', `${Date.now()}-${skill.name}`));
+  const runDir = ensureDirectory(
+    join(ensureWorkspace(), 'skills', 'runs', `${Date.now()}-${randomUUID().slice(0, 8)}-${skill.name}`),
+  );
   let outputDir = join(runDir, 'output');
   if (options.outputDir) {
     const outputDirCheck = validateWritePath(options.outputDir, [getWorkspaceDir()]);
@@ -862,20 +1155,30 @@ export function runInstalledSkill(name: string, options: SkillRunOptions): Skill
     outputDir = outputDirCheck.resolved;
   }
   outputDir = ensureDirectory(outputDir);
-  const result = spawnSync(getSkillsRuntimeConfig().pythonPath, [skill.entryScript, '--input-dir', inputDir, '--output-dir', outputDir], {
-    cwd: skill.installPath,
-    encoding: 'utf-8',
-    timeout: 90_000,
-    env: buildPythonEnv(),
-  });
+  const executionProfile = getSkillExecutionProfile(skill.name);
+  const swarmHandoffPath = join(outputDir, 'swarm_handoff.json');
+  const engineeringReportPath = join(outputDir, 'engineering_report.md');
+  const caseFileArtifactMapPath = join(outputDir, 'case_file_artifact_map.json');
+  const result: SpawnSyncReturns<string> = executionProfile.contract === 'legacy-file-inputs'
+    ? runLegacyFileInputSkill(
+        skill,
+        inputDir,
+        outputDir,
+        executionProfile,
+        swarmHandoffPath,
+        engineeringReportPath,
+        caseFileArtifactMapPath,
+      )
+    : spawnSync(getSkillsRuntimeConfig().pythonPath, [skill.entryScript, '--input-dir', inputDir, '--output-dir', outputDir], {
+        cwd: skill.installPath,
+        encoding: 'utf-8',
+        timeout: 90_000,
+        env: buildPythonEnv(),
+      });
 
   if (result.error) {
     throw result.error;
   }
-
-  const swarmHandoffPath = join(outputDir, 'swarm_handoff.json');
-  const engineeringReportPath = join(outputDir, 'engineering_report.md');
-  const caseFileArtifactMapPath = join(outputDir, 'case_file_artifact_map.json');
 
   const run: SkillRunResult = {
     skill,

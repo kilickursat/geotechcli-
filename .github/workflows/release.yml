@@ -17,6 +17,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm }
+      - run: node scripts/verify-strong-beta-release.mjs "${{ github.event.before }}" "${{ github.sha }}"
       - run: npm ci
       - run: npm run verify:consistency
       - run: npm test --workspace=packages/core
@@ -47,6 +48,26 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify npm package versions
+        if: github.ref == 'refs/heads/strong-beta'
+        run: |
+          EXPECTED_VERSION=$(node -p "require('./packages/core/package.json').version")
+
+          for attempt in $(seq 1 20); do
+            CLI_VERSION=$(npm view geotechcli version 2>/dev/null || true)
+            CORE_VERSION=$(npm view @geotechcli/core version 2>/dev/null || true)
+
+            if [ "$CLI_VERSION" = "$EXPECTED_VERSION" ] && [ "$CORE_VERSION" = "$EXPECTED_VERSION" ]; then
+              echo "npm publish verified at version $EXPECTED_VERSION"
+              exit 0
+            fi
+
+            echo "Attempt $attempt/20: waiting for npm registry to report geotechcli=$EXPECTED_VERSION and @geotechcli/core=$EXPECTED_VERSION (saw CLI=$CLI_VERSION CORE=$CORE_VERSION)"
+            sleep 15
+          done
+
+          echo "npm registry did not report the expected version in time."
+          exit 1
 
   deploy-beta:
     name: Deploy beta to Cloudflare
@@ -64,6 +85,59 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           NEXT_PUBLIC_APP_URL: https://beta.geotechcli.com
+      - name: Smoke check deployed beta site
+        run: |
+          export EXPECTED_VERSION=$(node -p "require('./packages/core/package.json').version")
+          node <<'NODE'
+          const expectedVersion = process.env.EXPECTED_VERSION;
+          const checks = [
+            {
+              url: 'https://beta.geotechcli.com/changelog',
+              validate(body) {
+                return body.includes(`v${expectedVersion}`);
+              },
+              description: `beta changelog exposes v${expectedVersion}`,
+            },
+            {
+              url: 'https://beta.geotechcli.com/api/proxy',
+              validate(_, response) {
+                return response.status === 200;
+              },
+              description: 'beta proxy GET health returns 200',
+            },
+          ];
+
+          const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+          (async () => {
+            for (const check of checks) {
+              let lastError = 'unknown error';
+              for (let attempt = 1; attempt <= 20; attempt += 1) {
+                try {
+                  const response = await fetch(check.url, { redirect: 'follow' });
+                  const body = await response.text();
+                  if (check.validate(body, response)) {
+                    console.log(`${check.description}: OK`);
+                    lastError = '';
+                    break;
+                  }
+                  lastError = `unexpected response status=${response.status}`;
+                } catch (error) {
+                  lastError = error instanceof Error ? error.message : String(error);
+                }
+                console.log(`Attempt ${attempt}/20 failed for ${check.url}: ${lastError}`);
+                await wait(15000);
+              }
+
+              if (lastError) {
+                throw new Error(`Smoke check failed for ${check.url}: ${lastError}`);
+              }
+            }
+          })().catch((error) => {
+            console.error(error);
+            process.exit(1);
+          });
+          NODE
 
   github-release:
     name: GitHub Release

@@ -7,8 +7,8 @@ Certified on `2026-04-19` against bundled example inputs using the strong-beta s
 - Total unique skills discovered: `49`
 - Executable `python-script` skills: `48`
 - Prompt-only skills: `1`
-- Executable skills passed end-to-end certification: `42`
-- Executable skills held back: `6`
+- Executable skills passed end-to-end certification: `48`
+- Executable skills held back: `0`
 
 ## Approved Skills
 
@@ -21,6 +21,10 @@ Certified on `2026-04-19` against bundled example inputs using the strong-beta s
 - `dewatering-impact-on-excavation`
 - `earth-pressure-envelope-selector`
 - `embankment-staged-construction`
+- `epb-conditioning-clogging`
+- `epb-face-support-window`
+- `epb-production-and-ring-cycle`
+- `epb-soft-ground-screening`
 - `evidence-to-casefile-curator`
 - `excavation-support-staged-review`
 - `foundation-construction-risk-review`
@@ -30,6 +34,7 @@ Certified on `2026-04-19` against bundled example inputs using the strong-beta s
 - `ground-improvement-qa-review`
 - `groundwater-regime-screening`
 - `instrumentation-trigger-and-action-review`
+- `mixed-face-transition-planning`
 - `natm-support-selection`
 - `parameter-sanity-review`
 - `permeation-and-compaction-grouting`
@@ -47,6 +52,7 @@ Certified on `2026-04-19` against bundled example inputs using the strong-beta s
 - `slope-failure-mechanism-screening`
 - `slope-instrumentation-trigger-review`
 - `slope-stability-review-and-remediation`
+- `soft-ground-settlement-observational-control`
 - `soil-parameter-triangulation`
 - `squeezing-ground-response`
 - `standards-and-safety-factor-audit`
@@ -57,14 +63,7 @@ Certified on `2026-04-19` against bundled example inputs using the strong-beta s
 
 ## Held Back
 
-These scripts currently fail the generic strong-beta runner because they do not accept the standard `--input-dir` / `--output-dir` contract and instead require explicit per-file argument wiring:
-
-- `epb-conditioning-clogging`
-- `epb-face-support-window`
-- `epb-production-and-ring-cycle`
-- `epb-soft-ground-screening`
-- `mixed-face-transition-planning`
-- `soft-ground-settlement-observational-control`
+No bundled executable skills remain held back after the Phase 2 legacy-CLI compatibility adapters were added for the EPB tunnel workspace.
 
 ## Prompt-Only
 

@@ -18,6 +18,7 @@ const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
 const deterministicArchive = join(repoRoot, 'skill_archive (1).zip');
 const promptOnlyArchive = join(repoRoot, 'skill.zip');
 const waveTwoArchive = join(repoRoot, 'geotechcli-geotech-skills-wave-2.zip');
+const tunnelWorkspaceArchive = join(repoRoot, 'geotechcli-tunnel-skills-workspace.zip');
 
 describe('Skills runtime', () => {
   let configDir = '';
@@ -36,6 +37,7 @@ describe('Skills runtime', () => {
     copyFileSync(deterministicArchive, join(fixtureDir, 'skill_archive (1).zip'));
     copyFileSync(promptOnlyArchive, join(fixtureDir, 'skill.zip'));
     copyFileSync(waveTwoArchive, join(fixtureDir, 'geotechcli-geotech-skills-wave-2.zip'));
+    copyFileSync(tunnelWorkspaceArchive, join(fixtureDir, 'geotechcli-tunnel-skills-workspace.zip'));
   });
 
   afterEach(() => {
@@ -129,6 +131,70 @@ describe('Skills runtime', () => {
       ).toThrow(/outside allowed directories/i);
     } finally {
       rmSync(outsideInput, { recursive: true, force: true });
+    }
+  });
+
+  it('runs the tunnel workspace legacy-compatible skills through the compatibility adapter', () => {
+    const archivePath = join(fixtureDir, 'geotechcli-tunnel-skills-workspace.zip');
+    importSkillsFromSource(archivePath);
+
+    const cases = [
+      {
+        name: 'epb-soft-ground-screening',
+        artifactTypes: ['ground-model', 'analysis-plan', 'results'],
+        reportPattern: /EPB Soft-Ground Screening|EPB Soft Ground Screening/i,
+        summaryField: 'overall_recommendation',
+      },
+      {
+        name: 'epb-face-support-window',
+        artifactTypes: ['results', 'review-checklist', 'acceptance-status'],
+        reportPattern: /EPB face support window/i,
+        summaryField: 'zone_results',
+      },
+      {
+        name: 'epb-conditioning-clogging',
+        artifactTypes: ['assumptions', 'results', 'issues-and-corrections'],
+        reportPattern: /EPB conditioning and clogging/i,
+        summaryField: 'zone_results',
+      },
+      {
+        name: 'epb-production-and-ring-cycle',
+        artifactTypes: ['results', 'final-report', 'review-checklist'],
+        reportPattern: /EPB production and ring cycle/i,
+        summaryField: 'total_rings',
+      },
+      {
+        name: 'mixed-face-transition-planning',
+        artifactTypes: ['analysis-plan', 'results', 'review-checklist', 'issues-and-corrections'],
+        reportPattern: /Mixed[- ]face transition/i,
+        summaryField: 'zone_results',
+      },
+      {
+        name: 'soft-ground-settlement-observational-control',
+        artifactTypes: ['results', 'review-checklist', 'acceptance-status', 'issues-and-corrections'],
+        reportPattern: /settlement/i,
+        summaryField: 'zone_results',
+      },
+    ] as const;
+    const runDirs = new Set<string>();
+
+    for (const testCase of cases) {
+      const installedSkill = getInstalledSkill(testCase.name);
+      const result = runInstalledSkill(installedSkill.name, {
+        inputDir: join(installedSkill.installPath, 'assets', 'examples'),
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.swarmHandoff?.skill).toBe(testCase.name);
+      expect(result.swarmHandoff?.project_summary).toBeTypeOf('string');
+      expect(result.swarmHandoff?.summary).toBeTypeOf('string');
+      expect(result.engineeringReport).toMatch(testCase.reportPattern);
+      expect(result.swarmHandoff?.[testCase.summaryField]).toBeDefined();
+      expect(result.caseFileArtifactMap?.candidate_case_file_artifact_types).toEqual(
+        testCase.artifactTypes,
+      );
+      expect(runDirs.has(result.runDir)).toBe(false);
+      runDirs.add(result.runDir);
     }
   });
 });
