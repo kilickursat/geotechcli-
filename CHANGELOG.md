@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.13] - 2026-04-19
+
+### Strong-Beta Release Guardrail Hotfix
+
+- Fixed the strong-beta release guardrail so GitHub Actions can compare versions across older commits even when the shared metadata file did not exist at the base ref.
+- Updated the release workflow checkout depth so the verify job always has enough Git history to evaluate the previous pushed commit on `strong-beta`.
+- Kept the strong-beta release rule intact: public beta pushes still require a new shared version and still gate npm, Cloudflare, and Modal release surfaces behind that versioned push.
+
 ## [0.4.12] - 2026-04-19
 
 ### Strong-Beta Skills Phase 2 + Release Guardrails

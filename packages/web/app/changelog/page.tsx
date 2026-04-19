@@ -8,6 +8,16 @@ const releases = [
     date: '2026-04-19',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'fix', text: 'Fixed the strong-beta release guardrail so GitHub Actions can compare release versions across older commits even when the shared metadata file did not exist at the base ref' },
+      { type: 'fix', text: 'Updated the release workflow checkout depth so the verify job always has enough history to evaluate the previous pushed commit on strong-beta' },
+      { type: 'fix', text: 'Kept the strong-beta release rule intact while making the workflow hotfix itself a proper versioned patch release instead of requiring an unversioned follow-up push' },
+    ],
+  },
+  {
+    version: '0.4.12',
+    date: '2026-04-19',
+    tag: '0.4.12 Release',
+    changes: [
       { type: 'fix', text: 'Added strong-beta release guardrails so public beta pushes now require a new shared version and verify GitHub, npm, Cloudflare, and Modal release surfaces together' },
       { type: 'feat', text: 'Removed the Modal deploy path filter so versioned strong-beta releases always refresh the hosted Qwen runtime instead of silently skipping the Modal workflow' },
       { type: 'feat', text: 'Extended the strong-beta skill runner with compatibility adapters for the remaining EPB tunnel workspace bundles so tunnel skills now share the same trusted install, sandbox, and artifact pipeline as the rest of the catalog' },

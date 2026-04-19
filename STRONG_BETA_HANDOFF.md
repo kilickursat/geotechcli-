@@ -4,7 +4,7 @@ Date: 2026-04-17
 Branch: `strong-beta`
 Repo: `https://github.com/kilickursat/geotechcli-.git`
 Current branch head: `285c318`
-Current release in repo: `0.4.12`
+Current release in repo: `0.4.13`
 Beta host: `https://beta.geotechcli.com`
 Hosted model: `Qwen/Qwen3.5-9B`
 Hosted runtime: Modal.com `L4` GPU, autoscale-to-zero enabled
@@ -153,8 +153,8 @@ As of this handoff:
 
 What still needs remote verification after a versioned push:
 
-- npm shows `geotechcli@0.4.12`
-- beta site changelog reflects `0.4.12`
+- npm shows `geotechcli@0.4.13`
+- beta site changelog reflects `0.4.13`
 - hosted-beta path on the deployed site is healthy after the pipeline completes
 - Modal deploy workflow completed when the release affected the hosted Modal runtime or its serving contract
 - Modal health endpoint reflects the expected hosted runtime after deploy
