@@ -40,6 +40,14 @@ const ConfigSchema = z.object({
       verbose: z.boolean().default(false),
     })
     .default({}),
+  skills: z
+    .object({
+      enabled: z.boolean().default(false),
+      directory: z.string().default(''),
+      python_path: z.string().default('python'),
+      trusted_only: z.boolean().default(true),
+    })
+    .default({}),
 });
 
 export type GeotechConfig = z.infer<typeof ConfigSchema>;
@@ -102,9 +110,10 @@ export function loadConfig(): GeotechConfig {
   }
 }
 
-export function saveConfig(config: GeotechConfig): void {
+export function saveConfig(config: GeotechConfig | Partial<GeotechConfig>): void {
   const configPath = getConfigPath();
-  writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
+  const validated = ConfigSchema.parse(config);
+  writeFileSync(configPath, JSON.stringify(validated, null, 2), 'utf-8');
   if (platform() !== 'win32') {
     try { chmodSync(configPath, 0o600); } catch { /* best effort */ }
   }
@@ -178,7 +187,7 @@ export function getConfigValue(key: string): unknown {
  * Environment variables take precedence over config file values when present.
  * API keys are NEVER logged or exposed.
  */
-export function buildLLMConfig(): { provider: import('../llm/types.js').LLMProvider; apiKey: string; baseUrl?: string; modelId?: string; visionModelId?: string; timeout: number } {
+export function buildLLMConfig(): import('../llm/types.js').LLMConfig & { timeout: number; skillsEnabled: boolean } {
   const config = loadConfig();
 
   const provider = config.llm.provider;
@@ -246,5 +255,6 @@ export function buildLLMConfig(): { provider: import('../llm/types.js').LLMProvi
     modelId,
     visionModelId: config.llm.vision_model || undefined,
     timeout: config.llm.timeout,
+    skillsEnabled: process.env.GEOTECHCLI_ENABLE_SKILLS === '1' || config.skills.enabled,
   };
 }

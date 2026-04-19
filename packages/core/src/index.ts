@@ -157,6 +157,36 @@ export {
   type SandboxCheck,
 } from './agents/sandbox.js';
 
+// Skills
+export {
+  AGENT_SKILL_TOOL_NAMES,
+  areAgentSkillToolsEnabled,
+  getSkillsRuntimeConfig,
+  getSkillsDirectory,
+  getStrongBetaSkillApproval,
+  listInstalledSkills,
+  getInstalledSkill,
+  isStrongBetaSkillApproved,
+  readInstalledSkillGuide,
+  STRONG_BETA_SKILL_APPROVALS,
+  validateSkillSource,
+  validateInstalledSkill,
+  importSkillsFromSource,
+  runInstalledSkill,
+  isAgentSkillToolName,
+  type SkillRuntime,
+  type SkillsRuntimeConfig,
+  type InstalledSkill,
+  type SkillValidationIssue,
+  type SkillValidationCandidate,
+  type SkillValidationResult,
+  type SkillImportResult,
+  type SkillRunOptions,
+  type SkillRunResult,
+  type StrongBetaSkillApproval,
+  type StrongBetaSkillApprovalStatus,
+} from './skills/index.js';
+
 // Database layer (Supabase + Upstash Redis)
 export {
   dbQuery, dbInsert, dbUpdate, dbUpsert, dbRpc, dbHealthCheck,

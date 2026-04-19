@@ -1,18 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { toolRegistry } from '../src/agents/tools.js';
 import { validateReadPath, validateShellCommand, validateWritePath } from '../src/agents/sandbox.js';
+import { importSkillsFromSource } from '../src/skills/index.js';
 
 import '../src/agents/bridge-tools.js';
 import '../src/agents/data-tools.js';
+import '../src/agents/skill-tools.js';
 
 describe('Security hardening regressions', () => {
   const previousRunCommandFlag = process.env.GEOTECHCLI_ENABLE_RUN_COMMAND;
+  const previousConfigDir = process.env.GEOTECHCLI_CONFIG_DIR;
+  let configDir = '';
 
   beforeEach(() => {
     delete process.env.GEOTECHCLI_ENABLE_RUN_COMMAND;
+    configDir = mkdtempSync(join(tmpdir(), 'geotechcli-security-config-'));
+    process.env.GEOTECHCLI_CONFIG_DIR = configDir;
   });
 
   afterEach(() => {
@@ -21,6 +27,14 @@ describe('Security hardening regressions', () => {
     } else {
       process.env.GEOTECHCLI_ENABLE_RUN_COMMAND = previousRunCommandFlag;
     }
+
+    if (previousConfigDir === undefined) {
+      delete process.env.GEOTECHCLI_CONFIG_DIR;
+    } else {
+      process.env.GEOTECHCLI_CONFIG_DIR = previousConfigDir;
+    }
+
+    rmSync(configDir, { recursive: true, force: true });
   });
 
   it('blocks python script execution from shell validation', () => {
@@ -88,5 +102,30 @@ describe('Security hardening regressions', () => {
   it('still allows normal reads inside the current workspace', () => {
     const check = validateReadPath('./package.json');
     expect(check.safe).toBe(true);
+  });
+
+  it('blocks trusted-only skill imports from outside strong-beta locations', () => {
+    const outsideSkill = mkdtempSync(join(tmpdir(), 'geotechcli-untrusted-skill-'));
+
+    try {
+      mkdirSync(join(outsideSkill, 'agents'), { recursive: true });
+      writeFileSync(
+        join(outsideSkill, 'SKILL.md'),
+        [
+          '---',
+          'name: outside-skill',
+          'description: minimal prompt-only test skill',
+          '---',
+          '',
+          '# Outside Skill',
+        ].join('\n'),
+        'utf-8',
+      );
+      writeFileSync(join(outsideSkill, 'agents', 'openai.yaml'), 'display_name: Outside Skill\n', 'utf-8');
+
+      expect(() => importSkillsFromSource(outsideSkill)).toThrow(/trusted strong-beta skill locations/i);
+    } finally {
+      rmSync(outsideSkill, { recursive: true, force: true });
+    }
   });
 });

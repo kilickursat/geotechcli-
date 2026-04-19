@@ -13,6 +13,7 @@ import { toolRegistry } from '../src/agents/tools.js';
 import '../src/agents/filesystem-tools.js';
 import '../src/agents/bridge-tools.js';
 import '../src/agents/data-tools.js';
+import '../src/agents/skill-tools.js';
 
 function approx(actual: number, expected: number, tol: number, label: string) {
   expect(Math.abs(actual - expected), label).toBeLessThanOrEqual(tol);
@@ -670,6 +671,12 @@ describe('New Tool Registration', () => {
   it('Lateral earth pressure tool is registered', () => {
     const tool = toolRegistry.get('calculate_lateral_earth_pressure');
     expect(tool).toBeDefined();
+  });
+
+  it('Skill tools are registered', async () => {
+    expect(toolRegistry.get('list_skills')).toBeDefined();
+    expect(toolRegistry.get('describe_skill')).toBeDefined();
+    expect(toolRegistry.get('run_skill')).toBeDefined();
   });
 
   it('Total tools >= 26', () => {

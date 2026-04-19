@@ -11,6 +11,11 @@ Hosted runtime: Modal.com `L4` GPU, autoscale-to-zero enabled
 
 This file is the current restart point for continuing strong-beta work on another machine.
 
+Related internal policy:
+
+- `STRONG_BETA_SKILLS_POLICY.md` defines the protected rollout rules for skills, agent skill calls, and prompt-cache work on this branch.
+- `STRONG_BETA_SKILLS_CERTIFICATION.md` records which bundled skills are currently approved, held back, or prompt-only after certification on this branch.
+
 ## Purpose
 
 The `strong-beta` branch is the truthful public beta branch for geotechCLI.
@@ -184,6 +189,8 @@ What still needs remote verification after a push:
 
 - `CHANGELOG.md`
 - `README.md`
+- `STRONG_BETA_SKILLS_POLICY.md`
+- `STRONG_BETA_SKILLS_CERTIFICATION.md`
 - `scripts/verify-release-consistency.mjs`
 - `.github/workflows/release.yml`
 - `.github/workflows/modal-deploy.yml`

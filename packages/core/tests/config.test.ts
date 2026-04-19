@@ -9,13 +9,16 @@ describe('hosted-beta config defaults', () => {
   let configDir = '';
   let previousConfigDir: string | undefined;
   let previousProxyUrl: string | undefined;
+  let previousSkillsFlag: string | undefined;
 
   beforeEach(() => {
     previousConfigDir = process.env.GEOTECHCLI_CONFIG_DIR;
     previousProxyUrl = process.env.GEOTECHCLI_PROXY_URL;
+    previousSkillsFlag = process.env.GEOTECHCLI_ENABLE_SKILLS;
     configDir = mkdtempSync(join(tmpdir(), 'geotechcli-config-'));
     process.env.GEOTECHCLI_CONFIG_DIR = configDir;
     delete process.env.GEOTECHCLI_PROXY_URL;
+    delete process.env.GEOTECHCLI_ENABLE_SKILLS;
   });
 
   afterEach(() => {
@@ -31,6 +34,12 @@ describe('hosted-beta config defaults', () => {
       process.env.GEOTECHCLI_PROXY_URL = previousProxyUrl;
     }
 
+    if (previousSkillsFlag === undefined) {
+      delete process.env.GEOTECHCLI_ENABLE_SKILLS;
+    } else {
+      process.env.GEOTECHCLI_ENABLE_SKILLS = previousSkillsFlag;
+    }
+
     rmSync(configDir, { recursive: true, force: true });
   });
 
@@ -39,9 +48,12 @@ describe('hosted-beta config defaults', () => {
     const llmConfig = buildLLMConfig();
 
     expect(config.llm.provider).toBe('hosted-beta');
+    expect(config.skills.enabled).toBe(false);
+    expect(config.skills.trusted_only).toBe(true);
     expect(llmConfig.provider).toBe('hosted-beta');
     expect(llmConfig.apiKey).toBe('');
     expect(llmConfig.baseUrl).toBe('https://beta.geotechcli.com/api/proxy');
+    expect(llmConfig.skillsEnabled).toBe(false);
   });
 
   it('uses GEOTECHCLI_PROXY_URL when hosted-beta is active', () => {
@@ -69,5 +81,13 @@ describe('hosted-beta config defaults', () => {
     const llmConfig = buildLLMConfig();
     expect(llmConfig.provider).toBe('hosted-beta');
     expect(llmConfig.baseUrl).toBe('https://beta.geotechcli.com/api/proxy');
+  });
+
+  it('lets the environment explicitly enable skills for a session', () => {
+    process.env.GEOTECHCLI_ENABLE_SKILLS = '1';
+
+    const llmConfig = buildLLMConfig();
+
+    expect(llmConfig.skillsEnabled).toBe(true);
   });
 });

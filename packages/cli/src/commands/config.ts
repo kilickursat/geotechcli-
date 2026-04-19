@@ -49,6 +49,13 @@ export function registerConfigCommand(program: Command): void {
       keyValue('  Verbose', String(cfg.cli.verbose));
 
       console.log('');
+      console.log(chalk.gray('  [Skills]'));
+      keyValue('  Enabled', String(cfg.skills.enabled));
+      keyValue('  Directory', cfg.skills.directory || chalk.gray('(provider default)'));
+      keyValue('  Python path', cfg.skills.python_path || 'python');
+      keyValue('  Trusted only', String(cfg.skills.trusted_only));
+
+      console.log('');
       dim('Config location: ~/.geotechcli/config.json');
       dim('Set values with: geotech config set <key> <value>');
       console.log('');
@@ -108,6 +115,10 @@ export function registerConfigCommand(program: Command): void {
       setConfigValue('llm.model', '');
       setConfigValue('llm.vision_model', '');
       setConfigValue('llm.base_url', '');
+      setConfigValue('skills.enabled', 'false');
+      setConfigValue('skills.directory', '');
+      setConfigValue('skills.python_path', 'python');
+      setConfigValue('skills.trusted_only', 'true');
       success(`Configuration reset to defaults (hosted beta ${DEFAULT_LLM_MODEL}).`);
     });
 

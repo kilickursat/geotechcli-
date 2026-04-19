@@ -17,6 +17,7 @@ import { registerRetainingCommand } from './commands/retaining.js';
 import { registerSettlementCommands } from './commands/settlement.js';
 import { registerSeepageCommand } from './commands/seepage.js';
 import { registerVizCommand } from './commands/viz.js';
+import { registerSkillCommand } from './commands/skill.js';
 import {
   registerVisionCommand,
   registerAIClassifyCommand,
@@ -71,6 +72,7 @@ registerExportCommand(program);
 registerBridgeCommand(program);
 
 // System
+registerSkillCommand(program);
 registerConfigCommand(program);
 registerStatusCommand(program);
 

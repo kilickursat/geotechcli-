@@ -17,6 +17,7 @@ export interface LLMConfig {
   modelId?: string;
   visionModelId?: string;
   timeout?: number;
+  skillsEnabled?: boolean;
 }
 
 export interface ChatMessage {

@@ -9,6 +9,8 @@ import { normalizeToolArgs } from './tool-normalization.js';
 import './filesystem-tools.js';
 import './bridge-tools.js';
 import './data-tools.js';
+import './skill-tools.js';
+import { isAgentSkillToolName } from '../skills/index.js';
 
 export interface SwarmStep {
   agent: 'orchestrator' | 'interpretation' | 'simulation' | 'reviewer';
@@ -46,6 +48,9 @@ const ROLE_TOOL_ALLOWLIST = {
     'project_save_dataset',
     'project_save_parameter',
     'project_add_assumption',
+    'list_skills',
+    'describe_skill',
+    'run_skill',
   ],
   simulation: [
     'calculate_bearing_capacity',
@@ -67,10 +72,15 @@ const ROLE_TOOL_ALLOWLIST = {
     'project_save_result',
     'project_save_parameter',
     'project_add_artifact',
+    'list_skills',
+    'describe_skill',
+    'run_skill',
   ],
   reviewer: [
     'query_standards',
     'project_load',
+    'list_skills',
+    'describe_skill',
   ],
 } as const;
 
@@ -84,18 +94,23 @@ function getHostedSwarmMaxTokens(config: LLMConfig, phase: 'loop' | 'final'): nu
   return phase === 'loop' ? 700 : 900;
 }
 
-export function getAllowedToolsForAgent(agent: SwarmStep['agent']): readonly string[] {
-  return agent === 'orchestrator' ? [] : ROLE_TOOL_ALLOWLIST[agent as SwarmToolRole];
+export function getAllowedToolsForAgent(agent: SwarmStep['agent'], skillsEnabled = false): readonly string[] {
+  const allowed = agent === 'orchestrator' ? [] : ROLE_TOOL_ALLOWLIST[agent as SwarmToolRole];
+  if (skillsEnabled) {
+    return allowed;
+  }
+  return allowed.filter((toolName) => !isAgentSkillToolName(toolName));
 }
 
-export function isToolAllowedForAgent(agent: SwarmStep['agent'], toolName: string): boolean {
-  return getAllowedToolsForAgent(agent).includes(toolName);
+export function isToolAllowedForAgent(agent: SwarmStep['agent'], toolName: string, skillsEnabled = false): boolean {
+  return getAllowedToolsForAgent(agent, skillsEnabled).includes(toolName);
 }
 
-function getToolDescriptionsFor(toolNames: readonly string[]): string {
+function getToolDescriptionsFor(toolNames: readonly string[], skillsEnabled = false): string {
   return toolRegistry
     .list()
     .filter((tool) => toolNames.includes(tool.name))
+    .filter((tool) => skillsEnabled || !isAgentSkillToolName(tool.name))
     .map((tool) => {
       const params = Object.entries((tool.parameters as any).properties ?? {})
         .map(([key, value]: [string, any]) => `    - ${key}: ${value.description ?? value.type}`)
@@ -105,7 +120,7 @@ function getToolDescriptionsFor(toolNames: readonly string[]): string {
     .join('\n\n');
 }
 
-function interpretationPrompt(): string {
+function interpretationPrompt(skillsEnabled = false): string {
   return `You are the INTERPRETATION AGENT in geotechCLI's multi-agent system.
 
 YOUR ROLE: Clean, parse, classify, and structure raw geotechnical data.
@@ -119,7 +134,7 @@ YOU HANDLE:
 - Saving structured datasets, derived parameters, and assumptions into project memory when a project context is available
 
 YOUR TOOLS:
-${getToolDescriptionsFor(ROLE_TOOL_ALLOWLIST.interpretation)}
+${getToolDescriptionsFor(ROLE_TOOL_ALLOWLIST.interpretation, skillsEnabled)}
 
 RULES:
 - Call tools to do real work; never estimate or guess data values.
@@ -138,7 +153,7 @@ To call a tool:
 \`\`\``;
 }
 
-function simulationPrompt(): string {
+function simulationPrompt(skillsEnabled = false): string {
   return `You are the SIMULATION AGENT in geotechCLI's multi-agent system.
 
 YOUR ROLE: Execute engineering calculations and numerical simulations.
@@ -154,7 +169,7 @@ YOU HANDLE:
 - Saving results, derived parameters, and output artifacts to persistent project storage
 
 YOUR TOOLS:
-${getToolDescriptionsFor(ROLE_TOOL_ALLOWLIST.simulation)}
+${getToolDescriptionsFor(ROLE_TOOL_ALLOWLIST.simulation, skillsEnabled)}
 
 RULES:
 - Use the data provided by the Interpretation Agent; do not re-read files.
@@ -174,7 +189,7 @@ To call a tool:
 \`\`\``;
 }
 
-function reviewerPrompt(): string {
+function reviewerPrompt(skillsEnabled = false): string {
   return `You are the REVIEWER AGENT in geotechCLI's multi-agent system.
 
 YOUR ROLE: Safety check, sanity check, and standards compliance review.
@@ -190,7 +205,7 @@ YOU CHECK:
 6. PARSE SAFETY: If any upstream result includes parseStatus/confidence/warnings or canAutoProceed=false, flag it explicitly and reject automatic conclusions that depend on that output.
 
 YOUR TOOLS:
-${getToolDescriptionsFor(ROLE_TOOL_ALLOWLIST.reviewer)}
+${getToolDescriptionsFor(ROLE_TOOL_ALLOWLIST.reviewer, skillsEnabled)}
 
 OUTPUT FORMAT - you MUST output exactly one of:
 
@@ -238,6 +253,7 @@ async function runAgentLoop(
   onStep: SwarmCallback,
   maxIter = 6,
 ): Promise<{ output: string; context: Record<string, unknown>; tokens: number; latency: number }> {
+  const skillsEnabled = config.skillsEnabled === true;
   const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
     { role: 'system', content: systemPrompt },
     { role: 'user', content: input },
@@ -300,8 +316,8 @@ async function runAgentLoop(
           continue;
         }
 
-        if (!isToolAllowedForAgent(agentName, call.tool)) {
-          const allowedTools = getAllowedToolsForAgent(agentName);
+        if (!isToolAllowedForAgent(agentName, call.tool, skillsEnabled)) {
+          const allowedTools = getAllowedToolsForAgent(agentName, skillsEnabled);
           onStep({
             agent: agentName,
             type: 'error',
@@ -312,6 +328,21 @@ async function runAgentLoop(
           messages.push({
             role: 'user',
             content: `[Role Allowlist Blocked: ${call.tool}]\nThe ${agentName} agent is not allowed to execute this tool.\nAllowed tools: ${allowedTools.length > 0 ? allowedTools.join(', ') : 'none'}.\nChoose an allowed tool or continue without tool use.`,
+          });
+          continue;
+        }
+
+        if (isAgentSkillToolName(call.tool) && !config.skillsEnabled) {
+          onStep({
+            agent: agentName,
+            type: 'error',
+            content: `Skill tool blocked: ${call.tool} is not enabled in this session.`,
+            toolName: call.tool,
+            timestamp: Date.now(),
+          });
+          messages.push({
+            role: 'user',
+            content: `[Skill Tool Blocked: ${call.tool}]\nSkill tools are disabled in this session. Continue without skill use.`,
           });
           continue;
         }
@@ -413,7 +444,7 @@ export async function runSwarm(
   const interpResult = await runAgentLoop(
     `${contextBlock}Task: ${task}\n\nRead, classify, and structure all relevant data for this task.`,
     config,
-    interpretationPrompt(),
+    interpretationPrompt(config.skillsEnabled === true),
     'interpretation',
     trackStep,
   );
@@ -456,8 +487,8 @@ export async function runSwarm(
 
     const simResult = await runAgentLoop(
       `${contextBlock}Data from Interpretation Agent:\n${interpData}\n\nOriginal task: ${task}${correctionNote}\n\nRun all necessary calculations.`,
-      config,
-      simulationPrompt(),
+    config,
+    simulationPrompt(config.skillsEnabled === true),
       'simulation',
       trackStep,
     );
@@ -491,7 +522,7 @@ export async function runSwarm(
     const reviewResult = await runAgentLoop(
       `${contextBlock}Original task: ${task}\n\nInterpretation summary:\n${interpData}\n\nSimulation results:\n${simData}\n\nReview these results for safety, sanity, standards compliance, and parse safety.`,
       config,
-      reviewerPrompt(),
+      reviewerPrompt(config.skillsEnabled === true),
       'reviewer',
       trackStep,
     );

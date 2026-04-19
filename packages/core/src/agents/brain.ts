@@ -14,6 +14,8 @@ import './filesystem-tools.js';
 import './bridge-tools.js';
 import './data-tools.js';
 import './deliverable-tools.js';
+import './skill-tools.js';
+import { isAgentSkillToolName } from '../skills/index.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -213,9 +215,10 @@ function buildDeterministicFallbackAnswer(
 // System prompt
 // ---------------------------------------------------------------------------
 
-function buildCompactSystemPrompt(): string {
+function buildCompactSystemPrompt(skillsEnabled = false): string {
   const tools = toolRegistry
     .list()
+    .filter((tool) => skillsEnabled || !isAgentSkillToolName(tool.name))
     .map((tool) => `- ${tool.name}: ${tool.description}`)
     .join('\n');
 
@@ -240,10 +243,25 @@ Rules:
 
 function buildSystemPrompt(config?: LLMConfig): string {
   if (config?.provider === 'hosted-beta') {
-    return buildCompactSystemPrompt();
+    return buildCompactSystemPrompt(config.skillsEnabled === true);
   }
 
-  const toolDescriptions = toolRegistry.toToolDescriptions();
+  const skillsEnabled = config?.skillsEnabled === true;
+  const toolDescriptions = toolRegistry
+    .list()
+    .filter((tool) => skillsEnabled || !isAgentSkillToolName(tool.name))
+    .map((tool) => {
+      const params = Object.entries(
+        (tool.parameters as any).properties ?? {},
+      )
+        .map(([k, v]: [string, any]) => {
+          const req = ((tool.parameters as any).required ?? []).includes(k) ? ' (required)' : ' (optional)';
+          return `    - ${k}: ${v.description ?? v.type}${req}`;
+        })
+        .join('\n');
+      return `  ${tool.name}: ${tool.description}\n${params}`;
+    })
+    .join('\n\n');
 
   return `You are geotechCLI Agent, an expert geotechnical engineering AI that solves problems by EXECUTING real calculations, not just describing them.
 
@@ -486,6 +504,23 @@ export async function runAgent(
     };
     session.steps.push(callStep);
     onStep(callStep);
+
+    if (isAgentSkillToolName(toolCall.tool) && !config.skillsEnabled) {
+      const blockedStep: AgentStep = {
+        type: 'error',
+        content: `Skill tool blocked: ${toolCall.tool} is not enabled in this session.`,
+        toolName: toolCall.tool,
+        timestamp: Date.now(),
+      };
+      session.steps.push(blockedStep);
+      onStep(blockedStep);
+
+      messages.push({
+        role: 'user',
+        content: `[Tool Blocked: ${toolCall.tool}]\nSkill tools are disabled in this session. Continue without skill use or explain the limitation.`,
+      });
+      continue;
+    }
 
     const guardrailCheck = validateToolArgs(toolCall.tool, toolCall.args);
     if (!guardrailCheck.passed) {
