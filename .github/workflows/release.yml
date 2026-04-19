@@ -94,16 +94,31 @@ jobs:
           const expectedVersion = process.env.EXPECTED_VERSION;
           const checks = [
             {
-              url: 'https://beta.geotechcli.com/changelog',
-              validate(body) {
-                return body.includes(`v${expectedVersion}`);
+              url: `https://beta.geotechcli.com/api/version?ts=${Date.now()}`,
+              headers: {
+                'cache-control': 'no-cache',
+                pragma: 'no-cache',
               },
-              description: `beta changelog exposes v${expectedVersion}`,
+              async validate(response) {
+                const payload = await response.json().catch(() => null);
+                if (response.status !== 200) {
+                  return `unexpected status=${response.status}`;
+                }
+                if (!payload || payload.version !== expectedVersion) {
+                  return `expected version=${expectedVersion}, received ${JSON.stringify(payload)}`;
+                }
+                return null;
+              },
+              description: `beta version endpoint exposes ${expectedVersion}`,
             },
             {
-              url: 'https://beta.geotechcli.com/api/proxy',
-              validate(_, response) {
-                return response.status === 200;
+              url: `https://beta.geotechcli.com/api/proxy?ts=${Date.now()}`,
+              headers: {
+                'cache-control': 'no-cache',
+                pragma: 'no-cache',
+              },
+              async validate(response) {
+                return response.status === 200 ? null : `unexpected status=${response.status}`;
               },
               description: 'beta proxy GET health returns 200',
             },
@@ -116,14 +131,17 @@ jobs:
               let lastError = 'unknown error';
               for (let attempt = 1; attempt <= 20; attempt += 1) {
                 try {
-                  const response = await fetch(check.url, { redirect: 'follow' });
-                  const body = await response.text();
-                  if (check.validate(body, response)) {
+                  const response = await fetch(check.url, {
+                    redirect: 'follow',
+                    headers: check.headers,
+                  });
+                  const validationError = await check.validate(response);
+                  if (!validationError) {
                     console.log(`${check.description}: OK`);
                     lastError = '';
                     break;
                   }
-                  lastError = `unexpected response status=${response.status}`;
+                  lastError = validationError;
                 } catch (error) {
                   lastError = error instanceof Error ? error.message : String(error);
                 }

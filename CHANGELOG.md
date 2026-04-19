@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.14] - 2026-04-19
+
+### Strong-Beta Deploy Smoke Contract Fix
+
+- Added a dedicated beta version endpoint so Cloudflare deploy verification can read a stable JSON release contract instead of scraping the changelog HTML.
+- Marked the version endpoint `no-store` and `force-dynamic` so the strong-beta smoke check does not get trapped behind stale cached markup after a successful deploy.
+- Updated the release workflow smoke step to poll the deployed version API with clearer diagnostics while keeping the hosted proxy health check in place.
+- Added local route and regression coverage so the version endpoint remains part of the beta web contract before future strong-beta releases.
+
 ## [0.4.13] - 2026-04-19
 
 ### Strong-Beta Release Guardrail Hotfix

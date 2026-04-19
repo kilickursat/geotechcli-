@@ -8,9 +8,10 @@ const releases = [
     date: '2026-04-19',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
-      { type: 'fix', text: 'Fixed the strong-beta release guardrail so GitHub Actions can compare release versions across older commits even when the shared metadata file did not exist at the base ref' },
-      { type: 'fix', text: 'Updated the release workflow checkout depth so the verify job always has enough history to evaluate the previous pushed commit on strong-beta' },
-      { type: 'fix', text: 'Kept the strong-beta release rule intact while making the workflow hotfix itself a proper versioned patch release instead of requiring an unversioned follow-up push' },
+      { type: 'fix', text: 'Added a dedicated beta version endpoint so the release workflow can verify the deployed Cloudflare build through a stable JSON contract instead of scraping the changelog page HTML' },
+      { type: 'fix', text: 'Marked the beta version endpoint as force-dynamic and no-store so strong-beta release smoke checks do not get stuck behind cached markup after a successful deploy' },
+      { type: 'fix', text: 'Improved deploy smoke diagnostics so version mismatches now report the actual deployed payload instead of the misleading unexpected response status=200 message' },
+      { type: 'fix', text: 'Added local route smoke coverage and a web regression test for the beta version endpoint so future strong-beta releases keep the same deploy verification contract' },
     ],
   },
   {

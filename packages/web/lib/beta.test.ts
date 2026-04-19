@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_LLM_MODEL } from '@geotechcli/core/meta';
+import { DEFAULT_LLM_MODEL, DEFAULT_LLM_PROVIDER, GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 
 import {
   checkHostedBetaDailyLimit,
@@ -20,6 +20,25 @@ afterEach(() => {
 });
 
 describe('hosted beta controls', () => {
+  it('exposes a no-store deployed version endpoint for beta smoke checks', async () => {
+    const route = await import('../app/api/version/route.js');
+
+    const response = await route.GET();
+    const body = (await response.json()) as {
+      status?: string;
+      version?: string;
+      provider?: string;
+      defaults?: { text?: string };
+    };
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toMatch(/no-store/i);
+    expect(body.status).toBe('ok');
+    expect(body.version).toBe(GEOTECHCLI_VERSION);
+    expect(body.provider).toBe(DEFAULT_LLM_PROVIDER);
+    expect(body.defaults?.text).toBe(DEFAULT_LLM_MODEL);
+  });
+
   it('gives geotechcli clients more room than anonymous callers', async () => {
     expect(getHostedBetaRequestLimit('geotechcli')).toBeGreaterThan(getHostedBetaRequestLimit('anonymous'));
     expect(getDailyLimitForClient('text', 'geotechcli')).toBeGreaterThan(
@@ -242,7 +261,7 @@ describe('hosted beta controls', () => {
       headers: {
         'content-type': 'application/json',
         'x-geotech-client': 'geotechcli',
-        'x-geotech-client-version': '0.4.13',
+        'x-geotech-client-version': '0.4.14',
         'x-geotech-call-type': 'agent',
       },
       body: JSON.stringify({

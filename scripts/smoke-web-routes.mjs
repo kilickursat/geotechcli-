@@ -15,6 +15,10 @@ function assert(condition, message) {
 
 const routeExpectations = [
   {
+    path: ['packages', 'web', 'app', 'api', 'version', 'route.ts'],
+    handlers: ['GET'],
+  },
+  {
     path: ['packages', 'web', 'app', 'api', 'proxy', 'route.ts'],
     handlers: ['GET', 'POST'],
   },
