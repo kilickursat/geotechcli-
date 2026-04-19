@@ -2,17 +2,53 @@ import { execFileSync } from 'node:child_process';
 
 const [baseRef, headRef = 'HEAD'] = process.argv.slice(2);
 const branchName = process.env.GITHUB_REF_NAME ?? process.env.GITHUB_HEAD_REF ?? '';
+const VERSION_PATHS = [
+  'packages/core/src/meta/metadata.json',
+  'packages/core/package.json',
+  'packages/cli/package.json',
+];
 
 function isZeroRef(value) {
   return !value || /^0+$/.test(value);
 }
 
-function readJsonAt(ref, path) {
-  const text = execFileSync('git', ['show', `${ref}:${path}`], {
-    encoding: 'utf-8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  return JSON.parse(text);
+function tryReadJsonAt(ref, path) {
+  try {
+    const text = execFileSync('git', ['show', `${ref}:${path}`], {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return JSON.parse(text);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (
+      message.includes('exists on disk, but not in') ||
+      message.includes('invalid object name') ||
+      message.includes('bad object') ||
+      message.includes('unknown revision') ||
+      message.includes('does not have a commit checked out')
+    ) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+function readVersionAt(ref) {
+  for (const path of VERSION_PATHS) {
+    const payload = tryReadJsonAt(ref, path);
+    const version = payload?.version;
+    if (typeof version === 'string' && version.trim()) {
+      return {
+        version: version.trim(),
+        path,
+      };
+    }
+  }
+
+  throw new Error(
+    `Unable to read a release version for ref ${ref}. Tried ${VERSION_PATHS.join(', ')}. Ensure actions/checkout fetches the base commit history.`,
+  );
 }
 
 function assert(condition, message) {
@@ -31,14 +67,14 @@ if (isZeroRef(baseRef)) {
   process.exit(0);
 }
 
-const baseMeta = readJsonAt(baseRef, 'packages/core/src/meta/metadata.json');
-const headMeta = readJsonAt(headRef, 'packages/core/src/meta/metadata.json');
+const baseVersion = readVersionAt(baseRef);
+const headVersion = readVersionAt(headRef);
 
 assert(
-  baseMeta.version !== headMeta.version,
-  `strong-beta pushes must carry a new release version. Base ${baseMeta.version} matches head ${headMeta.version}.`,
+  baseVersion.version !== headVersion.version,
+  `strong-beta pushes must carry a new release version. Base ${baseVersion.version} (${baseVersion.path}) matches head ${headVersion.version} (${headVersion.path}).`,
 );
 
 console.log(
-  `verify-strong-beta-release: OK (${baseMeta.version} -> ${headMeta.version})`,
+  `verify-strong-beta-release: OK (${baseVersion.version} -> ${headVersion.version})`,
 );
