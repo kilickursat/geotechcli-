@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.16] - 2026-04-20
+
+### Strong-Beta Agent Skill Opt-In
+
+- Added an explicit `--skills` session flag to `geotech agent` and `geotech chat`, so users can opt a single AI session into installed skill tools without turning skill routing on globally.
+- Kept direct `geotech skill ...` commands ready by default while preserving the strong-beta default that ordinary agent sessions do not automatically see or call skills unless explicitly enabled.
+- Carried the session opt-in through both single-agent and swarm execution paths, including the interactive follow-up hint that now preserves `--skills` when you continue into chat.
+- Added focused regression coverage proving that agent skill tools remain blocked when disabled and become callable when the session is explicitly skill-enabled.
+
 ## [0.4.15] - 2026-04-20
 
 ### Strong-Beta Bundled Skills Bootstrap

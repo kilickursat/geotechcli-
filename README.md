@@ -65,6 +65,9 @@ geotech vision rmr tunnel-face.jpg
 # AI: multi-agent analysis
 geotech agent "evaluate foundation options for a 12-story building on soft clay"
 
+# AI: explicitly enable installed skills for this session
+geotech agent "screen shallow foundation options for this site" --skills
+
 # Export to AutoCAD DXF
 geotech export dxf --input boreholes.json --output profile.dxf
 ```
@@ -139,6 +142,8 @@ These commands now use the hosted beta Qwen path by default.
 | `geotech agent` | Multi-agent orchestration with optional project memory |
 | `geotech chat` | Interactive AI session with optional project memory |
 | `geotech report` | AI-generated geotechnical report drafting |
+
+Installed strong-beta skills are available directly through `geotech skill ...`. Agent and chat sessions can opt into skill tools explicitly with `--skills` while the default strong-beta agent path stays unchanged.
 
 ### Export and Integration
 

@@ -1184,6 +1184,16 @@ function renderAgentStep(step: AgentStep, json: boolean, quiet: boolean = false)
   }
 }
 
+function withSessionSkillOptIn<T extends { skillsEnabled?: boolean }>(
+  config: T,
+  enabled: boolean,
+): T & { skillsEnabled: boolean } {
+  return {
+    ...config,
+    skillsEnabled: config.skillsEnabled === true || enabled,
+  };
+}
+
 function renderSwarmStep(step: SwarmStep, json: boolean, quiet: boolean = false): void {
   if (json || quiet) return;
 
@@ -1245,6 +1255,7 @@ export function registerAgentCommand(program: Command): void {
     .description('Agentic AI - reasons about your problem and executes real calculations')
     .argument('<task...>', 'Engineering task in natural language')
     .option('--swarm', 'Use multi-agent swarm (Bieniawski -> Terzaghi -> Hoek)')
+    .option('--skills', 'Enable installed skill tools for this session')
     .option('--project <id>', 'Load and persist context to a stored project')
     .action(async (taskParts: string[], opts) => {
       const flags = getGlobalFlags(opts);
@@ -1266,11 +1277,16 @@ export function registerAgentCommand(program: Command): void {
 
       let liveStatus: ReturnType<typeof createLiveStatusController> = null;
       try {
-        const config = buildLLMConfig();
+        const config = withSessionSkillOptIn(buildLLMConfig(), opts.skills === true);
         const projectState = loadProjectState(opts.project);
 
         if (projectState && !flags.json) {
           console.log(chalk.gray(`  Project context loaded: ${projectState.name} (${projectState.id})`));
+          console.log('');
+        }
+
+        if (opts.skills === true && !flags.json) {
+          console.log(chalk.gray('  Installed skill tools enabled for this session.'));
           console.log('');
         }
 
@@ -1325,7 +1341,7 @@ export function registerAgentCommand(program: Command): void {
             const toolCalls = session.steps.filter((s) => s.type === 'tool_call').length;
             const agents = [...new Set(session.steps.map((s) => s.agent))];
             console.log(chalk.gray(`  (${agents.length} agents, ${toolCalls} tools executed, review: ${session.reviewPassed ? 'PASSED' : 'ISSUES NOTED'}, ${session.totalTokens} tokens)`));
-            console.log(chalk.cyan('\n  Continue interactively with: ') + chalk.white(`geotech chat${opts.project ? ` --project ${opts.project}` : ''}`));
+            console.log(chalk.cyan('\n  Continue interactively with: ') + chalk.white(`geotech chat${opts.project ? ` --project ${opts.project}` : ''}${opts.skills ? ' --skills' : ''}`));
           } else {
             liveStatus?.stop();
           }
@@ -1394,7 +1410,7 @@ export function registerAgentCommand(program: Command): void {
             renderRichText(answer.content);
             console.log('');
             console.log(chalk.gray(`  (${session.steps.filter((s) => s.type === 'tool_call').length} tools executed, ${session.totalTokens} tokens, ${session.totalLatencyMs}ms)`));
-            console.log(chalk.cyan('\n  Continue interactively with: ') + chalk.white(`geotech chat${opts.project ? ` --project ${opts.project}` : ''}`));
+            console.log(chalk.cyan('\n  Continue interactively with: ') + chalk.white(`geotech chat${opts.project ? ` --project ${opts.project}` : ''}${opts.skills ? ' --skills' : ''}`));
           } else {
             liveStatus?.stop();
           }
@@ -1444,6 +1460,7 @@ export function registerAgentCommand(program: Command): void {
 export function registerChatCommand(program: Command): void {
   const cmd = new Command('chat')
     .description('Interactive agentic session - type natural language, agent executes tools with memory')
+    .option('--skills', 'Enable installed skill tools for this session')
     .option('--project <id>', 'Load and persist context to a stored project')
     .action(async (opts) => {
       const { createInterface } = await import('node:readline');
@@ -1457,7 +1474,7 @@ export function registerChatCommand(program: Command): void {
 
       let config;
       try {
-        config = buildLLMConfig();
+        config = withSessionSkillOptIn(buildLLMConfig(), opts.skills === true);
       } catch (err) {
         error(err instanceof Error ? err.message : String(err));
         return;
@@ -1472,6 +1489,11 @@ export function registerChatCommand(program: Command): void {
       const projectState = loadProjectState(opts.project);
       if (projectState) {
         console.log(chalk.gray(`  Project context loaded: ${projectState.name} (${projectState.id})`));
+        console.log('');
+      }
+
+      if (opts.skills === true) {
+        console.log(chalk.gray('  Installed skill tools enabled for this session.'));
         console.log('');
       }
 

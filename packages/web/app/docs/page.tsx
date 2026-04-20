@@ -84,6 +84,8 @@ geotech config reset
 
 Strong-beta behavior: deterministic commands work immediately after install. AI, vision, and agent commands use hosted Qwen access by default, with server-side rate limits and no user provider key required. Bring-your-own provider keys remain available as an advanced override.
 
+Installed skills are also bundled in strong beta. Direct geotech skill commands are ready immediately, while geotech agent and geotech chat can opt into skill tools per session with the --skills flag.
+
 Hugging Face setup: get a token at huggingface.co/settings/tokens with "Make calls to Inference Providers" permission. Browse models at huggingface.co/models. Append :fastest or :cheapest to auto-route, or :provider to force a specific backend (cerebras, together, groq, etc.).`,
   },
   {
@@ -198,6 +200,12 @@ geotech vision log Appendix-2A-Geotechnical-Report-Part-6.pdf
 geotech agent "evaluate TBM selection for 6.5m tunnel in mixed face conditions with 3 bar water pressure"
 
 geotech agent "classify the soil profile and recommend foundation type for a 12-story building"
+
+# Explicitly enable installed skill tools for this one session
+geotech agent "screen shallow foundation options for this site" --skills
+
+# Interactive chat with explicit skill access
+geotech chat --skills
 
 # Reuse persistent project memory across runs
 geotech agent "check bearing and settlement for the current foundation concept" --project tokyo-shaft

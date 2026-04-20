@@ -8,10 +8,10 @@ const releases = [
     date: '2026-04-20',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
-      { type: 'fix', text: 'Packaged the certified strong-beta skill archives inside the published core package so fresh CLI installs now ship with the bundled skill catalog instead of an empty local registry' },
-      { type: 'feat', text: 'Bootstrapped bundled skills automatically on first CLI and agent skill use so skill list, show, run, and explicit agent discovery work on a clean machine without a manual import step' },
-      { type: 'fix', text: 'Added a tar-first archive extraction path with path validation so bundled skill ZIPs no longer depend as heavily on python just to be discovered and imported safely' },
-      { type: 'fix', text: 'Added regression coverage for packaged bundled-skill bootstrap and widened heavy runtime test timeouts so the full certified catalog remains verifiable in CI' },
+      { type: 'feat', text: 'Added an explicit --skills session flag to geotech agent and geotech chat so users can opt a single AI session into installed skill tools without enabling skills globally' },
+      { type: 'fix', text: 'Kept direct geotech skill commands ready by default while preserving the strong-beta default that ordinary agent sessions do not automatically see or call skills unless explicitly enabled' },
+      { type: 'fix', text: 'Carried session-level skill opt-in through both single-agent and swarm execution paths, including the interactive continue into chat hint' },
+      { type: 'fix', text: 'Added focused regression coverage proving that agent skill tools remain blocked when disabled and become callable when the session is explicitly skill-enabled' },
     ],
   },
   {
