@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 
 import { Command } from 'commander';
 import {
+  ensureBundledSkillsInstalled,
   getInstalledSkill,
   getStrongBetaSkillApproval,
   importSkillsFromSource,
@@ -58,38 +59,44 @@ export function registerSkillCommand(program: Command): void {
     .description('List installed skills')
     .option('--json', 'Output raw JSON')
     .action((opts) => {
-      const skills = listInstalledSkills();
-      const skillsWithApproval = skills.map((skill) => ({
-        ...skill,
-        approval: getStrongBetaSkillApproval(skill.name),
-      }));
-      if (opts.json) {
-        renderJSON({ skills: skillsWithApproval });
-        return;
+      try {
+        ensureBundledSkillsInstalled();
+        const skills = listInstalledSkills();
+        const skillsWithApproval = skills.map((skill) => ({
+          ...skill,
+          approval: getStrongBetaSkillApproval(skill.name),
+        }));
+        if (opts.json) {
+          renderJSON({ skills: skillsWithApproval });
+          return;
+        }
+
+        if (skills.length === 0) {
+          warn('No local skills are installed.');
+          return;
+        }
+
+        const rows = skillsWithApproval.map((entry) => {
+          const approval = entry.approval;
+          return [
+            entry.name,
+            approval.status,
+            entry.runtime,
+            entry.scriptCount,
+            entry.referenceCount,
+            entry.assetCount,
+          ];
+        });
+
+        heading('Installed Skills');
+        renderTable(
+          ['Name', 'Approval', 'Runtime', 'Scripts', 'Refs', 'Assets'],
+          rows,
+        );
+      } catch (err) {
+        error(err instanceof Error ? err.message : String(err));
+        process.exitCode = 1;
       }
-
-      if (skills.length === 0) {
-        warn('No local skills are installed.');
-        return;
-      }
-
-      const rows = skillsWithApproval.map((entry) => {
-        const approval = entry.approval;
-        return [
-          entry.name,
-          approval.status,
-          entry.runtime,
-          entry.scriptCount,
-          entry.referenceCount,
-          entry.assetCount,
-        ];
-      });
-
-      heading('Installed Skills');
-      renderTable(
-        ['Name', 'Approval', 'Runtime', 'Scripts', 'Refs', 'Assets'],
-        rows,
-      );
     });
 
   skill
@@ -121,6 +128,7 @@ export function registerSkillCommand(program: Command): void {
     .option('--json', 'Output raw JSON')
     .action((name: string, opts) => {
       try {
+        ensureBundledSkillsInstalled();
         const installedSkill = getInstalledSkill(name);
         const guide = readInstalledSkillGuide(name);
         const payload = {
@@ -155,6 +163,9 @@ export function registerSkillCommand(program: Command): void {
     .option('--json', 'Output raw JSON')
     .action((target: string, opts) => {
       try {
+        if (!existsSync(target)) {
+          ensureBundledSkillsInstalled();
+        }
         const result = existsSync(target) ? validateSkillSource(target) : validateInstalledSkill(target);
         if (opts.json) {
           renderJSON(result);
@@ -176,6 +187,7 @@ export function registerSkillCommand(program: Command): void {
     .option('--json', 'Output raw JSON')
     .action((name: string, opts) => {
       try {
+        ensureBundledSkillsInstalled();
         if (!isStrongBetaSkillApproved(name)) {
           const approval = getStrongBetaSkillApproval(name);
           throw new Error(`Skill "${name}" is not approved for strong-beta CLI execution. ${approval.reason}`);

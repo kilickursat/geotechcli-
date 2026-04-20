@@ -161,6 +161,7 @@ export {
 export {
   AGENT_SKILL_TOOL_NAMES,
   areAgentSkillToolsEnabled,
+  ensureBundledSkillsInstalled,
   getSkillsRuntimeConfig,
   getSkillsDirectory,
   getStrongBetaSkillApproval,

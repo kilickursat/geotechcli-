@@ -261,7 +261,7 @@ describe('hosted beta controls', () => {
       headers: {
         'content-type': 'application/json',
         'x-geotech-client': 'geotechcli',
-        'x-geotech-client-version': '0.4.14',
+        'x-geotech-client-version': GEOTECHCLI_VERSION,
         'x-geotech-call-type': 'agent',
       },
       body: JSON.stringify({

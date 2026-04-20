@@ -12,6 +12,7 @@ import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, extname, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { loadConfig } from '../config/index.js';
 import { ensureWorkspace } from '../agents/sandbox.js';
@@ -213,12 +214,31 @@ const SKILL_EXECUTION_PROFILES: Record<string, SkillExecutionProfile> = {
     candidateArtifactTypes: ['results', 'review-checklist', 'acceptance-status', 'issues-and-corrections'],
   },
 };
+const DEFAULT_BUNDLED_SKILL_ARCHIVES = [
+  'geotechcli-geotech-skills-wave-2.zip',
+  'geotechcli-geotech-skills-wave-3.zip',
+  'geotechcli-geotech-skills-wave-4.zip',
+  'geotechcli-geotech-skills-wave-5.zip',
+  'geotechcli-tunnel-skills-workspace.zip',
+  'skill.zip',
+] as const;
+
+let bundledSkillsBootstrapAttemptedForDir: string | null = null;
+let bundledSkillsBootstrapActiveForDir: string | null = null;
 
 function getSkillsDirFallback(): string {
   return join(
     process.env.GEOTECHCLI_CONFIG_DIR ?? join(homedir(), '.geotechcli'),
     'skills',
   );
+}
+
+function getCorePackageRootDir(): string {
+  return fileURLToPath(new URL('../../', import.meta.url));
+}
+
+function getBundledSkillsDir(): string {
+  return join(getCorePackageRootDir(), 'bundled-skills');
 }
 
 function nowIso(): string {
@@ -513,6 +533,25 @@ function ensureDirectory(dirPath: string): string {
   return dirPath;
 }
 
+function countInstalledSkillManifests(skillsDir: string): number {
+  return readdirSync(skillsDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => join(skillsDir, entry.name))
+    .filter((dirPath) => isFile(manifestPathFor(dirPath)))
+    .length;
+}
+
+function getBundledSkillArchivePaths(): string[] {
+  const bundledDir = getBundledSkillsDir();
+  if (!isDirectory(bundledDir)) {
+    return [];
+  }
+
+  return DEFAULT_BUNDLED_SKILL_ARCHIVES
+    .map((archiveName) => join(bundledDir, archiveName))
+    .filter((archivePath) => isFile(archivePath));
+}
+
 function createTempDir(prefix: string): string {
   const dirPath = join(tmpdir(), `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
   mkdirSync(dirPath, { recursive: true });
@@ -557,8 +596,59 @@ function runPythonScript(scriptContent: string, args: string[], cwd?: string): {
   };
 }
 
+function validateZipEntries(entries: string[]): void {
+  for (const entry of entries) {
+    const normalized = entry.trim().replace(/\\/g, '/');
+    if (!normalized) continue;
+    if (normalized.startsWith('/')) {
+      throw new Error(`unsafe zip entry: ${entry}`);
+    }
+    if (/^[A-Za-z]:\//.test(normalized)) {
+      throw new Error(`unsafe zip entry: ${entry}`);
+    }
+    const parts = normalized.split('/').filter(Boolean);
+    if (parts.some((part) => part === '..')) {
+      throw new Error(`unsafe zip entry: ${entry}`);
+    }
+  }
+}
+
+function tryExtractZipWithTar(sourcePath: string, extractRoot: string): boolean {
+  const listResult = spawnSync('tar', ['-tf', sourcePath], {
+    encoding: 'utf-8',
+    timeout: 30_000,
+    env: buildPythonEnv(),
+  });
+  if (listResult.error || listResult.status !== 0) {
+    return false;
+  }
+
+  const entries = (listResult.stdout ?? '')
+    .split(/\r?\n/)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  validateZipEntries(entries);
+
+  const extractResult = spawnSync('tar', ['-xf', sourcePath, '-C', extractRoot], {
+    encoding: 'utf-8',
+    timeout: 30_000,
+    env: buildPythonEnv(),
+  });
+  if (extractResult.error || extractResult.status !== 0) {
+    return false;
+  }
+
+  return true;
+}
+
 function extractZipToTemp(sourcePath: string): string {
   const extractRoot = createTempDir('geotechcli-skill-import');
+  if (tryExtractZipWithTar(sourcePath, extractRoot)) {
+    return extractRoot;
+  }
+
+  rmSync(extractRoot, { recursive: true, force: true });
+  mkdirSync(extractRoot, { recursive: true });
   const helperScript = [
     'import pathlib',
     'import sys',
@@ -749,6 +839,34 @@ export function getSkillsRuntimeConfig(): SkillsRuntimeConfig {
 
 export function areAgentSkillToolsEnabled(): boolean {
   return getSkillsRuntimeConfig().enabled;
+}
+
+export function ensureBundledSkillsInstalled(): InstalledSkill[] {
+  const skillsDir = getSkillsDirectory();
+  const installedSkillCount = countInstalledSkillManifests(skillsDir);
+  if (installedSkillCount > 0) {
+    bundledSkillsBootstrapAttemptedForDir = skillsDir;
+    return listInstalledSkills();
+  }
+
+  if (bundledSkillsBootstrapAttemptedForDir === skillsDir || bundledSkillsBootstrapActiveForDir === skillsDir) {
+    return listInstalledSkills();
+  }
+
+  bundledSkillsBootstrapActiveForDir = skillsDir;
+  try {
+    const bundledArchives = getBundledSkillArchivePaths();
+    for (const archivePath of bundledArchives) {
+      importSkillsFromSource(archivePath, { force: true });
+    }
+    bundledSkillsBootstrapAttemptedForDir = skillsDir;
+  } finally {
+    if (bundledSkillsBootstrapActiveForDir === skillsDir) {
+      bundledSkillsBootstrapActiveForDir = null;
+    }
+  }
+
+  return listInstalledSkills();
 }
 
 export function isAgentSkillToolName(toolName: string): toolName is AgentSkillToolName {

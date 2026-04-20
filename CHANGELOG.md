@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.15] - 2026-04-20
+
+### Strong-Beta Bundled Skills Bootstrap
+
+- Packaged the certified strong-beta skill archives inside `@geotechcli/core` so installed CLI users now receive the bundled catalog instead of a skill command surface with no shipped skills.
+- Added first-use skill bootstrap for the CLI and agent skill tools, so a fresh `~/.geotechcli/skills` directory is automatically populated from the bundled catalog before `skill list`, `skill show`, `skill run`, or agent skill discovery.
+- Kept the bootstrap bundle curated to the approved wave archives plus the prompt-only tunnel reviewer, preserving the current strong-beta approval model while making the catalog actually available on a fresh install.
+- Added a `tar`-first archive extraction path with path validation, reducing the hidden dependency on `python` for bundled ZIP discovery and import while keeping the existing safe fallback path.
+- Added regression coverage for packaged bundled-skill bootstrap and widened heavy skill-runtime test timeouts so the certified catalog can be imported and exercised reliably in CI.
+
 ## [0.4.14] - 2026-04-19
 
 ### Strong-Beta Deploy Smoke Contract Fix

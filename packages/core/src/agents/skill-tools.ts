@@ -1,5 +1,6 @@
 import { toolRegistry, type ToolResult } from './tools.js';
 import {
+  ensureBundledSkillsInstalled,
   getInstalledSkill,
   getStrongBetaSkillApproval,
   isStrongBetaSkillApproved,
@@ -18,22 +19,32 @@ toolRegistry.register(
     },
   },
   (): ToolResult => {
-    const skills = listInstalledSkills().map((skill) => ({
-      name: skill.name,
-      displayName: skill.displayName,
-      description: skill.description,
-      runtime: skill.runtime,
-      approval: getStrongBetaSkillApproval(skill.name),
-    }))
-      .filter((skill) => skill.approval.status === 'approved');
+    try {
+      ensureBundledSkillsInstalled();
+      const skills = listInstalledSkills().map((skill) => ({
+        name: skill.name,
+        displayName: skill.displayName,
+        description: skill.description,
+        runtime: skill.runtime,
+        approval: getStrongBetaSkillApproval(skill.name),
+      }))
+        .filter((skill) => skill.approval.status === 'approved');
 
-    return {
-      success: true,
-      data: { skills },
-      summary: skills.length > 0
-        ? `${skills.length} installed skill${skills.length === 1 ? '' : 's'} available`
-        : 'No installed skills available',
-    };
+      return {
+        success: true,
+        data: { skills },
+        summary: skills.length > 0
+          ? `${skills.length} installed skill${skills.length === 1 ? '' : 's'} available`
+          : 'No installed skills available',
+      };
+    } catch (err) {
+      return {
+        success: false,
+        data: null,
+        summary: '',
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
   },
 );
 
@@ -51,6 +62,7 @@ toolRegistry.register(
   },
   (args): ToolResult => {
     try {
+      ensureBundledSkillsInstalled();
       const name = String(args.name);
       if (!isStrongBetaSkillApproved(name)) {
         const approval = getStrongBetaSkillApproval(name);
@@ -109,6 +121,7 @@ toolRegistry.register(
   },
   (args): ToolResult => {
     try {
+      ensureBundledSkillsInstalled();
       const name = String(args.name);
       if (!isStrongBetaSkillApproved(name)) {
         const approval = getStrongBetaSkillApproval(name);

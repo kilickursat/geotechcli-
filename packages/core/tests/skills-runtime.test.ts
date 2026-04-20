@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   createProject,
+  ensureBundledSkillsInstalled,
   getInstalledSkill,
   importSkillsFromSource,
   listInstalledSkills,
@@ -72,6 +73,14 @@ describe('Skills runtime', () => {
     expect(installed.map((skill) => skill.name)).toContain('shallow-foundation-option-screening');
   });
 
+  it('bootstraps the packaged bundled skill catalog into an empty config directory', () => {
+    const installed = ensureBundledSkillsInstalled();
+
+    expect(installed.length).toBeGreaterThan(40);
+    expect(installed.map((skill) => skill.name)).toContain('shallow-foundation-option-screening');
+    expect(installed.map((skill) => skill.name)).toContain('tunnel-engineering-reviewer');
+  }, 60_000);
+
   it('validates and imports a wave-2 container archive with nested skill zips', () => {
     const archivePath = join(fixtureDir, 'geotechcli-geotech-skills-wave-2.zip');
     const validation = validateSkillSource(archivePath);
@@ -83,7 +92,7 @@ describe('Skills runtime', () => {
     const imported = importSkillsFromSource(archivePath);
     expect(imported.imported.length).toBe(12);
     expect(imported.imported.map((skill) => skill.name)).toContain('site-investigation-data-quality');
-  });
+  }, 30_000);
 
   it('runs a bundled deterministic skill and persists outputs into project memory', () => {
     const archivePath = join(fixtureDir, 'skill_archive (1).zip');
@@ -196,5 +205,5 @@ describe('Skills runtime', () => {
       expect(runDirs.has(result.runDir)).toBe(false);
       runDirs.add(result.runDir);
     }
-  });
+  }, 30_000);
 });

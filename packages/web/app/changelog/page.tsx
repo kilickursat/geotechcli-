@@ -5,13 +5,13 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 const releases = [
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-04-19',
+    date: '2026-04-20',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
-      { type: 'fix', text: 'Added a dedicated beta version endpoint so the release workflow can verify the deployed Cloudflare build through a stable JSON contract instead of scraping the changelog page HTML' },
-      { type: 'fix', text: 'Marked the beta version endpoint as force-dynamic and no-store so strong-beta release smoke checks do not get stuck behind cached markup after a successful deploy' },
-      { type: 'fix', text: 'Improved deploy smoke diagnostics so version mismatches now report the actual deployed payload instead of the misleading unexpected response status=200 message' },
-      { type: 'fix', text: 'Added local route smoke coverage and a web regression test for the beta version endpoint so future strong-beta releases keep the same deploy verification contract' },
+      { type: 'fix', text: 'Packaged the certified strong-beta skill archives inside the published core package so fresh CLI installs now ship with the bundled skill catalog instead of an empty local registry' },
+      { type: 'feat', text: 'Bootstrapped bundled skills automatically on first CLI and agent skill use so skill list, show, run, and explicit agent discovery work on a clean machine without a manual import step' },
+      { type: 'fix', text: 'Added a tar-first archive extraction path with path validation so bundled skill ZIPs no longer depend as heavily on python just to be discovered and imported safely' },
+      { type: 'fix', text: 'Added regression coverage for packaged bundled-skill bootstrap and widened heavy runtime test timeouts so the full certified catalog remains verifiable in CI' },
     ],
   },
   {

@@ -1,6 +1,6 @@
 {
   "name": "@geotechcli/core",
-  "version": "0.4.14",
+  "version": "0.4.15",
   "description": "Shared computation and LLM engine for geotechCLI",
   "type": "module",
   "main": "./dist/index.js",
@@ -49,7 +49,8 @@
     "vitest": "^4.1.4"
   },
   "files": [
-    "dist"
+    "dist",
+    "bundled-skills"
   ],
   "publishConfig": {
     "access": "public"
