@@ -1,6 +1,6 @@
 {
   "name": "@geotechcli/core",
-  "version": "0.4.16",
+  "version": "0.4.17",
   "description": "Shared computation and LLM engine for geotechCLI",
   "type": "module",
   "main": "./dist/index.js",
@@ -40,6 +40,7 @@
   },
   "dependencies": {
     "docx": "^9.0.0",
+    "fflate": "^0.8.2",
     "pdfkit": "^0.15.0",
     "zod": "^3.24.0"
   },

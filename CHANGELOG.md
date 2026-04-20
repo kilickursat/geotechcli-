@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.17] - 2026-04-20
+
+### Strong-Beta Bundled Skills Extraction Hotfix
+
+- Replaced bundled skill ZIP extraction with a pure JavaScript path inside `@geotechcli/core`, so first-use skill bootstrap no longer depends on external `tar` or `python` executables just to list or inspect installed skills.
+- Preserved the existing strong-beta skill catalog and agent `--skills` session opt-in behavior while removing the Windows-specific archive extraction footgun that could block fresh local skill discovery.
+- Kept the archive entry path validation in place so bundled skill imports still reject unsafe ZIP paths during bootstrap and nested archive discovery.
+
 ## [0.4.16] - 2026-04-20
 
 ### Strong-Beta Agent Skill Opt-In

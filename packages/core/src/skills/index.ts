@@ -13,6 +13,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, extname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { unzipSync } from 'fflate';
 
 import { loadConfig } from '../config/index.js';
 import { ensureWorkspace } from '../agents/sandbox.js';
@@ -142,19 +143,6 @@ const SUPPORTED_SKILL_FILE_EXTENSIONS = new Set([
   '.yml',
   '.txt',
 ]);
-const SYSTEM_ENV_KEYS = [
-  'PATH',
-  'PATHEXT',
-  'SYSTEMROOT',
-  'COMSPEC',
-  'WINDIR',
-  'TMP',
-  'TEMP',
-  'HOME',
-  'USERPROFILE',
-  'LANG',
-  'LC_ALL',
-];
 const DEFAULT_SKILL_EXECUTION_PROFILE: SkillExecutionProfile = {
   contract: 'input-dir-output-dir',
 };
@@ -559,40 +547,10 @@ function createTempDir(prefix: string): string {
 }
 
 function buildPythonEnv(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {
+  return {
+    ...process.env,
     PYTHONIOENCODING: 'utf-8',
     PYTHONUTF8: '1',
-  };
-
-  for (const key of SYSTEM_ENV_KEYS) {
-    if (process.env[key]) {
-      env[key] = process.env[key];
-    }
-  }
-
-  return env;
-}
-
-function runPythonScript(scriptContent: string, args: string[], cwd?: string): { status: number | null; stdout: string; stderr: string } {
-  const pythonPath = getSkillsRuntimeConfig().pythonPath;
-  const helperPath = join(createTempDir('geotechcli-skill-helper'), 'helper.py');
-  writeFileSync(helperPath, scriptContent, 'utf-8');
-  const result = spawnSync(pythonPath, [helperPath, ...args], {
-    cwd,
-    encoding: 'utf-8',
-    timeout: 30_000,
-    env: buildPythonEnv(),
-  });
-  rmSync(dirname(helperPath), { recursive: true, force: true });
-
-  if (result.error) {
-    throw result.error;
-  }
-
-  return {
-    status: result.status,
-    stdout: result.stdout ?? '',
-    stderr: result.stderr ?? '',
   };
 }
 
@@ -613,71 +571,37 @@ function validateZipEntries(entries: string[]): void {
   }
 }
 
-function tryExtractZipWithTar(sourcePath: string, extractRoot: string): boolean {
-  const listResult = spawnSync('tar', ['-tf', sourcePath], {
-    encoding: 'utf-8',
-    timeout: 30_000,
-    env: buildPythonEnv(),
-  });
-  if (listResult.error || listResult.status !== 0) {
-    return false;
-  }
-
-  const entries = (listResult.stdout ?? '')
-    .split(/\r?\n/)
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0);
-  validateZipEntries(entries);
-
-  const extractResult = spawnSync('tar', ['-xf', sourcePath, '-C', extractRoot], {
-    encoding: 'utf-8',
-    timeout: 30_000,
-    env: buildPythonEnv(),
-  });
-  if (extractResult.error || extractResult.status !== 0) {
-    return false;
-  }
-
-  return true;
-}
-
 function extractZipToTemp(sourcePath: string): string {
   const extractRoot = createTempDir('geotechcli-skill-import');
-  if (tryExtractZipWithTar(sourcePath, extractRoot)) {
-    return extractRoot;
-  }
+  try {
+    const entries = unzipSync(readFileSync(sourcePath));
+    validateZipEntries(Object.keys(entries));
 
-  rmSync(extractRoot, { recursive: true, force: true });
-  mkdirSync(extractRoot, { recursive: true });
-  const helperScript = [
-    'import pathlib',
-    'import sys',
-    'import zipfile',
-    '',
-    'src = pathlib.Path(sys.argv[1])',
-    'dest = pathlib.Path(sys.argv[2])',
-    'with zipfile.ZipFile(src) as archive:',
-    '    for info in archive.infolist():',
-    "        parts = pathlib.PurePosixPath(info.filename).parts",
-    "        if not parts:",
-    '            continue',
-    "        if any(part in ('..', '') for part in parts):",
-    "            raise SystemExit(f'unsafe zip entry: {info.filename}')",
-    "        if pathlib.PurePosixPath(info.filename).is_absolute():",
-    "            raise SystemExit(f'unsafe zip entry: {info.filename}')",
-    '        target = dest.joinpath(*parts)',
-    "        if info.is_dir():",
-    '            target.mkdir(parents=True, exist_ok=True)',
-    '            continue',
-    '        target.parent.mkdir(parents=True, exist_ok=True)',
-    '        with archive.open(info) as source_handle, open(target, "wb") as target_handle:',
-    '            target_handle.write(source_handle.read())',
-  ].join('\n');
+    for (const [entryName, contents] of Object.entries(entries)) {
+      const normalized = entryName.trim().replace(/\\/g, '/');
+      if (!normalized) {
+        continue;
+      }
 
-  const extractResult = runPythonScript(helperScript, [sourcePath, extractRoot]);
-  if (extractResult.status !== 0) {
+      const parts = normalized.split('/').filter(Boolean);
+      if (parts.length === 0) {
+        continue;
+      }
+
+      const targetPath = join(extractRoot, ...parts);
+      if (normalized.endsWith('/')) {
+        mkdirSync(targetPath, { recursive: true });
+        continue;
+      }
+
+      mkdirSync(dirname(targetPath), { recursive: true });
+      writeFileSync(targetPath, Buffer.from(contents));
+    }
+  } catch (error) {
     rmSync(extractRoot, { recursive: true, force: true });
-    throw new Error(extractResult.stderr.trim() || extractResult.stdout.trim() || 'Failed to extract skill archive.');
+    throw error instanceof Error
+      ? new Error(`Failed to extract skill archive: ${error.message}`)
+      : new Error('Failed to extract skill archive.');
   }
 
   return extractRoot;
