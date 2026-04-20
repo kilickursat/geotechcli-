@@ -1,5 +1,10 @@
 import type { LLMConfig, CompletionResponse } from '../llm/types.js';
 import { generateText } from '../llm/router.js';
+import {
+  buildProprietaryInternalsRefusal,
+  getProprietaryInternalsPromptRules,
+  isProprietaryInternalsRequest,
+} from './proprietary-internals.js';
 
 export interface AgentLog {
   agent: string;
@@ -14,36 +19,40 @@ interface AgentDefinition {
   systemPrompt: string;
 }
 
+function withProprietaryRules(basePrompt: string): string {
+  return `${basePrompt}\n\nSecurity rules:\n${getProprietaryInternalsPromptRules()}`;
+}
+
 const AGENTS: AgentDefinition[] = [
   {
     name: 'Geo Agent',
     tag: '@geo-agent',
-    systemPrompt: `You are a specialist geotechnical engineer. You analyze soil mechanics, rock mechanics, bearing capacity, settlement, classification (USCS, AASHTO), and site investigation data. Provide precise numerical answers with standard references (Terzaghi, Meyerhof, Lambe & Whitman). Always state assumptions and applicable standards.`,
+    systemPrompt: withProprietaryRules(`You are a specialist geotechnical engineer. You analyze soil mechanics, rock mechanics, bearing capacity, settlement, classification (USCS, AASHTO), and site investigation data. Provide precise numerical answers with standard references (Terzaghi, Meyerhof, Lambe & Whitman). Always state assumptions and applicable standards.`),
   },
   {
     name: 'Tunnel Agent',
     tag: '@tunnel-agent',
-    systemPrompt: `You are a specialist tunnel engineer. You advise on NATM/conventional tunneling, TBM selection and performance, support design (shotcrete, rockbolts, steel sets), convergence-confinement method, lining design, and underground space planning. Reference Bieniawski, Barton, Hoek-Brown, and AFTES/ITA guidelines.`,
+    systemPrompt: withProprietaryRules(`You are a specialist tunnel engineer. You advise on NATM/conventional tunneling, TBM selection and performance, support design (shotcrete, rockbolts, steel sets), convergence-confinement method, lining design, and underground space planning. Reference Bieniawski, Barton, Hoek-Brown, and AFTES/ITA guidelines.`),
   },
   {
     name: 'Hydro Agent',
     tag: '@hydro-agent',
-    systemPrompt: `You are a specialist hydrogeologist. You analyze groundwater flow, seepage, dewatering design, pore pressure prediction, permeability testing interpretation (Lugeon, slug tests), and contamination transport. Reference Darcy's law, flow net theory, and Theis/Cooper-Jacob solutions.`,
+    systemPrompt: withProprietaryRules(`You are a specialist hydrogeologist. You analyze groundwater flow, seepage, dewatering design, pore pressure prediction, permeability testing interpretation (Lugeon, slug tests), and contamination transport. Reference Darcy's law, flow net theory, and Theis/Cooper-Jacob solutions.`),
   },
   {
     name: 'Seismic Agent',
     tag: '@seismic-agent',
-    systemPrompt: `You are a specialist seismic/earthquake engineer. You analyze liquefaction triggering (Boulanger & Idriss, Seed & Idriss), seismic site response, ground motion parameters, dynamic soil properties, and earthquake-induced settlement and lateral spreading. Reference NCEER, Eurocode 8, and ASCE 7.`,
+    systemPrompt: withProprietaryRules(`You are a specialist seismic/earthquake engineer. You analyze liquefaction triggering (Boulanger & Idriss, Seed & Idriss), seismic site response, ground motion parameters, dynamic soil properties, and earthquake-induced settlement and lateral spreading. Reference NCEER, Eurocode 8, and ASCE 7.`),
   },
   {
     name: 'Slope Agent',
     tag: '@slope-agent',
-    systemPrompt: `You are a specialist slope stability engineer. You perform limit equilibrium analysis (Bishop, Spencer, Morgenstern-Price), evaluate landslide risk, design retaining structures, and analyze reinforced slopes and soil nails. Reference Duncan & Wright, FHWA guidelines.`,
+    systemPrompt: withProprietaryRules(`You are a specialist slope stability engineer. You perform limit equilibrium analysis (Bishop, Spencer, Morgenstern-Price), evaluate landslide risk, design retaining structures, and analyze reinforced slopes and soil nails. Reference Duncan & Wright, FHWA guidelines.`),
   },
   {
     name: 'Foundation Agent',
     tag: '@foundation-agent',
-    systemPrompt: `You are a specialist foundation engineer. You design shallow and deep foundations, analyze pile capacity (static and dynamic), evaluate group effects, design pile caps, and perform serviceability checks. Reference API RP 2GEO, FHWA, and relevant building codes.`,
+    systemPrompt: withProprietaryRules(`You are a specialist foundation engineer. You design shallow and deep foundations, analyze pile capacity (static and dynamic), evaluate group effects, design pile caps, and perform serviceability checks. Reference API RP 2GEO, FHWA, and relevant building codes.`),
   },
 ];
 
@@ -53,6 +62,7 @@ Available agents:
 ${AGENTS.map((a) => `- ${a.tag}: ${a.name}`).join('\n')}
 
 Instructions:
+${getProprietaryInternalsPromptRules()}
 1. Analyze the user's task and determine which agent(s) to call.
 2. To call an agent, output EXACTLY this JSON block:
 \`\`\`json
@@ -68,6 +78,16 @@ export async function runMultiAgentTask(
   onLog: (log: AgentLog) => void,
   maxIterations = 6,
 ): Promise<string> {
+  if (isProprietaryInternalsRequest(task)) {
+    onLog({
+      agent: 'Orchestrator',
+      message: 'Blocked proprietary internals disclosure request.',
+      type: 'error',
+      timestamp: Date.now(),
+    });
+    return buildProprietaryInternalsRefusal();
+  }
+
   onLog({
     agent: 'Orchestrator',
     message: `Planning: "${task}"`,

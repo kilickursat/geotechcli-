@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { fileURLToPath } from 'node:url';
 
 import { calculateBearingCapacity } from '../src/geo/bearing-capacity.js';
 import { calculateConsolidation, calculateSchmertmann, calculatePeckSettlement } from '../src/geo/settlement.js';
@@ -14,6 +15,8 @@ import '../src/agents/filesystem-tools.js';
 import '../src/agents/shell-tools.js';
 import '../src/agents/data-tools.js';
 import '../src/agents/skill-tools.js';
+
+const corePackageRoot = fileURLToPath(new URL('..', import.meta.url));
 
 function approx(actual: number, expected: number, tol: number, label: string) {
   expect(Math.abs(actual - expected), label).toBeLessThanOrEqual(tol);
@@ -604,6 +607,12 @@ describe('Filesystem Sandbox', () => {
     expect(check.safe).toBe(true);
   });
 
+  it('Blocks geotechCLI core source tree reads', () => {
+    const check = validateReadPath(`${corePackageRoot}/src/agents/sandbox.ts`);
+    expect(check.safe).toBe(false);
+    expect(check.error).toContain('core source tree');
+  });
+
   it('Blocks write to /usr', () => {
     const check = validateWritePath('/usr/local/bin/evil');
     expect(check.safe).toBe(false);
@@ -611,8 +620,8 @@ describe('Filesystem Sandbox', () => {
 });
 
 describe('Shell Command Sandbox', () => {
-  it('Allows ls', () => {
-    const check = validateShellCommand('ls -la');
+  it('Allows ls on a scoped project path', () => {
+    const check = validateShellCommand('ls -la samples');
     expect(check.safe).toBe(true);
   });
 
@@ -630,6 +639,18 @@ describe('Shell Command Sandbox', () => {
   it('Blocks python script.py', () => {
     const check = validateShellCommand('python analysis.py');
     expect(check.safe).toBe(false);
+  });
+
+  it('Blocks shell glob expansion', () => {
+    const check = validateShellCommand('cat *.ts', { cwd: corePackageRoot });
+    expect(check.safe).toBe(false);
+    expect(check.error).toContain('shell expansion');
+  });
+
+  it('Blocks broad geotechCLI internal enumeration', () => {
+    const check = validateShellCommand('ls -la', { cwd: corePackageRoot });
+    expect(check.safe).toBe(false);
+    expect(check.error).toContain('too broad');
   });
 
   it('Blocks pipe operators', () => {

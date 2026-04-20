@@ -8,6 +8,16 @@ const releases = [
     date: '2026-04-20',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'security', text: 'Added a dedicated proprietary-internals refusal policy across the main agent, swarm, and exported legacy multi-agent orchestrator paths so hidden prompts, internal instructions, repo layout, and protected source-file requests are blocked before any model call is made' },
+      { type: 'security', text: 'Hardened the agent filesystem and shell sandbox against geotechCLI repo-internal disclosure by blocking protected source/build/test areas and rejecting broad repo-root enumeration when the CLI is run from its own source checkout' },
+      { type: 'fix', text: 'Kept normal user flexibility intact by preserving high-level product explanations, ordinary project subdirectory scanning, and the existing opt-in command runner behavior while adding regression coverage for the new protection boundaries' },
+    ],
+  },
+  {
+    version: '0.4.20',
+    date: '2026-04-20',
+    tag: '0.4.20 Release',
+    changes: [
       { type: 'fix', text: 'Added a repo-level contributor guide so maintainers and coding agents can follow the current strong-beta architecture, release workflow, and verification expectations more consistently' },
       { type: 'fix', text: 'Removed a stale internal swarm prompt reference to the deleted local integration surface so the shipped multi-agent guidance matches the real toolset and beta scope' },
       { type: 'fix', text: 'Kept the strong-beta build green after the internal agent-guidance cleanup so the CLI, core package, and web app stay aligned on the new release' },

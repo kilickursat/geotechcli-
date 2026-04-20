@@ -2,13 +2,17 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { toolRegistry } from '../src/agents/tools.js';
 import { validateReadPath, validateShellCommand, validateWritePath } from '../src/agents/sandbox.js';
 import { importSkillsFromSource } from '../src/skills/index.js';
 
+import '../src/agents/filesystem-tools.js';
 import '../src/agents/shell-tools.js';
 import '../src/agents/data-tools.js';
 import '../src/agents/skill-tools.js';
+
+const corePackageRoot = fileURLToPath(new URL('..', import.meta.url));
 
 describe('Security hardening regressions', () => {
   const previousRunCommandFlag = process.env.GEOTECHCLI_ENABLE_RUN_COMMAND;
@@ -62,10 +66,23 @@ describe('Security hardening regressions', () => {
     expect(check.error).toContain('blocked operator');
   });
 
+  it('blocks shell glob expansion that could widen file access', () => {
+    const check = validateShellCommand('cat *.ts', { cwd: corePackageRoot });
+    expect(check.safe).toBe(false);
+    expect(check.error).toContain('shell expansion');
+  });
+
   it('keeps run_command disabled by default in strong beta', async () => {
     const result = await toolRegistry.execute('run_command', { command: 'ls -la' });
     expect(result.success).toBe(false);
     expect(result.error).toContain('disabled by default');
+  });
+
+  it('blocks broad run_command enumeration inside geotechCLI internals', async () => {
+    process.env.GEOTECHCLI_ENABLE_RUN_COMMAND = '1';
+    const result = await toolRegistry.execute('run_command', { command: 'ls -la', cwd: corePackageRoot });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('too broad');
   });
 
   it('blocks parse_ags paths outside the allowed workspace', async () => {
@@ -96,6 +113,44 @@ describe('Security hardening regressions', () => {
     } finally {
       rmSync(insideBase, { recursive: true, force: true });
       rmSync(outsideBase, { recursive: true, force: true });
+    }
+  });
+
+  it('blocks direct reads of geotechCLI core internals', () => {
+    const check = validateReadPath(join(corePackageRoot, 'src', 'agents', 'sandbox.ts'));
+    expect(check.safe).toBe(false);
+    expect(check.error).toContain('core source tree');
+  });
+
+  it('blocks direct writes into geotechCLI core internals', () => {
+    const check = validateWritePath(join(corePackageRoot, 'src', '__blocked__.txt'));
+    expect(check.safe).toBe(false);
+    expect(check.error).toContain('core source tree');
+  });
+
+  it('blocks broad repo-root directory enumeration through list_directory', async () => {
+    const result = await toolRegistry.execute('list_directory', { path: process.cwd() });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('too broad');
+  });
+
+  it('blocks broad repo-root scanning through scan_project', async () => {
+    const result = await toolRegistry.execute('scan_project', { path: process.cwd() });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('too broad');
+  });
+
+  it('still allows directory enumeration inside a normal project subdirectory', async () => {
+    const safeDir = mkdtempSync(join(process.cwd(), '__sandbox-safe-project-'));
+
+    try {
+      writeFileSync(join(safeDir, 'notes.txt'), 'safe notes', 'utf-8');
+      const result = await toolRegistry.execute('list_directory', { path: safeDir });
+      expect(result.success).toBe(true);
+      const entries = ((result.data as { entries: Array<{ name: string }> }).entries).map((entry) => entry.name);
+      expect(entries).toContain('notes.txt');
+    } finally {
+      rmSync(safeDir, { recursive: true, force: true });
     }
   });
 

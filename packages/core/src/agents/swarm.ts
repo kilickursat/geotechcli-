@@ -4,6 +4,11 @@ import { toolRegistry, type ToolResult } from './tools.js';
 import { validateToolArgs, formatViolations } from './guardrails.js';
 import { extractToolSafetyIssue, serializeContextForPrompt } from './safety.js';
 import { normalizeToolArgs } from './tool-normalization.js';
+import {
+  buildProprietaryInternalsRefusal,
+  getProprietaryInternalsPromptRules,
+  isProprietaryInternalsRequest,
+} from './proprietary-internals.js';
 
 // Ensure all tools are registered
 import './filesystem-tools.js';
@@ -117,6 +122,7 @@ function getToolDescriptionsFor(toolNames: readonly string[], skillsEnabled = fa
 }
 
 function interpretationPrompt(skillsEnabled = false): string {
+  const proprietaryRules = getProprietaryInternalsPromptRules();
   return `You are the INTERPRETATION AGENT in geotechCLI's multi-agent system.
 
 YOUR ROLE: Clean, parse, classify, and structure raw geotechnical data.
@@ -133,6 +139,7 @@ YOUR TOOLS:
 ${getToolDescriptionsFor(ROLE_TOOL_ALLOWLIST.interpretation, skillsEnabled)}
 
 RULES:
+${proprietaryRules}
 - Call tools to do real work; never estimate or guess data values.
 - If a tool result indicates canAutoProceed=false or low-confidence parsing, stop automatic handoff from that output until you retry or clearly mark the limitation.
 - When you derive reusable structured data or assumptions for a project, persist them with project memory tools.
@@ -150,6 +157,7 @@ To call a tool:
 }
 
 function simulationPrompt(skillsEnabled = false): string {
+  const proprietaryRules = getProprietaryInternalsPromptRules();
   return `You are the SIMULATION AGENT in geotechCLI's multi-agent system.
 
 YOUR ROLE: Execute engineering calculations and numerical simulations.
@@ -168,6 +176,7 @@ YOUR TOOLS:
 ${getToolDescriptionsFor(ROLE_TOOL_ALLOWLIST.simulation, skillsEnabled)}
 
 RULES:
+${proprietaryRules}
 - Use the data provided by the Interpretation Agent; do not re-read files.
 - Run ALL relevant calculations for the task.
 - If an upstream or tool result is blocked, incomplete, or low confidence, do not continue blindly. Retry, use a safer alternative, or pass the limitation to the reviewer.
@@ -186,6 +195,7 @@ To call a tool:
 }
 
 function reviewerPrompt(skillsEnabled = false): string {
+  const proprietaryRules = getProprietaryInternalsPromptRules();
   return `You are the REVIEWER AGENT in geotechCLI's multi-agent system.
 
 YOUR ROLE: Safety check, sanity check, and standards compliance review.
@@ -202,6 +212,9 @@ YOU CHECK:
 
 YOUR TOOLS:
 ${getToolDescriptionsFor(ROLE_TOOL_ALLOWLIST.reviewer, skillsEnabled)}
+
+RULES:
+${proprietaryRules}
 
 OUTPUT FORMAT - you MUST output exactly one of:
 
@@ -222,6 +235,7 @@ To call a tool:
 }
 
 function orchestratorPrompt(): string {
+  const proprietaryRules = getProprietaryInternalsPromptRules();
   return `You are the SWARM ORCHESTRATOR for geotechCLI.
 
 You coordinate three specialist agents:
@@ -232,6 +246,9 @@ You coordinate three specialist agents:
 For the given task, produce the FINAL engineering report by synthesizing all agent outputs.
 
 If the Reviewer rejected results, incorporate the corrections and note the issues that were found and resolved.
+
+Rules:
+${proprietaryRules}
 
 Produce a comprehensive, professional engineering report with:
 - Data summary
@@ -431,6 +448,16 @@ export async function runSwarm(
     session.steps.push(step);
     onStep(step);
   };
+
+  if (isProprietaryInternalsRequest(task)) {
+    trackStep({
+      agent: 'orchestrator',
+      type: 'answer',
+      content: buildProprietaryInternalsRefusal(),
+      timestamp: Date.now(),
+    });
+    return session;
+  }
 
   const serializedContext = serializeContextForPrompt(sessionContext, 5000);
   const contextBlock = serializedContext ? `Project/session context:\n${serializedContext}\n\n` : '';

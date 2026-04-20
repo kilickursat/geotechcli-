@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.21] - 2026-04-20
+
+### Agent Internals Hardening
+
+- Added a dedicated proprietary-internals refusal policy across the main agent, swarm, and exported legacy multi-agent orchestrator paths so requests for hidden prompts, internal instructions, repo layout, or protected source files are blocked before any model call is made.
+- Hardened the agent filesystem and shell sandbox against geotechCLI repo-internal disclosure by blocking direct reads of protected source/build/test areas and by rejecting broad root-level enumeration when the CLI is run from its own source checkout.
+- Kept normal project flexibility intact by preserving high-level product explanations, ordinary user project subdirectory scanning, and the existing opt-in command runner behavior while adding regression coverage for the new protection boundaries.
+
 ## [0.4.20] - 2026-04-20
 
 ### Internal Agent Guidance Cleanup

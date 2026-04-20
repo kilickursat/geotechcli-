@@ -5,6 +5,11 @@ import { validateToolArgs, formatViolations } from './guardrails.js';
 import { extractToolSafetyIssue, serializeContextForPrompt } from './safety.js';
 import { normalizeToolArgs } from './tool-normalization.js';
 import {
+  buildProprietaryInternalsRefusal,
+  getProprietaryInternalsPromptRules,
+  isProprietaryInternalsRequest,
+} from './proprietary-internals.js';
+import {
   buildGeotechnicalFallbackAnswer,
   buildGeotechnicalPreflightAnswer,
 } from './intake.js';
@@ -221,6 +226,7 @@ function buildCompactSystemPrompt(skillsEnabled = false): string {
     .filter((tool) => skillsEnabled || !isAgentSkillToolName(tool.name))
     .map((tool) => `- ${tool.name}: ${tool.description}`)
     .join('\n');
+  const proprietaryRules = getProprietaryInternalsPromptRules();
 
   return `You are geotechCLI Agent, a geotechnical engineering assistant that must use real tools for calculations.
 
@@ -233,6 +239,7 @@ Tool call format:
 \`\`\`
 
 Rules:
+${proprietaryRules}
 - Use tools for calculations instead of inventing numbers.
 - Keep assumptions brief and explicit when inputs are incomplete.
 - Interpret tool outputs in engineering terms with units.
@@ -247,6 +254,7 @@ function buildSystemPrompt(config?: LLMConfig): string {
   }
 
   const skillsEnabled = config?.skillsEnabled === true;
+  const proprietaryRules = getProprietaryInternalsPromptRules();
   const toolDescriptions = toolRegistry
     .list()
     .filter((tool) => skillsEnabled || !isAgentSkillToolName(tool.name))
@@ -288,6 +296,7 @@ For every request, follow this loop:
 5. REPEAT or ANSWER: If more calculations are needed, go back to step 2. Otherwise, provide your final answer.
 
 ## RULES
+${proprietaryRules}
 - ALWAYS use tools for calculations. Never invent numbers or estimate what a formula would produce.
 - If the user provides incomplete data, state your assumptions clearly before calling tools.
 - Chain multiple tools when engineering judgment requires it.
@@ -375,6 +384,17 @@ export async function runAgent(
     totalTokens: 0,
     totalLatencyMs: 0,
   };
+
+  if (isProprietaryInternalsRequest(userQuery)) {
+    const refusalStep: AgentStep = {
+      type: 'answer',
+      content: buildProprietaryInternalsRefusal(),
+      timestamp: Date.now(),
+    };
+    session.steps.push(refusalStep);
+    onStep(refusalStep);
+    return session;
+  }
 
   const preflightAnswer = buildDeterministicPreflightAnswer(userQuery, config, sessionContext);
   if (preflightAnswer) {

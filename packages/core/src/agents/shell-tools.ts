@@ -27,11 +27,6 @@ toolRegistry.register(
     }
 
     const command = String(args.command);
-    const check = validateShellCommand(command);
-    if (!check.safe) {
-      return { success: false, data: null, summary: '', error: check.error! };
-    }
-
     try {
       const cwdCheck = validateReadPath(args.cwd ? String(args.cwd) : process.cwd());
       if (!cwdCheck.safe) {
@@ -39,6 +34,11 @@ toolRegistry.register(
       }
 
       const cwd = cwdCheck.resolved;
+      const check = validateShellCommand(command, { cwd });
+      if (!check.safe) {
+        return { success: false, data: null, summary: '', error: check.error! };
+      }
+
       const output = execSync(command, {
         cwd,
         timeout: 15_000,

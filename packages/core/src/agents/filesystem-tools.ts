@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync, writeFileSync, existsSync, statSync } from 'node:fs';
-import { join, resolve, extname, basename } from 'node:path';
+import { basename, extname, join, relative, resolve } from 'node:path';
 import { toolRegistry, type ToolResult } from './tools.js';
-import { validateReadPath, validateWritePath } from './sandbox.js';
+import { validateEnumerationPath, validateReadPath, validateWritePath } from './sandbox.js';
 
 // ---------------------------------------------------------------------------
 // File reading (sandboxed)
@@ -79,7 +79,7 @@ toolRegistry.register(
     },
   },
   (args): ToolResult => {
-    const check = validateReadPath(String(args.path));
+    const check = validateEnumerationPath(String(args.path));
     if (!check.safe) return { success: false, data: null, summary: '', error: check.error! };
     const dirPath = check.resolved;
 
@@ -91,6 +91,7 @@ toolRegistry.register(
     const pattern = args.pattern ? String(args.pattern).toLowerCase() : null;
 
     const files = entries
+      .filter((entry) => validateReadPath(join(dirPath, entry.name)).safe)
       .map((entry) => {
         const fullPath = join(dirPath, entry.name);
         const isDir = entry.isDirectory();
@@ -226,7 +227,7 @@ toolRegistry.register(
     },
   },
   (args): ToolResult => {
-    const check = validateReadPath(String(args.path));
+    const check = validateEnumerationPath(String(args.path));
     if (!check.safe) return { success: false, data: null, summary: '', error: check.error! };
     const dirPath = check.resolved;
 
@@ -246,10 +247,13 @@ toolRegistry.register(
       for (const entry of entries) {
         if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
         const full = join(dir, entry.name);
-        if (entry.isDirectory()) { scanDir(full, depth + 1); continue; }
+        const childCheck = validateReadPath(full);
+        if (!childCheck.safe) continue;
+        const safePath = childCheck.resolved;
+        if (entry.isDirectory()) { scanDir(safePath, depth + 1); continue; }
         const ext = extname(entry.name).toLowerCase();
         const name = entry.name.toLowerCase();
-        const rel = full.replace(dirPath + '/', '');
+        const rel = relative(dirPath, safePath).replace(/\\/g, '/');
         if (ext === '.ags' || name.includes('borehole')) categories.boreholeData.push(rel);
         else if (name.includes('spt') || name.includes('cpt')) categories.sptCptData.push(rel);
         else if (name.includes('triaxial') || name.includes('consolidation') || name.includes('atterberg')) categories.soilTestResults.push(rel);
