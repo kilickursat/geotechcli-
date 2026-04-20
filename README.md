@@ -171,8 +171,6 @@ Current bundled strong-beta catalog: 49 skills total, including 48 approved exec
 | `geotech export geojson` | Export to GeoJSON |
 | `geotech export dxf` | Export to AutoCAD DXF |
 | `geotech export csv` | Export to CSV |
-| `geotech bridge detect` | Detect running PLAXIS, FLAC, or Rocscience processes |
-| `geotech bridge generate` | Generate automation scripts for supported software |
 
 Sample export fixtures are committed under `samples/exports/`:
 

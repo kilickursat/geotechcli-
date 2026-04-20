@@ -293,21 +293,6 @@ geotech settlement trough --volume-loss 1.5 --depth 18 --diameter 6.5 --plot
 This command is meant for quick engineering review in an interactive browser workspace before exporting or reporting. Set \`GEOTECHCLI_PLOT_MODE=ascii\` to keep the older terminal-only workflow.`,
   },
   {
-    id: 'bridge',
-    title: 'geotech bridge',
-    content: `Connect to local geotechnical software.
-
-\`\`\`bash
-# Detect running instances
-geotech bridge detect
-
-# Generate automation script
-geotech bridge generate --software plaxis --output model.py
-geotech bridge generate --software flac --output model.fis
-geotech bridge generate --software rocscience --analysis slope
-\`\`\``,
-  },
-  {
     id: 'global-flags',
     title: 'Global Flags',
     content: `Most calculation and analysis commands support these flags:

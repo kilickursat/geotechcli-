@@ -20,7 +20,7 @@ export default function PricingPage() {
               <p className="text-[var(--text-secondary)] text-sm leading-relaxed">
                 Deterministic commands are available now with no signup or billing.
                 That includes bearing capacity, liquefaction, classification, pile,
-                slope, retaining, tunnel, exports, and bridge script generation.
+                slope, retaining, tunnel, exports, and bundled skills.
               </p>
             </div>
             <div>

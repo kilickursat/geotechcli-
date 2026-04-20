@@ -11,7 +11,7 @@ import { exportGeoJSON, exportDXF, exportCSV, exportJSON } from '../src/export/i
 import { toolRegistry } from '../src/agents/tools.js';
 
 import '../src/agents/filesystem-tools.js';
-import '../src/agents/bridge-tools.js';
+import '../src/agents/shell-tools.js';
 import '../src/agents/data-tools.js';
 import '../src/agents/skill-tools.js';
 
@@ -291,7 +291,7 @@ describe('Exports', () => {
 describe('Tool Registry', () => {
   it('All expected tools registered', () => {
     const names = toolRegistry.list().map(t => t.name);
-    for (const n of ['calculate_bearing_capacity', 'calculate_liquefaction', 'classify_rmr89', 'classify_uscs', 'classify_q_system', 'predict_tbm_performance', 'select_tbm_type', 'predict_cutter_wear', 'calculate_tunnel_settlement', 'calculate_consolidation', 'calculate_schmertmann_settlement', 'read_file', 'list_directory', 'parse_csv', 'write_file', 'scan_project', 'plaxis_execute', 'plaxis_get_results', 'flac3d_execute', 'rocscience_execute', 'run_command', 'parse_ags', 'parse_cpt', 'query_standards', 'project_create', 'project_load', 'project_list', 'project_save_dataset', 'project_save_parameter', 'project_add_assumption', 'project_add_artifact', 'project_save_result']) {
+    for (const n of ['calculate_bearing_capacity', 'calculate_liquefaction', 'classify_rmr89', 'classify_uscs', 'classify_q_system', 'predict_tbm_performance', 'select_tbm_type', 'predict_cutter_wear', 'calculate_tunnel_settlement', 'calculate_consolidation', 'calculate_schmertmann_settlement', 'read_file', 'list_directory', 'parse_csv', 'write_file', 'scan_project', 'run_command', 'parse_ags', 'parse_cpt', 'query_standards', 'project_create', 'project_load', 'project_list', 'project_save_dataset', 'project_save_parameter', 'project_add_assumption', 'project_add_artifact', 'project_save_result']) {
       expect(names).toContain(n);
     }
   });

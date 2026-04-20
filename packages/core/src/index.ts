@@ -122,17 +122,6 @@ export {
   type DXFEntity,
 } from './export/index.js';
 
-// Software bridges
-export {
-  detectSoftware,
-  generatePLAXISScript,
-  generateFLACScript,
-  generateRocscienceScript,
-  type BridgeStatus,
-  type ScriptTemplate,
-  type SoftwareType,
-} from './bridge/index.js';
-
 // Metering & anti-abuse
 export {
   InMemoryUsageStore,

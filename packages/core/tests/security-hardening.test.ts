@@ -6,7 +6,7 @@ import { toolRegistry } from '../src/agents/tools.js';
 import { validateReadPath, validateShellCommand, validateWritePath } from '../src/agents/sandbox.js';
 import { importSkillsFromSource } from '../src/skills/index.js';
 
-import '../src/agents/bridge-tools.js';
+import '../src/agents/shell-tools.js';
 import '../src/agents/data-tools.js';
 import '../src/agents/skill-tools.js';
 

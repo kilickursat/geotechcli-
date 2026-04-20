@@ -236,8 +236,7 @@ toolRegistry.register(
 
     const categories: Record<string, string[]> = {
       boreholeData: [], sptCptData: [], soilTestResults: [], sensorData: [],
-      gisFiles: [], cadFiles: [], plaxisModels: [], flacModels: [],
-      reports: [], images: [], other: [],
+      gisFiles: [], cadFiles: [], reports: [], images: [], other: [],
     };
 
     function scanDir(dir: string, depth = 0): void {
@@ -257,8 +256,6 @@ toolRegistry.register(
         else if (name.includes('piezometer') || name.includes('inclinometer') || name.includes('sensor')) categories.sensorData.push(rel);
         else if (['.geojson', '.shp', '.kml', '.kmz'].includes(ext)) categories.gisFiles.push(rel);
         else if (['.dxf', '.dwg'].includes(ext)) categories.cadFiles.push(rel);
-        else if (['.plx', '.p2d', '.p3d'].includes(ext)) categories.plaxisModels.push(rel);
-        else if (['.sav', '.f3sav', '.fis'].includes(ext)) categories.flacModels.push(rel);
         else if (['.pdf', '.docx', '.xlsx'].includes(ext)) categories.reports.push(rel);
         else if (['.jpg', '.jpeg', '.png', '.tif'].includes(ext)) categories.images.push(rel);
         else if (['.csv', '.json', '.txt', '.dat', '.tsv'].includes(ext)) categories.other.push(rel);

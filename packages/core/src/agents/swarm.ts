@@ -7,7 +7,7 @@ import { normalizeToolArgs } from './tool-normalization.js';
 
 // Ensure all tools are registered
 import './filesystem-tools.js';
-import './bridge-tools.js';
+import './shell-tools.js';
 import './data-tools.js';
 import './skill-tools.js';
 import { isAgentSkillToolName } from '../skills/index.js';
@@ -64,10 +64,6 @@ const ROLE_TOOL_ALLOWLIST = {
     'calculate_pile_capacity',
     'calculate_slope_stability',
     'calculate_lateral_earth_pressure',
-    'plaxis_execute',
-    'plaxis_get_results',
-    'flac3d_execute',
-    'rocscience_execute',
     'write_file',
     'project_save_result',
     'project_save_parameter',

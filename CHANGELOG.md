@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.19] - 2026-04-20
+
+### Beta Surface Cleanup
+
+- Trimmed an unfinished local integration surface from the shipped beta so the public CLI only exposes features that are currently supported end to end.
+- Removed the related internal tool wiring and exports so the packaged runtime and public API surface stay aligned with the current beta scope.
+- Cleaned docs, pricing copy, README content, and release notes so the website reflects the supported feature set more accurately.
+
 ## [0.4.18] - 2026-04-20
 
 ### Strong-Beta Skills Visibility Update
@@ -221,7 +229,6 @@
 - **Shell command hardening** 窶・`run_command` tool now uses centralized `validateShellCommand()`. Blocks `python -c`, `python -m`, pipe operators, redirects, `curl`, `wget`, `sudo`, and all destructive commands. Only allows read-only commands and `python <script.py>`.
 - **Fail-closed hosted beta config** Production proxy (`/api/proxy`) now reports unavailable unless `ZHIPU_API_KEY` is configured, and it requires Upstash Redis in production so anonymous rate limiting stays enforced safely.
 - **Registration rate limiting** 窶・`/api/auth` registration endpoint limited to 5 attempts per IP per hour.
-- **PLAXIS bridge hardened** 窶・Added `open(`, `write(`, `unlink` to blocked PLAXIS command patterns.
 
 ### New Calculation Modules
 

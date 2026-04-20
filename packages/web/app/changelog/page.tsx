@@ -8,6 +8,16 @@ const releases = [
     date: '2026-04-20',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'fix', text: 'Trimmed an unfinished local integration surface from the shipped beta so the public CLI only exposes features that are currently supported end to end' },
+      { type: 'fix', text: 'Removed the related internal tool wiring and exports so the packaged runtime and public API surface stay aligned with the current beta scope' },
+      { type: 'fix', text: 'Cleaned docs, pricing copy, README content, and release notes so the website reflects the supported feature set more accurately' },
+    ],
+  },
+  {
+    version: '0.4.18',
+    date: '2026-04-20',
+    tag: '0.4.18 Release',
+    changes: [
       { type: 'feat', text: 'Added a dedicated geotech skill section to the public docs with concrete list, show, validate, run, and agent-session examples so bundled skills are documented as a first-class strong-beta surface' },
       { type: 'feat', text: 'Added a homepage bundled-skills showcase on the beta site, including a direct docs link and terminal examples for direct CLI use and the per-session --skills agent opt-in path' },
       { type: 'fix', text: 'Updated the public beta capability messaging to show the bundled strong-beta skill catalog more explicitly instead of leaving skills buried inside release notes or command help' },
@@ -199,7 +209,6 @@ const releases = [
       { type: 'feat', text: 'Natural language soil classification' },
       { type: 'feat', text: 'GBR document Q&A with vision model' },
       { type: 'feat', text: 'Export to GeoJSON, DXF (AutoCAD), and CSV' },
-      { type: 'feat', text: 'PLAXIS / FLAC / Rocscience bridge (detection + script generation)' },
       { type: 'feat', text: 'LLM-agnostic provider layer: Qwen, OpenAI, Anthropic, Hugging Face, and self-hosted backends' },
       { type: 'feat', text: 'Anti-abuse metering: 5 free AI calls for unregistered users, IP fingerprinting' },
       { type: 'feat', text: '--json, --verbose, --plot, --output global flags on every command' },

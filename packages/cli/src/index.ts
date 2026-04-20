@@ -10,7 +10,6 @@ import { registerConfigCommand } from './commands/config.js';
 import { registerStatusCommand } from './commands/status.js';
 import { registerTunnelCommands } from './commands/tunnel.js';
 import { registerExportCommand } from './commands/export.js';
-import { registerBridgeCommand } from './commands/bridge.js';
 import { registerPileCommand } from './commands/pile.js';
 import { registerSlopeCommand } from './commands/slope.js';
 import { registerRetainingCommand } from './commands/retaining.js';
@@ -67,9 +66,8 @@ registerAgentCommand(program);
 registerReportCommand(program);
 registerChatCommand(program);
 
-// Export & Bridge
+// Export
 registerExportCommand(program);
-registerBridgeCommand(program);
 
 // System
 registerSkillCommand(program);
