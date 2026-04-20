@@ -8,6 +8,16 @@ const releases = [
     date: '2026-04-20',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'fix', text: 'Added a repo-level contributor guide so maintainers and coding agents can follow the current strong-beta architecture, release workflow, and verification expectations more consistently' },
+      { type: 'fix', text: 'Removed a stale internal swarm prompt reference to the deleted local integration surface so the shipped multi-agent guidance matches the real toolset and beta scope' },
+      { type: 'fix', text: 'Kept the strong-beta build green after the internal agent-guidance cleanup so the CLI, core package, and web app stay aligned on the new release' },
+    ],
+  },
+  {
+    version: '0.4.19',
+    date: '2026-04-20',
+    tag: '0.4.19 Release',
+    changes: [
       { type: 'fix', text: 'Trimmed an unfinished local integration surface from the shipped beta so the public CLI only exposes features that are currently supported end to end' },
       { type: 'fix', text: 'Removed the related internal tool wiring and exports so the packaged runtime and public API surface stay aligned with the current beta scope' },
       { type: 'fix', text: 'Cleaned docs, pricing copy, README content, and release notes so the website reflects the supported feature set more accurately' },

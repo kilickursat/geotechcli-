@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.20] - 2026-04-20
+
+### Internal Agent Guidance Cleanup
+
+- Added a repo-level `AGENTS.md` guide so maintainers and coding agents can follow the current strong-beta architecture, release workflow, and verification expectations more consistently.
+- Removed a stale internal swarm prompt reference to the deleted local integration surface so the shipped multi-agent guidance matches the real toolset and beta scope.
+- Kept the strong-beta build green after the internal agent-guidance cleanup so the CLI, core package, and web app stay aligned on the new release.
+
 ## [0.4.19] - 2026-04-20
 
 ### Beta Surface Cleanup
