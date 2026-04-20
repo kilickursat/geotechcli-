@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.18] - 2026-04-20
+
+### Strong-Beta Skills Visibility Update
+
+- Added a dedicated geotech skill section to the public docs with concrete list, show, validate, run, and agent-session examples so bundled skills are documented as a first-class strong-beta surface.
+- Added a homepage bundled-skills showcase on the beta site, including a direct docs link and terminal examples for direct CLI use and the per-session --skills agent opt-in path.
+- Updated the public beta capability messaging to show the bundled strong-beta skill catalog more explicitly instead of leaving skills buried inside release notes or command help.
+
 ## [0.4.17] - 2026-04-20
 
 ### Strong-Beta Bundled Skills Extraction Hotfix

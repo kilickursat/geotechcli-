@@ -62,6 +62,10 @@ geotech classify rmr --ucs 85 --rqd 72 --spacing 0.4 --condition fair --gw dry
 # AI: classify RMR from a tunnel face photo
 geotech vision rmr tunnel-face.jpg
 
+# Bundled strong-beta skills
+geotech skill list
+geotech skill show shallow-foundation-option-screening
+
 # AI: multi-agent analysis
 geotech agent "evaluate foundation options for a 12-story building on soft clay"
 
@@ -144,6 +148,21 @@ These commands now use the hosted beta Qwen path by default.
 | `geotech report` | AI-generated geotechnical report drafting |
 
 Installed strong-beta skills are available directly through `geotech skill ...`. Agent and chat sessions can opt into skill tools explicitly with `--skills` while the default strong-beta agent path stays unchanged.
+
+### Bundled Skills
+
+Strong beta currently ships a bundled skill catalog and bootstraps it on first use.
+
+| Command | Description |
+|---------|-------------|
+| `geotech skill list` | Show the installed bundled skill catalog |
+| `geotech skill show <name>` | Inspect one installed skill and its approval state |
+| `geotech skill validate <target>` | Validate an installed skill name or a local bundle before import |
+| `geotech skill run <name> --input-dir <dir>` | Run one approved deterministic skill against a prepared input directory |
+| `geotech agent "..." --skills` | Let a single agent session discover and call approved installed skills |
+| `geotech chat --skills` | Start an interactive AI session with skill tools enabled for that session |
+
+Current bundled strong-beta catalog: 49 skills total, including 48 approved executable skills and 1 prompt-only reviewer skill.
 
 ### Export and Integration
 

@@ -1,6 +1,7 @@
 import { Nav } from '@/components/Nav';
 import { Hero } from '@/components/Hero';
 import { Features } from '@/components/Features';
+import { SkillCallout } from '@/components/SkillCallout';
 import { HowItWorks } from '@/components/HowItWorks';
 import { Stats } from '@/components/Stats';
 import { CodeDemo } from '@/components/CodeDemo';
@@ -31,6 +32,7 @@ export default function HomePage() {
       </section>
 
       <Features />
+      <SkillCallout />
       <HowItWorks />
       <Stats />
       <CodeDemo />

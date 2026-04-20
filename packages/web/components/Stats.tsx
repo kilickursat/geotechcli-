@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 
 const stats = [
   { display: '1st', label: 'Agentic AI CLI in Geotechnical Engineering', accent: 'var(--accent-teal)', static: true },
-  { target: 6, suffix: '+', label: 'AI-Powered Commands', accent: 'var(--accent-cyan)', static: false },
+  { target: 49, suffix: '', label: 'Bundled Skills Shipped in Beta', accent: 'var(--accent-cyan)', static: false },
   { target: 11, suffix: '+', label: 'Deterministic Commands', accent: 'var(--accent-purple)', static: false },
   { target: 0, suffix: '', label: 'API Keys Required', accent: 'var(--accent-teal)', static: false },
 ];
@@ -68,7 +68,7 @@ function Counter({
 export function Stats() {
   return (
     <section className="py-16 px-12 max-w-[1000px] mx-auto">
-      <div className="grid grid-cols-4 gap-8">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-8">
         {stats.map((s, i) => (
           <div key={i} className="text-center">
             <Counter

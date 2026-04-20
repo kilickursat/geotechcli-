@@ -8,20 +8,19 @@ const releases = [
     date: '2026-04-20',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
-      { type: 'fix', text: 'Replaced bundled skill ZIP extraction with a pure JavaScript path inside @geotechcli/core so first-use skill bootstrap no longer depends on external tar or python executables just to list or inspect installed skills' },
-      { type: 'fix', text: 'Preserved the strong-beta skill catalog and the new --skills agent session opt-in while removing the Windows-specific archive extraction footgun that could block fresh local skill discovery' },
-      { type: 'fix', text: 'Kept archive path validation in place so bundled skill imports still reject unsafe ZIP paths during bootstrap and nested archive discovery' },
+      { type: 'feat', text: 'Added a dedicated geotech skill section to the public docs with concrete list, show, validate, run, and agent-session examples so bundled skills are documented as a first-class strong-beta surface' },
+      { type: 'feat', text: 'Added a homepage bundled-skills showcase on the beta site, including a direct docs link and terminal examples for direct CLI use and the per-session --skills agent opt-in path' },
+      { type: 'fix', text: 'Updated the public beta capability messaging to show the bundled strong-beta skill catalog more explicitly instead of leaving skills buried inside release notes or command help' },
     ],
   },
   {
-    version: '0.4.16',
+    version: '0.4.17',
     date: '2026-04-20',
-    tag: '0.4.16 Release',
+    tag: '0.4.17 Release',
     changes: [
-      { type: 'feat', text: 'Added an explicit --skills session flag to geotech agent and geotech chat so users can opt a single AI session into installed skill tools without enabling skills globally' },
-      { type: 'fix', text: 'Kept direct geotech skill commands ready by default while preserving the strong-beta default that ordinary agent sessions do not automatically see or call skills unless explicitly enabled' },
-      { type: 'fix', text: 'Carried session-level skill opt-in through both single-agent and swarm execution paths, including the interactive continue into chat hint' },
-      { type: 'fix', text: 'Added focused regression coverage proving that agent skill tools remain blocked when disabled and become callable when the session is explicitly skill-enabled' },
+      { type: 'fix', text: 'Replaced bundled skill ZIP extraction with a pure JavaScript path inside @geotechcli/core so first-use skill bootstrap no longer depends on external tar or python executables just to list or inspect installed skills' },
+      { type: 'fix', text: 'Preserved the strong-beta skill catalog and the new --skills agent session opt-in while removing the Windows-specific archive extraction footgun that could block fresh local skill discovery' },
+      { type: 'fix', text: 'Kept archive path validation in place so bundled skill imports still reject unsafe ZIP paths during bootstrap and nested archive discovery' },
     ],
   },
   {

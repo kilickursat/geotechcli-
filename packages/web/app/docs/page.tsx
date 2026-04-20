@@ -89,6 +89,32 @@ Installed skills are also bundled in strong beta. Direct geotech skill commands 
 Hugging Face setup: get a token at huggingface.co/settings/tokens with "Make calls to Inference Providers" permission. Browse models at huggingface.co/models. Append :fastest or :cheapest to auto-route, or :provider to force a specific backend (cerebras, together, groq, etc.).`,
   },
   {
+    id: 'skills',
+    title: 'geotech skill',
+    content: `Bundled strong-beta skills ship with the CLI and bootstrap on first use. Use direct skill commands when you want a repeatable local workflow, and use the --skills flag when you want geotech agent or geotech chat to see the approved skill catalog for that one session.
+
+\`\`\`bash
+# See the bundled catalog
+geotech skill list
+
+# Inspect one installed workflow
+geotech skill show shallow-foundation-option-screening
+
+# Validate an installed skill or a local bundle before import
+geotech skill validate shallow-foundation-option-screening
+geotech skill validate geotechcli-geotech-skills-wave-3.zip
+
+# Run one approved deterministic skill against a prepared input directory
+geotech skill run shallow-foundation-option-screening --input-dir assets/example-inputs
+
+# Let agent or chat use approved skills for one session
+geotech agent "screen shallow foundation options for this site" --skills
+geotech chat --skills
+\`\`\`
+
+Strong beta currently bundles 49 skills: 48 approved executable skills and 1 prompt-only reviewer skill.`,
+  },
+  {
     id: 'bearing',
     title: 'geotech bearing',
     content: `Calculate bearing capacity using Terzaghi, Meyerhof, Hansen, or Vesic methods.
