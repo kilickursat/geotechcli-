@@ -11,6 +11,10 @@ function readJson(...parts) {
   return JSON.parse(readText(...parts));
 }
 
+function countMatches(source, pattern) {
+  return [...source.matchAll(pattern)].length;
+}
+
 function assert(condition, message) {
   if (!condition) {
     throw new Error(message);
@@ -21,6 +25,10 @@ const metadata = readJson('packages', 'core', 'src', 'meta', 'metadata.json');
 const cliPkg = readJson('packages', 'cli', 'package.json');
 const corePkg = readJson('packages', 'core', 'package.json');
 const webPkg = readJson('packages', 'web', 'package.json');
+const skillApprovalSource = readText('packages', 'core', 'src', 'skills', 'approval.ts');
+const approvedSkillCount = countMatches(skillApprovalSource, /approval\('approved'/g);
+const promptOnlySkillCount = countMatches(skillApprovalSource, /approval\('prompt_only'/g);
+const totalBundledSkillCount = approvedSkillCount + promptOnlySkillCount;
 const lockfile = readJson('package-lock.json');
 const lockCliPkg = lockfile.packages?.['packages/cli'];
 const lockCorePkg = lockfile.packages?.['packages/core'];
@@ -65,6 +73,10 @@ assert(
 assert(
   readme.includes(metadata.defaults.visionModel),
   `README.md must mention the shared default vision model ${metadata.defaults.visionModel}.`,
+);
+assert(
+  readme.includes(`Current bundled strong-beta catalog: ${totalBundledSkillCount} skills total, including ${approvedSkillCount} approved executable skills and ${promptOnlySkillCount} prompt-only reviewer skill.`),
+  'README.md must keep the bundled strong-beta skill counts aligned with the approval catalog.',
 );
 for (const requiredFlag of ['--quiet', '--dry-run']) {
   assert(
@@ -131,6 +143,10 @@ assert(
   docsSource.includes('GLOBAL_FLAG_DEFINITIONS'),
   'Docs page must render global flags from shared metadata.',
 );
+assert(
+  docsSource.includes(`Strong beta currently bundles ${totalBundledSkillCount} skills: ${approvedSkillCount} approved executable skills and ${promptOnlySkillCount} prompt-only reviewer skill.`),
+  'Docs page must keep bundled skill counts aligned with the approval catalog.',
+);
 
 const pricingSource = readText('packages', 'web', 'app', 'pricing', 'page.tsx');
 assert(
@@ -143,6 +159,33 @@ const changelogSource = readText('packages', 'web', 'app', 'changelog', 'page.ts
 assert(
   changelogSource.includes('GEOTECHCLI_VERSION'),
   'Changelog page must use GEOTECHCLI_VERSION for the current release entry.',
+);
+const rootChangelog = readText('CHANGELOG.md');
+const topChangelogVersion = rootChangelog.match(/^## \[([^\]]+)\]/m)?.[1];
+assert(
+  topChangelogVersion === metadata.version,
+  `CHANGELOG.md top entry must match shared metadata version ${metadata.version}, found ${topChangelogVersion ?? '(missing)'}.`,
+);
+
+const featureSource = readText('packages', 'web', 'components', 'Features.tsx');
+assert(
+  featureSource.includes(`${totalBundledSkillCount} bundled strong-beta skills ship`) &&
+    featureSource.includes('--skills'),
+  'Homepage features panel must keep bundled-skill messaging aligned with the approval catalog and per-session --skills opt-in.',
+);
+
+const skillCalloutSource = readText('packages', 'web', 'components', 'SkillCallout.tsx');
+assert(
+  skillCalloutSource.includes(`${totalBundledSkillCount} bundled strong-beta skills detected`) &&
+    skillCalloutSource.includes('--skills'),
+  'Homepage skill callout must keep bundled-skill messaging aligned with the approval catalog and per-session --skills opt-in.',
+);
+
+const versionRouteSource = readText('packages', 'web', 'app', 'api', 'version', 'route.ts');
+assert(
+  versionRouteSource.includes('DEFAULT_LLM_PROVIDER') &&
+    versionRouteSource.includes('GEOTECHCLI_VERSION'),
+  '/api/version must expose shared provider and version metadata from the core package.',
 );
 
 console.log('verify-release-consistency: OK');

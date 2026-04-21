@@ -78,7 +78,7 @@ const features = [
     ),
     colorClass: 'purple',
     name: 'Bundled Skill Library',
-    desc: '49 approved strong-beta skills ship with the CLI for repeatable screening, review, excavation, groundwater, tunnel, and foundation workflows through geotech skill or agent and chat with --skills.',
+    desc: '49 bundled strong-beta skills ship with the CLI for repeatable screening, review, excavation, groundwater, tunnel, and foundation workflows through geotech skill or agent and chat with --skills.',
     tag: '49 Bundled',
     tagColor: 'purple',
   },

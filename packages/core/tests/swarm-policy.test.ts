@@ -38,7 +38,9 @@ describe('Swarm tool policy', () => {
     expect(isToolAllowedForAgent('interpretation', 'list_skills')).toBe(false);
     expect(isToolAllowedForAgent('interpretation', 'list_skills', true)).toBe(true);
     expect(isToolAllowedForAgent('simulation', 'calculate_bearing_capacity')).toBe(true);
+    expect(isToolAllowedForAgent('simulation', 'generate_report')).toBe(true);
     expect(isToolAllowedForAgent('simulation', 'query_standards')).toBe(false);
+    expect(isToolAllowedForAgent('reviewer', 'generate_report')).toBe(false);
     expect(getAllowedToolsForAgent('reviewer')).not.toContain('project_add_assumption');
     expect(getAllowedToolsForAgent('reviewer', true)).not.toContain('run_skill');
   });

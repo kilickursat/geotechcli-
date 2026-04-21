@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.22] - 2026-04-21
+
+### Agent Runtime Parity And Release Surface Alignment
+
+- Unified the live agent tool bootstrap so both `runAgent` and `runSwarm` load the same filesystem, shell, data, deliverable, and skill tool registrations instead of silently drifting when a tool was added by side-effect import only.
+- Aligned `runSwarm` with the same deterministic geotechnical intake screen and first-turn hosted-beta fallback used by `runAgent`, so under-specified requests and hosted provider warmup/outage cases now fail more consistently across both execution paths.
+- Updated strong-beta release surfaces together for the same versioned fix: package metadata, lockfile pins, README, website docs, website changelog, homepage bundled-skill copy, and release-consistency checks now describe the same `0.4.22` runtime behavior.
+
 ## [0.4.21] - 2026-04-20
 
 ### Agent Internals Hardening

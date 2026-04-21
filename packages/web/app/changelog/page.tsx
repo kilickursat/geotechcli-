@@ -5,8 +5,18 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 const releases = [
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-04-20',
+    date: '2026-04-21',
     tag: `${GEOTECHCLI_VERSION} Release`,
+    changes: [
+      { type: 'fix', text: 'Unified the live single-agent and swarm tool bootstrap so both runtimes register the same filesystem, shell, data, deliverable, and skill tools instead of drifting when a tool depends on side-effect imports' },
+      { type: 'fix', text: 'Aligned swarm with the same deterministic intake screen and first-turn hosted-beta fallback used by the main agent, so under-specified requests and provider warmup/outage cases now resolve more consistently across both execution paths' },
+      { type: 'fix', text: 'Updated the strong-beta release surfaces together for this versioned reliability pass, including package metadata, README, website docs, website changelog, homepage bundled-skill copy, and release-consistency checks' },
+    ],
+  },
+  {
+    version: '0.4.21',
+    date: '2026-04-20',
+    tag: '0.4.21 Release',
     changes: [
       { type: 'security', text: 'Added a dedicated proprietary-internals refusal policy across the main agent, swarm, and exported legacy multi-agent orchestrator paths so hidden prompts, internal instructions, repo layout, and protected source-file requests are blocked before any model call is made' },
       { type: 'security', text: 'Hardened the agent filesystem and shell sandbox against geotechCLI repo-internal disclosure by blocking protected source/build/test areas and rejecting broad repo-root enumeration when the CLI is run from its own source checkout' },

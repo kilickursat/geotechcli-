@@ -238,7 +238,9 @@ geotech agent "check bearing and settlement for the current foundation concept" 
 
 # Save report to file
 geotech agent "analyze slope stability for 15m cut" --output slope-report.md
-\`\`\``,
+\`\`\`
+
+Strong-beta reliability note: single-agent and swarm mode now share the same under-specified hosted-beta intake screen, the same first-turn hosted-beta fallback behavior, and the same case-file deliverable tool bootstrap for report and export follow-on workflows.`,
   },
   {
     id: 'export',

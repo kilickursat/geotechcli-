@@ -149,6 +149,8 @@ These commands now use the hosted beta Qwen path by default.
 
 Installed strong-beta skills are available directly through `geotech skill ...`. Agent and chat sessions can opt into skill tools explicitly with `--skills` while the default strong-beta agent path stays unchanged.
 
+Strong-beta reliability note: single-agent and swarm mode now share the same under-specified hosted-beta intake screen, the same first-turn hosted-beta fallback behavior, and the same case-file deliverable tool bootstrap for report and export follow-on workflows.
+
 ### Bundled Skills
 
 Strong beta currently ships a bundled skill catalog and bootstraps it on first use.

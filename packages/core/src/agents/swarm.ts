@@ -9,12 +9,16 @@ import {
   getProprietaryInternalsPromptRules,
   isProprietaryInternalsRequest,
 } from './proprietary-internals.js';
+import {
+  buildDeterministicFallbackAnswer,
+  buildDeterministicPreflightAnswer,
+  getHostedFallbackMode,
+  isHostedBetaUnavailable,
+  type HostedFallbackMode,
+} from './runtime-fallbacks.js';
 
 // Ensure all tools are registered
-import './filesystem-tools.js';
-import './shell-tools.js';
-import './data-tools.js';
-import './skill-tools.js';
+import './runtime-bootstrap.js';
 import { isAgentSkillToolName } from '../skills/index.js';
 
 export interface SwarmStep {
@@ -73,6 +77,12 @@ const ROLE_TOOL_ALLOWLIST = {
     'project_save_result',
     'project_save_parameter',
     'project_add_artifact',
+    'generate_report',
+    'render_pdf',
+    'render_docx',
+    'export_csv',
+    'export_dxf',
+    'export_geojson',
     'list_skills',
     'describe_skill',
     'run_skill',
@@ -170,6 +180,7 @@ YOU RECEIVE: Structured data from the Interpretation Agent (soil profiles, class
   - TBM performance prediction, type selection, cutter wear
   - Tunnel settlement calculation (Peck)
   - Running approved deterministic skills when the session enables them
+  - Generating reports and export deliverables from stored case-file artifacts when needed
   - Saving results, derived parameters, and output artifacts to persistent project storage
 
 YOUR TOOLS:
@@ -264,8 +275,19 @@ async function runAgentLoop(
   systemPrompt: string,
   agentName: SwarmStep['agent'],
   onStep: SwarmCallback,
+  fallback?: {
+    userQuery: string;
+    sessionContext?: Record<string, unknown>;
+  },
   maxIter = 6,
-): Promise<{ output: string; context: Record<string, unknown>; tokens: number; latency: number }> {
+): Promise<{
+  output: string;
+  context: Record<string, unknown>;
+  tokens: number;
+  latency: number;
+  usedDeterministicFallback?: boolean;
+  fallbackMode?: HostedFallbackMode;
+}> {
   const skillsEnabled = config.skillsEnabled === true;
   const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
     { role: 'system', content: systemPrompt },
@@ -285,6 +307,30 @@ async function runAgentLoop(
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      if (index === 0 && fallback && isHostedBetaUnavailable(message)) {
+        const fallbackMode = getHostedFallbackMode(message);
+        onStep({
+          agent: agentName,
+          type: 'thought',
+          content:
+            fallbackMode === 'warming_timeout'
+              ? 'Hosted model on Modal.com GPU is warming up or hit the current timeout budget. Switching to deterministic fallback reasoning.'
+              : 'Hosted beta is temporarily unavailable. Switching to deterministic fallback reasoning.',
+          timestamp: Date.now(),
+        });
+        return {
+          output: buildDeterministicFallbackAnswer(
+            fallback.userQuery,
+            fallback.sessionContext,
+            fallbackMode,
+          ),
+          context,
+          tokens: totalTokens,
+          latency: totalLatency,
+          usedDeterministicFallback: true,
+          fallbackMode,
+        };
+      }
       onStep({ agent: agentName, type: 'error', content: message, timestamp: Date.now() });
       return { output: `Error: ${message}`, context, tokens: totalTokens, latency: totalLatency };
     }
@@ -459,6 +505,17 @@ export async function runSwarm(
     return session;
   }
 
+  const preflightAnswer = buildDeterministicPreflightAnswer(task, config, sessionContext);
+  if (preflightAnswer) {
+    trackStep({
+      agent: 'orchestrator',
+      type: 'answer',
+      content: preflightAnswer,
+      timestamp: Date.now(),
+    });
+    return session;
+  }
+
   const serializedContext = serializeContextForPrompt(sessionContext, 5000);
   const contextBlock = serializedContext ? `Project/session context:\n${serializedContext}\n\n` : '';
 
@@ -470,11 +527,25 @@ export async function runSwarm(
     interpretationPrompt(config.skillsEnabled === true),
     'interpretation',
     trackStep,
+    {
+      userQuery: task,
+      sessionContext,
+    },
   );
 
   session.totalTokens += interpResult.tokens;
   session.totalLatencyMs += interpResult.latency;
   session.context = { ...session.context, interpretation: interpResult.context };
+
+  if (interpResult.usedDeterministicFallback) {
+    trackStep({
+      agent: 'orchestrator',
+      type: 'answer',
+      content: interpResult.output,
+      timestamp: Date.now(),
+    });
+    return session;
+  }
 
   let interpData = '';
   const interpHandoff = interpResult.output.match(/```handoff\s*\n?([\s\S]*?)\n?```/);

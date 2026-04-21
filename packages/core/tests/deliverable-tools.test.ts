@@ -244,6 +244,24 @@ describe('deliverable tools', () => {
     );
   });
 
+  it('registers deliverable tools through the live swarm runtime import', async () => {
+    await import('../src/agents/swarm.js');
+    const { toolRegistry } = await import('../src/agents/tools.js');
+
+    const names = toolRegistry.list().map((tool) => tool.name);
+
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'generate_report',
+        'render_pdf',
+        'render_docx',
+        'export_csv',
+        'export_dxf',
+        'export_geojson',
+      ]),
+    );
+  });
+
   it('exports artifact-backed deliverables from stored case-file data', async () => {
     await import('../src/agents/brain.js');
     const { toolRegistry } = await import('../src/agents/tools.js');
