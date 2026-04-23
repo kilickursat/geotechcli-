@@ -218,6 +218,33 @@ geotech vision log Appendix-2A-Geotechnical-Report-Part-6.pdf
 \`\`\``,
   },
   {
+    id: 'ingest',
+    title: 'geotech ingest',
+    content: `Structured ingest for geotechnical PDFs and images. Use \`borehole-log\` for focused borehole extraction and \`geotech-document\` for broader report intelligence such as geology, lithology, classifications, and engineering parameters.
+
+\`\`\`bash
+# Borehole-log extraction from images or PDF packets
+geotech ingest borehole-log.pdf --type borehole-log
+
+# Broader geotechnical report intelligence
+geotech ingest Geotechnical-Report.pdf --type geotech-document
+
+# Export the self-contained HTML dossier for design review or sharing
+geotech ingest Geotechnical-Report.pdf --type geotech-document --format html --output geotechnical-dossier.html
+
+# Large reports automatically switch to resumable async jobs
+geotech ingest Geotechnical-Report.pdf --type geotech-document
+geotech ingest wait <jobId> --format html --output geotechnical-dossier.html
+geotech ingest result <jobId> --format html --output geotechnical-dossier.html
+
+# Persist a project-backed ingest, then reopen the latest stored review later
+geotech ingest Geotechnical-Report.pdf --type geotech-document --project demo-project
+geotech ingest review demo-project --dataset ingest-review:latest --format html --output review-dossier.html
+\`\`\`
+
+The HTML dossier is a self-contained engineering review file with an executive summary, confidence metrics, extracted materials and parameters, review findings, page-by-page evidence cards, and stored-review plus approval context when the ingest is project-backed.`,
+  },
+  {
     id: 'agent',
     title: 'geotech agent (AI)',
     content: `Multi-agent orchestrator for complex tasks. Routes to specialized Geo, Tunnel, Hydro, Seismic, Slope, and Foundation agents, and can reuse persistent project memory with --project.

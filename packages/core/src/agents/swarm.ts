@@ -16,6 +16,7 @@ import {
   isHostedBetaUnavailable,
   type HostedFallbackMode,
 } from './runtime-fallbacks.js';
+import { runWithToolRuntimeContext } from './tool-runtime.js';
 
 // Ensure all tools are registered
 import './runtime-bootstrap.js';
@@ -50,6 +51,14 @@ const ROLE_TOOL_ALLOWLIST = {
     'scan_project',
     'parse_ags',
     'parse_cpt',
+    'ingest_geotech_document',
+    'start_geotech_ingest_job',
+    'get_geotech_ingest_job',
+    'wait_geotech_ingest_job',
+    'load_geotech_ingest_job_result',
+    'list_geotech_ingest_jobs',
+    'list_persisted_ingest_reviews',
+    'load_persisted_ingest_review',
     'classify_uscs',
     'classify_rmr89',
     'classify_q_system',
@@ -90,6 +99,16 @@ const ROLE_TOOL_ALLOWLIST = {
   reviewer: [
     'query_standards',
     'project_load',
+    'get_geotech_ingest_job',
+    'wait_geotech_ingest_job',
+    'load_geotech_ingest_job_result',
+    'list_geotech_ingest_jobs',
+    'list_persisted_ingest_reviews',
+    'load_persisted_ingest_review',
+    'list_persisted_ingest_review_approvals',
+    'load_persisted_ingest_review_approval',
+    'approve_persisted_ingest_review',
+    'promote_persisted_ingest_review',
     'list_skills',
     'describe_skill',
   ],
@@ -139,6 +158,7 @@ YOUR ROLE: Clean, parse, classify, and structure raw geotechnical data.
 
 YOU HANDLE:
 - Reading borehole logs, AGS files, CPT data from disk
+- Ingesting geotechnical PDFs and images into structured borehole or geotech-document outputs
 - Classifying soils (USCS, AASHTO) and rocks (RMR, Q-system)
 - Parsing CSV sensor data and site investigation reports
 - Scanning project directories to inventory available data
@@ -211,7 +231,7 @@ function reviewerPrompt(skillsEnabled = false): string {
 
 YOUR ROLE: Safety check, sanity check, and standards compliance review.
 
-YOU RECEIVE: Calculation results from the Simulation Agent.
+YOU RECEIVE: Calculation results from the Simulation Agent. You may also inspect persisted ingest reviews when validating whether promoted project datasets are safe to trust, and you may record approval before promotion when the evidence supports it.
 
 YOU CHECK:
 1. SAFETY FACTORS: Are FOS values above code minimums?
@@ -406,7 +426,10 @@ async function runAgentLoop(
           continue;
         }
 
-        const result = await toolRegistry.execute(call.tool, call.args);
+        const result = await runWithToolRuntimeContext(
+          { config },
+          () => toolRegistry.execute(call.tool, call.args),
+        );
         onStep({
           agent: agentName,
           type: 'tool_result',

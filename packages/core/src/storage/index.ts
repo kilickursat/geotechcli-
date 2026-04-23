@@ -8,6 +8,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
+import { normalizeBoreholeLocation, type BoreholeLocation } from '../ingest/geotech-schemas.js';
 
 // ---------------------------------------------------------------------------
 // Persistent Project Storage
@@ -20,6 +21,7 @@ export interface ProjectMeta {
   id: string;
   name: string;
   location?: string;
+  locationMetadata?: BoreholeLocation;
   description?: string;
   createdAt: string;
   updatedAt: string;
@@ -27,6 +29,7 @@ export interface ProjectMeta {
 
 export interface SoilProfile {
   boreholeId: string;
+  location?: BoreholeLocation;
   layers: Array<{
     depthFrom: number;
     depthTo: number;
@@ -72,6 +75,7 @@ export interface ProjectDataset {
   kind: string;
   data: unknown;
   source?: string;
+  metadata?: Record<string, unknown>;
   updatedAt: string;
 }
 
@@ -182,6 +186,7 @@ function normalizeSoilProfile(value: unknown): SoilProfile | null {
 
   return {
     boreholeId,
+    location: normalizeBoreholeLocation(value.location),
     layers,
     waterTableDepth: asNumber(value.waterTableDepth),
   };
@@ -266,6 +271,7 @@ function normalizeDatasets(value: unknown): Record<string, ProjectDataset> {
       kind,
       data: dataset.data ?? null,
       source: asOptionalString(dataset.source),
+      metadata: isRecord(dataset.metadata) ? dataset.metadata : undefined,
       updatedAt: asOptionalString(dataset.updatedAt) ?? nowIso(),
     };
   }
@@ -325,6 +331,7 @@ function normalizeProjectData(raw: unknown): ProjectData {
       id: projectId,
       name: asOptionalString(metaSource.name) ?? projectId,
       location: asOptionalString(metaSource.location),
+      locationMetadata: normalizeBoreholeLocation(metaSource.locationMetadata),
       description: asOptionalString(metaSource.description),
       createdAt,
       updatedAt: asOptionalString(metaSource.updatedAt) ?? createdAt,
@@ -397,7 +404,7 @@ function getProjectFilePath(projectId: string): string {
 
 export function createProject(
   name: string,
-  options?: { location?: string; description?: string },
+  options?: { location?: string; locationMetadata?: BoreholeLocation; description?: string },
 ): ProjectData {
   const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   const dir = getProjectDir(id);
@@ -414,6 +421,7 @@ export function createProject(
       id,
       name,
       location: options?.location,
+      locationMetadata: normalizeBoreholeLocation(options?.locationMetadata),
       description: options?.description,
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -495,17 +503,18 @@ export function deleteProject(projectId: string): void {
 
 export function addSoilProfile(projectId: string, profile: SoilProfile): void {
   withProject(projectId, (project) => {
-    const idx = project.soilProfiles.findIndex((existing) => existing.boreholeId === profile.boreholeId);
+    const normalizedProfile = normalizeSoilProfile(profile) ?? profile;
+    const idx = project.soilProfiles.findIndex((existing) => existing.boreholeId === normalizedProfile.boreholeId);
     if (idx >= 0) {
-      project.soilProfiles[idx] = profile;
+      project.soilProfiles[idx] = normalizedProfile;
     } else {
-      project.soilProfiles.push(profile);
+      project.soilProfiles.push(normalizedProfile);
     }
 
-    project.namedDatasets[profile.boreholeId] = {
-      name: profile.boreholeId,
+    project.namedDatasets[normalizedProfile.boreholeId] = {
+      name: normalizedProfile.boreholeId,
       kind: 'soil-profile',
-      data: profile,
+      data: normalizedProfile,
       source: 'addSoilProfile',
       updatedAt: nowIso(),
     };

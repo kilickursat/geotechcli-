@@ -25,11 +25,25 @@ export interface ChatMessage {
   content: string | ContentPart[];
 }
 
-export interface ContentPart {
-  type: 'text' | 'image_url';
-  text?: string;
-  image_url?: { url: string; detail?: 'auto' | 'low' | 'high' };
+export interface TextContentPart {
+  type: 'text';
+  text: string;
 }
+
+export interface ImageUrlContentPart {
+  type: 'image_url';
+  image_url: { url: string; detail?: 'auto' | 'low' | 'high' };
+}
+
+export interface DocumentUrlContentPart {
+  type: 'document_url';
+  document_url: { url: string; mimeType?: string };
+}
+
+export type ContentPart =
+  | TextContentPart
+  | ImageUrlContentPart
+  | DocumentUrlContentPart;
 
 export interface CompletionRequest {
   messages: ChatMessage[];
@@ -54,10 +68,18 @@ export interface TokenUsage {
   totalTokens: number;
 }
 
+export interface ProviderCapabilities {
+  text: boolean;
+  visionImages: boolean;
+  nativePdfDocuments: boolean;
+  jsonMode: boolean;
+}
+
 export interface ProviderAdapter {
   readonly name: LLMProvider;
   readonly defaultModel: string;
   readonly defaultVisionModel: string;
+  readonly capabilities: ProviderCapabilities;
   complete(request: CompletionRequest, config: LLMConfig): Promise<CompletionResponse>;
 }
 

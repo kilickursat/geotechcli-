@@ -1,6 +1,6 @@
 {
   "name": "@geotechcli/core",
-  "version": "0.4.22",
+  "version": "0.4.23",
   "description": "Shared computation and LLM engine for geotechCLI",
   "type": "module",
   "main": "./dist/index.js",
@@ -39,9 +39,13 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@napi-rs/canvas": "^0.1.99",
     "docx": "^9.0.0",
     "fflate": "^0.8.2",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^5.6.205",
     "pdfkit": "^0.15.0",
+    "sharp": "^0.34.5",
     "zod": "^3.24.0"
   },
   "devDependencies": {

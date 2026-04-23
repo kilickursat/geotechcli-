@@ -5,6 +5,7 @@ import type {
   LLMConfig,
   LLMProvider,
 } from '../types.js';
+import { resolveProviderCapabilities } from '../capabilities.js';
 
 interface OpenAIChatResponse {
   id: string;
@@ -39,6 +40,12 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
   readonly name: LLMProvider;
   readonly defaultModel: string;
   readonly defaultVisionModel: string;
+  readonly capabilities = {
+    text: true,
+    visionImages: true,
+    nativePdfDocuments: false,
+    jsonMode: true,
+  } as const;
 
   private readonly baseUrl: string;
 
@@ -67,6 +74,7 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
     const effectiveBaseUrl = config.baseUrl ?? this.baseUrl;
     const model =
       request.model ?? config.modelId ?? this.defaultModel;
+    const capabilities = resolveProviderCapabilities(config, { model });
 
     const messages = request.messages.map((msg) => {
       if (typeof msg.content === 'string') {
@@ -77,7 +85,21 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
         role: msg.role,
         content: msg.content.map((part) => {
           if (part.type === 'text') {
-            return { type: 'text' as const, text: part.text ?? '' };
+            return { type: 'text' as const, text: part.text };
+          }
+          if (part.type === 'document_url') {
+            if (!capabilities.nativePdfDocuments) {
+              throw new Error(
+                `${this.name} with model "${model}" does not advertise native PDF document vision support. Export the page as PNG/JPG or use a provider/model with PDF-capable multimodal support.`,
+              );
+            }
+            return {
+              type: 'document_url' as const,
+              document_url: {
+                url: part.document_url.url,
+                mimeType: part.document_url.mimeType,
+              },
+            };
           }
           return {
             type: 'image_url' as const,

@@ -4,6 +4,7 @@ import type {
   CompletionResponse,
   LLMConfig,
 } from '../types.js';
+import { resolveProviderCapabilities } from '../capabilities.js';
 
 interface HFChatResponse {
   id: string;
@@ -53,6 +54,12 @@ export class HuggingFaceAdapter implements ProviderAdapter {
   readonly name = 'huggingface' as const;
   readonly defaultModel = 'meta-llama/Llama-3.1-8B-Instruct';
   readonly defaultVisionModel = 'Qwen/Qwen3.5-9B';
+  readonly capabilities = {
+    text: true,
+    visionImages: true,
+    nativePdfDocuments: false,
+    jsonMode: true,
+  } as const;
 
   private readonly baseUrl: string;
 
@@ -82,6 +89,7 @@ export class HuggingFaceAdapter implements ProviderAdapter {
     const effectiveBaseUrl = config.baseUrl ?? this.baseUrl;
     const model =
       request.model ?? config.modelId ?? this.defaultModel;
+    const capabilities = resolveProviderCapabilities(config, { model });
 
     // Build messages in OpenAI-compatible format (HF supports this natively)
     const messages = request.messages.map((msg) => {
@@ -93,7 +101,21 @@ export class HuggingFaceAdapter implements ProviderAdapter {
         role: msg.role,
         content: msg.content.map((part) => {
           if (part.type === 'text') {
-            return { type: 'text' as const, text: part.text ?? '' };
+            return { type: 'text' as const, text: part.text };
+          }
+          if (part.type === 'document_url') {
+            if (!capabilities.nativePdfDocuments) {
+              throw new Error(
+                `Hugging Face model "${model}" does not advertise native PDF document vision support on this adapter path. Export the page as PNG/JPG or pick a PDF-capable multimodal model.`,
+              );
+            }
+            return {
+              type: 'image_url' as const,
+              image_url: {
+                url: part.document_url.url,
+                detail: 'auto' as const,
+              },
+            };
           }
           return {
             type: 'image_url' as const,

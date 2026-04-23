@@ -4,11 +4,14 @@ import { DEFAULT_LLM_MODEL, DEFAULT_LLM_PROVIDER, GEOTECHCLI_VERSION } from '@ge
 
 import {
   checkHostedBetaDailyLimit,
+  getHostedBetaDeveloperAuthStatus,
   getDailyLimitForClient,
   getHostedBetaRequestLimit,
   inferHostedBetaCallType,
   incrementHostedBetaUsage,
+  resolveHostedBetaClientMode,
   validateAnonymousHostedBetaMessages,
+  validateMessages,
 } from './beta.js';
 
 afterEach(() => {
@@ -47,6 +50,20 @@ describe('hosted beta controls', () => {
     expect(getDailyLimitForClient('agent', 'geotechcli')).toBeGreaterThan(
       getDailyLimitForClient('agent', 'anonymous'),
     );
+  });
+
+  it('recognizes a valid developer key before falling back to public client modes', () => {
+    vi.stubEnv('GEOTECHCLI_DEVELOPER_API_KEY', 'gtdev_live_key');
+    const headers = new Headers({
+      authorization: 'Bearer gtdev_live_key',
+      'x-geotech-client': 'geotechcli',
+    });
+
+    expect(getHostedBetaDeveloperAuthStatus(headers)).toEqual({
+      provided: true,
+      authorized: true,
+    });
+    expect(resolveHostedBetaClientMode(headers)).toBe('developer');
   });
 
   it('keys daily limits by ip and call type', async () => {
@@ -100,6 +117,24 @@ describe('hosted beta controls', () => {
         { role: 'assistant', content: 'Sure.' },
       ]),
     ).toThrow(/Anonymous hosted beta requests/);
+  });
+
+  it('rejects PDF data URIs masquerading as image_url payloads', () => {
+    expect(() =>
+      validateMessages([
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'image_url',
+              image_url: {
+                url: 'data:application/pdf;base64,ZmFrZS1wZGY=',
+              },
+            },
+          ],
+        },
+      ]),
+    ).toThrow(/invalid text or image payload/i);
   });
 
   it('prefers actual message shape over a misleading call-type hint', () => {
@@ -235,6 +270,140 @@ describe('hosted beta controls', () => {
     expect(response.status).toBe(200);
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(body.choices?.[0]?.message?.content).toBe('USCS: CH');
+  });
+
+  it('clamps hosted-beta output tokens before forwarding upstream', async () => {
+    vi.stubEnv('MODAL_ENDPOINT_URL', 'https://test--geotechcli-qwen-serve.modal.run/v1/chat/completions');
+
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          model: DEFAULT_LLM_MODEL,
+          choices: [{ message: { content: 'OK' } }],
+          usage: {
+            prompt_tokens: 10,
+            completion_tokens: 1,
+            total_tokens: 11,
+          },
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
+    global.fetch = fetchMock as typeof fetch;
+
+    const route = await import('../app/api/proxy/route.js');
+    const request = new NextRequest('https://example.com/api/proxy', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-geotech-client': 'geotechcli',
+      },
+      body: JSON.stringify({
+        messages: [{ role: 'user', content: 'Summarize this geotechnical report page.' }],
+        model: DEFAULT_LLM_MODEL,
+        maxTokens: 3000,
+      }),
+    });
+
+    const response = await route.POST(request);
+    expect(response.status).toBe(200);
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const upstreamBody = JSON.parse(String(init.body)) as { max_tokens?: number };
+    expect(upstreamBody.max_tokens).toBe(800);
+  });
+
+  it('rejects invalid developer auth instead of silently treating it as a public client', async () => {
+    vi.stubEnv('MODAL_ENDPOINT_URL', 'https://test--geotechcli-qwen-serve.modal.run/v1/chat/completions');
+    vi.stubEnv('GEOTECHCLI_DEVELOPER_API_KEY', 'gtdev_live_key');
+
+    const route = await import('../app/api/proxy/route.js');
+    const request = new NextRequest('https://example.com/api/proxy', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: 'Bearer wrong-key',
+        'x-geotech-client': 'geotechcli',
+      },
+      body: JSON.stringify({
+        messages: [{ role: 'user', content: 'Reply with OK' }],
+        model: DEFAULT_LLM_MODEL,
+      }),
+    });
+
+    const response = await route.POST(request);
+    const body = (await response.json()) as {
+      error?: { code?: string };
+      client?: { mode?: string };
+    };
+
+    expect(response.status).toBe(403);
+    expect(body.error?.code).toBe('developer_auth_invalid');
+    expect(body.client?.mode).toBe('geotechcli');
+  });
+
+  it('bypasses public hosted-beta limits for a valid developer key', async () => {
+    vi.stubEnv('MODAL_ENDPOINT_URL', 'https://test--geotechcli-qwen-serve.modal.run/v1/chat/completions');
+    vi.stubEnv('GEOTECHCLI_DEVELOPER_API_KEY', 'gtdev_live_key');
+
+    const fetchMock = vi.fn().mockImplementation(async () =>
+      new Response(
+        JSON.stringify({
+          model: DEFAULT_LLM_MODEL,
+          choices: [
+            {
+              message: {
+                content: 'OK',
+              },
+            },
+          ],
+          usage: {
+            prompt_tokens: 10,
+            completion_tokens: 1,
+            total_tokens: 11,
+          },
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      )
+    );
+    global.fetch = fetchMock as typeof fetch;
+
+    const route = await import('../app/api/proxy/route.js');
+    const headers = {
+      'content-type': 'application/json',
+      authorization: 'Bearer gtdev_live_key',
+      'x-geotech-client': 'geotechcli',
+      'x-geotech-client-version': GEOTECHCLI_VERSION,
+    };
+
+    for (let index = 0; index < 70; index += 1) {
+      const request = new NextRequest('https://example.com/api/proxy', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: `Reply with OK ${index}` }],
+          model: DEFAULT_LLM_MODEL,
+        }),
+      });
+
+      const response = await route.POST(request);
+      const body = (await response.json()) as {
+        client?: { mode?: string };
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+
+      expect(response.status).toBe(200);
+      expect(body.client?.mode).toBe('developer');
+      expect(body.choices?.[0]?.message?.content).toBe('OK');
+    }
+
+    expect(fetchMock).toHaveBeenCalledTimes(70);
   });
 
   it('does not retry upstream agent requests after a transient failure', async () => {

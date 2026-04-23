@@ -12,8 +12,8 @@ import {
   checkHostedBetaDailyLimit,
   createHostedBetaErrorResponse,
   extractClientIp,
+  getHostedBetaDeveloperAuthStatus,
   getHostedBetaRequestLimit,
-  isGeotechCliClient,
   getHostedBetaConfigIssue,
   getHostedBetaDefaultModel,
   hasHostedBetaRedis,
@@ -21,6 +21,8 @@ import {
   inferHostedBetaCallType,
   isHostedBetaModel,
   isIPRateLimitedMemory,
+  resolveHostedBetaClientMode,
+  shouldBypassHostedBetaLimits,
   validateAnonymousHostedBetaMessages,
   validateMessages,
 } from '../../../lib/beta';
@@ -83,14 +85,31 @@ function stripReasoningPreamble(content: string): string {
 
 function getUpstreamTimeoutMs(callType: 'text' | 'vision' | 'agent'): number {
   if (callType === 'agent') return 240_000;
-  if (callType === 'vision') return 90_000;
+  if (callType === 'vision') return 150_000;
   return 75_000;
 }
 
 function getUpstreamAttemptCount(callType: 'text' | 'vision' | 'agent'): number {
   // Keep agent requests to a single long-budget attempt so we do not burn extra
   // Modal GPU time retrying an abandoned cold start after the CLI has already moved on.
-  return callType === 'agent' ? 1 : 4;
+  if (callType === 'agent') return 1;
+  if (callType === 'vision') return 2;
+  return 4;
+}
+
+function parsePositiveIntegerEnv(rawValue: string | undefined, fallback: number): number {
+  const parsed = Number(rawValue);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
+function getHostedBetaOutputTokenCap(callType: 'text' | 'vision' | 'agent'): number {
+  if (callType === 'agent') {
+    return parsePositiveIntegerEnv(process.env.GEOTECHCLI_HOSTED_BETA_MAX_TOKENS_AGENT, 900);
+  }
+  if (callType === 'vision') {
+    return parsePositiveIntegerEnv(process.env.GEOTECHCLI_HOSTED_BETA_MAX_TOKENS_VISION, 900);
+  }
+  return parsePositiveIntegerEnv(process.env.GEOTECHCLI_HOSTED_BETA_MAX_TOKENS_TEXT, 800);
 }
 
 function isTransientUpstreamStatus(status: number): boolean {
@@ -335,7 +354,8 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   const requestId = createRequestId();
-  const clientMode = isGeotechCliClient(request.headers) ? 'geotechcli' : 'anonymous';
+  const developerAuth = getHostedBetaDeveloperAuthStatus(request.headers);
+  const clientMode = resolveHostedBetaClientMode(request.headers);
   const clientVersion = request.headers.get('x-geotech-client-version')?.trim() || null;
   const configIssue = getHostedBetaConfigIssue();
   if (configIssue) {
@@ -344,6 +364,17 @@ export async function POST(request: NextRequest) {
       'Hosted beta AI is unavailable.',
       configIssue,
       { code: 'hosted_beta_unavailable' },
+      requestId,
+      { mode: clientMode, version: clientVersion },
+    );
+  }
+
+  if (developerAuth.provided && !developerAuth.authorized) {
+    return createHostedBetaErrorResponse(
+      403,
+      'Hosted beta developer auth failed.',
+      'The supplied developer auth key is missing, invalid, or not enabled on this server.',
+      { code: 'developer_auth_invalid' },
       requestId,
       { mode: clientMode, version: clientVersion },
     );
@@ -400,51 +431,69 @@ export async function POST(request: NextRequest) {
 
   const clientIp = extractClientIp(request.headers);
   const perMinuteLimit = getHostedBetaRequestLimit(clientMode);
-  const ipRateLimited = hasHostedBetaRedis()
-    ? await isIPRateLimitedRedis(
-        clientIp,
-        perMinuteLimit,
-        60_000,
-      )
-    : isIPRateLimitedMemory(
-        clientIp,
-        perMinuteLimit,
-        60_000,
-      );
+  const bypassHostedBetaLimits = shouldBypassHostedBetaLimits(clientMode);
+  const dailyCheck = bypassHostedBetaLimits
+    ? {
+        allowed: true,
+        fingerprint: null,
+        limit: Number.MAX_SAFE_INTEGER,
+        used: 0,
+        remaining: Number.MAX_SAFE_INTEGER,
+      }
+    : await (async () => {
+        const perMinuteLimit = getHostedBetaRequestLimit(clientMode);
+        const ipRateLimited = hasHostedBetaRedis()
+          ? await isIPRateLimitedRedis(
+              clientIp,
+              perMinuteLimit,
+              60_000,
+            )
+          : isIPRateLimitedMemory(
+              clientIp,
+              perMinuteLimit,
+              60_000,
+            );
 
-  if (ipRateLimited) {
-    return createHostedBetaErrorResponse(
-      429,
-      'Hosted beta rate limit reached.',
-      'Too many requests from this network in the last minute. Please wait and retry.',
-      {
-        code: 'ip_rate_limited',
-        retry_after_seconds: 60,
-      },
-      requestId,
-      { mode: clientMode, version: clientVersion },
-    );
-  }
+        if (ipRateLimited) {
+          return createHostedBetaErrorResponse(
+            429,
+            'Hosted beta rate limit reached.',
+            'Too many requests from this network in the last minute. Please wait and retry.',
+            {
+              code: 'ip_rate_limited',
+              retry_after_seconds: 60,
+            },
+            requestId,
+            { mode: clientMode, version: clientVersion },
+          );
+        }
 
-  const dailyCheck = await checkHostedBetaDailyLimit({
-    ip: clientIp,
-    callType,
-    clientMode,
-  });
+        const limitCheck = await checkHostedBetaDailyLimit({
+          ip: clientIp,
+          callType,
+          clientMode,
+        });
 
-  if (!dailyCheck.allowed) {
-    return createHostedBetaErrorResponse(
-      429,
-      'Hosted beta daily limit reached.',
-      `Strong beta currently allows ${dailyCheck.limit} ${callType} request${dailyCheck.limit === 1 ? '' : 's'} per day.`,
-      {
-        code: 'daily_limit_reached',
-        remaining: 0,
-        retry_after_seconds: secondsUntilUtcMidnight(),
-      },
-      requestId,
-      { mode: clientMode, version: clientVersion },
-    );
+        if (!limitCheck.allowed) {
+          return createHostedBetaErrorResponse(
+            429,
+            'Hosted beta daily limit reached.',
+            `Strong beta currently allows ${limitCheck.limit} ${callType} request${limitCheck.limit === 1 ? '' : 's'} per day.`,
+            {
+              code: 'daily_limit_reached',
+              remaining: 0,
+              retry_after_seconds: secondsUntilUtcMidnight(),
+            },
+            requestId,
+            { mode: clientMode, version: clientVersion },
+          );
+        }
+
+        return limitCheck;
+      })();
+
+  if (dailyCheck instanceof NextResponse) {
+    return dailyCheck;
   }
 
   const upstreamBody: Record<string, unknown> = {
@@ -457,7 +506,7 @@ export async function POST(request: NextRequest) {
     upstreamBody.temperature = body.temperature;
   }
   if (body.maxTokens !== undefined) {
-    upstreamBody.max_tokens = body.maxTokens;
+    upstreamBody.max_tokens = Math.min(body.maxTokens, getHostedBetaOutputTokenCap(callType));
   }
   if (body.jsonMode) {
     upstreamBody.response_format = { type: 'json_object' };
@@ -532,7 +581,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  await incrementHostedBetaUsage(dailyCheck.fingerprint, callType);
+  if (dailyCheck.fingerprint) {
+    await incrementHostedBetaUsage(dailyCheck.fingerprint, callType);
+      }
 
   return jsonResponse({
     request_id: requestId,
@@ -562,8 +613,8 @@ export async function POST(request: NextRequest) {
     },
     beta: {
       callType,
-      remaining_today: Math.max(0, dailyCheck.remaining - 1),
-      requests_per_minute_per_ip: perMinuteLimit,
+      remaining_today: bypassHostedBetaLimits ? null : Math.max(0, dailyCheck.remaining - 1),
+      requests_per_minute_per_ip: bypassHostedBetaLimits ? null : perMinuteLimit,
       latency_ms: Date.now() - start,
       body_size_bytes: body.rawSizeBytes,
     },

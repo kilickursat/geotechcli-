@@ -205,7 +205,7 @@ export function buildLLMConfig(): import('../llm/types.js').LLMConfig & { timeou
   let apiKey = config.llm.api_key;
   switch (provider) {
     case 'hosted-beta':
-      apiKey = '';
+      apiKey = preferEnv(process.env.GEOTECHCLI_AUTH_API_KEY, config.auth.api_key);
       break;
     case 'zhipu':
       apiKey = preferEnv(process.env.ZHIPU_API_KEY, config.llm.api_key);

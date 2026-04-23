@@ -1,5 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { buildBoreholeLocation, detectCoordinateReferenceSystem } from '../geo/coordinates.js';
+import type { BoreholeLocation, CoordinateReferenceSystem } from './geotech-schemas.js';
 
 // ---------------------------------------------------------------------------
 // AGS 4.0 Format Parser
@@ -18,12 +20,14 @@ export interface AGSGroup {
 export interface AGSFile {
   groups: Map<string, AGSGroup>;
   projectInfo: Record<string, string>;
+  coordinateReferenceSystem?: CoordinateReferenceSystem;
   boreholes: Array<{
     id: string;
     easting: number | null;
     northing: number | null;
     groundLevel: number | null;
     finalDepth: number | null;
+    location?: BoreholeLocation;
   }>;
   samples: Array<{
     boreholeId: string;
@@ -46,6 +50,61 @@ export interface AGSFile {
     description: string;
     uscs: string;
   }>;
+}
+
+type AGSRow = Record<string, string | number | null>;
+
+function firstDefinedValue(row: AGSRow | undefined, keys: string[]): string | number | null | undefined {
+  if (!row) return undefined;
+
+  for (const key of keys) {
+    const value = row[key];
+    if (value == null) continue;
+    if (typeof value === 'string' && !value.trim()) continue;
+    return value;
+  }
+
+  return undefined;
+}
+
+function asNumberOrNull(value: string | number | null | undefined): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value !== 'string') return null;
+
+  const parsed = Number(value.trim().replace(/,/g, ''));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function asId(row: AGSRow | undefined): string | undefined {
+  const value = firstDefinedValue(row, ['HOLE_ID', 'LOCA_ID']);
+  return value != null && String(value).trim() ? String(value).trim() : undefined;
+}
+
+function extractCoordinateReferenceSystemHint(row: AGSRow | undefined): string | undefined {
+  if (!row) return undefined;
+
+  for (const [key, value] of Object.entries(row)) {
+    if (!/(crs|epsg|grid|datum|proj|coordinate|zone)/i.test(key)) continue;
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  }
+
+  for (const value of Object.values(row)) {
+    if (typeof value === 'string' && /(epsg|wgs|utm|mercator|british national grid|osgb|bng)/i.test(value)) {
+      return value.trim();
+    }
+  }
+
+  return undefined;
+}
+
+function extractLocationRaw(row: AGSRow): Record<string, string | number | null> | undefined {
+  const entries = Object.entries(row).filter(
+    ([key, value]) =>
+      /(lat|lon|long|nate|natn|east|north|gl|rl|crs|epsg|datum|grid)/i.test(key) &&
+      (typeof value === 'string' || typeof value === 'number' || value === null),
+  );
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }
 
 export function parseAGS(filePath: string): AGSFile {
@@ -93,7 +152,7 @@ export function parseAGSContent(content: string): AGSFile {
       currentGroup.types = cells.slice(1);
       section = 'type';
     } else if (rowType === 'DATA') {
-      const row: Record<string, string | number | null> = {};
+      const row: AGSRow = {};
       const values = cells.slice(1);
       currentGroup.headings.forEach((h, i) => {
         const val = values[i] ?? '';
@@ -125,14 +184,57 @@ export function parseAGSContent(content: string): AGSFile {
     }
   }
 
-  // Boreholes from HOLE group
-  const boreholes = (groups.get('HOLE')?.data ?? []).map((row) => ({
-    id: String(row['HOLE_ID'] ?? row['LOCA_ID'] ?? ''),
-    easting: row['HOLE_NATE'] != null ? Number(row['HOLE_NATE']) : row['LOCA_NATE'] != null ? Number(row['LOCA_NATE']) : null,
-    northing: row['HOLE_NATN'] != null ? Number(row['HOLE_NATN']) : row['LOCA_NATN'] != null ? Number(row['LOCA_NATN']) : null,
-    groundLevel: row['HOLE_GL'] != null ? Number(row['HOLE_GL']) : row['LOCA_GL'] != null ? Number(row['LOCA_GL']) : null,
-    finalDepth: row['HOLE_FDEP'] != null ? Number(row['HOLE_FDEP']) : row['LOCA_FDEP'] != null ? Number(row['LOCA_FDEP']) : null,
-  }));
+  const coordinateReferenceSystem = detectCoordinateReferenceSystem({
+    crs: extractCoordinateReferenceSystemHint(projGroup?.data[0] as AGSRow | undefined),
+    description: Object.values(projectInfo).join(' '),
+  });
+
+  const locaRows = (groups.get('LOCA')?.data ?? []) as AGSRow[];
+  const holeRows = (groups.get('HOLE')?.data ?? []) as AGSRow[];
+  const rowsById = new Map<string, { loca?: AGSRow; hole?: AGSRow }>();
+
+  for (const row of locaRows) {
+    const id = asId(row);
+    if (!id) continue;
+    rowsById.set(id, { ...rowsById.get(id), loca: row });
+  }
+
+  for (const row of holeRows) {
+    const id = asId(row);
+    if (!id) continue;
+    rowsById.set(id, { ...rowsById.get(id), hole: row });
+  }
+
+  const boreholes = [...rowsById.entries()].map(([id, rowSet]) => {
+    const mergedRow: AGSRow = {
+      ...(rowSet.loca ?? {}),
+      ...(rowSet.hole ?? {}),
+    };
+    const easting = asNumberOrNull(firstDefinedValue(mergedRow, ['HOLE_NATE', 'LOCA_NATE', 'HOLE_EAST', 'LOCA_EAST']));
+    const northing = asNumberOrNull(firstDefinedValue(mergedRow, ['HOLE_NATN', 'LOCA_NATN', 'HOLE_NORTH', 'LOCA_NORTH']));
+    const groundLevel = asNumberOrNull(firstDefinedValue(mergedRow, ['HOLE_GL', 'LOCA_GL']));
+    const finalDepth = asNumberOrNull(firstDefinedValue(mergedRow, ['HOLE_FDEP', 'LOCA_FDEP']));
+
+    return {
+      id,
+      easting,
+      northing,
+      groundLevel,
+      finalDepth,
+      location: buildBoreholeLocation({
+        boreholeId: id,
+        easting: firstDefinedValue(mergedRow, ['HOLE_NATE', 'LOCA_NATE', 'HOLE_EAST', 'LOCA_EAST']),
+        northing: firstDefinedValue(mergedRow, ['HOLE_NATN', 'LOCA_NATN', 'HOLE_NORTH', 'LOCA_NORTH']),
+        latitude: firstDefinedValue(mergedRow, ['HOLE_LAT', 'LOCA_LAT', 'HOLE_LATI', 'LOCA_LATI']),
+        longitude: firstDefinedValue(mergedRow, ['HOLE_LON', 'LOCA_LON', 'HOLE_LONG', 'LOCA_LONG', 'HOLE_LLON', 'LOCA_LLON']),
+        groundLevel,
+        reducedLevel: firstDefinedValue(mergedRow, ['HOLE_RL', 'LOCA_RL']),
+        crs: extractCoordinateReferenceSystemHint(mergedRow) ?? coordinateReferenceSystem,
+        source: 'ags',
+        raw: extractLocationRaw(mergedRow),
+      }),
+    };
+  });
 
   // Samples from SAMP group
   const samples = (groups.get('SAMP')?.data ?? []).map((row) => ({
@@ -161,7 +263,7 @@ export function parseAGSContent(content: string): AGSFile {
     uscs: String(row['GEOL_USCS'] ?? row['GEOL_STAT'] ?? ''),
   }));
 
-  return { groups, projectInfo, boreholes, samples, sptResults, geology };
+  return { groups, projectInfo, coordinateReferenceSystem, boreholes, samples, sptResults, geology };
 }
 
 function parseAGSRow(line: string): string[] {

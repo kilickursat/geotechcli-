@@ -4,6 +4,22 @@ import { generateText } from '../llm/router.js';
 export { renderReportAsPdf } from './pdf.js';
 export { renderReportAsDocx } from './docx.js';
 export {
+  buildIngestDossier,
+  type BuildIngestDossierOptions,
+  type IngestDossier,
+  type IngestDossierApproval,
+  type IngestDossierBadge,
+  type IngestDossierFindingGroup,
+  type IngestDossierMetric,
+  type IngestDossierNarrativeSection,
+  type IngestDossierPageCard,
+  type IngestDossierSourceResult,
+  type IngestDossierStoredReview,
+  type IngestDossierTable,
+  type IngestDossierTone,
+} from './ingest-dossier.js';
+export { renderIngestDossierAsHtml } from './html.js';
+export {
   buildArtifactDrivenReport,
   generateReportFromCaseFile,
   type CaseFileGeneratedReport,

@@ -57,6 +57,69 @@ describe('HostedBetaAdapter', () => {
     });
   });
 
+  it('forwards hosted-beta developer auth when a trusted auth key is configured', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          model: DEFAULT_LLM_MODEL,
+          choices: [{ message: { content: 'OK' } }],
+          usage: {
+            prompt_tokens: 3,
+            completion_tokens: 1,
+            total_tokens: 4,
+          },
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
+    global.fetch = fetchMock as typeof fetch;
+
+    const adapter = new HostedBetaAdapter('https://beta.geotechcli.com/api/proxy');
+    await adapter.complete(
+      {
+        messages: [{ role: 'user', content: 'Reply with OK' }],
+      },
+      {
+        provider: 'hosted-beta',
+        apiKey: 'gtdev_live_key',
+        timeout: 1000,
+      },
+    );
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.headers).toMatchObject({
+      Authorization: 'Bearer gtdev_live_key',
+    });
+  });
+
+  it('rejects native document_url payloads because hosted-beta is raster-image only today', async () => {
+    const adapter = new HostedBetaAdapter('https://beta.geotechcli.com/api/proxy');
+    await expect(
+      adapter.complete(
+        {
+          messages: [{
+            role: 'user',
+            content: [{
+              type: 'document_url',
+              document_url: {
+                url: 'data:application/pdf;base64,ZmFrZS1wZGY=',
+                mimeType: 'application/pdf',
+              },
+            }],
+          }],
+        },
+        {
+          provider: 'hosted-beta',
+          apiKey: '',
+          timeout: 1000,
+        },
+      ),
+    ).rejects.toThrow(/raster image inputs/i);
+  });
+
   it('surfaces hosted-beta rate limit errors clearly', async () => {
     global.fetch = vi.fn().mockResolvedValue(
       new Response(
@@ -146,6 +209,6 @@ describe('HostedBetaAdapter', () => {
           timeout: 1_000,
         },
       ),
-    ).rejects.toThrow('Hosted beta request timed out after 75s');
+    ).rejects.toThrow('Hosted beta request timed out after 120s');
   });
 });

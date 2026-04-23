@@ -42,6 +42,21 @@ jobs:
         env:
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+          GEOTECHCLI_HOSTED_MODEL_ID: ${{ vars.GEOTECHCLI_HOSTED_MODEL_ID }}
+          GEOTECHCLI_MODAL_GPU: ${{ vars.GEOTECHCLI_MODAL_GPU }}
+          GEOTECHCLI_MODAL_MIN_CONTAINERS: ${{ vars.GEOTECHCLI_MODAL_MIN_CONTAINERS }}
+          GEOTECHCLI_MODAL_BUFFER_CONTAINERS: ${{ vars.GEOTECHCLI_MODAL_BUFFER_CONTAINERS }}
+          GEOTECHCLI_MODAL_MAX_CONTAINERS: ${{ vars.GEOTECHCLI_MODAL_MAX_CONTAINERS }}
+          GEOTECHCLI_MODAL_MAX_INPUTS: ${{ vars.GEOTECHCLI_MODAL_MAX_INPUTS }}
+          GEOTECHCLI_VLLM_PIP_SPEC: ${{ vars.GEOTECHCLI_VLLM_PIP_SPEC }}
+          GEOTECHCLI_VLLM_GPU_MEMORY_UTILIZATION: ${{ vars.GEOTECHCLI_VLLM_GPU_MEMORY_UTILIZATION }}
+          GEOTECHCLI_VLLM_MAX_MODEL_LEN: ${{ vars.GEOTECHCLI_VLLM_MAX_MODEL_LEN }}
+          GEOTECHCLI_VLLM_MM_LIMIT_JSON: ${{ vars.GEOTECHCLI_VLLM_MM_LIMIT_JSON }}
+          GEOTECHCLI_VLLM_REASONING_PARSER: ${{ vars.GEOTECHCLI_VLLM_REASONING_PARSER }}
+          GEOTECHCLI_VLLM_ATTENTION_BACKEND: ${{ vars.GEOTECHCLI_VLLM_ATTENTION_BACKEND }}
+          GEOTECHCLI_VLLM_MAMBA_BACKEND: ${{ vars.GEOTECHCLI_VLLM_MAMBA_BACKEND }}
+          GEOTECHCLI_VLLM_KV_CACHE_DTYPE: ${{ vars.GEOTECHCLI_VLLM_KV_CACHE_DTYPE }}
+          GEOTECHCLI_VLLM_EXTRA_ARGS: ${{ vars.GEOTECHCLI_VLLM_EXTRA_ARGS }}
         run: modal deploy modal/serve_qwen.py
 
       - name: Smoke check hosted beta endpoint
@@ -73,6 +88,16 @@ jobs:
 
       - name: Summary
         if: always()
+        env:
+          GEOTECHCLI_VLLM_PIP_SPEC: ${{ vars.GEOTECHCLI_VLLM_PIP_SPEC }}
+          GEOTECHCLI_MODAL_MIN_CONTAINERS: ${{ vars.GEOTECHCLI_MODAL_MIN_CONTAINERS }}
+          GEOTECHCLI_MODAL_BUFFER_CONTAINERS: ${{ vars.GEOTECHCLI_MODAL_BUFFER_CONTAINERS }}
+          GEOTECHCLI_MODAL_MAX_CONTAINERS: ${{ vars.GEOTECHCLI_MODAL_MAX_CONTAINERS }}
+          GEOTECHCLI_MODAL_MAX_INPUTS: ${{ vars.GEOTECHCLI_MODAL_MAX_INPUTS }}
+          GEOTECHCLI_VLLM_REASONING_PARSER: ${{ vars.GEOTECHCLI_VLLM_REASONING_PARSER }}
+          GEOTECHCLI_VLLM_ATTENTION_BACKEND: ${{ vars.GEOTECHCLI_VLLM_ATTENTION_BACKEND }}
+          GEOTECHCLI_VLLM_MAMBA_BACKEND: ${{ vars.GEOTECHCLI_VLLM_MAMBA_BACKEND }}
+          GEOTECHCLI_VLLM_KV_CACHE_DTYPE: ${{ vars.GEOTECHCLI_VLLM_KV_CACHE_DTYPE }}
         run: |
           VERSION=$(node -p "require('./packages/core/package.json').version")
           if [ "${{ steps.check.outputs.configured }}" = "true" ]; then
@@ -80,6 +105,13 @@ jobs:
             echo "Version: $VERSION" >> $GITHUB_STEP_SUMMARY
             echo "Endpoint: https://kursatkilic6648--geotechcli-qwen-serve.modal.run" >> $GITHUB_STEP_SUMMARY
             echo "Health: /health" >> $GITHUB_STEP_SUMMARY
+            echo "vLLM: ${GEOTECHCLI_VLLM_PIP_SPEC:-vllm==0.18.1}" >> $GITHUB_STEP_SUMMARY
+            echo "Warm pool: min=${GEOTECHCLI_MODAL_MIN_CONTAINERS:-0}, buffer=${GEOTECHCLI_MODAL_BUFFER_CONTAINERS:-0}, max=${GEOTECHCLI_MODAL_MAX_CONTAINERS:-1}" >> $GITHUB_STEP_SUMMARY
+            echo "Concurrency: ${GEOTECHCLI_MODAL_MAX_INPUTS:-8}" >> $GITHUB_STEP_SUMMARY
+            echo "Reasoning parser: ${GEOTECHCLI_VLLM_REASONING_PARSER:-qwen3}" >> $GITHUB_STEP_SUMMARY
+            echo "Attention backend override: ${GEOTECHCLI_VLLM_ATTENTION_BACKEND:-auto}" >> $GITHUB_STEP_SUMMARY
+            echo "Mamba backend override: ${GEOTECHCLI_VLLM_MAMBA_BACKEND:-auto}" >> $GITHUB_STEP_SUMMARY
+            echo "KV cache dtype override: ${GEOTECHCLI_VLLM_KV_CACHE_DTYPE:-auto}" >> $GITHUB_STEP_SUMMARY
           else
             echo "### Modal deploy skipped" >> $GITHUB_STEP_SUMMARY
             echo "Version: $VERSION" >> $GITHUB_STEP_SUMMARY

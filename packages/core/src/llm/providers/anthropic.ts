@@ -21,6 +21,12 @@ export class AnthropicAdapter implements ProviderAdapter {
   readonly name = 'anthropic' as const;
   readonly defaultModel = 'claude-sonnet-4-20250514';
   readonly defaultVisionModel = 'claude-sonnet-4-20250514';
+  readonly capabilities = {
+    text: true,
+    visionImages: true,
+    nativePdfDocuments: false,
+    jsonMode: true,
+  } as const;
 
   private readonly baseUrl: string;
 
@@ -63,7 +69,12 @@ export class AnthropicAdapter implements ProviderAdapter {
         // Convert to Anthropic multimodal format
         const parts = msg.content.map((part) => {
           if (part.type === 'text') {
-            return { type: 'text' as const, text: part.text ?? '' };
+            return { type: 'text' as const, text: part.text };
+          }
+          if (part.type === 'document_url') {
+            throw new Error(
+              `Anthropic with model "${model}" does not support native PDF document parts in this adapter path yet. Export the page as PNG/JPG or use a provider/model with PDF-capable multimodal support.`,
+            );
           }
           // Anthropic expects base64 images differently
           const url = part.image_url?.url ?? '';

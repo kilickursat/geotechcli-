@@ -32,12 +32,30 @@ describe('Swarm tool policy', () => {
 
   it('keeps each agent inside its allowlist', () => {
     expect(isToolAllowedForAgent('reviewer', 'query_standards')).toBe(true);
+    expect(isToolAllowedForAgent('reviewer', 'list_persisted_ingest_reviews')).toBe(true);
+    expect(isToolAllowedForAgent('reviewer', 'load_persisted_ingest_review')).toBe(true);
+    expect(isToolAllowedForAgent('reviewer', 'list_persisted_ingest_review_approvals')).toBe(true);
+    expect(isToolAllowedForAgent('reviewer', 'load_persisted_ingest_review_approval')).toBe(true);
+    expect(isToolAllowedForAgent('reviewer', 'approve_persisted_ingest_review')).toBe(true);
+    expect(isToolAllowedForAgent('reviewer', 'promote_persisted_ingest_review')).toBe(true);
     expect(isToolAllowedForAgent('reviewer', 'calculate_bearing_capacity')).toBe(false);
     expect(isToolAllowedForAgent('reviewer', 'run_skill')).toBe(false);
     expect(isToolAllowedForAgent('interpretation', 'calculate_bearing_capacity')).toBe(false);
+    expect(isToolAllowedForAgent('interpretation', 'ingest_geotech_document')).toBe(true);
+    expect(isToolAllowedForAgent('interpretation', 'list_persisted_ingest_reviews')).toBe(true);
+    expect(isToolAllowedForAgent('interpretation', 'load_persisted_ingest_review')).toBe(true);
+    expect(isToolAllowedForAgent('interpretation', 'list_persisted_ingest_review_approvals')).toBe(false);
+    expect(isToolAllowedForAgent('interpretation', 'load_persisted_ingest_review_approval')).toBe(false);
+    expect(isToolAllowedForAgent('interpretation', 'approve_persisted_ingest_review')).toBe(false);
+    expect(isToolAllowedForAgent('interpretation', 'promote_persisted_ingest_review')).toBe(false);
     expect(isToolAllowedForAgent('interpretation', 'list_skills')).toBe(false);
     expect(isToolAllowedForAgent('interpretation', 'list_skills', true)).toBe(true);
     expect(isToolAllowedForAgent('simulation', 'calculate_bearing_capacity')).toBe(true);
+    expect(isToolAllowedForAgent('simulation', 'ingest_geotech_document')).toBe(false);
+    expect(isToolAllowedForAgent('simulation', 'list_persisted_ingest_review_approvals')).toBe(false);
+    expect(isToolAllowedForAgent('simulation', 'load_persisted_ingest_review_approval')).toBe(false);
+    expect(isToolAllowedForAgent('simulation', 'approve_persisted_ingest_review')).toBe(false);
+    expect(isToolAllowedForAgent('simulation', 'promote_persisted_ingest_review')).toBe(false);
     expect(isToolAllowedForAgent('simulation', 'generate_report')).toBe(true);
     expect(isToolAllowedForAgent('simulation', 'query_standards')).toBe(false);
     expect(isToolAllowedForAgent('reviewer', 'generate_report')).toBe(false);

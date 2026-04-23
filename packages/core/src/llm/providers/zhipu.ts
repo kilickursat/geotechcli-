@@ -31,6 +31,12 @@ export class ZhipuAdapter implements ProviderAdapter {
   readonly name = 'zhipu' as const;
   readonly defaultModel = DEFAULT_LLM_MODEL;
   readonly defaultVisionModel = DEFAULT_LLM_VISION_MODEL;
+  readonly capabilities = {
+    text: true,
+    visionImages: true,
+    nativePdfDocuments: true,
+    jsonMode: true,
+  } as const;
 
   private readonly baseUrl: string;
 
@@ -58,7 +64,15 @@ export class ZhipuAdapter implements ProviderAdapter {
       // Vision: convert ContentPart[] to Zhipu multimodal format
       const parts = msg.content.map((part) => {
         if (part.type === 'text') {
-          return { type: 'text' as const, text: part.text ?? '' };
+          return { type: 'text' as const, text: part.text };
+        }
+        if (part.type === 'document_url') {
+          return {
+            type: 'image_url' as const,
+            image_url: {
+              url: part.document_url.url,
+            },
+          };
         }
         return {
           type: 'image_url' as const,

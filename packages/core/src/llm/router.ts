@@ -12,6 +12,10 @@ import { AnthropicAdapter } from './providers/anthropic.js';
 import { HuggingFaceAdapter } from './providers/huggingface.js';
 import { HostedBetaAdapter } from './providers/hosted-beta.js';
 import { DEFAULT_LLM_MODEL, DEFAULT_LLM_VISION_MODEL } from '../meta/index.js';
+export {
+  resolveProviderCapabilities,
+  providerSupportsNativePdfDocuments,
+} from './capabilities.js';
 
 // ---------------------------------------------------------------------------
 // Provider registry — singleton, adapters registered once at startup
@@ -154,25 +158,15 @@ export async function generateVision(
     options?.model ?? config.visionModelId ?? adapter.defaultVisionModel;
 
   const dataUri = `data:${mimeType};base64,${imageBase64}`;
-
-  const messages = [
+  const messages = buildMultimodalMessages(
     {
-      role: 'system' as const,
-      content:
-        options?.systemPrompt ??
-        `${GEOTECH_SYSTEM_PROMPT}\nYou are analyzing a geotechnical image. Provide precise, quantitative observations.`,
+      type: 'image_url',
+      image_url: { url: dataUri },
     },
-    {
-      role: 'user' as const,
-      content: [
-        {
-          type: 'image_url' as const,
-          image_url: { url: dataUri },
-        },
-        { type: 'text' as const, text: prompt },
-      ],
-    },
-  ];
+    prompt,
+    options?.systemPrompt ??
+      `${GEOTECH_SYSTEM_PROMPT}\nYou are analyzing a geotechnical image. Provide precise, quantitative observations.`,
+  );
 
   return adapter.complete(
     {
@@ -183,4 +177,67 @@ export async function generateVision(
     },
     config,
   );
+}
+
+export async function generateDocumentVision(
+  prompt: string,
+  documentBase64: string,
+  mimeType: string,
+  config: LLMConfig,
+  options?: {
+    systemPrompt?: string;
+    temperature?: number;
+    maxTokens?: number;
+    model?: string;
+  },
+): Promise<CompletionResponse> {
+  const adapter = registry.get(config.provider);
+  const visionModel =
+    options?.model ?? config.visionModelId ?? adapter.defaultVisionModel;
+  const dataUri = `data:${mimeType};base64,${documentBase64}`;
+  const messages = buildMultimodalMessages(
+    {
+      type: 'document_url',
+      document_url: { url: dataUri, mimeType },
+    },
+    prompt,
+    options?.systemPrompt ??
+      `${GEOTECH_SYSTEM_PROMPT}\nYou are analyzing a geotechnical document page. Provide precise, quantitative observations.`,
+  );
+
+  return adapter.complete(
+    {
+      messages,
+      temperature: options?.temperature,
+      maxTokens: options?.maxTokens,
+      model: visionModel,
+    },
+    config,
+  );
+}
+
+function buildMultimodalMessages(
+  mediaPart: {
+    type: 'image_url';
+    image_url: { url: string; detail?: 'auto' | 'low' | 'high' };
+  } | {
+    type: 'document_url';
+    document_url: { url: string; mimeType?: string };
+  },
+  prompt: string,
+  systemPrompt: string,
+) {
+  return [
+    {
+      role: 'system' as const,
+      content: systemPrompt,
+    },
+    {
+      role: 'user' as const,
+      content: [
+        mediaPart,
+        { type: 'text' as const, text: prompt },
+      ],
+    },
+  ];
 }

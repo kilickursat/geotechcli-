@@ -9,11 +9,13 @@ describe('hosted-beta config defaults', () => {
   let configDir = '';
   let previousConfigDir: string | undefined;
   let previousProxyUrl: string | undefined;
+  let previousHostedBetaAuthKey: string | undefined;
   let previousSkillsFlag: string | undefined;
 
   beforeEach(() => {
     previousConfigDir = process.env.GEOTECHCLI_CONFIG_DIR;
     previousProxyUrl = process.env.GEOTECHCLI_PROXY_URL;
+    previousHostedBetaAuthKey = process.env.GEOTECHCLI_AUTH_API_KEY;
     previousSkillsFlag = process.env.GEOTECHCLI_ENABLE_SKILLS;
     configDir = mkdtempSync(join(tmpdir(), 'geotechcli-config-'));
     process.env.GEOTECHCLI_CONFIG_DIR = configDir;
@@ -32,6 +34,12 @@ describe('hosted-beta config defaults', () => {
       delete process.env.GEOTECHCLI_PROXY_URL;
     } else {
       process.env.GEOTECHCLI_PROXY_URL = previousProxyUrl;
+    }
+
+    if (previousHostedBetaAuthKey === undefined) {
+      delete process.env.GEOTECHCLI_AUTH_API_KEY;
+    } else {
+      process.env.GEOTECHCLI_AUTH_API_KEY = previousHostedBetaAuthKey;
     }
 
     if (previousSkillsFlag === undefined) {
@@ -81,6 +89,31 @@ describe('hosted-beta config defaults', () => {
     const llmConfig = buildLLMConfig();
     expect(llmConfig.provider).toBe('hosted-beta');
     expect(llmConfig.baseUrl).toBe('https://beta.geotechcli.com/api/proxy');
+  });
+
+  it('uses auth.api_key for hosted-beta developer requests', () => {
+    saveConfig({
+      llm: {
+        provider: 'hosted-beta',
+        api_key: '',
+        model: '',
+        vision_model: '',
+        base_url: '',
+        timeout: 60000,
+      },
+      auth: {
+        api_key: 'gtdev_local_key',
+        tier: 'pro',
+      },
+      cli: {
+        color: true,
+        verbose: false,
+      },
+    });
+
+    const llmConfig = buildLLMConfig();
+    expect(llmConfig.provider).toBe('hosted-beta');
+    expect(llmConfig.apiKey).toBe('gtdev_local_key');
   });
 
   it('lets the environment explicitly enable skills for a session', () => {

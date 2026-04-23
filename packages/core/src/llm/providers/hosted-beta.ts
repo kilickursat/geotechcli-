@@ -36,10 +36,17 @@ interface HostedBetaResponse {
 
 type HostedBetaCallType = 'text' | 'vision' | 'agent';
 
+function requestContainsNativeDocumentParts(request: CompletionRequest): boolean {
+  return request.messages.some((message) =>
+    Array.isArray(message.content) &&
+    message.content.some((part) => part.type === 'document_url'),
+  );
+}
+
 function inferCallType(request: CompletionRequest): HostedBetaCallType {
   const hasVisionInput = request.messages.some((message) =>
     Array.isArray(message.content) &&
-    message.content.some((part) => part.type === 'image_url'),
+    message.content.some((part) => part.type === 'image_url' || part.type === 'document_url'),
   );
 
   if (hasVisionInput) {
@@ -92,14 +99,20 @@ function formatHostedBetaError(status: number, data: HostedBetaResponse, fallbac
 
 function getMinimumHostedBetaTimeoutMs(callType: HostedBetaCallType): number {
   if (callType === 'agent') return 255_000;
-  if (callType === 'vision') return 90_000;
-  return 75_000;
+  if (callType === 'vision') return 150_000;
+  return 120_000;
 }
 
 export class HostedBetaAdapter implements ProviderAdapter {
   readonly name = 'hosted-beta' as const;
   readonly defaultModel = DEFAULT_LLM_MODEL;
   readonly defaultVisionModel = DEFAULT_LLM_VISION_MODEL;
+  readonly capabilities = {
+    text: true,
+    visionImages: true,
+    nativePdfDocuments: false,
+    jsonMode: true,
+  } as const;
 
   private readonly baseUrl: string;
 
@@ -114,6 +127,12 @@ export class HostedBetaAdapter implements ProviderAdapter {
     request: CompletionRequest,
     config: LLMConfig,
   ): Promise<CompletionResponse> {
+    if (requestContainsNativeDocumentParts(request)) {
+      throw new Error(
+        'Hosted beta currently accepts raster image inputs for multimodal analysis, not native PDF document parts. Render the PDF page to PNG/JPG before sending it through hosted-beta.',
+      );
+    }
+
     const callType = inferCallType(request);
     const timeoutMs = Math.max(config.timeout ?? 60_000, getMinimumHostedBetaTimeoutMs(callType));
     const effectiveBaseUrl =
@@ -126,7 +145,20 @@ export class HostedBetaAdapter implements ProviderAdapter {
       (callType === 'vision' ? this.defaultVisionModel : this.defaultModel);
 
     const body = {
-      messages: request.messages,
+      messages: request.messages.map((message) => {
+        if (typeof message.content === 'string') {
+          return message;
+        }
+        return {
+          ...message,
+          content: message.content.map((part) => {
+            if (part.type === 'document_url') {
+              return part;
+            }
+            return part;
+          }),
+        };
+      }),
       model,
       temperature: request.temperature,
       maxTokens: request.maxTokens,
@@ -136,14 +168,19 @@ export class HostedBetaAdapter implements ProviderAdapter {
     const start = Date.now();
     let res: Response;
     try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'X-Geotech-Client': 'geotechcli',
+        'X-Geotech-Client-Version': GEOTECHCLI_VERSION,
+        'X-Geotech-Call-Type': callType,
+      };
+      if (config.apiKey.trim()) {
+        headers.Authorization = `Bearer ${config.apiKey.trim()}`;
+      }
+
       res = await fetch(effectiveBaseUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Geotech-Client': 'geotechcli',
-          'X-Geotech-Client-Version': GEOTECHCLI_VERSION,
-          'X-Geotech-Call-Type': callType,
-        },
+        headers,
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(timeoutMs),
       });

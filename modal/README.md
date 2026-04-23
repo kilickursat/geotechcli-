@@ -45,3 +45,32 @@ Serves `Qwen/Qwen3.5-9B` on an NVIDIA L4 GPU via [Modal](https://modal.com).
 - Model: Qwen/Qwen3.5-9B
 - Max context: 4096 tokens
 - Max output: 4096 tokens
+
+## Compatibility Overrides
+
+When Qwen3.5 or vLLM compatibility changes upstream, you can adjust the Modal
+runtime without hardcoding secrets or editing user-facing docs first.
+
+- `GEOTECHCLI_VLLM_PIP_SPEC`
+  Example: `vllm==0.18.1`
+- `GEOTECHCLI_VLLM_REASONING_PARSER`
+  Default: `qwen3`
+- `GEOTECHCLI_VLLM_ATTENTION_BACKEND`
+  Example: `FLASH_ATTN`
+- `GEOTECHCLI_VLLM_MAMBA_BACKEND`
+  Example: `TRITON`
+- `GEOTECHCLI_VLLM_KV_CACHE_DTYPE`
+  Example: `fp8`
+- `GEOTECHCLI_VLLM_EXTRA_ARGS`
+  Example: `--enable-prefix-caching`
+- `GEOTECHCLI_MODAL_MIN_CONTAINERS`
+  Default: `0`
+- `GEOTECHCLI_MODAL_BUFFER_CONTAINERS`
+  Default: `0`
+- `GEOTECHCLI_MODAL_MAX_CONTAINERS`
+  Default: `1`
+- `GEOTECHCLI_MODAL_MAX_INPUTS`
+  Default: `8`
+
+These are intended for deploy-time compatibility testing, not for storing
+secrets. Keep tokens in Modal secrets or server environment variables only.

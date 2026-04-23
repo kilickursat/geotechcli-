@@ -1,10 +1,21 @@
-export { generateText, generateChat, generateVision, registry } from './router.js';
+export {
+  generateText,
+  generateChat,
+  generateVision,
+  generateDocumentVision,
+  registry,
+} from './router.js';
+export {
+  resolveProviderCapabilities,
+  providerSupportsNativePdfDocuments,
+} from './capabilities.js';
 export { withRetry } from './middleware/retry.js';
 export type {
   LLMProvider,
   LLMConfig,
   ChatMessage,
   ContentPart,
+  ProviderCapabilities,
   CompletionRequest,
   CompletionResponse,
   TokenUsage,

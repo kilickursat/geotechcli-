@@ -1,4 +1,14 @@
 export { calculateBearingCapacity, type BearingCapacityResult, type BearingCapacityInput } from './bearing-capacity.js';
+export {
+  parseCoordinateText,
+  buildBoreholeLocation,
+  detectCoordinateReferenceSystem,
+  transformCoordinatesToWGS84,
+  type CoordinateAxis,
+  type CoordinateReferenceSystemDetectionInput,
+  type CoordinateTransformInput,
+  type BoreholeLocationInput,
+} from './coordinates.js';
 export { classifyUSCS, classifyRMR89, classifyQSystem, type USCSResult, type RMR89Result, type QSystemResult } from './classification.js';
 export { calculateLiquefaction, type LiquefactionResult } from './liquefaction.js';
 export {

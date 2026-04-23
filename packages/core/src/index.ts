@@ -84,6 +84,8 @@ export {
   classifyRMRFromImage,
   classifySoilFromDescription,
   interpretBoreholeLog,
+  interpretBoreholeLogWithContext,
+  mergeBoreholeLogPages,
   queryGBRDocument,
   interpretSensorImage,
   type ParseSafety,
@@ -93,21 +95,47 @@ export {
   type SoilClassificationFromTextResult,
   type BoreholeInterpretation,
   type BoreholeLayer,
+  type BoreholeLocation,
+  type BoreholeLogContext,
+  type BoreholeLogPageResult,
   type SensorInterpretation,
 } from './vision/index.js';
+export {
+  extractGeotechDocumentFactsFromText,
+  interpretGeotechDocumentPage,
+  type GeotechDocumentContext,
+  type GeotechDocumentInsight,
+  type GeotechDocumentClassification,
+  type GeotechMaterialObservation,
+  type GeotechParameterObservation,
+} from './vision/geotech-document.js';
 
 // Report generation
 export {
   generateReport,
+  buildIngestDossier,
   buildArtifactDrivenReport,
   generateReportFromCaseFile,
+  renderIngestDossierAsHtml,
   renderReportAsPdf,
   renderReportAsDocx,
   type GeneratedReport,
   type ReportSection,
+  type BuildIngestDossierOptions,
   type CaseFileGeneratedReport,
   type CaseFileReportInput,
   type GenerateStoredCaseFileReportOptions,
+  type IngestDossier,
+  type IngestDossierApproval,
+  type IngestDossierBadge,
+  type IngestDossierFindingGroup,
+  type IngestDossierMetric,
+  type IngestDossierNarrativeSection,
+  type IngestDossierPageCard,
+  type IngestDossierSourceResult,
+  type IngestDossierStoredReview,
+  type IngestDossierTable,
+  type IngestDossierTone,
 } from './report/index.js';
 
 // Export formats

@@ -10,6 +10,7 @@ import { registerConfigCommand } from './commands/config.js';
 import { registerStatusCommand } from './commands/status.js';
 import { registerTunnelCommands } from './commands/tunnel.js';
 import { registerExportCommand } from './commands/export.js';
+import { registerIngestCommand } from './commands/ingest.js';
 import { registerPileCommand } from './commands/pile.js';
 import { registerSlopeCommand } from './commands/slope.js';
 import { registerRetainingCommand } from './commands/retaining.js';
@@ -52,6 +53,7 @@ registerSettlementCommands(program);
 // Seepage
 registerSeepageCommand(program);
 registerVizCommand(program);
+registerIngestCommand(program);
 
 // Tunnel engineering
 registerTunnelCommands(program);

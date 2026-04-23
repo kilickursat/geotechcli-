@@ -47,6 +47,10 @@ describe('Project storage', () => {
       kind: 'borehole-log',
       data: { totalDepth: 18.5 },
       source: 'vision-log',
+      metadata: {
+        promotedFromReviewId: 'review-123',
+        promotionDatasetName: 'ingest-promotion:review-123',
+      },
     });
     saveDerivedParameter(project.meta.id, {
       name: 'design-friction-angle',
@@ -81,12 +85,14 @@ describe('Project storage', () => {
     expect(loaded.artifacts).toHaveLength(1);
     expect(loaded.agentSessions).toHaveLength(1);
     expect(loaded.namedDatasets['bh-01']?.kind).toBe('borehole-log');
+    expect(loaded.namedDatasets['bh-01']?.metadata?.promotedFromReviewId).toBe('review-123');
     expect(loaded.derivedParameters['design-friction-angle']?.value).toBe(32);
     expect(loaded.activeAnalysisContext.currentTask).toBe('Footing concept design');
 
     const context = getProjectAgentContext(project.meta.id);
     expect((context.projectMeta as { id: string }).id).toBe(project.meta.id);
     expect((context.namedDatasets as Record<string, unknown>)['bh-01']).toBeDefined();
+    expect(((context.namedDatasets as Record<string, unknown>)['bh-01'] as Record<string, unknown>).promotedFromReviewId).toBeUndefined();
   });
 
   it('normalizes legacy project files with missing new fields', () => {

@@ -4,6 +4,7 @@ import { toolRegistry, type ToolResult } from './tools.js';
 import { validateToolArgs, formatViolations } from './guardrails.js';
 import { extractToolSafetyIssue, serializeContextForPrompt } from './safety.js';
 import { normalizeToolArgs } from './tool-normalization.js';
+import { runWithToolRuntimeContext } from './tool-runtime.js';
 import {
   buildProprietaryInternalsRefusal,
   getProprietaryInternalsPromptRules,
@@ -426,7 +427,10 @@ export async function runAgent(
       onStep(warnStep);
     }
 
-    const result = await toolRegistry.execute(toolCall.tool, toolCall.args);
+    const result = await runWithToolRuntimeContext(
+      { config },
+      () => toolRegistry.execute(toolCall.tool, toolCall.args),
+    );
     if (!result.success) {
       const errorStep: AgentStep = {
         type: 'error',

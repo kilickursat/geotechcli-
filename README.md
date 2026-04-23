@@ -62,6 +62,9 @@ geotech classify rmr --ucs 85 --rqd 72 --spacing 0.4 --condition fair --gw dry
 # AI: classify RMR from a tunnel face photo
 geotech vision rmr tunnel-face.jpg
 
+# AI: ingest a geotechnical report and export an HTML dossier
+geotech ingest Geotechnical-Report.pdf --type geotech-document --format html --output geotechnical-dossier.html
+
 # Bundled strong-beta skills
 geotech skill list
 geotech skill show shallow-foundation-option-screening
@@ -141,6 +144,7 @@ These commands now use the hosted beta Qwen path by default.
 | `geotech vision rmr` | Vision-assisted RMR workflow |
 | `geotech vision sensor` | Sensor and chart image interpretation |
 | `geotech vision log` | Borehole log extraction from images or multi-page PDFs |
+| `geotech ingest` | Geotechnical PDF/image ingest for borehole logs and broader report intelligence, with optional HTML dossier output |
 | `geotech ai-classify` | Natural language soil description to USCS and properties |
 | `geotech gbr chat` | GBR document question answering |
 | `geotech agent` | Multi-agent orchestration with optional project memory |
@@ -150,6 +154,38 @@ These commands now use the hosted beta Qwen path by default.
 Installed strong-beta skills are available directly through `geotech skill ...`. Agent and chat sessions can opt into skill tools explicitly with `--skills` while the default strong-beta agent path stays unchanged.
 
 Strong-beta reliability note: single-agent and swarm mode now share the same under-specified hosted-beta intake screen, the same first-turn hosted-beta fallback behavior, and the same case-file deliverable tool bootstrap for report and export follow-on workflows.
+
+## Geotechnical Document Ingest
+
+`geotech ingest` is the strong-beta path for extracting structured engineering content from geotechnical PDFs and images. It supports both focused borehole-log extraction and broader report intelligence for geology, lithology, and engineering parameters.
+
+```bash
+# Borehole-log extraction from an image or PDF packet
+geotech ingest borehole-log.pdf --type borehole-log
+
+# Broader report intelligence from a geotechnical report
+geotech ingest Geotechnical-Report.pdf --type geotech-document
+
+# Export the self-contained HTML dossier for review and sharing
+geotech ingest Geotechnical-Report.pdf --type geotech-document --format html --output geotechnical-dossier.html
+
+# Large reports automatically switch to resumable async ingest jobs
+geotech ingest Geotechnical-Report.pdf --type geotech-document
+geotech ingest wait <jobId> --format html --output geotechnical-dossier.html
+geotech ingest result <jobId> --format html --output geotechnical-dossier.html
+
+# Persist a project-backed ingest, then reopen the latest stored review later
+geotech ingest Geotechnical-Report.pdf --type geotech-document --project demo-project
+geotech ingest review demo-project --dataset ingest-review:latest --format html --output review-dossier.html
+```
+
+The HTML dossier is a self-contained engineering review file with:
+
+- executive summary and confidence metrics
+- extracted materials, classifications, and engineering parameters
+- review findings grouped by severity
+- page-by-page evidence cards and normalized section map
+- stored-review and approval context when the ingest is project-backed
 
 ### Bundled Skills
 

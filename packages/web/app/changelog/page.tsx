@@ -5,12 +5,26 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 const releases = [
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-04-21',
+    date: '2026-04-23',
     tag: `${GEOTECHCLI_VERSION} Release`,
+    changes: [
+      { type: 'feat', text: 'Added the geotech ingest workflow for borehole-log packets and broader geotechnical reports, including resumable long-PDF jobs, project-backed review storage, approval flow, and promotion tooling' },
+      { type: 'feat', text: 'Added first-class agent ingest-review tools plus broader OCR/preprocess fallback, provider-capability routing, and report-aware long-PDF extraction across the core runtime' },
+      { type: 'feat', text: 'Added a self-contained HTML ingest dossier so extracted borehole packets and broader geotechnical reports can be reviewed as a polished engineering brief instead of raw JSON alone' },
+      { type: 'fix', text: 'Updated the strong-beta release surfaces for 0.4.23, including package metadata, lockfile pins, README, website docs, and website changelog so the public product story matches the shipped PDF/report workflow' },
+    ],
+  },
+  {
+    version: '0.4.22',
+    date: '2026-04-21',
+    tag: '0.4.22 Release',
     changes: [
       { type: 'fix', text: 'Unified the live single-agent and swarm tool bootstrap so both runtimes register the same filesystem, shell, data, deliverable, and skill tools instead of drifting when a tool depends on side-effect imports' },
       { type: 'fix', text: 'Aligned swarm with the same deterministic intake screen and first-turn hosted-beta fallback used by the main agent, so under-specified requests and provider warmup/outage cases now resolve more consistently across both execution paths' },
       { type: 'fix', text: 'Updated the strong-beta release surfaces together for this versioned reliability pass, including package metadata, README, website docs, website changelog, homepage bundled-skill copy, and release-consistency checks' },
+      { type: 'feat', text: 'Added a self-contained HTML ingest dossier for geotech ingest so borehole packets and broader geotechnical reports can be reviewed as a polished engineering brief instead of raw JSON alone' },
+      { type: 'feat', text: 'Added public strong-beta docs and README examples for report ingest, resumable long-PDF jobs, and HTML dossier export using real geotechnical report workflows' },
+      { type: 'fix', text: 'Continued hardening the long-PDF ingest path around normalized page routing, async job orchestration, and broader geotechnical report extraction so mixed engineering PDFs behave like a first-class workflow' },
     ],
   },
   {

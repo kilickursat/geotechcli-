@@ -21,6 +21,13 @@ const GEOTECHCLI_HOSTED_BETA_LIMITS = {
   agentPerDay: 8,
 } as const;
 
+const DEVELOPER_HOSTED_BETA_LIMITS = {
+  requestsPerMinutePerIp: Number.MAX_SAFE_INTEGER,
+  textPerDay: Number.MAX_SAFE_INTEGER,
+  visionPerDay: Number.MAX_SAFE_INTEGER,
+  agentPerDay: Number.MAX_SAFE_INTEGER,
+} as const;
+
 export const HOSTED_BETA_LIMITS = {
   requestsPerMinutePerIp: GEOTECHCLI_HOSTED_BETA_LIMITS.requestsPerMinutePerIp,
   textPerDay: GEOTECHCLI_HOSTED_BETA_LIMITS.textPerDay,
@@ -31,7 +38,7 @@ export const HOSTED_BETA_LIMITS = {
 } as const;
 
 export type HostedBetaCallType = 'text' | 'vision' | 'agent';
-export type HostedBetaClientMode = 'anonymous' | 'geotechcli';
+export type HostedBetaClientMode = 'anonymous' | 'geotechcli' | 'developer';
 
 export interface ProxyContentPart {
   type: 'text' | 'image_url';
@@ -130,6 +137,75 @@ export function isGeotechCliClient(headers: Headers): boolean {
   return headers.get('x-geotech-client')?.trim().toLowerCase() === 'geotechcli';
 }
 
+function parseBearerToken(headerValue: string | null): string {
+  if (!headerValue) {
+    return '';
+  }
+
+  const match = headerValue.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim() ?? '';
+}
+
+function readHostedBetaDeveloperToken(headers: Headers): string {
+  const bearerToken = parseBearerToken(headers.get('authorization'));
+  if (bearerToken) {
+    return bearerToken;
+  }
+
+  return headers.get('x-geotech-auth-key')?.trim() ?? '';
+}
+
+function readConfiguredHostedBetaDeveloperKeys(): string[] {
+  const raw = [
+    process.env.GEOTECHCLI_DEVELOPER_API_KEY,
+    process.env.GEOTECHCLI_DEVELOPER_API_KEYS,
+  ]
+    .filter((value): value is string => Boolean(value?.trim()))
+    .join(',');
+
+  if (!raw) {
+    return [];
+  }
+
+  return raw
+    .split(/[,\r\n]+/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+export function getHostedBetaDeveloperAuthStatus(headers: Headers): {
+  provided: boolean;
+  authorized: boolean;
+} {
+  const token = readHostedBetaDeveloperToken(headers);
+  if (!token) {
+    return { provided: false, authorized: false };
+  }
+
+  const allowedKeys = readConfiguredHostedBetaDeveloperKeys();
+  if (allowedKeys.length === 0) {
+    return { provided: true, authorized: false };
+  }
+
+  return {
+    provided: true,
+    authorized: allowedKeys.includes(token),
+  };
+}
+
+export function resolveHostedBetaClientMode(headers: Headers): HostedBetaClientMode {
+  const developerAuth = getHostedBetaDeveloperAuthStatus(headers);
+  if (developerAuth.authorized) {
+    return 'developer';
+  }
+
+  return isGeotechCliClient(headers) ? 'geotechcli' : 'anonymous';
+}
+
+export function shouldBypassHostedBetaLimits(clientMode: HostedBetaClientMode): boolean {
+  return clientMode === 'developer';
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -151,9 +227,7 @@ function validateContentPart(part: unknown): ProxyContentPart | null {
   const detail =
     imageUrl?.detail === 'low' || imageUrl?.detail === 'high' ? imageUrl.detail : 'auto';
 
-  const isAllowedDataUri =
-    url.startsWith('data:image/') ||
-    url.startsWith('data:application/pdf;base64,');
+  const isAllowedDataUri = url.startsWith('data:image/');
 
   if (!isAllowedDataUri || url.length === 0 || url.length > IMAGE_DATA_URI_LIMIT) {
     return null;
@@ -261,6 +335,10 @@ export function inferHostedBetaCallType(
 }
 
 function getLimitProfile(clientMode: HostedBetaClientMode) {
+  if (clientMode === 'developer') {
+    return DEVELOPER_HOSTED_BETA_LIMITS;
+  }
+
   return clientMode === 'geotechcli'
     ? GEOTECHCLI_HOSTED_BETA_LIMITS
     : ANONYMOUS_HOSTED_BETA_LIMITS;

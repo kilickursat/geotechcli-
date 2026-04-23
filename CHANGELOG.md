@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.23] - 2026-04-23
+
+### Geotechnical PDF Intelligence, Dossiers, And Hosted-Beta Release Prep
+
+- Added the new `geotech ingest` CLI workflow for borehole-log packets and broader geotechnical report intelligence, including resumable long-PDF jobs, project-backed review storage, approval flow, and promotion tooling.
+- Added first-class agent and swarm ingest-review tools plus broader long-PDF normalization, OCR/preprocess fallback, provider-capability routing, and report-aware document extraction across the core runtime.
+- Added a self-contained HTML ingest dossier renderer so borehole packets and broader geotechnical reports can be reviewed as a polished engineering brief instead of raw JSON alone.
+- Updated the strong-beta release surfaces for `0.4.23`, including package metadata, lockfile pins, README, website docs, and website changelog so the public product story matches the shipped PDF/report workflow.
+
 ## [0.4.22] - 2026-04-21
 
 ### Agent Runtime Parity And Release Surface Alignment
@@ -7,6 +16,9 @@
 - Unified the live agent tool bootstrap so both `runAgent` and `runSwarm` load the same filesystem, shell, data, deliverable, and skill tool registrations instead of silently drifting when a tool was added by side-effect import only.
 - Aligned `runSwarm` with the same deterministic geotechnical intake screen and first-turn hosted-beta fallback used by `runAgent`, so under-specified requests and hosted provider warmup/outage cases now fail more consistently across both execution paths.
 - Updated strong-beta release surfaces together for the same versioned fix: package metadata, lockfile pins, README, website docs, website changelog, homepage bundled-skill copy, and release-consistency checks now describe the same `0.4.22` runtime behavior.
+- Added a self-contained HTML ingest dossier renderer for `geotech ingest`, so borehole-log packets and broader geotechnical reports can be reviewed in a cleaner engineering brief instead of raw JSON alone.
+- Added public strong-beta CLI examples for report ingest, resumable long-PDF jobs, and dossier export so the README and docs now show how to process real geotechnical report packets.
+- Continued hardening the long-PDF ingest path around normalized page routing, async job orchestration, and broader geotechnical report extraction so mixed engineering PDFs are treated as a first-class workflow rather than a single-file demo.
 
 ## [0.4.21] - 2026-04-20
 

@@ -1,6 +1,9 @@
 import type { LLMConfig } from '../llm/types.js';
-import { generateVision, generateText } from '../llm/router.js';
+import { generateDocumentVision, generateVision, generateText } from '../llm/router.js';
+import { providerSupportsNativePdfDocuments } from '../llm/capabilities.js';
+import { buildBoreholeLocation as buildStructuredBoreholeLocation } from '../geo/coordinates.js';
 import { classifyRMR89 } from '../geo/classification.js';
+import type { BoreholeLocation } from '../ingest/geotech-schemas.js';
 import {
   clampConfidence,
   createParseSafety,
@@ -14,6 +17,28 @@ import {
 } from './parse.js';
 
 export type { ParseSafety, ParseStatus } from './parse.js';
+export type { BoreholeLocation } from '../ingest/geotech-schemas.js';
+
+function getHostedBetaVisionMaxTokens(
+  config: LLMConfig,
+  profile: 'structured-vision' | 'fallback-vision' | 'ocr-vision' | 'structured-text' | 'fallback-text' | 'document-query',
+  requestedMaxTokens: number,
+): number {
+  if (config.provider !== 'hosted-beta') {
+    return requestedMaxTokens;
+  }
+
+  const capByProfile = {
+    'structured-vision': 850,
+    'fallback-vision': 950,
+    'ocr-vision': 700,
+    'structured-text': 700,
+    'fallback-text': 850,
+    'document-query': 900,
+  } as const;
+
+  return Math.min(requestedMaxTokens, capByProfile[profile]);
+}
 
 // ---------------------------------------------------------------------------
 // Vision retry helper — handles upstream empty-content failures
@@ -43,15 +68,29 @@ async function visionWithRetry(
   softPrompt: string,
   systemPrompt: string,
   maxTokens: number,
+  retryOptions?: {
+    fallbackSystemPrompt?: string;
+    fallbackTemperature?: number;
+    fallbackMaxTokens?: number;
+  },
 ): Promise<{ text: string; latencyMs: number; usedFallback: boolean }> {
   const start = Date.now();
+  const multimodalCall = mimeType === 'application/pdf'
+    ? generateDocumentVision
+    : generateVision;
+  const primaryMaxTokens = getHostedBetaVisionMaxTokens(config, 'structured-vision', maxTokens);
+  const fallbackMaxTokens = getHostedBetaVisionMaxTokens(
+    config,
+    'fallback-vision',
+    retryOptions?.fallbackMaxTokens ?? (maxTokens + 200),
+  );
 
   // Attempt 1: strict JSON prompt
   try {
-    const r1 = await generateVision(strictPrompt, imageBase64, mimeType, config, {
+    const r1 = await multimodalCall(strictPrompt, imageBase64, mimeType, config, {
       systemPrompt,
       temperature: 0.1,
-      maxTokens,
+      maxTokens: primaryMaxTokens,
     });
     if (r1.text && r1.text.trim().length > 10) {
       return { text: r1.text, latencyMs: r1.latencyMs, usedFallback: false };
@@ -64,11 +103,12 @@ async function visionWithRetry(
 
   // Attempt 2: softer plain text prompt
   try {
-    const r2 = await generateVision(softPrompt, imageBase64, mimeType, config, {
+    const r2 = await multimodalCall(softPrompt, imageBase64, mimeType, config, {
       systemPrompt:
-        systemPrompt + ' Be concise but thorough. You must provide values even if approximate.',
-      temperature: 0.3,
-      maxTokens: maxTokens + 200,
+        retryOptions?.fallbackSystemPrompt
+        ?? `${systemPrompt} Be concise but thorough. You must provide values even if approximate.`,
+      temperature: retryOptions?.fallbackTemperature ?? 0.3,
+      maxTokens: fallbackMaxTokens,
     });
 
     if (r2.text && r2.text.trim().length > 0) {
@@ -858,27 +898,548 @@ export interface BoreholeLayer {
   notes: string | null;
 }
 
+export interface BoreholeLogContext {
+  boreholeId?: string;
+  pageNumber?: number;
+  totalPages?: number;
+  priorContinuationDepth?: number | null;
+  pageTextHint?: string;
+  pageClassification?: string;
+}
+
 export interface BoreholeInterpretation extends ParseSafety {
   boreholeId: string;
   totalDepth: number | null;
   waterTableDepth: number | null;
   layers: BoreholeLayer[];
   summary: string | null;
+  location: BoreholeLocation | null;
+  groundElevation: number | null;
+  dateDrilled: string | null;
+  drillingMethod: string | null;
+  projectName: string | null;
+  continuationDepth: number | null;
+  pageNumber: number | null;
+  totalPages: number | null;
   rawLLMText: string;
   latencyMs: number;
 }
 
-export async function interpretBoreholeLog(
+export interface BoreholeLogPageResult {
+  pageNumber: number;
+  result: BoreholeInterpretation;
+}
+
+interface BoreholeMetadataExtraction extends ParseSafety {
+  boreholeId: string;
+  projectName: string | null;
+  dateDrilled: string | null;
+  drillingMethod: string | null;
+  groundElevation: number | null;
+  totalDepth: number | null;
+  pageInfo: string | null;
+  layoutNotes: string | null;
+  location: BoreholeLocation | null;
+  rawLLMText: string;
+  latencyMs: number;
+}
+
+function readOptionalString(source: Record<string, unknown> | null, key: string): string | null {
+  const value = source?.[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function readOptionalNumber(source: Record<string, unknown> | null, key: string): number | null {
+  const value = source?.[key];
+  const num = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
+function firstMatchingText(rawText: string, patterns: RegExp[]): string | null {
+  for (const pattern of patterns) {
+    const match = rawText.match(pattern);
+    if (match?.[0]) {
+      return match[0].trim();
+    }
+  }
+  return null;
+}
+
+function buildVisionBoreholeLocation(
+  source: Record<string, unknown> | null,
+  groundElevation: number | null,
+  boreholeId: string,
+): BoreholeLocation | null {
+  const coordinateSource =
+    source && typeof source.coordinates === 'object' && source.coordinates !== null
+      ? (source.coordinates as Record<string, unknown>)
+      : source;
+
+  if (!coordinateSource) {
+    return null;
+  }
+
+  const latitude = readOptionalNumber(coordinateSource, 'latitude');
+  const longitude = readOptionalNumber(coordinateSource, 'longitude');
+  const easting = readOptionalNumber(coordinateSource, 'easting');
+  const northing = readOptionalNumber(coordinateSource, 'northing');
+  const rawCoordinateText =
+    readOptionalString(coordinateSource, 'rawText')
+    ?? readOptionalString(coordinateSource, 'rawCoordinateText');
+  const coordinateSystem = readOptionalString(coordinateSource, 'coordinateSystem');
+
+  if (
+    latitude == null
+    && longitude == null
+    && easting == null
+    && northing == null
+    && !rawCoordinateText
+  ) {
+    return null;
+  }
+
+  return buildStructuredBoreholeLocation({
+    boreholeId,
+    source: 'vision',
+    crs: coordinateSystem ?? undefined,
+    easting,
+    northing,
+    latitude,
+    longitude,
+    groundLevel: groundElevation,
+    raw: {
+      rawCoordinateText,
+      coordinateSystem,
+      metadataConfidence: clampConfidence(
+        coordinateSource.confidence,
+        rawCoordinateText || latitude != null || easting != null ? 64 : 0,
+      ),
+    },
+  }) ?? null;
+}
+
+function extractBoreholeMetadataFallback(
+  rawText: string,
+  boreholeId?: string,
+): {
+  value: Record<string, unknown> | null;
+  baseStatus: ParseStatus;
+  warnings: string[];
+} {
+  if (!rawText.trim()) {
+    return { value: null, baseStatus: 'failed', warnings: [] };
+  }
+
+  const boreholeMatch = rawText.match(/\bBH[-_\s]?[A-Z0-9]+\b/i);
+  const totalDepthMatch = rawText.match(/total depth[^0-9]*(\d+(?:\.\d+)?)\s*m/i)
+    ?? rawText.match(/depth[^0-9]*(\d+(?:\.\d+)?)\s*m/i);
+  const elevationMatch = rawText.match(/(?:ground level|ground elevation|gl|m\.?o\.?d\.?)[^0-9+-]*([+-]?\d+(?:\.\d+)?)/i);
+  const pageInfo = firstMatchingText(rawText, [
+    /page\s+\d+\s*(?:of|\/)\s*\d+/i,
+    /sheet\s+\d+\s*(?:of|\/)\s*\d+/i,
+  ]);
+  const coordinateText = firstMatchingText(rawText, [
+    /\bE(?:asting)?[:=]?\s*\d+(?:\.\d+)?\s*[,\s;]+N(?:orthing)?[:=]?\s*\d+(?:\.\d+)?/i,
+    /\bLat(?:itude)?[:=]?\s*[-+]?\d+(?:\.\d+)?\s*[,\s;]+Lon(?:gitude)?[:=]?\s*[-+]?\d+(?:\.\d+)?/i,
+    /\bUTM\s+Zone\s+\d{1,2}[NS]?\s+E[:=]?\s*\d+(?:\.\d+)?\s+N[:=]?\s*\d+(?:\.\d+)?/i,
+  ]);
+  const eastingMatch = coordinateText?.match(/E(?:asting)?[:=]?\s*(\d+(?:\.\d+)?)/i)
+    ?? rawText.match(/\bE(?:asting)?[:=]?\s*(\d+(?:\.\d+)?)/i);
+  const northingMatch = coordinateText?.match(/N(?:orthing)?[:=]?\s*(\d+(?:\.\d+)?)/i)
+    ?? rawText.match(/\bN(?:orthing)?[:=]?\s*(\d+(?:\.\d+)?)/i);
+  const latitudeMatch = coordinateText?.match(/Lat(?:itude)?[:=]?\s*([-+]?\d+(?:\.\d+)?)/i)
+    ?? rawText.match(/\bLat(?:itude)?[:=]?\s*([-+]?\d+(?:\.\d+)?)/i);
+  const longitudeMatch = coordinateText?.match(/Lon(?:gitude)?[:=]?\s*([-+]?\d+(?:\.\d+)?)/i)
+    ?? rawText.match(/\bLon(?:gitude)?[:=]?\s*([-+]?\d+(?:\.\d+)?)/i);
+  const coordinateSystem = firstMatchingText(rawText, [
+    /\bUTM\s+Zone\s+\d{1,2}[NS]?\b/i,
+    /\bWGS ?84\b/i,
+    /\bBNG\b/i,
+    /\bBritish National Grid\b/i,
+    /\bMGA\s+Zone\s+\d{1,2}\b/i,
+  ]);
+
+  const value: Record<string, unknown> = {
+    boreholeId: (boreholeMatch?.[0] ?? boreholeId)?.replace(/\s+/g, '') ?? boreholeId ?? 'BH-unknown',
+  };
+
+  if (totalDepthMatch?.[1]) value.totalDepth = Number(totalDepthMatch[1]);
+  if (elevationMatch?.[1]) value.groundElevation = Number(elevationMatch[1]);
+  if (pageInfo) value.pageInfo = pageInfo;
+  if (coordinateText || eastingMatch?.[1] || northingMatch?.[1] || latitudeMatch?.[1] || longitudeMatch?.[1]) {
+    value.coordinates = {
+      easting: eastingMatch?.[1] ? Number(eastingMatch[1]) : null,
+      northing: northingMatch?.[1] ? Number(northingMatch[1]) : null,
+      latitude: latitudeMatch?.[1] ? Number(latitudeMatch[1]) : null,
+      longitude: longitudeMatch?.[1] ? Number(longitudeMatch[1]) : null,
+      coordinateSystem,
+      rawText: coordinateText,
+    };
+  }
+
+  return {
+    value,
+    baseStatus: Object.keys(value).length > 1 ? 'partial' : 'failed',
+    warnings: Object.keys(value).length > 1
+      ? ['Metadata pass returned narrative text; extracted partial borehole metadata fields.']
+      : [],
+  };
+}
+
+async function textWithRetry(
+  prompt: string,
+  config: LLMConfig,
+  systemPrompt: string,
+  maxTokens: number,
+): Promise<{ text: string; latencyMs: number; usedFallback: boolean }> {
+  const start = Date.now();
+  const primaryMaxTokens = getHostedBetaVisionMaxTokens(config, 'structured-text', maxTokens);
+  const fallbackMaxTokens = getHostedBetaVisionMaxTokens(config, 'fallback-text', maxTokens + 250);
+
+  try {
+    const first = await generateText(prompt, config, {
+      systemPrompt,
+      temperature: 0.1,
+      jsonMode: true,
+      maxTokens: primaryMaxTokens,
+    });
+    if (first.text && first.text.trim().length > 10) {
+      return { text: first.text, latencyMs: first.latencyMs, usedFallback: false };
+    }
+  } catch (error) {
+    if (!isRecoverableVisionEmptyResponse(error)) {
+      throw error;
+    }
+  }
+
+  try {
+    const second = await generateText(prompt, config, {
+      systemPrompt: `${systemPrompt} Return best-effort structured information even if some fields are uncertain.`,
+      temperature: 0.25,
+      jsonMode: false,
+      maxTokens: fallbackMaxTokens,
+    });
+
+    if (second.text && second.text.trim().length > 0) {
+      return {
+        text: second.text,
+        latencyMs: Date.now() - start,
+        usedFallback: true,
+      };
+    }
+  } catch (error) {
+    if (!isRecoverableVisionEmptyResponse(error)) {
+      throw error;
+    }
+  }
+
+  return {
+    text: '',
+    latencyMs: Date.now() - start,
+    usedFallback: true,
+  };
+}
+
+export interface DocumentImageTranscription {
+  text: string;
+  latencyMs: number;
+  usedFallback: boolean;
+  warnings: string[];
+}
+
+export async function transcribeDocumentImageText(
   imageBase64: string,
   mimeType: string,
   config: LLMConfig,
-  boreholeId?: string,
-): Promise<BoreholeInterpretation> {
-  const strictPrompt = `Extract structured data from this borehole log image. Respond with ONLY a JSON object:
+): Promise<DocumentImageTranscription> {
+  const response = await visionWithRetry(
+    imageBase64,
+    mimeType,
+    config,
+    `Transcribe the visible text from this document page. Respond with plain text only.
+- Preserve important line breaks when they help readability.
+- Include borehole IDs, depths, coordinate text, dates, table values, and page markers if visible.
+- Do not explain or summarize.
+- If only fragments are legible, return the fragments you can read.`,
+    `OCR this document image and return only the visible text. Preserve useful line breaks. Do not explain, analyze, summarize, infer, or guess missing text. If only fragments are legible, return only those fragments.`,
+    'You are performing OCR-style transcription on a geotechnical document image. Return plain text only, with no markdown fences or commentary.',
+    700,
+    {
+      fallbackSystemPrompt: 'You are performing OCR-style transcription on a geotechnical document image. Return only the visible text. Do not explain, analyze, summarize, infer, or guess missing text. No markdown, bullets, or commentary.',
+      fallbackTemperature: 0.15,
+      fallbackMaxTokens: 700,
+    },
+  );
+
+  return {
+    text: response.text.trim(),
+    latencyMs: response.latencyMs,
+    usedFallback: response.usedFallback,
+    warnings: response.usedFallback
+      ? ['OCR-style transcription required a fallback retry before returning text.']
+      : [],
+  };
+}
+
+async function extractBoreholeMetadata(
+  imageBase64: string,
+  mimeType: string,
+  config: LLMConfig,
+  context: BoreholeLogContext,
+): Promise<BoreholeMetadataExtraction> {
+  const strictPrompt = `Extract only the borehole log metadata visible on this page. Respond with ONLY a JSON object:
 {
   "boreholeId": "<ID if visible, or 'BH-unknown'>",
-  "totalDepth": <number in meters>,
+  "projectName": "<project name or null>",
+  "dateDrilled": "<date or date range or null>",
+  "drillingMethod": "<method or null>",
+  "groundElevation": <number in meters or null>,
+  "totalDepth": <number in meters or null>,
+  "pageInfo": "<page 1 of 3 or null>",
+  "layoutNotes": "<brief description of layout and depth scale placement or null>",
+  "coordinates": {
+    "easting": <number or null>,
+    "northing": <number or null>,
+    "latitude": <number or null>,
+    "longitude": <number or null>,
+    "coordinateSystem": "<declared CRS or null>",
+    "rawText": "<exact coordinate text or null>"
+  },
+  "confidence": <number 0-100>,
+  "warnings": ["<warning>", "<warning>"]
+}`;
+
+  const softPrompt = `Inspect only the borehole log header, title block, margins, and information boxes.
+Extract:
+1. Borehole ID
+2. Project name
+3. Date drilled
+4. Drilling method
+5. Ground elevation
+6. Total depth if printed
+7. Page information
+8. Layout notes
+9. Any coordinates exactly as printed, plus parsed numeric fields when visible
+Do not extract layers or soil descriptions in this pass.`;
+
+  const response = await visionWithRetry(
+    imageBase64,
+    mimeType,
+    config,
+    strictPrompt,
+    softPrompt,
+    'You are an expert geotechnical engineer extracting borehole log metadata. Focus on the header area, coordinate text, and document layout. Respond with JSON only.',
+    900,
+  );
+
+  const parsed = parseJsonObject(response.text);
+  const narrativeFallback = extractBoreholeMetadataFallback(response.text, context.boreholeId);
+  const mergedValue = {
+    ...(narrativeFallback.value ?? {}),
+    ...(parsed.value ?? {}),
+  };
+  const baseStatus = parsed.baseStatus !== 'failed' ? parsed.baseStatus : narrativeFallback.baseStatus;
+  const warnings = [...parsed.warnings, ...narrativeFallback.warnings];
+  const resolvedBoreholeId =
+    readOptionalString(mergedValue, 'boreholeId') ?? context.boreholeId ?? 'BH-unknown';
+  const projectName = readOptionalString(mergedValue, 'projectName');
+  const dateDrilled = readOptionalString(mergedValue, 'dateDrilled');
+  const drillingMethod = readOptionalString(mergedValue, 'drillingMethod');
+  const groundElevation = readOptionalNumber(mergedValue, 'groundElevation');
+  const totalDepth = readOptionalNumber(mergedValue, 'totalDepth');
+  const pageInfo = readOptionalString(mergedValue, 'pageInfo');
+  const layoutNotes = readOptionalString(mergedValue, 'layoutNotes');
+  const location = buildVisionBoreholeLocation(mergedValue, groundElevation, resolvedBoreholeId);
+  const confidence = clampConfidence(
+    mergedValue.confidence,
+    baseStatus === 'parsed' ? 78 : baseStatus === 'partial' ? 60 : 0,
+  );
+
+  const status = deriveParseStatus(
+    baseStatus,
+    [resolvedBoreholeId !== 'BH-unknown' ? resolvedBoreholeId : null, totalDepth, location, pageInfo]
+      .filter((value) => value !== null).length,
+    2,
+  );
+  const safety = createParseSafety(
+    status,
+    confidence,
+    combineWarnings(warnings, normalizeWarnings(mergedValue.warnings)),
+  );
+
+  return {
+    ...safety,
+    boreholeId: resolvedBoreholeId,
+    totalDepth,
+    projectName,
+    dateDrilled,
+    drillingMethod,
+    groundElevation,
+    pageInfo,
+    layoutNotes,
+    location,
+    rawLLMText: response.text,
+    latencyMs: response.latencyMs,
+  };
+}
+
+function shouldUseTextOnlyBoreholeInterpretation(
+  mimeType: string,
+  config: LLMConfig,
+  context: BoreholeLogContext,
+): boolean {
+  return (
+    mimeType === 'application/pdf'
+    && typeof context.pageTextHint === 'string'
+    && context.pageTextHint.trim().length >= 24
+    && !providerSupportsNativePdfDocuments(config)
+  );
+}
+
+async function extractBoreholeMetadataFromText(
+  pageText: string,
+  config: LLMConfig,
+  context: BoreholeLogContext,
+): Promise<BoreholeMetadataExtraction> {
+  const normalizedPageText = pageText.replace(/\s+/g, ' ').trim();
+  if (!normalizedPageText) {
+    return {
+      ...createParseSafety('failed', 0, ['No usable borehole page text was available for metadata extraction.']),
+      boreholeId: context.boreholeId ?? 'BH-unknown',
+      projectName: null,
+      dateDrilled: null,
+      drillingMethod: null,
+      groundElevation: null,
+      totalDepth: null,
+      pageInfo: null,
+      layoutNotes: null,
+      location: null,
+      rawLLMText: '',
+      latencyMs: 0,
+    };
+  }
+
+  const strictPrompt = `Extract only the borehole log metadata from this extracted page text. Respond with ONLY a JSON object:
+{
+  "boreholeId": "<ID if visible, or 'BH-unknown'>",
+  "projectName": "<project name or null>",
+  "dateDrilled": "<date or date range or null>",
+  "drillingMethod": "<method or null>",
+  "groundElevation": <number in meters or null>,
+  "totalDepth": <number in meters or null>,
+  "pageInfo": "<page 1 of 3 or null>",
+  "layoutNotes": "<brief description of layout and depth scale placement or null>",
+  "coordinates": {
+    "easting": <number or null>,
+    "northing": <number or null>,
+    "latitude": <number or null>,
+    "longitude": <number or null>,
+    "coordinateSystem": "<declared CRS or null>",
+    "rawText": "<exact coordinate text or null>"
+  },
+  "confidence": <number 0-100>,
+  "warnings": ["<warning>", "<warning>"]
+}
+
+Extract only header/title-block/style metadata from this page text. Do not invent layers.
+
+Page text:
+${normalizedPageText.slice(0, 6000)}`;
+
+  const response = await textWithRetry(
+    strictPrompt,
+    config,
+    'You are an expert geotechnical engineer extracting borehole log metadata from OCR/native page text. Respond with JSON only when possible.',
+    900,
+  );
+
+  const parsed = parseJsonObject(response.text);
+  const narrativeFallback = extractBoreholeMetadataFallback(normalizedPageText, context.boreholeId);
+  const mergedValue = {
+    ...(narrativeFallback.value ?? {}),
+    ...(parsed.value ?? {}),
+  };
+  const baseStatus = parsed.baseStatus !== 'failed' ? parsed.baseStatus : narrativeFallback.baseStatus;
+  const warnings = [...parsed.warnings, ...narrativeFallback.warnings];
+  if (response.usedFallback) {
+    warnings.push('Metadata extraction required a text fallback retry before structured parsing succeeded.');
+  }
+  const resolvedBoreholeId =
+    readOptionalString(mergedValue, 'boreholeId') ?? context.boreholeId ?? 'BH-unknown';
+  const projectName = readOptionalString(mergedValue, 'projectName');
+  const dateDrilled = readOptionalString(mergedValue, 'dateDrilled');
+  const drillingMethod = readOptionalString(mergedValue, 'drillingMethod');
+  const groundElevation = readOptionalNumber(mergedValue, 'groundElevation');
+  const totalDepth = readOptionalNumber(mergedValue, 'totalDepth');
+  const pageInfo = readOptionalString(mergedValue, 'pageInfo');
+  const layoutNotes = readOptionalString(mergedValue, 'layoutNotes');
+  const location = buildVisionBoreholeLocation(mergedValue, groundElevation, resolvedBoreholeId);
+  const confidence = clampConfidence(
+    mergedValue.confidence,
+    baseStatus === 'parsed' ? 74 : baseStatus === 'partial' ? 58 : 0,
+  );
+
+  const status = deriveParseStatus(
+    baseStatus,
+    [resolvedBoreholeId !== 'BH-unknown' ? resolvedBoreholeId : null, totalDepth, location, pageInfo]
+      .filter((value) => value !== null).length,
+    2,
+  );
+  const safety = createParseSafety(
+    status,
+    confidence,
+    combineWarnings(warnings, normalizeWarnings(mergedValue.warnings)),
+  );
+
+  return {
+    ...safety,
+    boreholeId: resolvedBoreholeId,
+    totalDepth,
+    projectName,
+    dateDrilled,
+    drillingMethod,
+    groundElevation,
+    pageInfo,
+    layoutNotes,
+    location,
+    rawLLMText: response.text,
+    latencyMs: response.latencyMs,
+  };
+}
+
+function buildBoreholeLayerPrompts(
+  context: BoreholeLogContext,
+  metadata: BoreholeMetadataExtraction,
+): { strictPrompt: string; softPrompt: string; systemPrompt: string } {
+  const locationCode = metadata.location?.crs?.code ?? metadata.location?.crs?.name ?? null;
+  const locationRawText =
+    typeof metadata.location?.raw?.rawCoordinateText === 'string'
+      ? metadata.location.raw.rawCoordinateText
+      : null;
+  const contextParts = [
+    `Borehole ID: ${metadata.boreholeId}`,
+    locationCode ? `Coordinate system: ${locationCode}` : null,
+    locationRawText ? `Coordinate text: ${locationRawText}` : null,
+    context.pageNumber != null && context.totalPages != null
+      ? `Page ${context.pageNumber} of ${context.totalPages}`
+      : null,
+    context.pageClassification ? `Page classification: ${context.pageClassification}` : null,
+    context.priorContinuationDepth != null
+      ? `Previous pages continued to ${context.priorContinuationDepth.toFixed(2)} m depth. Continue from there unless the page clearly restarts at a new borehole.`
+      : null,
+    context.pageTextHint ? `Native text hint: ${context.pageTextHint.slice(0, 400)}` : null,
+    metadata.rawLLMText ? `Metadata/layout notes: ${metadata.rawLLMText.slice(0, 300)}` : null,
+  ].filter((value): value is string => Boolean(value));
+
+  const sharedContext = contextParts.join('\n');
+
+  return {
+    strictPrompt: `Extract structured borehole log layer data from this page. Respond with ONLY a JSON object:
+{
+  "boreholeId": "<ID if visible, or ${JSON.stringify(metadata.boreholeId)}>",
+  "totalDepth": <number in meters or null>,
   "waterTableDepth": <number in meters or null>,
+  "continuationDepth": <deepest visible depth on this page or null>,
   "layers": [
     {
       "depthFrom": <m>,
@@ -890,37 +1451,83 @@ export async function interpretBoreholeLog(
       "notes": "<any additional notes>"
     }
   ],
-  "summary": "<brief engineering summary of the borehole>",
+  "summary": "<brief engineering summary of this page and its strata>",
   "confidence": <number 0-100>,
   "warnings": ["<warning>", "<warning>"]
-}`;
+}
 
-  const softPrompt = `Read this borehole log carefully and extract the key structured data:
+Context:
+${sharedContext}`,
+    softPrompt: `Read this borehole log page carefully and extract:
 1. Borehole ID if visible
-2. Total depth in meters
+2. Total depth on the page
 3. Water table depth if shown
-4. Each stratigraphic layer with depthFrom, depthTo, description, USCS symbol, SPT N, water content, and notes
-5. A brief engineering summary
-Provide approximate values where necessary, but keep the structure complete.`;
+4. The deepest continuation depth visible on the page
+5. Each stratigraphic layer with depthFrom, depthTo, description, USCS symbol, SPT N, water content, and notes
+6. A brief engineering summary
 
-  const response = await visionWithRetry(
-    imageBase64,
-    mimeType,
+Context:
+${sharedContext}
+
+Adapt to the visible layout. Continue from previous pages when the depth scale clearly carries on.`,
+    systemPrompt: 'You are an expert geotechnical engineer extracting layer data from borehole log documents. Adapt to varying log layouts, preserve depth continuity, and respond with JSON only.',
+  };
+}
+
+async function interpretBoreholeLogTextWithContext(
+  pageText: string,
+  config: LLMConfig,
+  context: BoreholeLogContext = {},
+): Promise<BoreholeInterpretation> {
+  const normalizedPageText = pageText.replace(/\s+/g, ' ').trim();
+  if (!normalizedPageText) {
+    return {
+      ...createParseSafety('failed', 0, ['No usable borehole page text was available for text-based interpretation.']),
+      boreholeId: context.boreholeId ?? 'BH-unknown',
+      totalDepth: null,
+      waterTableDepth: null,
+      layers: [],
+      summary: null,
+      location: null,
+      groundElevation: null,
+      dateDrilled: null,
+      drillingMethod: null,
+      projectName: null,
+      continuationDepth: null,
+      pageNumber: context.pageNumber ?? null,
+      totalPages: context.totalPages ?? null,
+      rawLLMText: '',
+      latencyMs: 0,
+    };
+  }
+
+  const metadata = await extractBoreholeMetadataFromText(normalizedPageText, config, context);
+  const prompts = buildBoreholeLayerPrompts(
+    {
+      ...context,
+      pageTextHint: normalizedPageText,
+    },
+    metadata,
+  );
+
+  const response = await textWithRetry(
+    `${prompts.strictPrompt}\n\nBorehole page text:\n${normalizedPageText.slice(0, 7000)}`,
     config,
-    strictPrompt,
-    softPrompt,
-    'You are an expert geotechnical engineer extracting data from borehole log documents. Be precise with depths, descriptions, and test values. Respond with JSON only.',
+    `${prompts.systemPrompt} Work from OCR/native extracted page text rather than pixels when needed.`,
     1500,
   );
 
   const parsed = parseJsonObject(response.text);
-  const narrativeFallback = extractBoreholeFallback(response.text, boreholeId);
+  const narrativeFallback = extractBoreholeFallback(normalizedPageText, metadata.boreholeId);
   const mergedValue = {
     ...(narrativeFallback.value ?? {}),
     ...(parsed.value ?? {}),
   };
   const baseStatus = parsed.baseStatus !== 'failed' ? parsed.baseStatus : narrativeFallback.baseStatus;
-  const warnings = [...parsed.warnings, ...narrativeFallback.warnings];
+  const warnings = [...metadata.warnings, ...parsed.warnings, ...narrativeFallback.warnings];
+  if (response.usedFallback) {
+    warnings.push('Layer extraction required a text fallback retry before structured parsing succeeded.');
+  }
   const parsedLayers = Array.isArray(mergedValue.layers)
     ? (mergedValue.layers as Record<string, unknown>[])
     : [];
@@ -945,14 +1552,138 @@ Provide approximate values where necessary, but keep the structure complete.`;
     return item;
   });
 
-  const totalDepth = readNumber(mergedValue, 'totalDepth', warnings);
+  const totalDepth = readOptionalNumber(mergedValue, 'totalDepth') ?? metadata.totalDepth;
   const waterTableDepth =
     mergedValue.waterTableDepth == null
       ? null
       : readNumber(mergedValue, 'waterTableDepth', warnings);
-  const summary = readString(mergedValue, 'summary', warnings);
+  const summary = readOptionalString(mergedValue, 'summary');
+  const continuationDepth =
+    readOptionalNumber(mergedValue, 'continuationDepth')
+    ?? layers.reduce<number | null>((maxDepth, layer) => {
+      if (layer.depthTo == null) return maxDepth;
+      return maxDepth == null ? layer.depthTo : Math.max(maxDepth, layer.depthTo);
+    }, null)
+    ?? totalDepth;
   const resolvedBoreholeId =
-    readString(mergedValue, 'boreholeId', []) ?? boreholeId ?? 'BH-unknown';
+    readOptionalString(mergedValue, 'boreholeId') ?? metadata.boreholeId ?? context.boreholeId ?? 'BH-unknown';
+  const confidence = clampConfidence(
+    mergedValue.confidence,
+    baseStatus === 'parsed' ? 72 : baseStatus === 'partial' ? 55 : 0,
+  );
+
+  const status = deriveParseStatus(
+    baseStatus,
+    [totalDepth, summary, layers.length > 0 ? 'layers' : null].filter((value) => value !== null)
+      .length,
+    3,
+  );
+  const safety = createParseSafety(
+    status,
+    confidence,
+    combineWarnings(warnings, normalizeWarnings(mergedValue.warnings)),
+  );
+
+  return {
+    ...safety,
+    boreholeId: resolvedBoreholeId,
+    totalDepth,
+    waterTableDepth,
+    layers,
+    summary,
+    location: metadata.location,
+    groundElevation: metadata.groundElevation,
+    dateDrilled: metadata.dateDrilled,
+    drillingMethod: metadata.drillingMethod,
+    projectName: metadata.projectName,
+    continuationDepth,
+    pageNumber: context.pageNumber ?? null,
+    totalPages: context.totalPages ?? null,
+    rawLLMText: [metadata.rawLLMText, response.text].filter(Boolean).join('\n\n'),
+    latencyMs: metadata.latencyMs + response.latencyMs,
+  };
+}
+
+function scoreBoreholeLocation(location: BoreholeLocation | null): number {
+  if (!location) return 0;
+  let score = 0;
+  if (location.wgs84) score += 100;
+  if (location.projected) score += 70;
+  if (location.crs?.confidence != null) score += Math.round(location.crs.confidence * 20);
+  if (location.raw && Object.keys(location.raw).length > 0) score += 5;
+  return score;
+}
+
+export async function interpretBoreholeLogWithContext(
+  imageBase64: string,
+  mimeType: string,
+  config: LLMConfig,
+  context: BoreholeLogContext = {},
+): Promise<BoreholeInterpretation> {
+  if (shouldUseTextOnlyBoreholeInterpretation(mimeType, config, context)) {
+    return interpretBoreholeLogTextWithContext(context.pageTextHint ?? '', config, context);
+  }
+
+  const metadata = await extractBoreholeMetadata(imageBase64, mimeType, config, context);
+  const prompts = buildBoreholeLayerPrompts(context, metadata);
+
+  const response = await visionWithRetry(
+    imageBase64,
+    mimeType,
+    config,
+    prompts.strictPrompt,
+    prompts.softPrompt,
+    prompts.systemPrompt,
+    1500,
+  );
+
+  const parsed = parseJsonObject(response.text);
+  const narrativeFallback = extractBoreholeFallback(response.text, metadata.boreholeId);
+  const mergedValue = {
+    ...(narrativeFallback.value ?? {}),
+    ...(parsed.value ?? {}),
+  };
+  const baseStatus = parsed.baseStatus !== 'failed' ? parsed.baseStatus : narrativeFallback.baseStatus;
+  const warnings = [...metadata.warnings, ...parsed.warnings, ...narrativeFallback.warnings];
+  const parsedLayers = Array.isArray(mergedValue.layers)
+    ? (mergedValue.layers as Record<string, unknown>[])
+    : [];
+
+  if (!Array.isArray(mergedValue.layers)) {
+    warnings.push('Missing or invalid "layers" array.');
+  }
+
+  const layers: BoreholeLayer[] = parsedLayers.map((layer) => {
+    const layerWarnings: string[] = [];
+    const item: BoreholeLayer = {
+      depthFrom: readNumber(layer, 'depthFrom', layerWarnings),
+      depthTo: readNumber(layer, 'depthTo', layerWarnings),
+      description: readString(layer, 'description', layerWarnings),
+      uscsSymbol: readString(layer, 'uscsSymbol', []),
+      sptN: layer.sptN == null ? null : readNumber(layer, 'sptN', layerWarnings),
+      waterContent:
+        layer.waterContent == null ? null : readNumber(layer, 'waterContent', layerWarnings),
+      notes: readString(layer, 'notes', []),
+    };
+    warnings.push(...layerWarnings.map((warning) => `Layer warning: ${warning}`));
+    return item;
+  });
+
+  const totalDepth = readOptionalNumber(mergedValue, 'totalDepth') ?? metadata.totalDepth;
+  const waterTableDepth =
+    mergedValue.waterTableDepth == null
+      ? null
+      : readNumber(mergedValue, 'waterTableDepth', warnings);
+  const summary = readOptionalString(mergedValue, 'summary');
+  const continuationDepth =
+    readOptionalNumber(mergedValue, 'continuationDepth')
+    ?? layers.reduce<number | null>((maxDepth, layer) => {
+      if (layer.depthTo == null) return maxDepth;
+      return maxDepth == null ? layer.depthTo : Math.max(maxDepth, layer.depthTo);
+    }, null)
+    ?? totalDepth;
+  const resolvedBoreholeId =
+    readOptionalString(mergedValue, 'boreholeId') ?? metadata.boreholeId ?? context.boreholeId ?? 'BH-unknown';
   const confidence = clampConfidence(
     mergedValue.confidence,
     baseStatus === 'parsed' ? 75 : baseStatus === 'partial' ? 58 : 0,
@@ -977,8 +1708,154 @@ Provide approximate values where necessary, but keep the structure complete.`;
     waterTableDepth,
     layers,
     summary,
-    rawLLMText: response.text,
-    latencyMs: response.latencyMs,
+    location: metadata.location,
+    groundElevation: metadata.groundElevation,
+    dateDrilled: metadata.dateDrilled,
+    drillingMethod: metadata.drillingMethod,
+    projectName: metadata.projectName,
+    continuationDepth,
+    pageNumber: context.pageNumber ?? null,
+    totalPages: context.totalPages ?? null,
+    rawLLMText: [metadata.rawLLMText, response.text].filter(Boolean).join('\n\n'),
+    latencyMs: metadata.latencyMs + response.latencyMs,
+  };
+}
+
+export async function interpretBoreholeLog(
+  imageBase64: string,
+  mimeType: string,
+  config: LLMConfig,
+  boreholeId?: string,
+): Promise<BoreholeInterpretation> {
+  return interpretBoreholeLogWithContext(imageBase64, mimeType, config, { boreholeId });
+}
+
+export function mergeBoreholeLogPages(
+  pages: BoreholeLogPageResult[],
+  overrideBoreholeId?: string,
+): BoreholeInterpretation {
+  const validPages = pages.filter(({ result }) => (
+    result.layers.length > 0
+    || result.totalDepth != null
+    || result.summary
+    || result.location
+  ));
+  const sourcePages = validPages.length > 0 ? validPages : pages;
+  const distinctBoreholeIds = [
+    ...new Set(
+      sourcePages
+        .map(({ result }) => result.boreholeId)
+        .filter((value) => value && value !== 'BH-unknown'),
+    ),
+  ];
+
+  const deduped = new Map<string, BoreholeLayer>();
+  for (const layer of sourcePages.flatMap(({ result }) => result.layers)) {
+    const key = [
+      layer.depthFrom ?? 'na',
+      layer.depthTo ?? 'na',
+      (layer.description ?? '').trim().toLowerCase(),
+      (layer.uscsSymbol ?? '').trim().toUpperCase(),
+      layer.sptN ?? 'na',
+    ].join('|');
+    if (!deduped.has(key)) {
+      deduped.set(key, layer);
+    }
+  }
+
+  const mergedLayers = [...deduped.values()].sort((left, right) => {
+    const leftDepth = left.depthFrom ?? Number.POSITIVE_INFINITY;
+    const rightDepth = right.depthFrom ?? Number.POSITIVE_INFINITY;
+    return leftDepth - rightDepth;
+  });
+
+  const summaries = [
+    ...new Set(
+      sourcePages
+        .map(({ result }) => result.summary?.trim())
+        .filter((value): value is string => Boolean(value)),
+    ),
+  ];
+
+  const warnings = [
+    ...new Set(
+      pages.flatMap(({ pageNumber, result }) => [
+        ...result.warnings.map((warning) => `Page ${pageNumber}: ${warning}`),
+      ]),
+    ),
+  ];
+
+  if (distinctBoreholeIds.length > 1 && !overrideBoreholeId) {
+    warnings.push(
+      `Multiple borehole IDs were detected across the supplied pages (${distinctBoreholeIds.join(', ')}). Split the PDF by borehole for a safer interpretation.`,
+    );
+  }
+
+  const confidences = sourcePages.map(({ result }) => result.confidence);
+  const averageConfidence = confidences.length > 0
+    ? Math.round(confidences.reduce((sum, value) => sum + value, 0) / confidences.length)
+    : 0;
+  const totalDepth = sourcePages.reduce<number | null>((maxDepth, { result }) => {
+    if (result.totalDepth == null) return maxDepth;
+    return maxDepth == null ? result.totalDepth : Math.max(maxDepth, result.totalDepth);
+  }, null);
+  const waterTableDepth = sourcePages.reduce<number | null>((selected, { result }) => {
+    if (result.waterTableDepth == null) return selected;
+    return selected == null ? result.waterTableDepth : Math.min(selected, result.waterTableDepth);
+  }, null);
+  const bestLocation = sourcePages
+    .map(({ result }) => result.location)
+    .filter((value): value is BoreholeLocation => value !== null)
+    .sort((left, right) => scoreBoreholeLocation(right) - scoreBoreholeLocation(left))[0] ?? null;
+  const firstMetadataPage = sourcePages
+    .map(({ result }) => result)
+    .find((result) =>
+      result.projectName
+      || result.drillingMethod
+      || result.dateDrilled
+      || result.groundElevation != null,
+    ) ?? sourcePages[0]?.result;
+  const continuationDepth = sourcePages.reduce<number | null>((maxDepth, { result }) => {
+    if (result.continuationDepth == null) return maxDepth;
+    return maxDepth == null ? result.continuationDepth : Math.max(maxDepth, result.continuationDepth);
+  }, totalDepth);
+
+  const parseStatus =
+    mergedLayers.length > 0 && totalDepth != null
+      ? 'parsed'
+      : mergedLayers.length > 0 || summaries.length > 0 || totalDepth != null
+        ? 'partial'
+        : 'failed';
+
+  return {
+    boreholeId:
+      overrideBoreholeId
+      ?? distinctBoreholeIds[0]
+      ?? sourcePages.map(({ result }) => result.boreholeId).find((value) => value && value !== 'BH-unknown')
+      ?? 'BH-unknown',
+    totalDepth,
+    waterTableDepth,
+    layers: mergedLayers,
+    summary: summaries.length > 0 ? summaries.join(' ') : null,
+    location: bestLocation,
+    groundElevation:
+      firstMetadataPage?.groundElevation
+      ?? bestLocation?.groundLevel
+      ?? bestLocation?.projected?.elevation
+      ?? bestLocation?.wgs84?.elevation
+      ?? null,
+    dateDrilled: firstMetadataPage?.dateDrilled ?? null,
+    drillingMethod: firstMetadataPage?.drillingMethod ?? null,
+    projectName: firstMetadataPage?.projectName ?? null,
+    continuationDepth,
+    pageNumber: sourcePages[0]?.result.pageNumber ?? null,
+    totalPages: sourcePages[0]?.result.totalPages ?? null,
+    rawLLMText: pages.map(({ pageNumber, result }) => `[Page ${pageNumber}]\n${result.rawLLMText}`).join('\n\n'),
+    latencyMs: pages.reduce((sum, { result }) => sum + result.latencyMs, 0),
+    parseStatus,
+    confidence: averageConfidence,
+    warnings,
+    canAutoProceed: parseStatus === 'parsed' && averageConfidence >= 70,
   };
 }
 
@@ -995,7 +1872,7 @@ export async function queryGBRDocument(
     `Based on this Geotechnical Baseline Report, answer the following question with a concise, technically accurate response and specific page/section references where possible:\n\n${question}`,
     `Read this Geotechnical Baseline Report and answer the question directly:\n\n${question}\n\nUse specific values, limits, assumptions, and references if they are visible in the document.`,
     'You are an expert geotechnical engineer analyzing a Geotechnical Baseline Report (GBR). Provide precise, actionable answers referencing specific data from the document.',
-    2000,
+    getHostedBetaVisionMaxTokens(config, 'document-query', 2000),
   );
 
   if (!response.text.trim()) {

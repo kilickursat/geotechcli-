@@ -1,37 +1,23 @@
-import { readFileSync } from 'node:fs';
 import { extname } from 'node:path';
-import { PDFDocument } from 'pdf-lib';
+import {
+  countDocumentPdfPages,
+  readDocumentPdfPageInputs,
+  readDocumentVisionInput,
+  type DocumentInputKind,
+  type DocumentPdfPageInput,
+  type DocumentVisionInput,
+  type PdfDocumentInspection,
+} from '@geotechcli/core';
 
 export const HOSTED_BETA_REQUEST_LIMIT_BYTES = 8 * 1024 * 1024;
 const HOSTED_BETA_REQUEST_MARGIN_BYTES = 32 * 1024;
 export const HOSTED_BETA_REQUEST_SAFE_BYTES =
   HOSTED_BETA_REQUEST_LIMIT_BYTES - HOSTED_BETA_REQUEST_MARGIN_BYTES;
 
-const MIME_TYPES: Record<string, string> = {
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  png: 'image/png',
-  gif: 'image/gif',
-  webp: 'image/webp',
-  pdf: 'application/pdf',
-};
-
-export type VisionFileKind = 'image' | 'pdf' | 'unknown';
+export type VisionFileKind = DocumentInputKind;
 export type StructuredOutputKind = 'text' | 'pdf' | 'docx';
-
-export interface VisionInput {
-  base64: string;
-  mimeType: string;
-  fileBytes: number;
-  filePath: string;
-  ext: string;
-  kind: VisionFileKind;
-}
-
-export interface VisionPdfPageInput extends VisionInput {
-  pageNumber: number;
-  totalPages: number;
-}
+export type VisionInput = DocumentVisionInput;
+export type VisionPdfPageInput = DocumentPdfPageInput;
 
 export interface HostedBetaVisionRequestDetails {
   prompt: string;
@@ -45,46 +31,21 @@ export interface HostedBetaVisionRequestDetails {
 }
 
 export function readVisionInput(filePath: string): VisionInput {
-  const buffer = readFileSync(filePath);
-  const ext = extname(filePath).slice(1).toLowerCase();
-  const kind: VisionFileKind = ext === 'pdf' ? 'pdf' : MIME_TYPES[ext] ? 'image' : 'unknown';
-
-  return {
-    base64: buffer.toString('base64'),
-    mimeType: MIME_TYPES[ext] ?? 'image/png',
-    fileBytes: buffer.length,
-    filePath,
-    ext,
-    kind,
-  };
+  return readDocumentVisionInput(filePath);
 }
 
-export async function readVisionPdfPageInputs(filePath: string): Promise<VisionPdfPageInput[]> {
-  const buffer = readFileSync(filePath);
-  const source = await PDFDocument.load(buffer, { ignoreEncryption: true });
-  const totalPages = source.getPageCount();
-  const pageInputs: VisionPdfPageInput[] = [];
+export async function countPdfPages(filePath: string): Promise<number> {
+  return countDocumentPdfPages(filePath);
+}
 
-  for (let index = 0; index < totalPages; index++) {
-    const pageDoc = await PDFDocument.create();
-    const [copiedPage] = await pageDoc.copyPages(source, [index]);
-    pageDoc.addPage(copiedPage);
-    const pageBytes = await pageDoc.save();
-    const pageBuffer = Buffer.from(pageBytes);
-
-    pageInputs.push({
-      base64: pageBuffer.toString('base64'),
-      mimeType: 'application/pdf',
-      fileBytes: pageBuffer.length,
-      filePath,
-      ext: 'pdf',
-      kind: 'pdf',
-      pageNumber: index + 1,
-      totalPages,
-    });
-  }
-
-  return pageInputs;
+export async function readVisionPdfPageInputs(
+  filePath: string,
+  options?: {
+    inspection?: PdfDocumentInspection | null;
+    preferExtractedPageImages?: boolean;
+  },
+): Promise<VisionPdfPageInput[]> {
+  return readDocumentPdfPageInputs(filePath, options);
 }
 
 export function estimateHostedBetaVisionBodyBytes(details: HostedBetaVisionRequestDetails): number {

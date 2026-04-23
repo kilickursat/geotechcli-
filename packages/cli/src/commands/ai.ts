@@ -8,7 +8,8 @@ import {
   analyzeCoreBox,
   classifyRMRFromImage,
   classifySoilFromDescription,
-  interpretBoreholeLog,
+  ingestBoreholeLogDocument,
+  inspectPdfDocument,
   queryGBRDocument,
   interpretSensorImage,
   runAgent,
@@ -82,7 +83,11 @@ function loadImageBase64(filePath: string): { base64: string; mimeType: string }
   };
 }
 
-function describeVisionInput(file: VisionInput): void {
+function describeVisionInput(file: VisionInput, flags?: { json?: boolean; quiet?: boolean }): void {
+  if (flags?.json || flags?.quiet) {
+    return;
+  }
+
   if (file.kind !== 'pdf') {
     return;
   }
@@ -91,7 +96,7 @@ function describeVisionInput(file: VisionInput): void {
   console.log(chalk.yellow('  PDF input detected.'));
   console.log(chalk.gray('    Vision analysis works best with PNG or JPG images.'));
   console.log(chalk.gray('    For borehole logs, the CLI can split multi-page PDFs into page-level requests automatically.'));
-  console.log(chalk.gray('    Oversized PDF pages will still be blocked before upload to avoid the hosted-beta body limit.'));
+  console.log(chalk.gray('    Scanned/image-only pages will use raster-image recovery when possible, and oversized pages will still be blocked before upload.'));
   console.log('');
 }
 
@@ -389,80 +394,6 @@ function renderParseSafetyCompact(result: {
   keyValue('Confidence', `${result.confidence}%`);
   keyValue('Auto proceed', result.canAutoProceed ? 'Yes' : 'No');
   renderWarningsCompact(result.warnings);
-}
-
-function mergeBoreholeLayers(layers: BoreholeLayer[]): BoreholeLayer[] {
-  const deduped = new Map<string, BoreholeLayer>();
-
-  for (const layer of layers) {
-    const key = [
-      layer.depthFrom ?? 'na',
-      layer.depthTo ?? 'na',
-      (layer.description ?? '').trim().toLowerCase(),
-      (layer.uscsSymbol ?? '').trim().toUpperCase(),
-      layer.sptN ?? 'na',
-    ].join('|');
-
-    if (!deduped.has(key)) {
-      deduped.set(key, layer);
-    }
-  }
-
-  return [...deduped.values()].sort((left, right) => {
-    const leftDepth = left.depthFrom ?? Number.POSITIVE_INFINITY;
-    const rightDepth = right.depthFrom ?? Number.POSITIVE_INFINITY;
-    return leftDepth - rightDepth;
-  });
-}
-
-function mergeBoreholeInterpretations(
-  pages: Array<{ pageNumber: number; result: BoreholeInterpretation }>,
-  overrideBoreholeId?: string,
-): BoreholeInterpretation {
-  const validPages = pages.filter(({ result }) => result.layers.length > 0 || result.totalDepth != null || result.summary);
-  const sourcePages = validPages.length > 0 ? validPages : pages;
-  const mergedLayers = mergeBoreholeLayers(sourcePages.flatMap(({ result }) => result.layers));
-  const summaries = [...new Set(sourcePages.map(({ result }) => result.summary?.trim()).filter((value): value is string => Boolean(value)))];
-  const warnings = [...new Set(
-    pages.flatMap(({ pageNumber, result }) =>
-      result.warnings.map((warning) => `Page ${pageNumber}: ${warning}`),
-    ),
-  )];
-  const confidences = sourcePages.map(({ result }) => result.confidence);
-  const averageConfidence = confidences.length > 0
-    ? Math.round(confidences.reduce((sum, value) => sum + value, 0) / confidences.length)
-    : 0;
-  const totalDepth = sourcePages.reduce<number | null>((maxDepth, { result }) => {
-    if (result.totalDepth == null) return maxDepth;
-    return maxDepth == null ? result.totalDepth : Math.max(maxDepth, result.totalDepth);
-  }, null);
-  const waterTableDepth = sourcePages.reduce<number | null>((selected, { result }) => {
-    if (result.waterTableDepth == null) return selected;
-    return selected == null ? result.waterTableDepth : Math.min(selected, result.waterTableDepth);
-  }, null);
-  const parseStatus =
-    mergedLayers.length > 0 && totalDepth != null
-      ? 'parsed'
-      : mergedLayers.length > 0 || summaries.length > 0 || totalDepth != null
-        ? 'partial'
-        : 'failed';
-
-  return {
-    boreholeId:
-      overrideBoreholeId
-      ?? sourcePages.map(({ result }) => result.boreholeId).find((value) => value && value !== 'BH-unknown')
-      ?? 'BH-unknown',
-    totalDepth,
-    waterTableDepth,
-    layers: mergedLayers,
-    summary: summaries.length > 0 ? summaries.join(' ') : null,
-    rawLLMText: pages.map(({ pageNumber, result }) => `[Page ${pageNumber}]\n${result.rawLLMText}`).join('\n\n'),
-    latencyMs: pages.reduce((sum, { result }) => sum + result.latencyMs, 0),
-    parseStatus,
-    confidence: averageConfidence,
-    warnings,
-    canAutoProceed: parseStatus === 'parsed' && averageConfidence >= 70,
-  };
 }
 
 function handleCommandErrorClean(
@@ -790,7 +721,7 @@ export function registerVisionCommand(program: Command): void {
       const spinner = startProgress(flags, 'Analyzing core box image...');
       try {
         const file = readVisionInput(imagePath);
-        describeVisionInput(file);
+        describeVisionInput(file, flags);
         const config = buildLLMConfig();
         maybeCheckHostedBetaVisionPayload(config, file, {
           prompt: 'Analyze this geotechnical image.',
@@ -838,7 +769,7 @@ export function registerVisionCommand(program: Command): void {
       const spinner = startProgress(flags, 'Extracting rock mass parameters from image...');
       try {
         const file = readVisionInput(imagePath);
-        describeVisionInput(file);
+        describeVisionInput(file, flags);
         const config = buildLLMConfig();
         maybeCheckHostedBetaVisionPayload(config, file, {
           prompt: 'Estimate rock mass parameters from this image.',
@@ -894,7 +825,7 @@ export function registerVisionCommand(program: Command): void {
       const spinner = startProgress(flags, 'Interpreting sensor data...');
       try {
         const file = readVisionInput(imagePath);
-        describeVisionInput(file);
+        describeVisionInput(file, flags);
         const config = buildLLMConfig();
         maybeCheckHostedBetaVisionPayload(config, file, {
           prompt: 'Interpret this sensor data image.',
@@ -943,7 +874,7 @@ export function registerVisionCommand(program: Command): void {
       const spinner = startProgress(flags, 'Extracting borehole log data...');
       try {
         const file = readVisionInput(filePath);
-        describeVisionInput(file);
+        describeVisionInput(file, flags);
         const config = buildLLMConfig();
         const requestDetails = {
           prompt: 'Extract structured borehole log data.',
@@ -954,55 +885,81 @@ export function registerVisionCommand(program: Command): void {
 
         let result: BoreholeInterpretation;
         if (file.kind === 'pdf') {
-          const pageInputs = await readVisionPdfPageInputs(filePath);
+          const pdfInspection = inspectPdfDocument(filePath);
+          const effectiveInspection = pdfInspection.totalPages > 0 ? pdfInspection : null;
+          const pageInputs = await readVisionPdfPageInputs(filePath, { inspection: effectiveInspection });
           if (!flags.json && !flags.quiet && pageInputs.length > 1) {
             info(`PDF contains ${pageInputs.length} pages. Processing borehole log pages sequentially.`);
           }
-
-          const pageResults: Array<{ pageNumber: number; result: BoreholeInterpretation }> = [];
-          const pageFailures: string[] = [];
 
           for (const pageInput of pageInputs) {
             if (!flags.json && !flags.quiet && pageInputs.length > 1) {
               info(`Processing PDF page ${pageInput.pageNumber}/${pageInput.totalPages}...`);
             }
-
-            try {
-              maybeCheckHostedBetaVisionPayload(config, pageInput, requestDetails);
-              const pageResult = await interpretBoreholeLog(
-                pageInput.base64,
-                pageInput.mimeType,
-                config,
-                opts.boreholeId,
-              );
-              pageResults.push({
-                pageNumber: pageInput.pageNumber,
-                result: pageResult,
-              });
-            } catch (pageError) {
-              pageFailures.push(`Page ${pageInput.pageNumber}: ${getErrorMessage(pageError)}`);
-            }
+            maybeCheckHostedBetaVisionPayload(config, pageInput, requestDetails);
           }
 
-          if (pageResults.length === 0) {
+          const ingestResult = await ingestBoreholeLogDocument({
+            config,
+            source: {
+              filePath,
+              fileName: filePath.split(/[\\/]/).pop(),
+              inputKind: 'pdf',
+            },
+            overrideBoreholeId: opts.boreholeId as string | undefined,
+            inspection: effectiveInspection,
+            pages: pageInputs,
+          });
+
+          const detectedIds = [
+            ...new Set(
+              ingestResult.boreholes
+                .map((borehole) => borehole.boreholeId)
+                .filter((value) => value && value !== 'BH-unknown'),
+            ),
+          ];
+
+          if (ingestResult.boreholes.length > 1 && !opts.boreholeId) {
             throw new Error(
-              pageFailures.length > 0
-                ? `No PDF pages could be processed successfully.\n${pageFailures.join('\n')}`
-                : 'No PDF pages could be processed successfully.',
+              `Multiple borehole groups were detected across the PDF pages (${detectedIds.join(', ') || 'unresolved IDs'}). Use geotech ingest for multi-borehole PDFs, split the PDF by borehole, or pass --borehole-id if the document is a single continued log.`,
             );
           }
 
-          result = mergeBoreholeInterpretations(pageResults, opts.boreholeId);
-          if (pageFailures.length > 0) {
-            result.warnings = [...result.warnings, ...pageFailures];
+          const selectedResult = ingestResult.boreholes[0];
+          if (!selectedResult) {
+            throw new Error('No borehole interpretation could be extracted from the supplied file.');
           }
 
+          result = {
+            ...selectedResult,
+            warnings: [...new Set([...selectedResult.warnings, ...ingestResult.warnings])],
+            canAutoProceed: selectedResult.canAutoProceed && !ingestResult.reviewRequired,
+          };
+
           spinner?.succeed(
-            `Extraction complete: ${result.layers.length} layers from ${pageResults.length}/${pageInputs.length} page(s) (${result.latencyMs}ms)`,
+            `Extraction complete: ${result.layers.length} layers from ${ingestResult.source.successfulPages}/${ingestResult.source.totalPages} page(s) (${result.latencyMs}ms)`,
           );
         } else {
           maybeCheckHostedBetaVisionPayload(config, file, requestDetails);
-          result = await interpretBoreholeLog(file.base64, file.mimeType, config, opts.boreholeId);
+          const ingestResult = await ingestBoreholeLogDocument({
+            config,
+            source: {
+              filePath,
+              fileName: filePath.split(/[\\/]/).pop(),
+              inputKind: 'image',
+            },
+            overrideBoreholeId: opts.boreholeId as string | undefined,
+            image: file,
+          });
+          const selectedResult = ingestResult.boreholes[0];
+          if (!selectedResult) {
+            throw new Error('No borehole interpretation could be extracted from the supplied file.');
+          }
+          result = {
+            ...selectedResult,
+            warnings: [...new Set([...selectedResult.warnings, ...ingestResult.warnings])],
+            canAutoProceed: selectedResult.canAutoProceed && !ingestResult.reviewRequired,
+          };
           spinner?.succeed(`Extraction complete: ${result.layers.length} layers (${result.latencyMs}ms)`);
         }
 
@@ -1010,8 +967,34 @@ export function registerVisionCommand(program: Command): void {
 
         heading(`Borehole Log - ${result.boreholeId}`);
         renderParseSafetyCompact(result);
+        if (result.projectName) {
+          keyValue('Project', result.projectName);
+        }
         keyValue('Total depth', formatMaybe(result.totalDepth, ' m'));
         keyValue('Water table', result.waterTableDepth != null ? `${result.waterTableDepth} m` : 'Not detected');
+        if (result.groundElevation != null) {
+          keyValue('Ground elevation', `${result.groundElevation} m`);
+        }
+        if (result.location) {
+          const rawCoordinateText =
+            typeof result.location.raw?.rawCoordinateText === 'string'
+              ? result.location.raw.rawCoordinateText
+              : null;
+          const coordinateParts = [
+            result.location.crs?.code ?? result.location.crs?.name ?? null,
+            rawCoordinateText,
+            result.location.wgs84
+              ? `lat ${result.location.wgs84.latitude}, lon ${result.location.wgs84.longitude}`
+              : null,
+            result.location.projected
+              ? `E ${result.location.projected.easting}, N ${result.location.projected.northing}`
+              : null,
+          ].filter((value): value is string => Boolean(value));
+
+          if (coordinateParts.length > 0) {
+            keyValue('Coordinates', coordinateParts.join(' | '));
+          }
+        }
 
         renderTable(
           ['From (m)', 'To (m)', 'Description', 'USCS', 'SPT-N'],
@@ -1111,7 +1094,7 @@ export function registerGBRCommand(program: Command): void {
       const spinner = startProgress(flags, `Querying GBR: "${question.slice(0, 50)}..."`);
       try {
         const file = readVisionInput(opts.doc);
-        describeVisionInput(file);
+        describeVisionInput(file, flags);
         const config = buildLLMConfig();
         maybeCheckHostedBetaVisionPayload(config, file, {
           prompt: 'Answer questions about this GBR document.',
