@@ -8,6 +8,18 @@ const releases = [
     date: '2026-04-23',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added hosted-beta long-PDF segmentation for geotechnical report ingest, using a 60 effective-page best-result window with linked sequential packets and one merged final result' },
+      { type: 'feat', text: 'Added --page-range <start:end> to geotech ingest so targeted report subsets can be reviewed, rerun, and exported without processing the whole PDF' },
+      { type: 'feat', text: 'Extended the HTML ingest dossier to show segment execution, selected page-range context, and merged packet outcomes inside one premium review surface' },
+      { type: 'fix', text: 'Kept the shipped hosted-beta path on the non-quantized default Qwen model while forcing segmented long-report execution onto extraction concurrency 1 for better queue stability on L4' },
+      { type: 'fix', text: 'Hardened parent and child persisted ingest jobs so segmented report packets checkpoint independently and merge back into the parent result with original page numbering preserved' },
+    ],
+  },
+  {
+    version: '0.4.24',
+    date: '2026-04-23',
+    tag: '0.4.24 Release',
+    changes: [
       { type: 'fix', text: 'Fixed the Modal deploy workflow so blank repository variables now fall back to the intended defaults instead of crashing the hosted-beta launcher during GitHub Actions deploys' },
       { type: 'fix', text: 'Reduced hosted-beta L4 startup memory pressure by defaulting the vLLM compilation profile to cudagraph_mode NONE, enabling PyTorch expandable segments, and stripping stale num-gpu-blocks override startup args that can force KV-cache OOM' },
       { type: 'fix', text: 'Wired the new Modal compilation override through the deploy workflow and runtime notes so the hosted Qwen path can be tuned safely without turning on a baseline warm-container cost increase' },

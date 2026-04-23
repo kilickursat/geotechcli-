@@ -13,6 +13,7 @@ import {
 import { transcribeDocumentImageText } from '../vision/index.js';
 import { recoverDocumentTextHint, type DocumentTextHintSource } from '../vision/ocr.js';
 import type { PdfDocumentInspection, PdfPageClassification } from './pdf.js';
+import type { IngestSegmentationSummary } from './segmentation.js';
 
 export interface GeotechDocumentVisionInput {
   base64: string;
@@ -31,6 +32,8 @@ export interface GeotechDocumentSource {
   filePath?: string;
   fileName?: string;
   inputKind: 'image' | 'pdf';
+  pageRange?: [number, number];
+  segmentation?: IngestSegmentationSummary;
 }
 
 export interface GeotechDocumentPageAudit {
@@ -345,6 +348,23 @@ function resolvePageConcurrency(
   }
 
   return capabilities.visionImages ? 3 : 2;
+}
+
+function shouldSeriallyProcessImageHeavyPages(
+  config: LLMConfig,
+  inspection: PdfDocumentInspection | null | undefined,
+): boolean {
+  if (config.provider !== 'hosted-beta' || !inspection || inspection.totalPages <= 1) {
+    return false;
+  }
+
+  const imageHeavyPages = inspection.pages.filter((page) =>
+    page.classification === 'image-only'
+    || page.classification === 'text-unreadable'
+    || page.classification === 'graphics-only',
+  ).length;
+
+  return imageHeavyPages >= Math.max(2, Math.ceil(inspection.totalPages / 2));
 }
 
 async function mapWithConcurrency<TInput, TOutput>(
@@ -817,7 +837,7 @@ function buildPageLeadText(
   const bodyLineLimit = options?.bodyLineLimit ?? 8;
   const bodyCharacterLimit = options?.bodyCharacterLimit ?? 480;
   const acceptedOnly = options?.acceptedOnly ?? false;
-  const accepted = inspectionPage.normalizedArtifact?.textQuality.accepted ?? false;
+  const accepted = inspectionPage.normalizedArtifact?.textQuality?.accepted ?? false;
   const nativeText =
     acceptedOnly && !accepted
       ? ''
@@ -925,6 +945,7 @@ function inferAppendixDividerRole(
 export function inferPreflightLowYieldPageRole(input: {
   inspectionPage: PdfDocumentInspection['pages'][number] | undefined;
   previousInspectionPage?: PdfDocumentInspection['pages'][number] | undefined;
+  nextInspectionPage?: PdfDocumentInspection['pages'][number] | undefined;
   pageNumber?: number | null;
   totalPages?: number | null;
   sourceKind?: GeotechDocumentPageInput['sourceKind'];
@@ -946,6 +967,13 @@ export function inferPreflightLowYieldPageRole(input: {
   const wordCount = inspectionPage.metadata?.wordCount ?? 0;
   const textSource = inspectionPage.normalizedArtifact?.textSource;
   const previousDividerRole = inferAppendixDividerRole(input.previousInspectionPage);
+  const nextDividerRole = inferAppendixDividerRole(input.nextInspectionPage);
+  const previousLooksVisual =
+    previousDividerRole === 'visual-appendix'
+    || input.previousInspectionPage?.classification === 'graphics-only';
+  const nextLooksVisual =
+    nextDividerRole === 'visual-appendix'
+    || input.nextInspectionPage?.classification === 'graphics-only';
 
   if (
     input.pageNumber === 1
@@ -965,6 +993,19 @@ export function inferPreflightLowYieldPageRole(input: {
     && textSource === 'native-text-low-quality'
     && wordCount <= 120
     && !hasEngineeringPageSignals(inspectionPage)
+  ) {
+    return 'visual-appendix';
+  }
+
+  if (
+    (inspectionPage.classification === 'image-only' || inspectionPage.classification === 'graphics-only')
+    && input.sourceKind === 'raster-image'
+    && wordCount === 0
+    && !hasEngineeringPageSignals(inspectionPage)
+    && (
+      nextLooksVisual
+      || (previousLooksVisual && input.pageNumber != null && input.totalPages != null && input.pageNumber >= input.totalPages - 2)
+    )
   ) {
     return 'visual-appendix';
   }
@@ -1051,10 +1092,20 @@ function deriveDocumentFindings(
 
   for (const result of results) {
     const inspectionPage = result.pageNumber != null ? inspection?.pages[result.pageNumber - 1] : undefined;
+    const previousInspectionPage = result.pageNumber != null ? inspection?.pages[result.pageNumber - 2] : undefined;
+    const nextInspectionPage = result.pageNumber != null ? inspection?.pages[result.pageNumber] : undefined;
     const nonCriticalRole = inferPreflightLowYieldPageRole({
       inspectionPage,
+      previousInspectionPage,
+      nextInspectionPage,
       pageNumber: result.pageNumber,
       totalPages: result.totalPages,
+      sourceKind:
+        inspectionPage?.classification === 'image-only'
+        || inspectionPage?.classification === 'graphics-only'
+        || inspectionPage?.classification === 'text-unreadable'
+          ? 'raster-image'
+          : undefined,
     });
     if (result.parseStatus === 'failed') {
       findings.push({
@@ -1090,10 +1141,20 @@ function deriveDocumentFindings(
     const pageNumber = Number((failure.match(/^Page (\d+):/) ?? [])[1]);
     const isTimeout = /timed out/i.test(failure);
     const inspectionPage = Number.isFinite(pageNumber) ? inspection?.pages[pageNumber - 1] : undefined;
+    const previousInspectionPage = Number.isFinite(pageNumber) ? inspection?.pages[pageNumber - 2] : undefined;
+    const nextInspectionPage = Number.isFinite(pageNumber) ? inspection?.pages[pageNumber] : undefined;
     const nonCriticalRole = inferPreflightLowYieldPageRole({
       inspectionPage,
+      previousInspectionPage,
+      nextInspectionPage,
       pageNumber: Number.isFinite(pageNumber) ? pageNumber : null,
       totalPages: inspection?.totalPages ?? null,
+      sourceKind:
+        inspectionPage?.classification === 'image-only'
+        || inspectionPage?.classification === 'graphics-only'
+        || inspectionPage?.classification === 'text-unreadable'
+          ? 'raster-image'
+          : undefined,
     });
     findings.push({
       code:
@@ -1164,7 +1225,9 @@ export async function ingestGeotechDocument(
   const pageResults: GeotechDocumentInsight[] = [];
   const documentWarnings = buildInspectionWarnings(options.inspection);
   const recoveredOcrPages = new Set<number>();
-  const pageConcurrency = resolvePageConcurrency(options.config, options.pageConcurrency);
+  const pageConcurrency = shouldSeriallyProcessImageHeavyPages(options.config, options.inspection)
+    ? 1
+    : resolvePageConcurrency(options.config, options.pageConcurrency);
 
   if (options.pages && options.pages.length > 0) {
     const pages = [...options.pages].sort((left, right) => left.pageNumber - right.pageNumber);
@@ -1172,6 +1235,8 @@ export async function ingestGeotechDocument(
       const inspectionPage = options.inspection?.pages[page.pageNumber - 1];
       const lowYieldRole = inferPreflightLowYieldPageRole({
         inspectionPage,
+        previousInspectionPage: options.inspection?.pages[page.pageNumber - 2],
+        nextInspectionPage: options.inspection?.pages[page.pageNumber],
         pageNumber: page.pageNumber,
         totalPages: page.totalPages,
         sourceKind: page.sourceKind,
@@ -1236,6 +1301,7 @@ export async function ingestGeotechDocument(
           totalPages: page.totalPages,
           pageClassification: inspectionPage?.classification,
           pageTextHint,
+          textRecoveryAttempted: !pageTextHint,
         };
         const extractionTimeoutMs = resolveTextExtractionTimeoutMs(pageTimeoutMs, pageTextHint);
         const extractionConfig: LLMConfig = {

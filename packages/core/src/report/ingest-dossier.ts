@@ -201,6 +201,22 @@ function buildFindingGroups(
 function buildGeotechTables(result: GeotechDocumentIngestResult): IngestDossierTable[] {
   const tables: IngestDossierTable[] = [];
 
+  if (result.source.segmentation?.mode === 'segmented-parent' && result.source.segmentation.segments?.length) {
+    tables.push({
+      title: 'Segment execution',
+      description: `Hosted-beta best-result window: ${result.source.segmentation.effectivePageLimit ?? '-'} effective pages.`,
+      columns: ['Segment', 'Pages', 'Status', 'Completed', 'Failed', 'Duration'],
+      rows: result.source.segmentation.segments.map((segment) => [
+        String(segment.segmentIndex),
+        `${segment.startPage}-${segment.endPage}`,
+        segment.status ?? 'queued',
+        segment.completedPages != null ? String(segment.completedPages) : '-',
+        segment.failedPages != null ? String(segment.failedPages) : '-',
+        segment.durationMs != null ? `${Math.round(segment.durationMs / 1000)}s` : '-',
+      ]),
+    });
+  }
+
   tables.push({
     title: 'Material observations',
     columns: ['Kind', 'Description', 'USCS', 'Lithology'],
@@ -410,6 +426,10 @@ function buildBoreholeBadges(result: BoreholeDocumentIngestResult): IngestDossie
 function buildFooterNotes(result: IngestDossierSourceResult): string[] {
   return uniqueStrings([
     result.source.fileName ?? result.source.filePath ?? null,
+    result.source.pageRange ? `Selected page range: ${result.source.pageRange[0]}-${result.source.pageRange[1]}.` : null,
+    result.source.segmentation?.mode === 'segmented-parent'
+      ? `Segmented execution used ${result.source.segmentation.segmentCount ?? result.source.segmentation.segments?.length ?? 0} linked packet(s).`
+      : null,
     result.pageFailures.length > 0 ? `${result.pageFailures.length} page failure(s) were recorded.` : null,
     result.warnings.length > 0 ? `${result.warnings.length} warning(s) were retained in the dossier.` : null,
     'Confidence, approval, and normalized tables are workflow aids for review, not engineering sign-off. Verify conclusions against the original source pages.',

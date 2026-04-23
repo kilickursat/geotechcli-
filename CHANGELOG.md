@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.25] - 2026-04-23
+
+### Hosted-Beta Long-PDF Segmentation And Merged Dossiers
+
+- Added hosted-beta long-PDF segmentation for `geotech ingest --type geotech-document`, using a 60 effective-page best-result window with sequential packet execution and one merged final result.
+- Added `--page-range <start:end>` to `geotech ingest` for contiguous PDF subrange review, debugging, and targeted reruns.
+- Updated the HTML ingest dossier to surface segmented packet execution, selected page-range context, and merged packet outcomes in one review surface.
+- Kept hosted-beta on the non-quantized default Qwen path while forcing segmented long-report execution onto extraction concurrency `1`.
+- Hardened parent and child persisted ingest jobs so segmented report packets checkpoint independently and merge back into the parent job with original page numbering.
+
 ## [0.4.24] - 2026-04-23
 
 ### Modal Deploy And Hosted-Beta L4 Hotfixes

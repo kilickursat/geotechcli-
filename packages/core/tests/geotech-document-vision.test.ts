@@ -1,16 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const generateTextMock = vi.fn();
+const transcribeDocumentImageTextMock = vi.fn();
 
 vi.mock('../src/llm/router.js', () => ({
   generateText: (...args: unknown[]) => generateTextMock(...args),
 }));
 
-import { extractGeotechDocumentFactsFromText } from '../src/vision/geotech-document.js';
+vi.mock('../src/vision/index.js', () => ({
+  transcribeDocumentImageText: (...args: unknown[]) => transcribeDocumentImageTextMock(...args),
+}));
+
+import { extractGeotechDocumentFactsFromText, interpretGeotechDocumentPage } from '../src/vision/geotech-document.js';
 
 describe('extractGeotechDocumentFactsFromText', () => {
   beforeEach(() => {
     generateTextMock.mockReset();
+    transcribeDocumentImageTextMock.mockReset();
   });
 
   it('short-circuits to deterministic extraction for strong text-bearing pages', async () => {
@@ -58,6 +64,36 @@ describe('extractGeotechDocumentFactsFromText', () => {
     expect(insight.documentClass).toBe('site-investigation-report');
   });
 
+  it('still calls the model for weak borehole-labelled text without strong field-method signals', async () => {
+    generateTextMock.mockResolvedValue({
+      text: JSON.stringify({
+        documentClass: 'site-investigation-report',
+        summary: 'Weak borehole-labelled page required model assistance.',
+        materials: [],
+        classifications: [],
+        parameters: [],
+        risks: [],
+        recommendations: [],
+        confidence: 74,
+        warnings: [],
+      }),
+      latencyMs: 11,
+      usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+      model: 'test-model',
+      provider: 'hosted-beta',
+    });
+
+    const insight = await extractGeotechDocumentFactsFromText(
+      'Borehole summary page. Project access and location notes only.',
+      { provider: 'hosted-beta', apiKey: '' } as any,
+      { pageNumber: 1, totalPages: 12, pageClassification: 'mixed' },
+    );
+
+    expect(generateTextMock).toHaveBeenCalledTimes(1);
+    expect(insight.summary).toContain('model assistance');
+    expect(insight.warnings.join(' ')).not.toMatch(/skipped model extraction/i);
+  });
+
   it('short-circuits chain-of-custody laboratory pages without a model call', async () => {
     const insight = await extractGeotechDocumentFactsFromText(
       'PARACEL LABORATORIES LTD Chain of Custody Parcel ID 2250463 Required Analysis VOCs PAHs pH Sample ID BH102 S01 BH103 S01 Analytical Laboratory Results.',
@@ -99,6 +135,19 @@ describe('extractGeotechDocumentFactsFromText', () => {
     expect(insight.parseStatus).toBe('parsed');
   });
 
+  it('short-circuits borehole procedure pages when deterministic extraction finds strong field-method signals', async () => {
+    const insight = await extractGeotechDocumentFactsFromText(
+      'Borehole locations and field methods. Borehole BH121 and BH122 were set out using project northing and easting coordinates with collar elevation control. Standard Penetration Test (SPT) sampling was completed in general accordance with ASTM D1586 using a split spoon sampler.',
+      { provider: 'hosted-beta', apiKey: '' } as any,
+      { pageNumber: 7, totalPages: 102, pageClassification: 'mixed' },
+    );
+
+    expect(generateTextMock).not.toHaveBeenCalled();
+    expect(insight.documentClass).toBe('borehole-log');
+    expect(insight.summary).toMatch(/borehole locations|field methods|standard penetration test/i);
+    expect(insight.warnings.join(' ')).toMatch(/skipped model extraction/i);
+  });
+
   it('falls back to deterministic extraction when the text model call times out', async () => {
     generateTextMock.mockRejectedValue(new Error('Hosted beta request timed out after 120s.'));
 
@@ -112,5 +161,18 @@ describe('extractGeotechDocumentFactsFromText', () => {
     expect(insight.summary).toBeTruthy();
     expect(insight.warnings.join(' ')).toMatch(/used deterministic fallback/i);
     expect(insight.parseStatus).toBe('partial');
+  });
+
+  it('skips a redundant OCR retry when upstream text recovery already failed', async () => {
+    const insight = await interpretGeotechDocumentPage(
+      'image-base64',
+      'image/png',
+      { provider: 'hosted-beta', apiKey: '' } as any,
+      { pageNumber: 5, totalPages: 12, pageClassification: 'image-only', textRecoveryAttempted: true },
+    );
+
+    expect(transcribeDocumentImageTextMock).not.toHaveBeenCalled();
+    expect(insight.parseStatus).toBe('failed');
+    expect(insight.warnings.join(' ')).toMatch(/skipped a redundant OCR retry/i);
   });
 });

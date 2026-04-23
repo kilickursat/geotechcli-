@@ -19,6 +19,38 @@ function makeGeotechResult(
       totalPages: 6,
       successfulPages: 5,
       failedPages: 1,
+      segmentation: {
+        mode: 'segmented-parent',
+        pageRange: [1, 102],
+        effectivePageLimit: 60,
+        segmentCount: 2,
+        segments: [
+          {
+            segmentIndex: 1,
+            segmentCount: 2,
+            startPage: 1,
+            endPage: 60,
+            pageCount: 60,
+            effectivePageCost: 60,
+            status: 'completed',
+            completedPages: 60,
+            failedPages: 0,
+            durationMs: 90000,
+          },
+          {
+            segmentIndex: 2,
+            segmentCount: 2,
+            startPage: 61,
+            endPage: 102,
+            pageCount: 42,
+            effectivePageCost: 42,
+            status: 'completed',
+            completedPages: 31,
+            failedPages: 1,
+            durationMs: 70000,
+          },
+        ],
+      },
     },
     inspection: null,
     inspectionSummary: {
@@ -137,10 +169,12 @@ describe('ingest dossier HTML', () => {
     expect(dossier.metrics.some((metric) => metric.label === 'Parameters' && metric.value === '2')).toBe(true);
     expect(dossier.findings[0]?.label).toBe('Needs review');
     expect(dossier.tables.some((table) => table.title === 'Engineering parameters')).toBe(true);
+    expect(dossier.tables.some((table) => table.title === 'Segment execution')).toBe(true);
     expect(dossier.pageCards).toHaveLength(2);
     expect(dossier.pageCards[1]?.warnings[0]).toContain('Page 5 timed out');
     expect(dossier.storedReview?.datasetName).toBe('ingest-review:school-packet');
     expect(dossier.approval?.approvedBy).toBe('Lead reviewer');
+    expect(dossier.footerNotes.some((note) => /Segmented execution used 2 linked packet/i.test(note))).toBe(true);
   });
 
   it('renders a self-contained HTML dossier with escaped engineering content', () => {
@@ -160,6 +194,7 @@ describe('ingest dossier HTML', () => {
     expect(html).toContain('<!doctype html>');
     expect(html).toContain('geotechCLI ingest dossier');
     expect(html).toContain('Engineering parameters');
+    expect(html).toContain('Segment execution');
     expect(html).toContain('Page map');
     expect(html).toContain('Stored review');
     expect(html).toContain('Clay &lt; shale &gt; profile &amp; lab data.');

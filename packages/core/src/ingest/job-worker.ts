@@ -1,4 +1,5 @@
-import { basename } from 'node:path';
+import { basename, join } from 'node:path';
+import { homedir } from 'node:os';
 import { buildLLMConfig } from '../config/index.js';
 import type { LLMConfig } from '../llm/types.js';
 import { readDocumentPdfPageInputs } from './document-inputs.js';
@@ -33,12 +34,23 @@ import {
 import { recoverDocumentTextHint } from '../vision/ocr.js';
 import { persistBoreholeIngestReview } from './review-store.js';
 import {
+  buildPersistedIngestJobSegments,
+  createPersistedIngestJob,
   loadPersistedIngestJob,
+  resolvePersistedIngestJobExtractionConcurrency,
   savePersistedIngestJob,
   type PersistedIngestJobDocumentType,
   type PersistedIngestJobPageCheckpoint,
   type PersistedIngestJobRecord,
 } from './job-store.js';
+import {
+  HOSTED_BETA_EFFECTIVE_PAGE_LIMIT,
+  slicePdfInspectionToRange,
+  writePdfPageSubset,
+  type IngestSegmentSummary,
+  type IngestSegmentationSummary,
+  type PdfPageRange,
+} from './segmentation.js';
 
 type PersistedIngestResult = BoreholeDocumentIngestResult | GeotechDocumentIngestResult;
 
@@ -103,6 +115,417 @@ function nowIso(now?: () => Date): string {
 
 function uniqueStrings(values: Array<string | null | undefined>): string[] {
   return [...new Set(values.filter((value): value is string => typeof value === 'string' && value.trim().length > 0))];
+}
+
+function getJobSourceDisplayPath(job: PersistedIngestJobRecord): string {
+  return job.source.originalFilePath ?? job.source.filePath;
+}
+
+function getJobSourceDisplayName(job: PersistedIngestJobRecord): string {
+  return job.source.originalFileName ?? basename(getJobSourceDisplayPath(job));
+}
+
+function cloneSegmentationSummary(segmentation: IngestSegmentationSummary | undefined): IngestSegmentationSummary | undefined {
+  if (!segmentation) {
+    return undefined;
+  }
+
+  return {
+    ...segmentation,
+    pageRange: [...segmentation.pageRange] as [number, number],
+    segments: segmentation.segments?.map((segment) => ({ ...segment })),
+  };
+}
+
+function buildJobResultSource(
+  job: PersistedIngestJobRecord,
+  counts: { successfulPages: number; failedPages: number },
+): {
+  filePath: string;
+  fileName: string;
+  inputKind: 'pdf';
+  totalPages: number;
+  successfulPages: number;
+  failedPages: number;
+  pageRange?: [number, number];
+  segmentation?: IngestSegmentationSummary;
+} {
+  return {
+    filePath: getJobSourceDisplayPath(job),
+    fileName: getJobSourceDisplayName(job),
+    inputKind: 'pdf',
+    totalPages: job.source.totalPages,
+    successfulPages: counts.successfulPages,
+    failedPages: counts.failedPages,
+    pageRange: job.source.pageRange,
+    segmentation: cloneSegmentationSummary(job.segmentation),
+  };
+}
+
+function remapPageReferenceText(message: string | undefined, localPageNumber: number, originalPageNumber: number): string | undefined {
+  if (!message) {
+    return undefined;
+  }
+
+  return message
+    .replace(new RegExp(`\\bPage ${localPageNumber}\\b`, 'g'), `Page ${originalPageNumber}`)
+    .replace(new RegExp(`\\bpage ${localPageNumber}\\b`, 'g'), `page ${originalPageNumber}`);
+}
+
+function remapChildGeotechInsightToOriginalPage(
+  insight: GeotechDocumentInsight,
+  localPageNumber: number,
+  originalPageNumber: number,
+  parentTotalPages: number,
+): GeotechDocumentInsight {
+  return {
+    ...insight,
+    pageNumber: originalPageNumber,
+    totalPages: parentTotalPages,
+    warnings: uniqueStrings(insight.warnings.map((warning) => remapPageReferenceText(warning, localPageNumber, originalPageNumber))),
+  };
+}
+
+function updateSegmentSummaryStatus(
+  segmentation: IngestSegmentationSummary | undefined,
+  segmentIndex: number,
+  patch: Partial<IngestSegmentSummary>,
+): IngestSegmentationSummary | undefined {
+  if (!segmentation?.segments) {
+    return segmentation;
+  }
+
+  return {
+    ...segmentation,
+    segments: segmentation.segments.map((segment) =>
+      segment.segmentIndex === segmentIndex
+        ? {
+            ...segment,
+            ...patch,
+          }
+        : segment
+    ),
+  };
+}
+
+function getIngestJobArtifactsRoot(): string {
+  return process.env.GEOTECHCLI_CONFIG_DIR ?? join(homedir(), '.geotechcli');
+}
+
+function getSegmentArtifactsDir(parentJobId: string): string {
+  return join(getIngestJobArtifactsRoot(), 'ingest-jobs', parentJobId, 'segments');
+}
+
+function getJobScopedPageRange(job: PersistedIngestJobRecord): PdfPageRange {
+  const [startPage, endPage] = job.source.pageRange ?? job.segmentation?.pageRange ?? [1, job.source.totalPages];
+  return {
+    startPage,
+    endPage,
+  };
+}
+
+function getJobOriginalTotalPages(job: PersistedIngestJobRecord): number {
+  return Math.max(job.source.totalPages, job.source.pageRange?.[1] ?? 0, job.segmentation?.pageRange?.[1] ?? 0);
+}
+
+function filterPageInputsToSelectedPages(
+  pageInputs: PreparedPdfPageInputBase[],
+  selectedPageNumbers: number[],
+): PreparedPdfPageInputBase[] {
+  const selected = new Set(selectedPageNumbers);
+  return pageInputs.filter((pageInput) => selected.has(pageInput.pageNumber));
+}
+
+function countCheckpointStatuses(
+  pages: PersistedIngestJobPageCheckpoint[],
+  range: PdfPageRange,
+): { completedPages: number; failedPages: number } {
+  let completedPages = 0;
+  let failedPages = 0;
+
+  for (const page of pages) {
+    if (page.pageNumber < range.startPage || page.pageNumber > range.endPage) {
+      continue;
+    }
+    if (page.status === 'completed') {
+      completedPages += 1;
+    } else if (page.status === 'failed') {
+      failedPages += 1;
+    }
+  }
+
+  return { completedPages, failedPages };
+}
+
+function isSegmentResolved(job: PersistedIngestJobRecord, range: PdfPageRange): boolean {
+  return job.checkpoints.pages
+    .filter((page) => page.pageNumber >= range.startPage && page.pageNumber <= range.endPage)
+    .every((page) => page.status !== 'pending');
+}
+
+function remapSegmentCheckpointError(
+  message: string | undefined,
+  localPageNumber: number,
+  originalPageNumber: number,
+): string | undefined {
+  const normalized = normalizeCheckpointErrorMessage(message ?? '');
+  return remapPageReferenceText(normalized, localPageNumber, originalPageNumber);
+}
+
+function mergeSegmentChildJobIntoParentJob(
+  parentJob: PersistedIngestJobRecord,
+  childJob: PersistedIngestJobRecord,
+  range: PdfPageRange,
+  now?: () => Date,
+): PersistedIngestJobRecord {
+  const timestamp = nowIso(now);
+  const originalTotalPages = getJobOriginalTotalPages(parentJob);
+
+  return {
+    ...parentJob,
+    updatedAt: timestamp,
+    execution: {
+      ...parentJob.execution,
+      lastHeartbeatAt: timestamp,
+    },
+    checkpoints: {
+      pages: parentJob.checkpoints.pages.map((pageCheckpoint) => {
+        if (pageCheckpoint.pageNumber < range.startPage || pageCheckpoint.pageNumber > range.endPage) {
+          return pageCheckpoint;
+        }
+
+        const localPageNumber = pageCheckpoint.pageNumber - range.startPage + 1;
+        const childCheckpoint = childJob.checkpoints.pages.find((page) => page.pageNumber === localPageNumber);
+
+        if (!childCheckpoint || childCheckpoint.status === 'pending') {
+          return {
+            ...pageCheckpoint,
+            status: 'failed',
+            updatedAt: timestamp,
+            error: `Page ${pageCheckpoint.pageNumber} did not complete within segment ${range.startPage}-${range.endPage}.`,
+            downgraded: false,
+          };
+        }
+
+        const remappedResult =
+          parentJob.documentType === 'geotech-document'
+          && childCheckpoint.status === 'completed'
+          && childCheckpoint.result
+            ? remapChildGeotechInsightToOriginalPage(
+                childCheckpoint.result as GeotechDocumentInsight,
+                localPageNumber,
+                pageCheckpoint.pageNumber,
+                originalTotalPages,
+              )
+            : childCheckpoint.result;
+
+        return {
+          ...pageCheckpoint,
+          status: childCheckpoint.status,
+          attempts: Math.max(pageCheckpoint.attempts, childCheckpoint.attempts),
+          updatedAt: timestamp,
+          completedAt: childCheckpoint.completedAt,
+          error: remapSegmentCheckpointError(childCheckpoint.error, localPageNumber, pageCheckpoint.pageNumber),
+          downgraded: childCheckpoint.downgraded,
+          ocrTextHint: childCheckpoint.ocrTextHint,
+          ocrSource: childCheckpoint.ocrSource,
+          ocrWarnings: childCheckpoint.ocrWarnings,
+          result: remappedResult,
+        };
+      }),
+    },
+  };
+}
+
+async function runSegmentedParentGeotechJob(
+  jobId: string,
+  currentJob: PersistedIngestJobRecord,
+  mutateJob: (mutator: (job: PersistedIngestJobRecord) => PersistedIngestJobRecord) => Promise<void>,
+  config: LLMConfig,
+  dependencies: PersistedIngestJobWorkerDependencies,
+): Promise<PersistedIngestJobRecord> {
+  const effectivePageLimit =
+    currentJob.segmentation?.effectivePageLimit
+    ?? HOSTED_BETA_EFFECTIVE_PAGE_LIMIT;
+  const scopedRange = getJobScopedPageRange(currentJob);
+  const baseInspection = currentJob.inspection;
+  if (!baseInspection) {
+    throw new Error('Segmented parent ingest requires PDF inspection metadata.');
+  }
+
+  const baseSegments: IngestSegmentSummary[] = currentJob.segmentation?.segments?.length
+    ? currentJob.segmentation.segments
+    : buildPersistedIngestJobSegments(baseInspection, {
+        pageRange: scopedRange,
+        effectivePageLimit,
+      }).map((segment, index, allSegments) => ({
+        ...segment,
+        segmentIndex: index + 1,
+        segmentCount: allSegments.length,
+        status: 'queued' as const,
+      }));
+
+  if (!currentJob.segmentation?.segments?.length) {
+    await mutateJob((job) => ({
+      ...job,
+      updatedAt: nowIso(dependencies.now),
+      segmentation: {
+        mode: 'segmented-parent',
+        pageRange: [scopedRange.startPage, scopedRange.endPage],
+        effectivePageLimit,
+        segmentCount: baseSegments.length,
+        segments: baseSegments,
+      },
+    }));
+    currentJob = loadPersistedIngestJob(jobId) ?? currentJob;
+  }
+
+  const segmentArtifactsDir = getSegmentArtifactsDir(jobId);
+
+  for (const segment of currentJob.segmentation?.segments ?? baseSegments) {
+    if (isCancelled(jobId)) {
+      break;
+    }
+
+    currentJob = loadPersistedIngestJob(jobId) ?? currentJob;
+    const latestSegment = currentJob.segmentation?.segments?.find((entry) => entry.segmentIndex === segment.segmentIndex) ?? segment;
+    const range = {
+      startPage: latestSegment.startPage,
+      endPage: latestSegment.endPage,
+    };
+
+    if (isSegmentResolved(currentJob, range) && latestSegment.status === 'completed') {
+      continue;
+    }
+
+    const packetPath = join(
+      segmentArtifactsDir,
+      `segment-${String(latestSegment.segmentIndex).padStart(2, '0')}-pages-${range.startPage}-${range.endPage}.pdf`,
+    );
+    await writePdfPageSubset(getJobSourceDisplayPath(currentJob), range, packetPath);
+
+    const childInspection = slicePdfInspectionToRange(baseInspection, range, { rebasePageNumbers: true });
+    if (!childInspection) {
+      throw new Error(`Unable to create a scoped inspection for segment ${latestSegment.segmentIndex}.`);
+    }
+
+    let childJob = latestSegment.childJobId ? loadPersistedIngestJob(latestSegment.childJobId) : null;
+    if (!childJob || childJob.status === 'failed' || childJob.status === 'canceled') {
+      childJob = createPersistedIngestJob({
+        documentType: currentJob.documentType,
+        filePath: packetPath,
+        inspection: childInspection,
+        config: currentJob.config,
+        overrideBoreholeId: currentJob.request.overrideBoreholeId,
+        originalFilePath: getJobSourceDisplayPath(currentJob),
+        originalFileName: getJobSourceDisplayName(currentJob),
+        segmentation: {
+          mode: 'segment-child',
+          pageRange: [range.startPage, range.endPage],
+          effectivePageLimit,
+          segmentCount: currentJob.segmentation?.segmentCount ?? baseSegments.length,
+          segmentIndex: latestSegment.segmentIndex,
+          parentJobId: currentJob.jobId,
+        },
+        now: dependencies.now,
+      });
+    }
+
+    const startedAt = Date.now();
+    await mutateJob((job) => ({
+      ...job,
+      updatedAt: nowIso(dependencies.now),
+      execution: {
+        ...job.execution,
+        lastHeartbeatAt: nowIso(dependencies.now),
+      },
+      segmentation: updateSegmentSummaryStatus(job.segmentation, latestSegment.segmentIndex, {
+        childJobId: childJob.jobId,
+        status: 'running',
+      }),
+    }));
+
+    const completedChild = await runPersistedIngestJobWorker(childJob.jobId, dependencies);
+    const durationMs = Date.now() - startedAt;
+
+    await mutateJob((job) => {
+      const mergedJob = mergeSegmentChildJobIntoParentJob(job, completedChild, range, dependencies.now);
+      const counts = countCheckpointStatuses(mergedJob.checkpoints.pages, range);
+      const childStatus =
+        completedChild.status === 'completed'
+          ? 'completed'
+          : completedChild.status === 'canceled'
+            ? 'canceled'
+            : 'failed';
+
+      return {
+        ...mergedJob,
+        segmentation: updateSegmentSummaryStatus(mergedJob.segmentation, latestSegment.segmentIndex, {
+          childJobId: completedChild.jobId,
+          status: childStatus,
+          completedPages: counts.completedPages,
+          failedPages: counts.failedPages,
+          durationMs,
+        }),
+      };
+    });
+  }
+
+  currentJob = loadPersistedIngestJob(jobId) ?? currentJob;
+  if (currentJob.execution.cancelRequested) {
+    await mutateJob((job) => ({
+      ...job,
+      status: 'canceled',
+      updatedAt: nowIso(dependencies.now),
+      canceledAt: nowIso(dependencies.now),
+      execution: {
+        ...job.execution,
+        pid: undefined,
+      },
+    }));
+    return loadPersistedIngestJob(jobId) ?? currentJob;
+  }
+
+  const replayPageInputs = filterPageInputsToSelectedPages(
+    await preparePdfPageInputs(
+      currentJob.source.filePath,
+      null,
+      currentJob.processing.pagePreprocessingConcurrency,
+      dependencies,
+    ),
+    currentJob.checkpoints.pages.map((page) => page.pageNumber),
+  );
+
+  const finalResult = await finalizeJobResult(currentJob, replayPageInputs, config, dependencies);
+  const persistedReview = currentJob.request.projectId
+    ? (dependencies.persistReview ?? persistBoreholeIngestReview)(currentJob.request.projectId, finalResult, {
+        title: currentJob.request.reviewTitle,
+      })
+    : null;
+
+  await mutateJob((job) => ({
+    ...job,
+    status: 'completed',
+    updatedAt: nowIso(dependencies.now),
+    completedAt: nowIso(dependencies.now),
+    execution: {
+      ...job.execution,
+      pid: undefined,
+      lastHeartbeatAt: nowIso(dependencies.now),
+    },
+    result: {
+      ingestResult: finalResult,
+      persistedReview: persistedReview
+        ? {
+            datasetName: persistedReview.datasetName,
+            reviewId: persistedReview.reviewId,
+            createdAt: persistedReview.createdAt,
+          }
+        : undefined,
+    },
+  }));
+
+  return loadPersistedIngestJob(jobId) ?? currentJob;
 }
 
 function isBoreholeResult(result: PersistedIngestResult): result is BoreholeDocumentIngestResult {
@@ -455,14 +878,10 @@ function buildSyntheticBoreholeResult(job: PersistedIngestJobRecord, inspection:
     schemaVersion: 1,
     documentType: 'borehole-log',
     generatedAt: nowIso(now),
-    source: {
-      filePath: job.source.filePath,
-      fileName: basename(job.source.filePath),
-      inputKind: 'pdf',
-      totalPages: job.source.totalPages,
+    source: buildJobResultSource(job, {
       successfulPages: 0,
       failedPages: pageFailures.length,
-    },
+    }),
     inspection,
     inspectionSummary: summarizeBoreholeIngestInspection(inspection),
     boreholes: [],
@@ -534,14 +953,10 @@ function buildSyntheticGeotechDocumentResult(
     schemaVersion: 1,
     documentType: 'geotech-document',
     generatedAt: nowIso(now),
-    source: {
-      filePath: job.source.filePath,
-      fileName: basename(job.source.filePath),
-      inputKind: 'pdf',
-      totalPages: job.source.totalPages,
+    source: buildJobResultSource(job, {
       successfulPages: 0,
       failedPages: pageFailures.length,
-    },
+    }),
     inspection,
     inspectionSummary: buildInspectionSummary(inspection),
     documentClass: null,
@@ -749,6 +1164,7 @@ async function processGeotechDocumentPage(
   const lowYieldRole = inferPreflightLowYieldPageRole({
     inspectionPage,
     previousInspectionPage: job.inspection?.pages[pageInput.pageNumber - 2],
+    nextInspectionPage: job.inspection?.pages[pageInput.pageNumber],
     pageNumber: pageInput.pageNumber,
     totalPages: pageInput.totalPages,
     sourceKind: pageInput.sourceKind,
@@ -931,11 +1347,7 @@ async function finalizeJobResult(
     try {
       const result = await ingestBoreholeLogDocument({
         config,
-        source: {
-          filePath: job.source.filePath,
-          fileName: basename(job.source.filePath),
-          inputKind: 'pdf',
-        },
+        source: buildJobResultSource(job, { successfulPages: 0, failedPages: 0 }),
         overrideBoreholeId: job.request.overrideBoreholeId,
         inspection: job.inspection,
         pages: job.checkpoints.pages
@@ -983,11 +1395,7 @@ async function finalizeJobResult(
   try {
     const result = await ingestGeotechDocument({
       config,
-      source: {
-        filePath: job.source.filePath,
-        fileName: basename(job.source.filePath),
-        inputKind: 'pdf',
-      },
+      source: buildJobResultSource(job, { successfulPages: 0, failedPages: 0 }),
       inspection: job.inspection,
       pages: job.checkpoints.pages
         .map((checkpoint) => geotechPageInputMap.get(checkpoint.pageNumber))
@@ -1097,6 +1505,10 @@ export async function runPersistedIngestJobWorker(
           totalPages: inspection.totalPages,
           weightedPageCost: inspection.pages.reduce((sum, page) => sum + (page.classification === 'image-only' || page.classification === 'text-unreadable' ? 2 : 1), 0),
         },
+        processing: {
+          ...job.processing,
+          chunkExtractionConcurrency: resolvePersistedIngestJobExtractionConcurrency(job.config, inspection),
+        },
         checkpoints: {
           pages: inspection.pages.map((page) => job.checkpoints.pages.find((existing) => existing.pageNumber === page.pageNumber) ?? ({
             pageNumber: page.pageNumber,
@@ -1111,7 +1523,12 @@ export async function runPersistedIngestJobWorker(
       }));
     }
 
+    currentJob = loadPersistedIngestJob(jobId) ?? currentJob;
     const config = buildJobConfig(currentJob, dependencies);
+    if (currentJob.documentType === 'geotech-document' && currentJob.segmentation?.mode === 'segmented-parent') {
+      return await runSegmentedParentGeotechJob(jobId, currentJob, mutateJob, config, dependencies);
+    }
+
     const pageInputs = await preparePdfPageInputs(
       currentJob.source.filePath,
       currentJob.inspection,

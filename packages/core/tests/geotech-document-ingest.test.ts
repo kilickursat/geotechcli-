@@ -197,6 +197,107 @@ describe('ingestGeotechDocument', () => {
     expect(result.reviewFindings.some((finding) => finding.code === 'parameters_not_detected')).toBe(true);
   });
 
+  it('serializes hosted-beta extraction for image-heavy page packets', async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+
+    const result = await ingestGeotechDocument({
+      config: { provider: 'hosted-beta', timeout: 60000 } as any,
+      source: {
+        filePath: 'image-heavy-report.pdf',
+        fileName: 'image-heavy-report.pdf',
+        inputKind: 'pdf',
+      },
+      inspection: {
+        totalPages: 3,
+        warnings: [],
+        metadata: { pdfVersion: '1.7', objectCount: 6 },
+        pages: Array.from({ length: 3 }, (_, index) => ({
+          pageNumber: index + 1,
+          classification: 'image-only',
+          degradation: { level: 'moderate', reasons: ['scan'] },
+          capabilities: { nativeTextExtraction: 'available', rasterImageExtraction: 'available' },
+          normalizedText: `Borehole BH-${index + 1}. Standard Penetration Test ASTM D1586. SPT ${10 + index}.`,
+          rawText: `Borehole BH-${index + 1}. Standard Penetration Test ASTM D1586. SPT ${10 + index}.`,
+          normalizedArtifact: {
+            pageNumber: index + 1,
+            classification: 'image-only',
+            rotation: 0,
+            nativeText: `Borehole BH-${index + 1}. Standard Penetration Test ASTM D1586. SPT ${10 + index}.`,
+            textQuality: {
+              accepted: true,
+              score: 0.95,
+              printableRatio: 1,
+              replacementRatio: 0,
+              symbolNoiseRatio: 0,
+              suspiciousTokenRatio: 0,
+              dictionaryCoverageRatio: 0.6,
+              averageTokenShapeScore: 0.9,
+              reasons: [],
+            },
+            textSource: 'native-text',
+            renderedImageAvailable: true,
+            headingHints: [`Borehole BH-${index + 1}`],
+            tablesDetected: true,
+            figuresDetected: false,
+            warnings: [],
+            confidence: 95,
+          },
+          metadata: {
+            width: 900,
+            height: 1200,
+            rotation: 0,
+            characterCount: 64,
+            wordCount: 10,
+            lineCount: 2,
+            hasTextOperators: false,
+            hasRasterImages: true,
+            contentStreamCount: 1,
+            decodedContentStreamCount: 1,
+            contentFilters: [],
+            fontNames: [],
+            objectRef: `${index + 1} 0 R`,
+          },
+        })),
+      } as any,
+      pages: [
+        { base64: 'page-1', mimeType: 'image/png', pageNumber: 1, totalPages: 3, sourceKind: 'raster-image' },
+        { base64: 'page-2', mimeType: 'image/png', pageNumber: 2, totalPages: 3, sourceKind: 'raster-image' },
+        { base64: 'page-3', mimeType: 'image/png', pageNumber: 3, totalPages: 3, sourceKind: 'raster-image' },
+      ],
+      extractTextFacts: async (_pageText, _config, context) => {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 15));
+        inFlight -= 1;
+
+        return makeResult({
+          documentClass: 'borehole-log',
+          summary: `Borehole page ${context.pageNumber}.`,
+          parameters: [
+            {
+              name: 'sptN',
+              valueText: `${10 + (context.pageNumber ?? 0)}`,
+              numericValue: 10 + (context.pageNumber ?? 0),
+              unit: null,
+              material: null,
+              context: 'field log',
+            },
+          ],
+          pageNumber: context.pageNumber ?? null,
+          totalPages: context.totalPages ?? null,
+          parseStatus: 'parsed',
+          confidence: 82,
+        }) as any;
+      },
+      interpretPage: vi.fn(),
+    });
+
+    expect(maxInFlight).toBe(1);
+    expect(result.source.successfulPages).toBe(3);
+    expect(result.pageFailures).toEqual([]);
+  });
+
   it('prioritizes engineering pages over cover pages for title, summary, and document class', async () => {
     const result = await ingestGeotechDocument({
       config: { provider: 'openai-compatible' } as any,
@@ -713,6 +814,184 @@ describe('ingestGeotechDocument', () => {
     expect(result.pageAudits[0]?.warnings.join(' ')).not.toMatch(/short-circuited/i);
     expect(result.reviewFindings.some((finding) => finding.code === 'visual_appendix_partial')).toBe(false);
     expect(result.contentChunks?.[0]?.sectionType).not.toBe('visual-appendix');
+  });
+
+  it('short-circuits zero-word late raster pages when adjacent tail pages are visual-only appendices', async () => {
+    const interpretPage = vi.fn();
+    const extractTextFacts = vi.fn(async (_pageText: string, _config: any, context: any) => makeResult({
+      documentClass: 'site-investigation-report',
+      title: 'Ground model and design summary',
+      summary: 'Engineering summary page was parsed normally.',
+      materials: [
+        { kind: 'soil', description: 'silty clay', uscsSymbol: 'CL', lithology: null },
+      ],
+      parameters: [
+        { name: 'cohesion', valueText: '24', numericValue: 24, unit: 'kPa', material: 'silty clay', context: 'summary table' },
+      ],
+      pageNumber: context.pageNumber ?? null,
+      totalPages: context.totalPages ?? null,
+      rawLLMText: 'mock',
+      latencyMs: 10,
+    }) as any);
+
+    const result = await ingestGeotechDocument({
+      config: { provider: 'hosted-beta', timeout: 60000 } as any,
+      source: {
+        filePath: 'tail-appendix.pdf',
+        fileName: 'tail-appendix.pdf',
+        inputKind: 'pdf',
+      },
+      inspection: {
+        totalPages: 3,
+        warnings: [],
+        metadata: { pdfVersion: '1.7', objectCount: 6 },
+        pages: [
+          {
+            pageNumber: 1,
+            classification: 'digital-text',
+            degradation: { level: 'none', reasons: [] },
+            capabilities: { nativeTextExtraction: 'available', rasterImageExtraction: 'available' },
+            normalizedText: 'Ground conditions and engineering parameters',
+            rawText: 'Ground conditions and engineering parameters',
+            normalizedArtifact: {
+              pageNumber: 1,
+              classification: 'digital-text',
+              rotation: 0,
+              nativeText: 'Ground conditions and engineering parameters',
+              textQuality: {
+                accepted: true,
+                score: 0.97,
+                printableRatio: 1,
+                replacementRatio: 0,
+                symbolNoiseRatio: 0,
+                suspiciousTokenRatio: 0,
+                dictionaryCoverageRatio: 0.7,
+                averageTokenShapeScore: 0.9,
+                reasons: [],
+              },
+              textSource: 'native-text',
+              renderedImageAvailable: true,
+              headingHints: ['Ground conditions'],
+              tablesDetected: true,
+              figuresDetected: false,
+              warnings: [],
+              confidence: 97,
+            },
+            metadata: {
+              width: 612,
+              height: 792,
+              rotation: 0,
+              characterCount: 42,
+              wordCount: 5,
+              lineCount: 1,
+              hasTextOperators: true,
+              hasRasterImages: false,
+              contentStreamCount: 1,
+              decodedContentStreamCount: 1,
+              contentFilters: [],
+              fontNames: ['Helvetica'],
+              objectRef: '1 0 R',
+            },
+          },
+          {
+            pageNumber: 2,
+            classification: 'image-only',
+            degradation: { level: 'full', reasons: ['scan'] },
+            capabilities: { nativeTextExtraction: 'unavailable', rasterImageExtraction: 'available' },
+            normalizedText: '',
+            rawText: '',
+            normalizedArtifact: {
+              pageNumber: 2,
+              classification: 'image-only',
+              rotation: 0,
+              nativeText: null,
+              textQuality: null,
+              textSource: 'none',
+              renderedImageAvailable: true,
+              headingHints: [],
+              tablesDetected: false,
+              figuresDetected: false,
+              warnings: [],
+              confidence: 20,
+            },
+            metadata: {
+              width: 900,
+              height: 1200,
+              rotation: 0,
+              characterCount: 0,
+              wordCount: 0,
+              lineCount: 0,
+              hasTextOperators: false,
+              hasRasterImages: true,
+              contentStreamCount: 1,
+              decodedContentStreamCount: 1,
+              contentFilters: [],
+              fontNames: [],
+              objectRef: '2 0 R',
+            },
+          },
+          {
+            pageNumber: 3,
+            classification: 'graphics-only',
+            degradation: { level: 'full', reasons: ['figure_page'] },
+            capabilities: { nativeTextExtraction: 'unavailable', rasterImageExtraction: 'available' },
+            normalizedText: '',
+            rawText: '',
+            normalizedArtifact: {
+              pageNumber: 3,
+              classification: 'graphics-only',
+              rotation: 0,
+              nativeText: null,
+              textQuality: null,
+              textSource: 'none',
+              renderedImageAvailable: true,
+              headingHints: [],
+              tablesDetected: false,
+              figuresDetected: true,
+              warnings: [],
+              confidence: 15,
+            },
+            metadata: {
+              width: 900,
+              height: 1200,
+              rotation: 0,
+              characterCount: 0,
+              wordCount: 0,
+              lineCount: 0,
+              hasTextOperators: false,
+              hasRasterImages: true,
+              contentStreamCount: 1,
+              decodedContentStreamCount: 1,
+              contentFilters: [],
+              fontNames: [],
+              objectRef: '3 0 R',
+            },
+          },
+        ],
+      } as any,
+      pages: [
+        { base64: 'page-1', mimeType: 'application/pdf', pageNumber: 1, totalPages: 3 },
+        { base64: 'page-2', mimeType: 'image/png', pageNumber: 2, totalPages: 3, sourceKind: 'raster-image' },
+        { base64: 'page-3', mimeType: 'image/png', pageNumber: 3, totalPages: 3, sourceKind: 'raster-image' },
+      ],
+      extractTextFacts,
+      interpretPage,
+    });
+
+    expect(extractTextFacts).toHaveBeenCalledTimes(1);
+    expect(interpretPage).not.toHaveBeenCalled();
+    expect(result.source.successfulPages).toBe(3);
+    expect(result.contentChunks?.some((chunk) => chunk.pageRange[0] === 2 && chunk.sectionType === 'visual-appendix')).toBe(true);
+    expect(result.contentChunks?.some((chunk) => chunk.pageRange[0] === 3 && chunk.sectionType === 'visual-appendix')).toBe(true);
+    expect(result.reviewFindings).toContainEqual(expect.objectContaining({
+      code: 'visual_appendix_partial',
+      pageNumber: 2,
+      severity: 'advisory',
+    }));
+    expect(result.reviewFindings).not.toContainEqual(expect.objectContaining({
+      code: 'page_geotech_extraction_partial',
+      pageNumber: 2,
+    }));
   });
 
   it('caps confidence and keeps auto-proceed disabled when partial or failed pages remain', async () => {

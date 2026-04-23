@@ -3,6 +3,7 @@ import { Command } from 'commander';
 
 const coreMocks = vi.hoisted(() => ({
   approvePersistedBoreholeIngestReview: vi.fn(),
+  buildPersistedIngestJobSegments: vi.fn(),
   buildIngestDossier: vi.fn(),
   buildLLMConfig: vi.fn(),
   cancelPersistedIngestJob: vi.fn(),
@@ -24,8 +25,11 @@ const coreMocks = vi.hoisted(() => ({
   renderIngestDossierAsHtml: vi.fn(),
   resolvePersistedIngestJobExtractionConcurrency: vi.fn(),
   resumePersistedIngestJob: vi.fn(),
+  shouldSegmentHostedBetaLongPdf: vi.fn(),
   shouldUseAsyncIngestJob: vi.fn(),
+  slicePdfInspectionToRange: vi.fn(),
   waitForPersistedIngestJob: vi.fn(),
+  writePdfPageSubset: vi.fn(),
 }));
 
 const visionMocks = vi.hoisted(() => ({
@@ -53,12 +57,14 @@ const fsMocks = vi.hoisted(() => ({
 
 vi.mock('@geotechcli/core', () => ({
   approvePersistedBoreholeIngestReview: coreMocks.approvePersistedBoreholeIngestReview,
+  buildPersistedIngestJobSegments: coreMocks.buildPersistedIngestJobSegments,
   buildIngestDossier: coreMocks.buildIngestDossier,
   buildLLMConfig: coreMocks.buildLLMConfig,
   cancelPersistedIngestJob: coreMocks.cancelPersistedIngestJob,
   computeWeightedPdfPageCost: coreMocks.computeWeightedPdfPageCost,
   createAndStartPersistedIngestJob: coreMocks.createAndStartPersistedIngestJob,
   DEFAULT_LLM_VISION_MODEL: 'Qwen/Qwen3.5-9B',
+  HOSTED_BETA_EFFECTIVE_PAGE_LIMIT: 60,
   GLOBAL_FLAG_DEFINITIONS: [
     { key: 'json', option: '--json', description: 'json' },
     { key: 'quiet', option: '--quiet', description: 'quiet' },
@@ -81,8 +87,11 @@ vi.mock('@geotechcli/core', () => ({
   renderIngestDossierAsHtml: coreMocks.renderIngestDossierAsHtml,
   resolvePersistedIngestJobExtractionConcurrency: coreMocks.resolvePersistedIngestJobExtractionConcurrency,
   resumePersistedIngestJob: coreMocks.resumePersistedIngestJob,
+  shouldSegmentHostedBetaLongPdf: coreMocks.shouldSegmentHostedBetaLongPdf,
   shouldUseAsyncIngestJob: coreMocks.shouldUseAsyncIngestJob,
+  slicePdfInspectionToRange: coreMocks.slicePdfInspectionToRange,
   waitForPersistedIngestJob: coreMocks.waitForPersistedIngestJob,
+  writePdfPageSubset: coreMocks.writePdfPageSubset,
 }));
 
 vi.mock('../src/util/vision-output.js', () => ({
@@ -238,8 +247,18 @@ describe('registerIngestCommand', () => {
       footerNotes: [],
     });
     coreMocks.renderIngestDossierAsHtml.mockReturnValue('<!doctype html><html><body>Dossier</body></html>');
+    coreMocks.buildPersistedIngestJobSegments.mockReturnValue([]);
     coreMocks.resolvePersistedIngestJobExtractionConcurrency.mockReturnValue(2);
+    coreMocks.shouldSegmentHostedBetaLongPdf.mockReturnValue(false);
     coreMocks.shouldUseAsyncIngestJob.mockReturnValue(false);
+    coreMocks.slicePdfInspectionToRange.mockImplementation((_inspection, range, options) => ({
+      totalPages: range.endPage - range.startPage + 1,
+      pages: Array.from({ length: range.endPage - range.startPage + 1 }, (_, index) => ({
+        pageNumber: options?.rebasePageNumbers ? index + 1 : range.startPage + index,
+        classification: 'digital-text',
+      })),
+    }));
+    coreMocks.writePdfPageSubset.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -328,6 +347,126 @@ describe('registerIngestCommand', () => {
       ],
       overrideBoreholeId: undefined,
     });
+  });
+
+  it('applies --page-range before dry-run sizing and page classification output', async () => {
+    const registerIngestCommand = await loadRegisterIngestCommand();
+    const program = new Command();
+
+    visionMocks.readVisionInput.mockReturnValue({
+      base64: 'pdf-base64',
+      mimeType: 'application/pdf',
+      fileBytes: 1024,
+      filePath: 'site-report.pdf',
+      ext: 'pdf',
+      kind: 'pdf',
+    });
+    visionMocks.countPdfPages.mockResolvedValue(80);
+    coreMocks.inspectPdfDocument.mockReturnValue({
+      totalPages: 80,
+      pages: Array.from({ length: 80 }, (_, index) => ({
+        pageNumber: index + 1,
+        classification: index % 2 === 0 ? 'digital-text' : 'image-only',
+      })),
+    });
+
+    registerIngestCommand(program);
+
+    await program.parseAsync([
+      'ingest',
+      'site-report.pdf',
+      '--type',
+      'geotech-document',
+      '--page-range',
+      '61:62',
+      '--dry-run',
+      '--json',
+    ], { from: 'user' });
+
+    expect(uiMocks.renderJSON).toHaveBeenCalledWith({
+      kind: 'geotech-ingest-dry-run',
+      documentType: 'geotech-document',
+      source: {
+        filePath: 'site-report.pdf',
+        inputKind: 'pdf',
+      },
+      wouldUseHostedVision: true,
+      projectId: undefined,
+      totalPages: 2,
+      pageRange: [61, 62],
+      pageClassifications: [
+        { pageNumber: 61, classification: 'digital-text' },
+        { pageNumber: 62, classification: 'digital-text' },
+      ],
+      overrideBoreholeId: undefined,
+    });
+  });
+
+  it('creates a segmented parent hosted-beta job for long geotech pdfs', async () => {
+    const registerIngestCommand = await loadRegisterIngestCommand();
+    const program = new Command();
+
+    visionMocks.readVisionInput.mockReturnValue({
+      base64: 'pdf-base64',
+      mimeType: 'application/pdf',
+      fileBytes: 1024,
+      filePath: 'Geotechnical-Report.pdf',
+      ext: 'pdf',
+      kind: 'pdf',
+    });
+    visionMocks.countPdfPages.mockResolvedValue(102);
+    coreMocks.buildLLMConfig.mockReturnValue({
+      provider: 'hosted-beta',
+      apiKey: 'test-key',
+      timeout: 1000,
+      visionModelId: 'Qwen/Qwen3.5-9B',
+    });
+    coreMocks.inspectPdfDocument.mockReturnValue({
+      totalPages: 102,
+      pages: Array.from({ length: 102 }, (_, index) => ({
+        pageNumber: index + 1,
+        classification: 'image-only',
+      })),
+    });
+    coreMocks.shouldSegmentHostedBetaLongPdf.mockReturnValue(true);
+    coreMocks.buildPersistedIngestJobSegments.mockReturnValue([
+      { startPage: 1, endPage: 60, pageCount: 60, effectivePageCost: 60 },
+      { startPage: 61, endPage: 102, pageCount: 42, effectivePageCost: 42 },
+    ]);
+    coreMocks.resolvePersistedIngestJobExtractionConcurrency.mockReturnValue(1);
+    coreMocks.createAndStartPersistedIngestJob.mockReturnValue(makePersistedIngestJobRecord({
+      documentType: 'geotech-document',
+      segmentation: {
+        mode: 'segmented-parent',
+        pageRange: [1, 102],
+        effectivePageLimit: 60,
+        segmentCount: 2,
+        segments: [
+          { segmentIndex: 1, segmentCount: 2, startPage: 1, endPage: 60, status: 'queued' },
+          { segmentIndex: 2, segmentCount: 2, startPage: 61, endPage: 102, status: 'queued' },
+        ],
+      },
+    }));
+
+    registerIngestCommand(program);
+
+    await program.parseAsync([
+      'ingest',
+      'Geotechnical-Report.pdf',
+      '--type',
+      'geotech-document',
+    ], { from: 'user' });
+
+    expect(coreMocks.createAndStartPersistedIngestJob).toHaveBeenCalledWith(expect.objectContaining({
+      documentType: 'geotech-document',
+      filePath: 'Geotechnical-Report.pdf',
+      segmentation: expect.objectContaining({
+        mode: 'segmented-parent',
+        pageRange: [1, 102],
+        segmentCount: 2,
+      }),
+    }));
+    expect(uiMocks.info).toHaveBeenCalledWith(expect.stringContaining('Hosted-beta best-result window is 60 effective pages'));
   });
 
   it('emits a stable dry-run JSON envelope for persisted ingest review lookup without calling storage helpers', async () => {

@@ -7,6 +7,16 @@ import type { LLMConfig } from '../llm/types.js';
 import type { PdfDocumentInspection, PdfPageClassification } from './pdf.js';
 import type { BoreholeDocumentIngestResult } from './geotech-extract.js';
 import type { GeotechDocumentIngestResult } from './geotech-document.js';
+import {
+  buildHostedBetaPdfSegments,
+  HOSTED_BETA_EFFECTIVE_PAGE_LIMIT,
+  pageWeightForClassification,
+  type IngestSegmentationMode,
+  type IngestSegmentationSummary,
+  type IngestSegmentSummary,
+  type PdfPageRange,
+  type PdfSegmentRange,
+} from './segmentation.js';
 
 export type PersistedIngestJobDocumentType = 'borehole-log' | 'geotech-document';
 export type PersistedIngestJobStatus = 'queued' | 'running' | 'completed' | 'failed' | 'canceled';
@@ -55,6 +65,9 @@ export interface PersistedIngestJobRecord {
     inputKind: 'pdf';
     totalPages: number;
     weightedPageCost: number;
+    originalFilePath?: string;
+    originalFileName?: string;
+    pageRange?: [number, number];
   };
   config: {
     provider: LLMConfig['provider'];
@@ -72,6 +85,7 @@ export interface PersistedIngestJobRecord {
     overrideBoreholeId?: string;
     reviewTitle?: string;
   };
+  segmentation?: IngestSegmentationSummary;
   inspection: PdfDocumentInspection | null;
   execution: {
     runCount: number;
@@ -94,6 +108,10 @@ export interface CreatePersistedIngestJobOptions {
   projectId?: string;
   overrideBoreholeId?: string;
   reviewTitle?: string;
+  originalFilePath?: string;
+  originalFileName?: string;
+  pageRange?: [number, number];
+  segmentation?: IngestSegmentationSummary;
   now?: () => Date;
 }
 
@@ -234,6 +252,91 @@ function normalizePageCheckpoint(value: unknown, index: number, now: string): Pe
   };
 }
 
+function normalizeTuplePageRange(value: unknown): [number, number] | undefined {
+  if (!Array.isArray(value) || value.length !== 2) {
+    return undefined;
+  }
+
+  const startPage = asOptionalNumber(value[0]);
+  const endPage = asOptionalNumber(value[1]);
+  if (
+    startPage == null
+    || endPage == null
+    || !Number.isInteger(startPage)
+    || !Number.isInteger(endPage)
+    || startPage < 1
+    || endPage < startPage
+  ) {
+    return undefined;
+  }
+
+  return [startPage, endPage];
+}
+
+function normalizeSegmentationSegments(value: unknown): IngestSegmentSummary[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  return value.flatMap((segment): IngestSegmentSummary[] => {
+    if (!isRecord(segment)) {
+      return [];
+    }
+    const startPage = asOptionalNumber(segment.startPage);
+    const endPage = asOptionalNumber(segment.endPage);
+    const pageCount = asOptionalNumber(segment.pageCount);
+    const effectivePageCost = asOptionalNumber(segment.effectivePageCost);
+    const segmentIndex = asOptionalNumber(segment.segmentIndex);
+    const segmentCount = asOptionalNumber(segment.segmentCount);
+    if (
+      startPage == null
+      || endPage == null
+      || pageCount == null
+      || effectivePageCost == null
+      || segmentIndex == null
+      || segmentCount == null
+    ) {
+      return [];
+    }
+
+    return [{
+      startPage,
+      endPage,
+      pageCount,
+      effectivePageCost,
+      segmentIndex,
+      segmentCount,
+      childJobId: asOptionalString(segment.childJobId),
+      status: isPersistedIngestJobStatus(segment.status) ? segment.status : undefined,
+      completedPages: asOptionalNumber(segment.completedPages),
+      failedPages: asOptionalNumber(segment.failedPages),
+      durationMs: asOptionalNumber(segment.durationMs),
+    }];
+  });
+}
+
+function normalizeSegmentationSummary(value: unknown): IngestSegmentationSummary | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const mode = asOptionalString(value.mode) as IngestSegmentationMode | undefined;
+  const pageRange = normalizeTuplePageRange(value.pageRange);
+  if (!mode || !pageRange || (mode !== 'single' && mode !== 'segmented-parent' && mode !== 'segment-child')) {
+    return undefined;
+  }
+
+  return {
+    mode,
+    pageRange,
+    effectivePageLimit: asOptionalNumber(value.effectivePageLimit),
+    segmentCount: asOptionalNumber(value.segmentCount),
+    segmentIndex: asOptionalNumber(value.segmentIndex),
+    parentJobId: asOptionalString(value.parentJobId),
+    segments: normalizeSegmentationSegments(value.segments),
+  };
+}
+
 function normalizePersistedIngestJobRecord(value: unknown): PersistedIngestJobRecord | null {
   if (!isRecord(value) || value.kind !== 'geotech-ingest-job-record' || value.schemaVersion !== JOB_SCHEMA_VERSION) {
     return null;
@@ -299,6 +402,9 @@ function normalizePersistedIngestJobRecord(value: unknown): PersistedIngestJobRe
       inputKind: 'pdf',
       totalPages,
       weightedPageCost,
+      originalFilePath: asOptionalString(source.originalFilePath),
+      originalFileName: asOptionalString(source.originalFileName),
+      pageRange: normalizeTuplePageRange(source.pageRange),
     },
     config: {
       provider: (asOptionalString(config.provider) as LLMConfig['provider']) ?? 'hosted-beta',
@@ -316,6 +422,7 @@ function normalizePersistedIngestJobRecord(value: unknown): PersistedIngestJobRe
       overrideBoreholeId: asOptionalString(request.overrideBoreholeId),
       reviewTitle: asOptionalString(request.reviewTitle),
     },
+    segmentation: normalizeSegmentationSummary(value.segmentation),
     inspection: isRecord(value.inspection) ? (value.inspection as unknown as PdfDocumentInspection) : null,
     execution: {
       runCount: asOptionalNumber(execution.runCount) ?? 0,
@@ -342,10 +449,6 @@ function normalizePersistedIngestJobRecord(value: unknown): PersistedIngestJobRe
   };
 }
 
-function pageWeightForClassification(classification: PdfPageClassification | null | undefined): number {
-  return classification === 'image-only' || classification === 'text-unreadable' ? 2 : 1;
-}
-
 export function computeWeightedPdfPageCost(inspection: PdfDocumentInspection | null | undefined): number {
   if (!inspection || inspection.pages.length === 0) {
     return 0;
@@ -365,7 +468,25 @@ export function shouldUseAsyncIngestJob(
 
 export function resolvePersistedIngestJobExtractionConcurrency(
   config: Pick<LLMConfig, 'provider' | 'modelId' | 'visionModelId'>,
+  inspection?: PdfDocumentInspection | null,
+  segmentation?: IngestSegmentationSummary,
 ): number {
+  if (segmentation?.mode === 'segmented-parent' || segmentation?.mode === 'segment-child') {
+    return 1;
+  }
+
+  if (
+    config.provider === 'hosted-beta'
+    && inspection
+    && inspection.pages.filter((page) =>
+      page.classification === 'image-only'
+      || page.classification === 'text-unreadable'
+      || page.classification === 'graphics-only',
+    ).length >= Math.max(2, Math.ceil(inspection.totalPages / 2))
+  ) {
+    return 1;
+  }
+
   const provider = config.provider;
   const visionModel = config.visionModelId?.toLowerCase() ?? '';
   const model = config.modelId?.toLowerCase() ?? '';
@@ -386,7 +507,15 @@ export function createPersistedIngestJob(
   const createdAt = nowIso(options.now);
   const resolvedFilePath = resolve(options.filePath);
   const jobId = buildJobId(resolvedFilePath, createdAt);
-  const inspection = options.inspection && options.inspection.totalPages > 0 ? options.inspection : null;
+  const rawInspection = options.inspection && options.inspection.totalPages > 0 ? options.inspection : null;
+  const pageRange = options.pageRange;
+  const inspection = rawInspection && pageRange
+    ? {
+        ...rawInspection,
+        totalPages: rawInspection.pages.filter((page) => page.pageNumber >= pageRange[0] && page.pageNumber <= pageRange[1]).length,
+        pages: rawInspection.pages.filter((page) => page.pageNumber >= pageRange[0] && page.pageNumber <= pageRange[1]),
+      }
+    : rawInspection;
   const totalPages = inspection?.totalPages ?? 0;
   const weightedPageCost = inspection ? computeWeightedPdfPageCost(inspection) : totalPages;
   const record: PersistedIngestJobRecord = {
@@ -403,6 +532,9 @@ export function createPersistedIngestJob(
       inputKind: 'pdf',
       totalPages,
       weightedPageCost,
+      originalFilePath: options.originalFilePath?.trim() || undefined,
+      originalFileName: options.originalFileName?.trim() || undefined,
+      pageRange: options.pageRange,
     },
     config: {
       provider: options.config.provider,
@@ -413,13 +545,14 @@ export function createPersistedIngestJob(
     },
     processing: {
       pagePreprocessingConcurrency: PAGE_PREPROCESSING_CONCURRENCY,
-      chunkExtractionConcurrency: resolvePersistedIngestJobExtractionConcurrency(options.config),
+      chunkExtractionConcurrency: resolvePersistedIngestJobExtractionConcurrency(options.config, inspection, options.segmentation),
     },
     request: {
       projectId: options.projectId?.trim() || undefined,
       overrideBoreholeId: options.overrideBoreholeId?.trim() || undefined,
       reviewTitle: options.reviewTitle?.trim() || undefined,
     },
+    segmentation: options.segmentation,
     inspection,
     execution: {
       runCount: 0,
@@ -440,6 +573,41 @@ export function createPersistedIngestJob(
 
   atomicWriteJson(getJobRecordPath(jobId), record);
   return record;
+}
+
+export function buildPersistedIngestJobSegments(
+  inspection: PdfDocumentInspection,
+  options?: {
+    pageRange?: PdfPageRange;
+    effectivePageLimit?: number;
+  },
+): PdfSegmentRange[] {
+  return buildHostedBetaPdfSegments(
+    inspection,
+    options?.effectivePageLimit ?? HOSTED_BETA_EFFECTIVE_PAGE_LIMIT,
+    options?.pageRange,
+  );
+}
+
+export function shouldSegmentHostedBetaLongPdf(
+  documentType: PersistedIngestJobDocumentType,
+  config: Pick<LLMConfig, 'provider'>,
+  inspection: PdfDocumentInspection | null | undefined,
+  pageRange?: PdfPageRange,
+): boolean {
+  if (documentType !== 'geotech-document' || config.provider !== 'hosted-beta' || !inspection) {
+    return false;
+  }
+
+  const scopedInspection = pageRange
+    ? {
+        ...inspection,
+        totalPages: inspection.pages.filter((page) => page.pageNumber >= pageRange.startPage && page.pageNumber <= pageRange.endPage).length,
+        pages: inspection.pages.filter((page) => page.pageNumber >= pageRange.startPage && page.pageNumber <= pageRange.endPage),
+      }
+    : inspection;
+
+  return computeWeightedPdfPageCost(scopedInspection) > HOSTED_BETA_EFFECTIVE_PAGE_LIMIT;
 }
 
 export function loadPersistedIngestJob(jobId: string): PersistedIngestJobRecord | null {

@@ -10,6 +10,7 @@ import {
 import { recoverDocumentTextHint, type DocumentTextHintSource } from '../vision/ocr.js';
 import type { ParseStatus } from '../vision/parse.js';
 import type { PdfDocumentInspection, PdfPageClassification } from './pdf.js';
+import type { IngestSegmentationSummary } from './segmentation.js';
 
 export interface BoreholeVisionInput {
   base64: string;
@@ -28,6 +29,8 @@ export interface BoreholeDocumentSource {
   filePath?: string;
   fileName?: string;
   inputKind: 'image' | 'pdf';
+  pageRange?: [number, number];
+  segmentation?: IngestSegmentationSummary;
 }
 
 export interface BoreholeIngestPageAudit {

@@ -165,6 +165,7 @@ export interface GeotechDocumentContext {
   totalPages?: number;
   pageTextHint?: string;
   pageClassification?: string;
+  textRecoveryAttempted?: boolean;
 }
 
 export interface GeotechDocumentInsight extends ParseSafety {
@@ -587,17 +588,64 @@ function buildGeotechDocumentInsightFromValue(input: {
 
 function shouldShortCircuitToDeterministicFallback(insight: GeotechDocumentInsight): boolean {
   const hasSummary = typeof insight.summary === 'string' && insight.summary.trim().length > 0;
+  const hasTitle = typeof insight.title === 'string' && insight.title.trim().length > 0;
+  const signalText = [
+    insight.title,
+    insight.summary,
+    ...insight.materials.map((material) => material.description),
+    ...insight.classifications.map((classification) => `${classification.system} ${classification.value}`.trim()),
+    ...insight.parameters.map((parameter) => `${parameter.name} ${parameter.valueText}`.trim()),
+    ...insight.risks,
+    ...insight.recommendations,
+  ]
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .join('\n');
   const hasStrongStructuredSignal =
     insight.parameters.length > 0
     || (insight.materials.length > 0 && insight.classifications.length > 0)
     || (insight.materials.length > 0 && insight.risks.length > 0);
+  const hasAnyStructuredSignal =
+    hasStrongStructuredSignal
+    || insight.materials.length > 0
+    || insight.classifications.length > 0
+    || insight.risks.length > 0
+    || insight.recommendations.length > 0;
   const hasRecognizableLabFormSignal =
     insight.documentClass === 'lab-report'
     && /chain of custody|required analysis|sample id|analytical laboratory|laboratories|certificate of analysis|analyte|reporting limit|source result|surrogate/i.test(
-      `${insight.title ?? ''}\n${insight.summary ?? ''}`,
+      signalText,
+    );
+  const hasBoreholeProcedureSignal =
+    insight.documentClass === 'borehole-log'
+    && /\bbh\d{1,5}[a-z0-9-]*\b|\bnorthing\b|\beasting\b|\belevation\b|\bstandard penetration test\b|\bspt\b|\bastm d1586\b|\bsplit spoon\b|\bsample location\b/i.test(
+      signalText,
+    );
+  const hasBroaderEngineeringSignal =
+    /\blaboratory\b|\bplasticity\b|\bliquid limit\b|\bmoisture content\b|\btriaxial\b|\bpermeability\b|\bgroundwater\b|\bstratigraphy\b|\blithology\b|\bformation\b|\bweathered\b|\brqd\b|\brmr\b|\bq-system\b/i.test(
+      signalText,
     );
 
-  return hasSummary && (hasStrongStructuredSignal || hasRecognizableLabFormSignal);
+  if (hasSummary && (hasStrongStructuredSignal || hasRecognizableLabFormSignal)) {
+    return true;
+  }
+
+  if (
+    (insight.documentClass === 'borehole-log' || insight.documentClass === 'lab-report')
+    && (hasSummary || hasTitle)
+    && (hasAnyStructuredSignal || hasBoreholeProcedureSignal || hasBroaderEngineeringSignal)
+  ) {
+    return true;
+  }
+
+  if (
+    (insight.documentClass === 'geology-log' || insight.documentClass === 'rock-mass-document')
+    && (hasSummary || hasTitle)
+    && (hasAnyStructuredSignal || hasBroaderEngineeringSignal)
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 export async function extractGeotechDocumentFactsFromText(
@@ -763,12 +811,16 @@ export async function interpretGeotechDocumentPage(
   let transcriptionLatencyMs = 0;
 
   if (!text) {
-    const transcription = await transcribeDocumentImageText(imageBase64, mimeType, config);
-    text = transcription.text.trim();
-    transcriptionWarnings.push(...transcription.warnings);
-    transcriptionLatencyMs = transcription.latencyMs;
-    if (!text) {
-      transcriptionWarnings.push('OCR-style transcription did not recover usable text from the page image.');
+    if (context.textRecoveryAttempted) {
+      transcriptionWarnings.push('Upstream text recovery already failed to recover usable text; skipped a redundant OCR retry for this page.');
+    } else {
+      const transcription = await transcribeDocumentImageText(imageBase64, mimeType, config);
+      text = transcription.text.trim();
+      transcriptionWarnings.push(...transcription.warnings);
+      transcriptionLatencyMs = transcription.latencyMs;
+      if (!text) {
+        transcriptionWarnings.push('OCR-style transcription did not recover usable text from the page image.');
+      }
     }
   }
 

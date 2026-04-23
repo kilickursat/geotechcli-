@@ -114,6 +114,7 @@ export {
 } from './review-store.js';
 export {
   cancelPersistedIngestJob,
+  buildPersistedIngestJobSegments,
   computeWeightedPdfPageCost,
   createAndStartPersistedIngestJob,
   createPersistedIngestJob,
@@ -125,6 +126,7 @@ export {
   resolvePersistedIngestJobExtractionConcurrency,
   resumePersistedIngestJob,
   savePersistedIngestJob,
+  shouldSegmentHostedBetaLongPdf,
   shouldUseAsyncIngestJob,
   startPersistedIngestJob,
   updatePersistedIngestJob,
@@ -137,6 +139,18 @@ export {
   type PersistedIngestJobResultRecord,
   type PersistedIngestJobStatus,
 } from './job-store.js';
+export {
+  HOSTED_BETA_EFFECTIVE_PAGE_LIMIT,
+  buildHostedBetaPdfSegments,
+  slicePdfInspectionToRange,
+  writePdfPageSubset,
+  type IngestSegmentationMode,
+  type IngestSegmentationSummary,
+  type IngestSegmentSummary,
+  type IngestSegmentStatus,
+  type PdfPageRange,
+  type PdfSegmentRange,
+} from './segmentation.js';
 export {
   runPersistedIngestJobWorker,
   type PersistedIngestJobWorkerDependencies,

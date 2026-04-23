@@ -232,17 +232,22 @@ geotech ingest Geotechnical-Report.pdf --type geotech-document
 # Export the self-contained HTML dossier for design review or sharing
 geotech ingest Geotechnical-Report.pdf --type geotech-document --format html --output geotechnical-dossier.html
 
-# Large reports automatically switch to resumable async jobs
+# Large hosted-beta reports automatically switch to segmented resumable async jobs
 geotech ingest Geotechnical-Report.pdf --type geotech-document
 geotech ingest wait <jobId> --format html --output geotechnical-dossier.html
 geotech ingest result <jobId> --format html --output geotechnical-dossier.html
+
+# Review a focused range without processing the whole report
+geotech ingest Geotechnical-Report.pdf --type geotech-document --page-range 61:102
 
 # Persist a project-backed ingest, then reopen the latest stored review later
 geotech ingest Geotechnical-Report.pdf --type geotech-document --project demo-project
 geotech ingest review demo-project --dataset ingest-review:latest --format html --output review-dossier.html
 \`\`\`
 
-The HTML dossier is a self-contained engineering review file with an executive summary, confidence metrics, extracted materials and parameters, review findings, page-by-page evidence cards, and stored-review plus approval context when the ingest is project-backed.`,
+The HTML dossier is a self-contained engineering review file with an executive summary, confidence metrics, extracted materials and parameters, review findings, page-by-page evidence cards, and stored-review plus approval context when the ingest is project-backed.
+
+Hosted-beta reliability note: geotechnical PDFs above the best-result window are now split into linked sequential packets automatically, and the final result plus HTML dossier merge those packets back into one review surface.`,
   },
   {
     id: 'agent',

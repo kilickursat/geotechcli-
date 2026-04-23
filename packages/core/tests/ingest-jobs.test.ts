@@ -1,17 +1,20 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { PDFDocument } from 'pdf-lib';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  buildPersistedIngestJobSegments,
   computeWeightedPdfPageCost,
   createPersistedIngestJob,
   loadPersistedIngestJob,
-  waitForPersistedIngestJob,
+  resolvePersistedIngestJobExtractionConcurrency,
   runPersistedIngestJobWorker,
   savePersistedIngestJob,
+  shouldSegmentHostedBetaLongPdf,
   shouldUseAsyncIngestJob,
+  waitForPersistedIngestJob,
   type BoreholeInterpretation,
   type LLMConfig,
   type PdfDocumentInspection,
@@ -204,6 +207,275 @@ describe('persisted ingest jobs', () => {
     expect(shouldUseAsyncIngestJob(weightedInspection)).toBe(true);
     expect(shouldUseAsyncIngestJob(smallInspection)).toBe(false);
     expect(shouldUseAsyncIngestJob(null, 6)).toBe(true);
+  });
+
+  it('builds hosted-beta segments from effective page cost and detects long geotech PDFs', () => {
+    const inspection = makeInspection(31, () => 'image-only');
+
+    const segments = buildPersistedIngestJobSegments(inspection);
+
+    expect(segments).toEqual([
+      expect.objectContaining({ startPage: 1, endPage: 30, effectivePageCost: 60 }),
+      expect.objectContaining({ startPage: 31, endPage: 31, effectivePageCost: 2 }),
+    ]);
+    expect(shouldSegmentHostedBetaLongPdf(
+      'geotech-document',
+      { provider: 'hosted-beta' },
+      inspection,
+    )).toBe(true);
+    expect(shouldSegmentHostedBetaLongPdf(
+      'borehole-log',
+      { provider: 'hosted-beta' },
+      inspection,
+    )).toBe(false);
+  });
+
+  it('serializes async hosted-beta extraction for image-heavy inspections', () => {
+    const config = {
+      provider: 'hosted-beta',
+      modelId: 'Qwen/Qwen3.5-9B',
+      visionModelId: 'Qwen/Qwen3.5-9B',
+    } satisfies Pick<LLMConfig, 'provider' | 'modelId' | 'visionModelId'>;
+    const inspection = makeInspection(4, (pageNumber) => (pageNumber <= 3 ? 'image-only' : 'digital-text'));
+    const concurrency = resolvePersistedIngestJobExtractionConcurrency(config, inspection);
+    const filePath = join(configDir, 'serialized-image-heavy-source.pdf');
+
+    expect(concurrency).toBe(1);
+
+    const job = createPersistedIngestJob({
+      documentType: 'geotech-document',
+      filePath,
+      inspection,
+      config: {
+        ...makeConfig(),
+        provider: 'hosted-beta',
+        modelId: 'Qwen/Qwen3.5-9B',
+      },
+    });
+
+    expect(job.processing.chunkExtractionConcurrency).toBe(1);
+    expect(resolvePersistedIngestJobExtractionConcurrency(config, makeInspection(4))).toBe(2);
+  });
+
+  it('recomputes extraction concurrency after worker-side inspection when the async job started without inspection data', async () => {
+    const filePath = join(configDir, 'late-inspection-source.pdf');
+    await writeBlankPdf(filePath, 4);
+
+    const job = createPersistedIngestJob({
+      documentType: 'geotech-document',
+      filePath,
+      config: {
+        ...makeConfig(),
+        provider: 'hosted-beta',
+        modelId: 'Qwen/Qwen3.5-9B',
+      },
+    });
+
+    expect(job.processing.chunkExtractionConcurrency).toBe(2);
+
+    await runPersistedIngestJobWorker(job.jobId, {
+      buildLLMConfig: () => ({
+        ...makeConfig(),
+        provider: 'hosted-beta',
+        modelId: 'Qwen/Qwen3.5-9B',
+      }),
+      inspectPdfDocument: () => makeInspection(4, (pageNumber) => (pageNumber <= 3 ? 'image-only' : 'digital-text')),
+      readDocumentPdfPageInputs: async () => [
+        {
+          base64: 'page-1',
+          mimeType: 'image/png',
+          fileBytes: 120,
+          filePath,
+          ext: 'png',
+          kind: 'image',
+          pageNumber: 1,
+          totalPages: 4,
+          sourceKind: 'raster-image',
+          normalizedArtifact: {
+            kind: 'image',
+            source: 'full-page-raster',
+            mimeType: 'image/png',
+            fileBytes: 120,
+            textSource: 'none',
+            textQuality: null,
+            warnings: [],
+          },
+        },
+        {
+          base64: 'page-2',
+          mimeType: 'image/png',
+          fileBytes: 120,
+          filePath,
+          ext: 'png',
+          kind: 'image',
+          pageNumber: 2,
+          totalPages: 4,
+          sourceKind: 'raster-image',
+          normalizedArtifact: {
+            kind: 'image',
+            source: 'full-page-raster',
+            mimeType: 'image/png',
+            fileBytes: 120,
+            textSource: 'none',
+            textQuality: null,
+            warnings: [],
+          },
+        },
+        {
+          base64: 'page-3',
+          mimeType: 'image/png',
+          fileBytes: 120,
+          filePath,
+          ext: 'png',
+          kind: 'image',
+          pageNumber: 3,
+          totalPages: 4,
+          sourceKind: 'raster-image',
+          normalizedArtifact: {
+            kind: 'image',
+            source: 'full-page-raster',
+            mimeType: 'image/png',
+            fileBytes: 120,
+            textSource: 'none',
+            textQuality: null,
+            warnings: [],
+          },
+        },
+        {
+          base64: 'page-4',
+          mimeType: 'application/pdf',
+          fileBytes: 120,
+          filePath,
+          ext: 'pdf',
+          kind: 'document',
+          pageNumber: 4,
+          totalPages: 4,
+          sourceKind: 'pdf-page',
+          normalizedArtifact: {
+            kind: 'document',
+            source: 'pdf-page',
+            mimeType: 'application/pdf',
+            fileBytes: 120,
+            textSource: 'native-text',
+            textQuality: null,
+            warnings: [],
+          },
+        },
+      ],
+      interpretGeotechDocumentPage: async (_imageBase64, _mimeType, _config, context) => ({
+        documentClass: 'geotechnical-document',
+        title: `Page ${context.pageNumber}`,
+        summary: `Page ${context.pageNumber} summary.`,
+        materials: [],
+        classifications: [],
+        parameters: [],
+        risks: [],
+        recommendations: [],
+        pageNumber: context.pageNumber ?? null,
+        totalPages: context.totalPages ?? null,
+        rawLLMText: 'mock',
+        latencyMs: 0,
+        parseStatus: 'parsed',
+        confidence: 81,
+        warnings: [],
+        canAutoProceed: true,
+      }),
+    });
+
+    const persisted = loadPersistedIngestJob(job.jobId);
+    expect(persisted?.processing.chunkExtractionConcurrency).toBe(1);
+  });
+
+  it('runs segmented parent geotech jobs sequentially and merges one final result', async () => {
+    const filePath = join(configDir, 'segmented-parent-source.pdf');
+    await writeBlankPdf(filePath, 31);
+    const inspection = makeInspection(31, () => 'image-only');
+
+    const job = createPersistedIngestJob({
+      documentType: 'geotech-document',
+      filePath,
+      inspection,
+      config: {
+        ...makeConfig(),
+        provider: 'hosted-beta',
+        modelId: 'Qwen/Qwen3.5-9B',
+      },
+      segmentation: {
+        mode: 'segmented-parent',
+        pageRange: [1, 31],
+        effectivePageLimit: 60,
+      },
+    });
+
+    const interpretGeotechDocumentPage = vi.fn().mockImplementation(async (_imageBase64, _mimeType, _config, context) => ({
+      documentClass: 'site-investigation-report',
+      title: `Page ${context.pageNumber}`,
+      summary: `Page ${context.pageNumber} summary.`,
+      materials: [],
+      classifications: [],
+      parameters: [],
+      risks: [],
+      recommendations: [],
+      pageNumber: context.pageNumber ?? null,
+      totalPages: context.totalPages ?? null,
+      rawLLMText: 'mock',
+      latencyMs: 0,
+      parseStatus: 'parsed',
+      confidence: 82,
+      warnings: [],
+      canAutoProceed: true,
+    }));
+
+    const completed = await runPersistedIngestJobWorker(job.jobId, {
+      buildLLMConfig: () => ({
+        ...makeConfig(),
+        provider: 'hosted-beta',
+        modelId: 'Qwen/Qwen3.5-9B',
+      }),
+      readDocumentPdfPageInputs: async (inputFilePath, options) => {
+        const totalPages = options?.inspection?.totalPages ?? 31;
+        const pageNumbers = options?.inspection?.pages?.map((page) => page.pageNumber) ?? Array.from({ length: totalPages }, (_, index) => index + 1);
+        return pageNumbers.map((pageNumber) => ({
+          base64: `${basename(inputFilePath)}-page-${pageNumber}`,
+          mimeType: 'image/png',
+          fileBytes: 120,
+          filePath: inputFilePath,
+          ext: 'png',
+          kind: 'image' as const,
+          pageNumber,
+          totalPages,
+          sourceKind: 'raster-image' as const,
+          normalizedArtifact: {
+            kind: 'image' as const,
+            source: 'full-page-raster' as const,
+            mimeType: 'image/png',
+            fileBytes: 120,
+            textSource: 'none' as const,
+            textQuality: null,
+            warnings: [],
+          },
+        }));
+      },
+      recoverDocumentTextHint: async () => ({
+        textHint: undefined,
+        source: 'none' as const,
+        warnings: [],
+        latencyMs: 0,
+        transformed: false,
+      }),
+      interpretGeotechDocumentPage,
+    });
+
+    expect(completed.status).toBe('completed');
+    expect(interpretGeotechDocumentPage).toHaveBeenCalledTimes(31);
+    expect(completed.result?.ingestResult.source.segmentation?.mode).toBe('segmented-parent');
+    expect(completed.result?.ingestResult.source.segmentation?.segments).toHaveLength(2);
+    expect(completed.result?.ingestResult.source.successfulPages).toBe(31);
+    expect(completed.result?.ingestResult.pageFailures).toEqual([]);
+
+    const persisted = loadPersistedIngestJob(job.jobId);
+    expect(persisted?.segmentation?.segments?.map((segment) => segment.status)).toEqual(['completed', 'completed']);
+    expect(persisted?.processing.chunkExtractionConcurrency).toBe(1);
   });
 
   it('resumes from checkpoints and skips already completed pages', async () => {
