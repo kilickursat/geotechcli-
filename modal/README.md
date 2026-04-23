@@ -61,8 +61,10 @@ runtime without hardcoding secrets or editing user-facing docs first.
   Example: `TRITON`
 - `GEOTECHCLI_VLLM_KV_CACHE_DTYPE`
   Example: `fp8`
+- `GEOTECHCLI_VLLM_COMPILATION_CONFIG`
+  Default: `{"cudagraph_mode":"NONE"}`
 - `GEOTECHCLI_VLLM_EXTRA_ARGS`
-  Example: `--enable-prefix-caching`
+  Example: `--swap-space 4`
 - `GEOTECHCLI_MODAL_MIN_CONTAINERS`
   Default: `0`
 - `GEOTECHCLI_MODAL_BUFFER_CONTAINERS`
@@ -74,3 +76,8 @@ runtime without hardcoding secrets or editing user-facing docs first.
 
 These are intended for deploy-time compatibility testing, not for storing
 secrets. Keep tokens in Modal secrets or server environment variables only.
+
+For the hosted-beta L4 path, avoid `--num-gpu-blocks-override` in
+`GEOTECHCLI_VLLM_EXTRA_ARGS`. vLLM documents that flag as a testing override,
+and it can force an otherwise stable startup into KV-cache OOM on tight-memory
+single-GPU deployments.

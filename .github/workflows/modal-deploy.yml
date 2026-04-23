@@ -56,6 +56,7 @@ jobs:
           GEOTECHCLI_VLLM_ATTENTION_BACKEND: ${{ vars.GEOTECHCLI_VLLM_ATTENTION_BACKEND }}
           GEOTECHCLI_VLLM_MAMBA_BACKEND: ${{ vars.GEOTECHCLI_VLLM_MAMBA_BACKEND }}
           GEOTECHCLI_VLLM_KV_CACHE_DTYPE: ${{ vars.GEOTECHCLI_VLLM_KV_CACHE_DTYPE }}
+          GEOTECHCLI_VLLM_COMPILATION_CONFIG: ${{ vars.GEOTECHCLI_VLLM_COMPILATION_CONFIG }}
           GEOTECHCLI_VLLM_EXTRA_ARGS: ${{ vars.GEOTECHCLI_VLLM_EXTRA_ARGS }}
         run: modal deploy modal/serve_qwen.py
 
@@ -98,6 +99,7 @@ jobs:
           GEOTECHCLI_VLLM_ATTENTION_BACKEND: ${{ vars.GEOTECHCLI_VLLM_ATTENTION_BACKEND }}
           GEOTECHCLI_VLLM_MAMBA_BACKEND: ${{ vars.GEOTECHCLI_VLLM_MAMBA_BACKEND }}
           GEOTECHCLI_VLLM_KV_CACHE_DTYPE: ${{ vars.GEOTECHCLI_VLLM_KV_CACHE_DTYPE }}
+          GEOTECHCLI_VLLM_COMPILATION_CONFIG: ${{ vars.GEOTECHCLI_VLLM_COMPILATION_CONFIG }}
         run: |
           VERSION=$(node -p "require('./packages/core/package.json').version")
           if [ "${{ steps.check.outputs.configured }}" = "true" ]; then
@@ -112,6 +114,7 @@ jobs:
             echo "Attention backend override: ${GEOTECHCLI_VLLM_ATTENTION_BACKEND:-auto}" >> $GITHUB_STEP_SUMMARY
             echo "Mamba backend override: ${GEOTECHCLI_VLLM_MAMBA_BACKEND:-auto}" >> $GITHUB_STEP_SUMMARY
             echo "KV cache dtype override: ${GEOTECHCLI_VLLM_KV_CACHE_DTYPE:-auto}" >> $GITHUB_STEP_SUMMARY
+            echo "Compilation config override: ${GEOTECHCLI_VLLM_COMPILATION_CONFIG:-{\"cudagraph_mode\":\"NONE\"}}" >> $GITHUB_STEP_SUMMARY
           else
             echo "### Modal deploy skipped" >> $GITHUB_STEP_SUMMARY
             echo "Version: $VERSION" >> $GITHUB_STEP_SUMMARY

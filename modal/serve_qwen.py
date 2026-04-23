@@ -28,6 +28,25 @@ def env_int(name: str, default: int, minimum: int | None = None) -> int:
     return value
 
 
+def sanitize_extra_args(extra_args: str) -> list[str]:
+    tokens = shlex.split(extra_args)
+    sanitized: list[str] = []
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token == "--num-gpu-blocks-override":
+            skipped_value = tokens[index + 1] if index + 1 < len(tokens) else "<missing>"
+            print(
+                "Ignoring unsupported vLLM arg for hosted-beta L4:",
+                f"{token} {skipped_value}",
+            )
+            index += 2
+            continue
+        sanitized.append(token)
+        index += 1
+    return sanitized
+
+
 MODEL_ID = os.environ.get("GEOTECHCLI_HOSTED_MODEL_ID", "Qwen/Qwen3.5-9B").strip() or "Qwen/Qwen3.5-9B"
 GPU = os.environ.get("GEOTECHCLI_MODAL_GPU", "L4").strip() or "L4"
 IDLE_TIMEOUT_SECONDS = 600
@@ -45,6 +64,10 @@ REASONING_PARSER = os.environ.get("GEOTECHCLI_VLLM_REASONING_PARSER", "qwen3").s
 ATTENTION_BACKEND = os.environ.get("GEOTECHCLI_VLLM_ATTENTION_BACKEND", "").strip()
 MAMBA_BACKEND = os.environ.get("GEOTECHCLI_VLLM_MAMBA_BACKEND", "").strip()
 KV_CACHE_DTYPE = os.environ.get("GEOTECHCLI_VLLM_KV_CACHE_DTYPE", "").strip()
+COMPILATION_CONFIG = (
+    os.environ.get("GEOTECHCLI_VLLM_COMPILATION_CONFIG", '{"cudagraph_mode":"NONE"}').strip()
+    or '{"cudagraph_mode":"NONE"}'
+)
 EXTRA_ARGS = os.environ.get("GEOTECHCLI_VLLM_EXTRA_ARGS", "").strip()
 
 hf_cache = modal.Volume.from_name("geotechcli-hf-cache", create_if_missing=True)
@@ -56,7 +79,12 @@ vllm_image = (
         VLLM_PIP_SPEC,
         "huggingface_hub[hf_transfer]",
     )
-    .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})
+    .env(
+        {
+            "HF_HUB_ENABLE_HF_TRANSFER": "1",
+            "PYTORCH_ALLOC_CONF": "expandable_segments:True",
+        }
+    )
 )
 
 app = modal.App("geotechcli-qwen")
@@ -100,6 +128,8 @@ def serve():
         "--limit-mm-per-prompt",
         MM_LIMIT_JSON,
         "--enable-prefix-caching",
+        "--compilation-config",
+        COMPILATION_CONFIG,
         "--generation-config",
         "vllm",
     ]
@@ -117,13 +147,14 @@ def serve():
         cmd.extend(["--kv-cache-dtype", KV_CACHE_DTYPE])
 
     if EXTRA_ARGS:
-        cmd.extend(shlex.split(EXTRA_ARGS))
+        cmd.extend(sanitize_extra_args(EXTRA_ARGS))
 
     if api_key:
         cmd.extend(["--api-key", api_key])
 
     print(f"Launching hosted beta model: {MODEL_ID}")
     print(f"vLLM package spec: {VLLM_PIP_SPEC}")
+    print(f"Compilation config: {COMPILATION_CONFIG}")
     print(
         "Autoscaling:",
         f"min={MIN_CONTAINERS}",
