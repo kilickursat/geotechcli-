@@ -19,15 +19,24 @@ import subprocess
 
 import modal
 
+
+def env_int(name: str, default: int, minimum: int | None = None) -> int:
+    raw = os.environ.get(name, "").strip()
+    value = int(raw) if raw else default
+    if minimum is not None:
+        value = max(minimum, value)
+    return value
+
+
 MODEL_ID = os.environ.get("GEOTECHCLI_HOSTED_MODEL_ID", "Qwen/Qwen3.5-9B").strip() or "Qwen/Qwen3.5-9B"
 GPU = os.environ.get("GEOTECHCLI_MODAL_GPU", "L4").strip() or "L4"
 IDLE_TIMEOUT_SECONDS = 600
 STARTUP_TIMEOUT_SECONDS = 15 * 60
 VLLM_PORT = 8000
-MIN_CONTAINERS = max(0, int(os.environ.get("GEOTECHCLI_MODAL_MIN_CONTAINERS", "0")))
-BUFFER_CONTAINERS = max(0, int(os.environ.get("GEOTECHCLI_MODAL_BUFFER_CONTAINERS", "0")))
-MAX_CONTAINERS = max(1, int(os.environ.get("GEOTECHCLI_MODAL_MAX_CONTAINERS", "1")))
-MAX_CONCURRENT_INPUTS = max(1, int(os.environ.get("GEOTECHCLI_MODAL_MAX_INPUTS", "8")))
+MIN_CONTAINERS = env_int("GEOTECHCLI_MODAL_MIN_CONTAINERS", 0, minimum=0)
+BUFFER_CONTAINERS = env_int("GEOTECHCLI_MODAL_BUFFER_CONTAINERS", 0, minimum=0)
+MAX_CONTAINERS = env_int("GEOTECHCLI_MODAL_MAX_CONTAINERS", 1, minimum=1)
+MAX_CONCURRENT_INPUTS = env_int("GEOTECHCLI_MODAL_MAX_INPUTS", 8, minimum=1)
 VLLM_PIP_SPEC = os.environ.get("GEOTECHCLI_VLLM_PIP_SPEC", "vllm==0.18.1").strip() or "vllm==0.18.1"
 GPU_MEMORY_UTILIZATION = os.environ.get("GEOTECHCLI_VLLM_GPU_MEMORY_UTILIZATION", "0.90").strip() or "0.90"
 MAX_MODEL_LEN = os.environ.get("GEOTECHCLI_VLLM_MAX_MODEL_LEN", "4096").strip() or "4096"
