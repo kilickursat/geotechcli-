@@ -8,10 +8,10 @@ const releases = [
     date: '2026-04-23',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
-      { type: 'feat', text: 'Added the geotech ingest workflow for borehole-log packets and broader geotechnical reports, including resumable long-PDF jobs, project-backed review storage, approval flow, and promotion tooling' },
-      { type: 'feat', text: 'Added first-class agent ingest-review tools plus broader OCR/preprocess fallback, provider-capability routing, and report-aware long-PDF extraction across the core runtime' },
-      { type: 'feat', text: 'Added a self-contained HTML ingest dossier so extracted borehole packets and broader geotechnical reports can be reviewed as a polished engineering brief instead of raw JSON alone' },
-      { type: 'fix', text: 'Updated the strong-beta release surfaces for 0.4.23, including package metadata, lockfile pins, README, website docs, and website changelog so the public product story matches the shipped PDF/report workflow' },
+      { type: 'fix', text: 'Fixed the Modal deploy workflow so blank repository variables now fall back to the intended defaults instead of crashing the hosted-beta launcher during GitHub Actions deploys' },
+      { type: 'fix', text: 'Reduced hosted-beta L4 startup memory pressure by defaulting the vLLM compilation profile to cudagraph_mode NONE, enabling PyTorch expandable segments, and stripping stale num-gpu-blocks override startup args that can force KV-cache OOM' },
+      { type: 'fix', text: 'Wired the new Modal compilation override through the deploy workflow and runtime notes so the hosted Qwen path can be tuned safely without turning on a baseline warm-container cost increase' },
+      { type: 'fix', text: 'Updated the strong-beta release surfaces for 0.4.24 so package metadata, lockfile pins, changelog notes, and the website release contract stay aligned with the shipped hosted-beta hotfixes' },
     ],
   },
   {

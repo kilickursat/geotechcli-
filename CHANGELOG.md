@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.24] - 2026-04-23
+
+### Modal Deploy And Hosted-Beta L4 Hotfixes
+
+- Fixed the Modal deploy workflow so blank repository variables now fall back to the intended defaults instead of crashing the `serve_qwen.py` launcher during GitHub Actions deploys.
+- Reduced hosted-beta L4 startup memory pressure by defaulting the vLLM compilation profile to `{"cudagraph_mode":"NONE"}`, enabling PyTorch expandable segments, and rejecting stale `--num-gpu-blocks-override` startup overrides that can force KV-cache OOM on single-GPU deployments.
+- Wired the new Modal compilation override through the deploy workflow and runtime notes so the hosted-beta Qwen path can be tuned safely without introducing a permanent warm-container cost increase.
+
 ## [0.4.23] - 2026-04-23
 
 ### Geotechnical PDF Intelligence, Dossiers, And Hosted-Beta Release Prep
