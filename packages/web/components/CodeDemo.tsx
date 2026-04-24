@@ -9,7 +9,7 @@ export function CodeDemo() {
           From raw data to insight.
         </h2>
         <p className="text-[var(--text-secondary)] text-[15px] mt-3 max-w-[500px]">
-          Local manifests, deterministic checks, and hosted-beta workflows without boilerplate.
+          Local GroundModels, deterministic checks, and hosted-beta workflows without boilerplate.
         </p>
       </div>
 
@@ -38,7 +38,7 @@ export function CodeDemo() {
 {'\n'}<span className="text-[var(--accent-teal)]">geotech</span> tunnel tbm-predict \
 {'\n'}  <span className="text-[var(--accent-blue)]">--diameter</span> 6.5 <span className="text-[var(--accent-blue)]">--ucs</span> 80 <span className="text-[var(--accent-blue)]">--rqd</span> 65
 {'\n'}
-{'\n'}<span className="text-[var(--text-muted)]"># Local project manifest</span>
+{'\n'}<span className="text-[var(--text-muted)]"># Local GroundModel dossier</span>
 {'\n'}<span className="text-[var(--accent-teal)]">geotech</span> analyze <span className="text-[var(--accent-orange)]">.</span> <span className="text-[var(--accent-blue)]">--format</span> html
           </pre>
         </div>
@@ -71,6 +71,8 @@ export function CodeDemo() {
 {'\n'}  Cutter life: <span className="text-[var(--text-primary)]">380 m/cutter</span>
 {'\n'}
 {'\n'}<span className="text-[var(--accent-teal)]">OK</span> Workspace dossier saved to .geotech/workspace-dossier.html
+{'\n'}  GroundModel: <span className="text-[var(--text-primary)]">4 boreholes, 52 evidence refs</span>
+{'\n'}  Verifier: <span className="text-[var(--text-primary)]">review</span> (0 blocking, 2 review)
           </pre>
         </div>
       </div>

@@ -14,6 +14,8 @@ import {
   parseXlsxFile,
   type TabularSchemaInference,
 } from '../tabular/index.js';
+import { buildGroundModelFromManifest } from '../ground-model/index.js';
+import { verifyGroundModel } from '../verifier/index.js';
 
 const IGNORED_DIRECTORIES = new Set([
   '.git',
@@ -175,13 +177,13 @@ function buildRecommendations(manifest: Omit<ProjectManifest, 'summary'>, summar
   }
 
   if ((datasetTypes['coordinate-table'] ?? 0) > 0) {
-    recommendations.push('Coordinate tables detected. Next: build borehole/project map once GroundModel is enabled.');
+    recommendations.push('Coordinate tables detected and bound into GroundModel where borehole IDs are present. Next: use map visualization once enabled.');
   }
   if ((datasetTypes['spt-profile'] ?? 0) > 0 || (datasetTypes['cpt-profile'] ?? 0) > 0) {
     recommendations.push('SPT/CPT profiles detected. Next: foundation screening and liquefaction workflows can consume these tables.');
   }
   if ((datasetTypes['lab-test-summary'] ?? 0) > 0) {
-    recommendations.push('Lab-test tables detected. Next: bind Atterberg, gradation, and density evidence into the GroundModel.');
+    recommendations.push('Lab-test tables detected. Atterberg, gradation, density, and moisture evidence are bound into GroundModel parameters where sampled columns are recognized.');
   }
   if ((datasetTypes['monitoring-time-series'] ?? 0) > 0 || (datasetTypes['signal-record'] ?? 0) > 0) {
     recommendations.push('Monitoring/signal data detected. Next: run signal analytics for trends, thresholds, and anomalies.');
@@ -197,7 +199,7 @@ function buildRecommendations(manifest: Omit<ProjectManifest, 'summary'>, summar
   }
 
   if (recommendations.length === 0) {
-    recommendations.push('Workspace manifest is ready. Add branch-specific CSV/XLSX schemas or ingest PDFs to unlock GroundModel construction.');
+    recommendations.push('Workspace manifest is ready. Add branch-specific CSV/XLSX schemas or ingest PDFs to improve GroundModel completeness.');
   }
 
   return recommendations;
@@ -283,11 +285,20 @@ export async function analyzeWorkspace(
   };
 
   const recommendations = buildRecommendations(manifestBase, summaryWithoutRecommendations);
-  return {
+  const manifest: ProjectManifest = {
     ...manifestBase,
     summary: {
       ...summaryWithoutRecommendations,
       recommendations,
     },
   };
+
+  if (options.includeGroundModel !== false) {
+    const groundModel = await buildGroundModelFromManifest(manifest, { maxRows: resolvedOptions.maxRows });
+    const verifier = verifyGroundModel(groundModel);
+    manifest.groundModel = groundModel;
+    manifest.verifier = verifier;
+  }
+
+  return manifest;
 }

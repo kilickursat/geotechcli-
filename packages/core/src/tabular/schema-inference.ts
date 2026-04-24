@@ -2,6 +2,8 @@ import type { TabularCell, TabularRow } from './csv.js';
 
 export type InferredColumnRole =
   | 'depth'
+  | 'top_depth'
+  | 'bottom_depth'
   | 'time'
   | 'date'
   | 'easting'
@@ -11,9 +13,11 @@ export type InferredColumnRole =
   | 'borehole_id'
   | 'sample_id'
   | 'test_id'
+  | 'description'
   | 'spt_n'
   | 'cpt_qc'
   | 'cpt_fs'
+  | 'groundwater_depth'
   | 'water_content'
   | 'liquid_limit'
   | 'plastic_limit'
@@ -160,7 +164,13 @@ function inferRoles(header: string, type: InferredColumnType): InferredColumnRol
   const normalized = normalizeHeader(header);
   const roles = new Set<InferredColumnRole>();
 
-  if (hasAny(normalized, ['depth', 'belowground', 'bgl', 'elevationdepth', 'z'])) roles.add('depth');
+  const isTopDepth = hasAny(normalized, ['topdepth', 'fromdepth', 'depthfrom', 'startdepth']);
+  const isBottomDepth = hasAny(normalized, ['bottomdepth', 'todepth', 'depthto', 'enddepth']);
+  const isGroundwaterDepth = hasAny(normalized, ['groundwater', 'watertable', 'gwl', 'waterlevel']);
+  if (isTopDepth) roles.add('top_depth');
+  if (isBottomDepth) roles.add('bottom_depth');
+  if (isGroundwaterDepth) roles.add('groundwater_depth');
+  if (!isTopDepth && !isBottomDepth && !isGroundwaterDepth && hasAny(normalized, ['depth', 'belowground', 'bgl', 'elevationdepth', 'z'])) roles.add('depth');
   if (hasAny(normalized, ['time', 'elapsed', 'duration'])) roles.add('time');
   if (hasAny(normalized, ['date', 'timestamp', 'datetime'])) roles.add('date');
   if (hasAny(normalized, ['easting', 'eastcoord', 'xcoord', 'gridx'])) roles.add('easting');
@@ -170,6 +180,7 @@ function inferRoles(header: string, type: InferredColumnType): InferredColumnRol
   if (hasAny(normalized, ['borehole', 'holeid', 'bhid', 'bhno', 'locationid'])) roles.add('borehole_id');
   if (hasAny(normalized, ['sampleid', 'sampleno', 'sample', 'specimen'])) roles.add('sample_id');
   if (hasAny(normalized, ['testid', 'testno'])) roles.add('test_id');
+  if (hasAny(normalized, ['description', 'materialdescription', 'soiltype', 'lithology', 'stratum', 'geology'])) roles.add('description');
   if (hasAny(normalized, ['sptn', 'nvalue', 'blowcount', 'blows', 'n60'])) roles.add('spt_n');
   if (hasAny(normalized, ['qc', 'coneresistance', 'tipresistance'])) roles.add('cpt_qc');
   if (hasAny(normalized, ['fs', 'sleevefriction', 'frictionsleeve'])) roles.add('cpt_fs');
@@ -197,13 +208,15 @@ function inferDatasetType(columns: ColumnInference[]): InferredDatasetType {
   const has = (role: InferredColumnRole) => columns.some((column) => column.roles.includes(role));
   const hasAnyRole = (roles: InferredColumnRole[]) => roles.some(has);
 
-  if (has('cpt_qc') && has('depth')) return 'cpt-profile';
-  if (has('spt_n') && has('depth')) return 'spt-profile';
+  const hasDepth = has('depth') || has('top_depth') || has('bottom_depth');
+
+  if (has('cpt_qc') && hasDepth) return 'cpt-profile';
+  if (has('spt_n') && hasDepth) return 'spt-profile';
   if (hasAnyRole(['liquid_limit', 'plastic_limit', 'plasticity_index', 'gradation_size', 'percent_passing', 'water_content', 'unit_weight'])) return 'lab-test-summary';
   if ((has('easting') && has('northing')) || (has('latitude') && has('longitude'))) return 'coordinate-table';
   if (hasAnyRole(['settlement', 'pore_pressure', 'inclination']) && hasAnyRole(['time', 'date'])) return 'monitoring-time-series';
   if (has('vibration')) return 'signal-record';
-  if (has('borehole_id') && has('depth')) return 'borehole-table';
+  if (has('borehole_id') && hasDepth) return 'borehole-table';
   return 'generic-table';
 }
 

@@ -8,11 +8,23 @@ const releases = [
     date: '2026-04-24',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added the canonical GroundModel v1 contract for workspace analysis, binding boreholes, SPT tests, groundwater, lab parameters, monitoring series, and rejected observations into one engineering model' },
+      { type: 'feat', text: 'Added evidence-bound extraction for sampled CSV/XLSX data so analyze JSON and dossiers show source file, sheet, row, column, confidence, raw value, and normalized value' },
+      { type: 'feat', text: 'Added a deterministic GroundModel verifier for rejected SPT values, missing groundwater, missing coordinates, undeclared local CRS, unknown standard profiles, and duplicate SPT depths' },
+      { type: 'feat', text: 'Upgraded geotech analyze --format html with GroundModel, verifier findings, and evidence table sections while keeping terminal output compact' },
+      { type: 'fix', text: 'Upgraded geotech agent --workspace so hosted-beta tasks receive a GroundModel/verifier summary without adding any Modal GPU calls to local analysis' },
+    ],
+  },
+  {
+    version: '0.4.28',
+    date: '2026-04-24',
+    tag: '0.4.28 Release',
+    changes: [
       { type: 'feat', text: 'Added geotech analyze [workspace] for deterministic local project manifests with compact terminal output, JSON, and self-contained HTML dossiers' },
       { type: 'feat', text: 'Added core workspace intelligence for file discovery, geotechnical classification, branch detection, recommendations, and ProjectManifest generation without hosted-beta GPU spend' },
       { type: 'feat', text: 'Added lightweight CSV/XLSX schema inference for depth, coordinates, borehole/sample IDs, SPT/CPT, lab, monitoring, and signal-style columns' },
       { type: 'feat', text: 'Added geotech agent ... --workspace <dir> so agent tasks can receive a compact local manifest summary instead of guessing directly from raw files' },
-      { type: 'docs', text: 'Documented geotech analyze ., --branch, --standard, --json, and --format html while keeping GroundModel and workspace-agent planner claims scoped to roadmap layers' },
+      { type: 'docs', text: 'Documented geotech analyze ., --branch, --standard, --json, and --format html while clearly marking deeper planner/calculation behavior as future roadmap layers' },
     ],
   },
   {

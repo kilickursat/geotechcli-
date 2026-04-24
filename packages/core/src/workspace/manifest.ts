@@ -1,4 +1,6 @@
 import type { TabularSchemaInference } from '../tabular/index.js';
+import type { GroundModel } from '../ground-model/index.js';
+import type { GroundModelVerification } from '../verifier/index.js';
 
 export type WorkspaceFileKind =
   | 'pdf'
@@ -71,6 +73,8 @@ export interface ProjectManifest {
   requestedStandard?: string;
   files: WorkspaceFileEntry[];
   summary: ProjectManifestSummary;
+  groundModel?: GroundModel;
+  verifier?: GroundModelVerification;
   warnings: string[];
 }
 
@@ -81,6 +85,7 @@ export interface AnalyzeWorkspaceOptions {
   maxRows?: number;
   branch?: string;
   standard?: string;
+  includeGroundModel?: boolean;
 }
 
 export const DEFAULT_ANALYZE_WORKSPACE_OPTIONS = {

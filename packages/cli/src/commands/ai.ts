@@ -60,12 +60,33 @@ function summarizeWorkspaceManifestForAgent(manifest: ProjectManifest): string {
     .map((file) => `- ${file.path}: ${file.classification.datasetType} (${file.classification.kind}, ${Math.round(file.classification.confidence * 100)}% confidence)`)
     .join('\n');
   const recommendations = manifest.summary.recommendations.map((item) => `- ${item}`).join('\n');
+  const groundModel = manifest.groundModel
+    ? [
+        'Evidence-bound GroundModel:',
+        `- Boreholes: ${manifest.groundModel.stats.boreholes}`,
+        `- SPT tests: ${manifest.groundModel.stats.sptTests}`,
+        `- Lab tests: ${manifest.groundModel.stats.labTests}`,
+        `- Parameters: ${manifest.groundModel.stats.parameters}`,
+        `- Evidence refs: ${manifest.groundModel.stats.evidenceRefs}`,
+        `- Rejected observations: ${manifest.groundModel.stats.rejectedObservations}`,
+      ].join('\n')
+    : '';
+  const verifier = manifest.verifier
+    ? [
+        'Calculation/verifier pre-check:',
+        `- Status: ${manifest.verifier.status}`,
+        `- Findings: ${manifest.verifier.summary.blocking} blocking, ${manifest.verifier.summary.review} review, ${manifest.verifier.summary.info} info`,
+        ...manifest.verifier.findings.slice(0, 8).map((finding) => `- ${finding.severity}/${finding.code}: ${finding.message}`),
+      ].join('\n')
+    : '';
 
   return [
     'Local workspace manifest:',
     `Root: ${manifest.rootPath}`,
     `Files: ${manifest.summary.totalFiles} total, ${manifest.summary.supportedFiles} supported, ${manifest.summary.tabularFiles} tabular, ${manifest.summary.pdfFiles} PDFs`,
     `Detected branches: ${manifest.summary.branches.join(', ') || 'none'}`,
+    groundModel,
+    verifier,
     files ? `Files:\n${files}` : 'Files: none',
     recommendations ? `Recommended next steps:\n${recommendations}` : '',
     manifest.warnings.length > 0 ? `Manifest warnings:\n${manifest.warnings.slice(0, 8).map((warning) => `- ${warning}`).join('\n')}` : '',
@@ -1302,7 +1323,7 @@ export function registerAgentCommand(program: Command): void {
         }
 
         if (workspaceManifest && !flags.json) {
-          console.log(chalk.gray(`  Workspace manifest attached: ${workspaceManifest.summary.totalFiles} files, branches: ${workspaceManifest.summary.branches.join(', ') || 'none'}`));
+          console.log(chalk.gray(`  Workspace manifest attached: ${workspaceManifest.summary.totalFiles} files, branches: ${workspaceManifest.summary.branches.join(', ') || 'none'}, verifier: ${workspaceManifest.verifier?.status ?? 'not-run'}`));
           console.log('');
         }
 
@@ -1332,6 +1353,11 @@ export function registerAgentCommand(program: Command): void {
               workspace: workspaceManifest ? {
                 rootPath: workspaceManifest.rootPath,
                 summary: workspaceManifest.summary,
+                groundModel: workspaceManifest.groundModel ? {
+                  stats: workspaceManifest.groundModel.stats,
+                  coordinateSystem: workspaceManifest.groundModel.coordinateSystem,
+                } : undefined,
+                verifier: workspaceManifest.verifier,
               } : undefined,
               mode: 'swarm',
               answer: answer?.content ?? '',
@@ -1410,6 +1436,11 @@ export function registerAgentCommand(program: Command): void {
               workspace: workspaceManifest ? {
                 rootPath: workspaceManifest.rootPath,
                 summary: workspaceManifest.summary,
+                groundModel: workspaceManifest.groundModel ? {
+                  stats: workspaceManifest.groundModel.stats,
+                  coordinateSystem: workspaceManifest.groundModel.coordinateSystem,
+                } : undefined,
+                verifier: workspaceManifest.verifier,
               } : undefined,
               mode: 'single',
               answer: answer?.content ?? '',

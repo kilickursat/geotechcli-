@@ -64,10 +64,59 @@ describe('workspace analysis', () => {
     expect(manifest.summary.datasetTypes['coordinate-table']).toBe(1);
     expect(manifest.summary.datasetTypes['ags-ground-investigation']).toBe(1);
     expect(manifest.summary.branches).toContain('foundation');
+    expect(manifest.groundModel?.schemaVersion).toBe('ground-model.v1');
+    expect(manifest.groundModel?.stats.boreholes).toBe(1);
+    expect(manifest.groundModel?.stats.sptTests).toBe(2);
+    expect(manifest.groundModel?.boreholes[0].coordinates?.easting).toBe(500000);
+    expect(manifest.verifier?.schemaVersion).toBe('ground-model-verifier.v1');
 
     const sptFile = manifest.files.find((file) => file.path === 'spt-profile.csv');
     expect(sptFile?.schemas?.[0].detected.sptColumns).toContain('sptN');
     expect(sptFile?.schemas?.[0].detected.depthColumns).toContain('depth_m');
+  });
+
+  it('binds lab parameters to evidence and rejects standards-reference SPT values', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-ground-model-'));
+    tempDirs.push(dir);
+
+    await writeFile(
+      join(dir, 'spt.csv'),
+      [
+        'borehole_id,depth_m,sptN',
+        'BH-01,1.5,12',
+        'BH-01,3.0,9640',
+      ].join('\n'),
+      'utf-8',
+    );
+    await writeFile(
+      join(dir, 'lab.csv'),
+      [
+        'borehole_id,sample_id,depth_m,liquid_limit,plasticity_index,water_content',
+        'BH-01,S-01,2.0,42,18,21',
+      ].join('\n'),
+      'utf-8',
+    );
+
+    const manifest = await analyzeWorkspace(dir);
+
+    expect(manifest.groundModel?.stats.sptTests).toBe(1);
+    expect(manifest.groundModel?.stats.rejectedObservations).toBe(1);
+    expect(manifest.groundModel?.rejectedObservations[0].reason).toContain('9640');
+    expect(manifest.groundModel?.parameters.map((parameter) => parameter.name)).toContain('liquidLimit');
+    expect(manifest.groundModel?.parameters[0].evidenceIds[0]).toMatch(/^ev-/);
+    expect(manifest.verifier?.findings.some((finding) => finding.code === 'rejected_spt_observation')).toBe(true);
+  });
+
+  it('supports manifest-only scans when GroundModel construction is disabled', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-manifest-only-'));
+    tempDirs.push(dir);
+    await writeFile(join(dir, 'locations.csv'), ['borehole_id,easting,northing', 'BH-01,1,2'].join('\n'), 'utf-8');
+
+    const manifest = await analyzeWorkspace(dir, { includeGroundModel: false });
+
+    expect(manifest.summary.datasetTypes['coordinate-table']).toBe(1);
+    expect(manifest.groundModel).toBeUndefined();
+    expect(manifest.verifier).toBeUndefined();
   });
 
   it('parses quoted CSV cells and infers lab-test schemas', () => {

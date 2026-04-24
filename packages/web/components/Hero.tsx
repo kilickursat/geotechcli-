@@ -156,7 +156,7 @@ export function Hero() {
           className="text-[var(--text-secondary)] leading-[1.65] max-w-[600px] mb-10 font-normal"
           style={{ fontSize: 'clamp(16px,2vw,19px)' }}
         >
-          Local workspace manifests, vision workflows, and AI reasoning powered by{' '}
+          Local GroundModels, vision workflows, and AI reasoning powered by{' '}
           <span style={{ color: 'var(--accent-teal)' }}>Qwen3.5-9B</span> - combined with
           deterministic geotechnical engines. No provider key. No signup. One command.
         </p>
@@ -233,6 +233,10 @@ export function Hero() {
             <span style={{ color: 'var(--text-muted)' }}>OK    18 files discovered, 9 supported datasets</span>
             {'\n'}
             <span style={{ color: 'var(--text-muted)' }}>OK    CSV/XLSX schemas: SPT, lab, coordinates</span>
+            {'\n'}
+            <span style={{ color: 'var(--text-muted)' }}>OK    GroundModel: 4 boreholes, 52 evidence refs</span>
+            {'\n'}
+            <span style={{ color: 'var(--text-muted)' }}>WARN  Verifier: review, groundwater assumption required</span>
             {'\n'}
             <span style={{ color: 'var(--accent-teal)' }}>OK</span>{' '}
             <span style={{ color: 'var(--text-primary)' }}>Branches: foundation, mapping, site-investigation</span>

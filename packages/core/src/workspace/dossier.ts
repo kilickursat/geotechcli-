@@ -80,10 +80,129 @@ function renderSchemaRows(files: WorkspaceFileEntry[]): string {
   </table>`;
 }
 
+function renderGroundModelSection(manifest: ProjectManifest): string {
+  const model = manifest.groundModel;
+  if (!model) {
+    return '<p class="empty">GroundModel was not generated for this analysis.</p>';
+  }
+
+  const boreholeRows = model.boreholes.slice(0, 40).map((borehole) => `<tr>
+    <td><code>${escapeHtml(borehole.id)}</code></td>
+    <td>${escapeHtml(borehole.coordinates
+      ? borehole.coordinates.latitude != null
+        ? `${borehole.coordinates.latitude}, ${borehole.coordinates.longitude}`
+        : `${borehole.coordinates.easting}, ${borehole.coordinates.northing}`
+      : '-')}</td>
+    <td>${escapeHtml(borehole.sptTests.length)}</td>
+    <td>${escapeHtml(borehole.strata.length)}</td>
+    <td>${escapeHtml(borehole.groundwater.length)}</td>
+    <td>${escapeHtml(percent(borehole.confidence))}</td>
+  </tr>`).join('\n');
+
+  const parameterRows = model.parameters.slice(0, 40).map((parameter) => `<tr>
+    <td>${escapeHtml(parameter.name)}</td>
+    <td>${escapeHtml(parameter.value)}${parameter.unit ? ` ${escapeHtml(parameter.unit)}` : ''}</td>
+    <td>${escapeHtml(parameter.boreholeId ?? '-')}</td>
+    <td>${escapeHtml(parameter.sampleId ?? '-')}</td>
+    <td>${escapeHtml(parameter.depth ?? '-')}</td>
+    <td>${escapeHtml(parameter.evidenceIds.join(', '))}</td>
+  </tr>`).join('\n');
+
+  return `
+    <div class="metrics">
+      ${renderMetric('Boreholes', model.stats.boreholes)}
+      ${renderMetric('SPT tests', model.stats.sptTests)}
+      ${renderMetric('Lab tests', model.stats.labTests)}
+      ${renderMetric('Parameters', model.stats.parameters)}
+      ${renderMetric('Evidence refs', model.stats.evidenceRefs)}
+      ${renderMetric('Rejected', model.stats.rejectedObservations)}
+    </div>
+    <div class="subgrid">
+      <div>
+        <h3>Boreholes</h3>
+        ${boreholeRows
+          ? `<table><thead><tr><th>ID</th><th>Location</th><th>SPT</th><th>Strata</th><th>GWL</th><th>Confidence</th></tr></thead><tbody>${boreholeRows}</tbody></table>`
+          : '<p class="empty">No boreholes were bound to evidence yet.</p>'}
+      </div>
+      <div>
+        <h3>Parameters</h3>
+        ${parameterRows
+          ? `<table><thead><tr><th>Name</th><th>Value</th><th>BH</th><th>Sample</th><th>Depth</th><th>Evidence</th></tr></thead><tbody>${parameterRows}</tbody></table>`
+          : '<p class="empty">No lab or design parameters were bound to evidence yet.</p>'}
+      </div>
+    </div>
+  `;
+}
+
+function renderVerifierSection(manifest: ProjectManifest): string {
+  const verifier = manifest.verifier;
+  if (!verifier) {
+    return '<p class="empty">Verifier was not run for this analysis.</p>';
+  }
+
+  if (verifier.findings.length === 0) {
+    return '<p class="empty">No verifier findings. Evidence-bound data passed the current deterministic checks.</p>';
+  }
+
+  return `<table>
+    <thead>
+      <tr>
+        <th>Severity</th>
+        <th>Code</th>
+        <th>Finding</th>
+        <th>Evidence</th>
+        <th>Recommendation</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${verifier.findings.map((finding) => `<tr>
+        <td><span class="badge ${escapeHtml(finding.severity)}">${escapeHtml(finding.severity)}</span></td>
+        <td><code>${escapeHtml(finding.code)}</code></td>
+        <td>${escapeHtml(finding.message)}</td>
+        <td>${escapeHtml(finding.evidenceIds.join(', ') || '-')}</td>
+        <td>${escapeHtml(finding.recommendation ?? '-')}</td>
+      </tr>`).join('\n')}
+    </tbody>
+  </table>`;
+}
+
+function renderEvidenceRows(manifest: ProjectManifest): string {
+  const evidence = manifest.groundModel?.evidence ?? [];
+  if (evidence.length === 0) {
+    return '<p class="empty">No evidence references were generated.</p>';
+  }
+
+  return `<table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Source</th>
+        <th>Location</th>
+        <th>Value</th>
+        <th>Confidence</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${evidence.slice(0, 80).map((ref) => `<tr>
+        <td><code>${escapeHtml(ref.id)}</code></td>
+        <td><code>${escapeHtml(ref.sourcePath)}</code></td>
+        <td>${escapeHtml([
+          ref.location.sheetName ? `sheet ${ref.location.sheetName}` : '',
+          ref.location.rowNumber ? `row ${ref.location.rowNumber}` : '',
+          ref.location.columnName ? `col ${ref.location.columnName}` : '',
+        ].filter(Boolean).join(', ') || '-')}</td>
+        <td>${escapeHtml(ref.normalizedValue ?? ref.rawValue ?? '-')}</td>
+        <td>${escapeHtml(percent(ref.confidence))}</td>
+      </tr>`).join('\n')}
+    </tbody>
+  </table>`;
+}
+
 export function renderWorkspaceManifestAsHtml(manifest: ProjectManifest): string {
   const title = 'geotechCLI Workspace Dossier';
   const fileRows = renderFileRows(manifest.files);
   const warnings = manifest.warnings.slice(0, 20);
+  const verifier = manifest.verifier;
 
   return `<!doctype html>
 <html lang="en">
@@ -201,6 +320,28 @@ export function renderWorkspaceManifestAsHtml(manifest: ProjectManifest): string
     .list li { margin: 8px 0; }
     .warning { color: var(--warning); }
     .empty { color: var(--muted); }
+    h3 {
+      margin: 22px 0 10px;
+      font-size: 15px;
+    }
+    .subgrid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 22px;
+      margin-top: 20px;
+    }
+    .badge {
+      display: inline-block;
+      min-width: 68px;
+      padding: 3px 7px;
+      border: 1px solid var(--line);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .badge.blocking { color: #8c1d18; background: #fff0ee; }
+    .badge.review { color: #7b4a00; background: #fff7e8; }
+    .badge.info { color: #165766; background: #edf8fa; }
     @media (max-width: 720px) {
       main { padding: 26px 14px 46px; }
       table { display: block; overflow-x: auto; }
@@ -225,6 +366,7 @@ export function renderWorkspaceManifestAsHtml(manifest: ProjectManifest): string
         ${renderMetric('PDFs', manifest.summary.pdfFiles)}
         ${renderMetric('Branches', manifest.summary.branches.length || '-')}
         ${renderMetric('Skipped', manifest.summary.skippedFiles)}
+        ${renderMetric('Verifier', verifier?.status ?? '-')}
       </div>
     </section>
 
@@ -260,6 +402,21 @@ export function renderWorkspaceManifestAsHtml(manifest: ProjectManifest): string
     <section>
       <h2>Tabular Schemas</h2>
       ${renderSchemaRows(manifest.files)}
+    </section>
+
+    <section>
+      <h2>GroundModel</h2>
+      ${renderGroundModelSection(manifest)}
+    </section>
+
+    <section>
+      <h2>Verifier Findings</h2>
+      ${renderVerifierSection(manifest)}
+    </section>
+
+    <section>
+      <h2>Evidence Table</h2>
+      ${renderEvidenceRows(manifest)}
     </section>
 
     <section>

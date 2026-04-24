@@ -17,6 +17,9 @@ export * from './ingest/index.js';
 // Workspace intelligence
 export * from './workspace/index.js';
 export * from './tabular/index.js';
+export * from './evidence/index.js';
+export * from './ground-model/index.js';
+export * from './verifier/index.js';
 
 // Standards database
 export { queryStandards, listStandards, getStandardById, type StandardProvision, type StandardsQueryResult } from './standards/index.js';

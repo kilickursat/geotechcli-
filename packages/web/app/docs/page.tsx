@@ -220,13 +220,13 @@ geotech vision log Appendix-2A-Geotechnical-Report-Part-6.pdf
   {
     id: 'analyze',
     title: 'geotech analyze',
-    content: `Local project-folder intelligence. This deterministic command scans a workspace, builds a project manifest, classifies geotechnical files, samples CSV/XLSX schemas, and records requested branch or standard context without spending hosted-beta GPU time.
+    content: `Local project-folder intelligence. This deterministic command scans a workspace, builds a project manifest, classifies geotechnical files, samples CSV/XLSX schemas, builds an evidence-bound GroundModel, and records requested branch or standard context without spending hosted-beta GPU time.
 
 \`\`\`bash
-# Compact terminal manifest
+# Compact terminal analysis
 geotech analyze .
 
-# Automation-friendly manifest
+# Automation-friendly manifest plus GroundModel/verifier
 geotech analyze . --json
 
 # Self-contained browser dossier
@@ -237,7 +237,7 @@ geotech analyze . --branch foundation
 geotech analyze . --standard eurocode7
 \`\`\`
 
-Current strong-beta scope: file discovery, AGS/PDF/image/GIS/CAD classification, CSV/XLSX schema inference, detected branches, warnings, and recommended next steps. The canonical GroundModel, evidence-bound calculations, map visualization, and role-based workspace agent planner are the next roadmap layers, so analyze does not yet auto-run design calculations from the folder.`,
+Current strong-beta scope: file discovery, AGS/PDF/image/GIS/CAD classification, CSV/XLSX schema inference, evidence references, canonical GroundModel construction, verifier findings, detected branches, warnings, and recommended next steps. Evidence-bound calculations, map visualization, and the role-based workspace agent planner are the next roadmap layers, so analyze does not yet auto-run design calculations from the folder.`,
   },
   {
     id: 'ingest',
@@ -276,7 +276,7 @@ Hosted-beta reliability note: geotechnical PDFs above the best-result window are
   {
     id: 'agent',
     title: 'geotech agent (AI)',
-    content: `Agentic geotechnical reasoning. The default Terzaghi agent screens underspecified requests before spending hosted-beta time, can execute deterministic tools when evidence is present, and can reuse persistent project memory with --project. Use --swarm for the Bieniawski/Terzaghi/Hoek multi-agent review path.
+    content: `Agentic geotechnical reasoning. The default Terzaghi agent screens underspecified requests before spending hosted-beta time, can execute deterministic tools when evidence is present, can receive an evidence-bound workspace GroundModel with --workspace, and can reuse persistent project memory with --project. Use --swarm for the Bieniawski/Terzaghi/Hoek multi-agent review path.
 
 \`\`\`bash
 # Default Terzaghi agent
@@ -284,7 +284,7 @@ geotech agent "evaluate TBM selection for 6.5m tunnel in mixed face conditions w
 
 geotech agent "classify the soil profile and recommend foundation type for a 12-story building"
 
-# Attach a local workspace manifest before calling the agent
+# Attach a local workspace GroundModel and verifier summary before calling the agent
 geotech agent "analyze this folder and prepare a foundation screening report" --workspace .
 
 # Optional swarm orchestration

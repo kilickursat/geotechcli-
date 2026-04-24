@@ -11,7 +11,7 @@ const features = [
     ),
     colorClass: 'teal',
     name: 'Workspace Analysis',
-    desc: 'Scan a local project folder, classify geotechnical files, infer CSV/XLSX schemas, and open a browser workspace dossier before spending hosted-beta GPU time.',
+    desc: 'Scan a local project folder, infer CSV/XLSX schemas, build an evidence-bound GroundModel, and open a browser dossier before spending hosted-beta GPU time.',
     tag: 'Local',
     tagColor: 'teal',
   },

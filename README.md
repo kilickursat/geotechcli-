@@ -50,7 +50,7 @@ Use the official Node.js installer or a trusted OS package manager. For strong b
 # Confirm the hosted beta path is active
 geotech status
 
-# Local project manifest and schema inference
+# Local project manifest, GroundModel, and verifier
 geotech analyze .
 geotech analyze . --format html --no-open
 
@@ -76,7 +76,7 @@ geotech skill show shallow-foundation-option-screening
 # AI: Terzaghi agent analysis
 geotech agent "evaluate foundation options for a 12-story building on soft clay"
 
-# AI: attach a local project manifest to the agent task
+# AI: attach a local GroundModel summary to the agent task
 geotech agent "analyze this folder and prepare a foundation screening report" --workspace .
 
 # AI: Bieniawski/Terzaghi/Hoek swarm mode for evidence-backed tasks
@@ -91,7 +91,7 @@ geotech export dxf --input boreholes.json --output profile.dxf
 
 ## Workspace Analysis
 
-`geotech analyze` is the first deterministic slice of the local project analyst roadmap. It scans a project folder, classifies geotechnical files, samples CSV/XLSX schemas, detects likely branches such as foundation, mapping, monitoring, and signal processing, and produces a compact manifest without spending hosted-beta GPU time.
+`geotech analyze` is the deterministic local project analyst surface. It scans a project folder, classifies geotechnical files, samples CSV/XLSX schemas, detects likely branches such as foundation, mapping, monitoring, and signal processing, and builds an evidence-bound `GroundModel` with verifier findings without spending hosted-beta GPU time.
 
 ```bash
 geotech analyze .
@@ -101,7 +101,7 @@ geotech analyze . --branch foundation
 geotech analyze . --standard eurocode7
 ```
 
-Current strong-beta scope: workspace awareness, CSV/XLSX schema inference, AGS/PDF/image/GIS/CAD classification, recommendations, and a self-contained HTML dossier. It does not yet build the canonical GroundModel or run branch-specific design calculations automatically.
+Current strong-beta scope: workspace awareness, CSV/XLSX schema inference, AGS/PDF/image/GIS/CAD classification, evidence references, canonical GroundModel construction, deterministic verifier findings, recommendations, and a self-contained HTML dossier. It does not yet auto-run branch-specific design calculations from the folder.
 
 ## Interactive Visualization
 
@@ -156,7 +156,7 @@ These commands are the public strong-beta foundation and are available now.
 | `geotech slope` | Slope stability using Bishop Simplified |
 | `geotech pile` | Pile capacity using alpha, beta, and SPT methods |
 | `geotech retaining` | Lateral earth pressure using Rankine and Coulomb |
-| `geotech analyze` | Local project folder manifest, geotechnical file classification, and CSV/XLSX schema inference |
+| `geotech analyze` | Local project manifest, CSV/XLSX schema inference, evidence-bound GroundModel, verifier, and HTML dossier |
 | `geotech viz` | Interactive browser visualization for saved JSON, CSV, and Excel data |
 
 ### AI-Assisted
@@ -172,7 +172,7 @@ These commands now use the hosted beta Qwen path by default.
 | `geotech ingest` | Geotechnical PDF/image ingest for borehole logs and broader report intelligence, with live PDF progress and optional browser HTML dossier output |
 | `geotech ai-classify` | Natural language soil description to USCS and properties |
 | `geotech gbr chat` | GBR document question answering |
-| `geotech agent` | Terzaghi single-agent reasoning by default; optional `--workspace`, `--swarm` orchestration, and project memory |
+| `geotech agent` | Terzaghi single-agent reasoning by default; optional evidence-bound `--workspace`, `--swarm` orchestration, and project memory |
 | `geotech chat` | Interactive AI session with optional project memory |
 | `geotech report` | AI-generated geotechnical report drafting |
 

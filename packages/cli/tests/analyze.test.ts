@@ -31,6 +31,9 @@ describe('analyze command', () => {
     const payload = JSON.parse(logSpy.mock.calls.map((call) => String(call[0])).join('\n'));
     expect(payload.schemaVersion).toBe('workspace-manifest.v1');
     expect(payload.summary.datasetTypes['spt-profile']).toBe(1);
+    expect(payload.groundModel.schemaVersion).toBe('ground-model.v1');
+    expect(payload.groundModel.stats.sptTests).toBe(1);
+    expect(payload.verifier.schemaVersion).toBe('ground-model-verifier.v1');
   });
 
   it('writes a browser dossier without opening when --no-open is supplied', async () => {
@@ -51,6 +54,8 @@ describe('analyze command', () => {
 
     const html = await readFile(htmlPath, 'utf-8');
     expect(html).toContain('Workspace Dossier');
+    expect(html).toContain('GroundModel');
+    expect(html).toContain('Verifier Findings');
     expect(html).toContain('locations.csv');
     expect(logSpy.mock.calls.map((call) => String(call[0])).join('\n')).toContain('Workspace dossier saved');
   });

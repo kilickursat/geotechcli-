@@ -1,5 +1,16 @@
 ﻿# Changelog
 
+## [0.4.29] - 2026-04-24
+
+### GroundModel Truth Layer
+
+- Added the canonical `GroundModel` v1 data contract for local workspace analysis, including boreholes, SPT tests, strata, groundwater observations, lab tests, parameters, monitoring series, evidence references, rejected observations, and model stats.
+- Added evidence-bound extraction for sampled CSV/XLSX workspace data so `geotech analyze . --json` now includes source file, sheet, row, column, confidence, raw value, normalized value, and warnings for extracted engineering facts.
+- Added a deterministic GroundModel verifier that flags rejected SPT values, missing groundwater, missing borehole coordinates, undeclared local CRS, unknown standard profiles, duplicate SPT depths, and no-evidence workspaces before agent/report synthesis.
+- Upgraded `geotech analyze . --format html` with GroundModel, verifier findings, and evidence-table sections while keeping terminal output compact.
+- Upgraded `geotech agent ... --workspace <dir>` so the agent receives a manifest plus GroundModel/verifier summary instead of only file classification.
+- Kept the release local and cost-aware: no additional hosted-beta or Modal GPU calls are introduced by the GroundModel/verifier path.
+
 ## [0.4.28] - 2026-04-24
 
 ### Workspace Analyze Foundation
@@ -8,7 +19,7 @@
 - Added core workspace intelligence modules for file discovery, geotechnical file classification, ProjectManifest generation, and recommended next workflows without spending hosted-beta GPU time.
 - Added lightweight CSV/XLSX schema inference for depth, time, coordinate, borehole/sample IDs, SPT/CPT, lab, monitoring, and signal-style columns.
 - Added `geotech agent ... --workspace <dir>` so hosted-beta agent tasks can receive a compact local manifest summary without direct file guessing.
-- Added docs and README coverage for `geotech analyze .`, including `--branch`, `--standard`, `--json`, and `--format html` examples while clearly marking GroundModel and agent planner behavior as future roadmap layers.
+- Added docs and README coverage for `geotech analyze .`, including `--branch`, `--standard`, `--json`, and `--format html` examples while clearly marking deeper planner and calculation behavior as roadmap layers.
 
 ## [0.4.27] - 2026-04-24
 

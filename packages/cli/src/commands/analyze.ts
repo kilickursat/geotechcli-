@@ -62,6 +62,12 @@ function renderTextManifest(manifest: ProjectManifest): void {
   keyValue('Detected branches', manifest.summary.branches.join(', ') || '-');
   if (manifest.requestedBranch) keyValue('Requested branch', manifest.requestedBranch);
   if (manifest.requestedStandard) keyValue('Standard profile', manifest.requestedStandard);
+  if (manifest.groundModel) {
+    keyValue('GroundModel', `${manifest.groundModel.stats.boreholes} boreholes, ${manifest.groundModel.stats.evidenceRefs} evidence refs`);
+  }
+  if (manifest.verifier) {
+    keyValue('Verifier status', `${manifest.verifier.status} (${manifest.verifier.summary.blocking} blocking, ${manifest.verifier.summary.review} review)`);
+  }
 
   const rows = focusedFiles(manifest)
     .slice(0, 16)
@@ -100,6 +106,35 @@ function renderTextManifest(manifest: ProjectManifest): void {
 
   if (schemaRows.length > 0) {
     renderTable(['Tabular source', 'Schema', 'Rows', 'Detected columns'], schemaRows);
+  }
+
+  if (manifest.groundModel && manifest.groundModel.boreholes.length > 0) {
+    const groundRows = manifest.groundModel.boreholes.slice(0, 10).map((borehole) => [
+      borehole.id,
+      borehole.coordinates
+        ? borehole.coordinates.latitude != null
+          ? `${borehole.coordinates.latitude}, ${borehole.coordinates.longitude}`
+          : `${borehole.coordinates.easting}, ${borehole.coordinates.northing}`
+        : '-',
+      borehole.sptTests.length,
+      borehole.strata.length,
+      borehole.groundwater.length,
+      `${Math.round(borehole.confidence * 100)}%`,
+    ]);
+    renderTable(['Borehole', 'Location', 'SPT', 'Strata', 'GWL', 'Confidence'], groundRows);
+  }
+
+  if (manifest.verifier && manifest.verifier.findings.length > 0) {
+    const findingRows = manifest.verifier.findings.slice(0, 8).map((finding) => [
+      finding.severity,
+      finding.code,
+      finding.message,
+      finding.evidenceIds.join(', ') || '-',
+    ]);
+    renderTable(['Severity', 'Code', 'Finding', 'Evidence'], findingRows);
+    if (manifest.verifier.findings.length > findingRows.length) {
+      warn(`${manifest.verifier.findings.length - findingRows.length} additional verifier findings. Use --json or --format html for full details.`);
+    }
   }
 
   if (manifest.summary.recommendations.length > 0) {
@@ -174,7 +209,7 @@ export function registerAnalyzeCommand(program: Command): void {
 
       if (!flags.quiet) {
         success(opened ? `Workspace dossier opened in your browser: ${htmlPath}` : `Workspace dossier saved to ${htmlPath}`);
-        info(`Files: ${manifest.summary.totalFiles}, tabular: ${manifest.summary.tabularFiles}, PDFs: ${manifest.summary.pdfFiles}`);
+        info(`Files: ${manifest.summary.totalFiles}, tabular: ${manifest.summary.tabularFiles}, PDFs: ${manifest.summary.pdfFiles}, verifier: ${manifest.verifier?.status ?? 'not-run'}`);
       }
       return;
     }
