@@ -26,14 +26,28 @@ function getHostedBetaGeotechDocumentMaxTokens(
   return Math.min(requestedMaxTokens, cap);
 }
 
-function isRecoverableEmptyResponse(error: unknown): boolean {
+function isRecoverableTextRetryResponse(error: unknown): boolean {
   const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
   return (
     message.includes('returned no content')
     || message.includes('did not contain assistant text')
     || message.includes('no completion choices')
     || message.includes('empty completion')
+    || message.includes('524')
+    || message.includes('upstream request failed')
+    || message.includes('upstream request timed out')
+    || message.includes('upstream timeout')
+    || message.includes('timed out')
+    || message.includes('provider is busy')
+    || message.includes('temporarily unavailable')
   );
+}
+
+async function waitForRecoverableTextBackoff(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, 100);
+    timer.unref?.();
+  });
 }
 
 async function textWithRetry(
@@ -57,9 +71,10 @@ async function textWithRetry(
       return { text: first.text, latencyMs: first.latencyMs, usedFallback: false };
     }
   } catch (error) {
-    if (!isRecoverableEmptyResponse(error)) {
+    if (!isRecoverableTextRetryResponse(error)) {
       throw error;
     }
+    await waitForRecoverableTextBackoff();
   }
 
   try {
@@ -78,7 +93,7 @@ async function textWithRetry(
       };
     }
   } catch (error) {
-    if (!isRecoverableEmptyResponse(error)) {
+    if (!isRecoverableTextRetryResponse(error)) {
       throw error;
     }
   }
@@ -336,8 +351,30 @@ function normalizeParameters(value: unknown): GeotechParameterObservation[] {
   return parameters;
 }
 
+function sanitizeImplausibleSptParameters(parameters: GeotechParameterObservation[]): {
+  parameters: GeotechParameterObservation[];
+  warnings: string[];
+} {
+  const warnings: string[] = [];
+  const sanitized = parameters.filter((parameter) => {
+    if (parameter.name.toLowerCase() !== 'sptn' || parameter.numericValue == null || parameter.numericValue <= 200) {
+      return true;
+    }
+
+    warnings.push(
+      `Ignored implausible SPT N value (${parameter.valueText}); it appears to be a standard/reference number rather than a blow count.`,
+    );
+    return false;
+  });
+
+  return { parameters: sanitized, warnings };
+}
+
 function classifyDocumentHeuristically(rawText: string): string {
   const normalized = rawText.toLowerCase();
+  const hasReportSignal = /\b(geotechnical (?:investigation|report)|site investigation|subsurface investigation|foundation recommendations?|executive summary|scope of work|recommendations?)\b/.test(normalized);
+  const hasBoreholeAppendixSignal = /\b(?:appendix|attached|included|record of)\b[^.]{0,120}\bborehole(?: logs?| records?)?\b|\bborehole(?: logs?| records?)\b[^.]{0,120}\b(?:appendix|attached|included)\b/.test(normalized);
+  if (hasReportSignal && hasBoreholeAppendixSignal) return 'site-investigation-report';
   if (/\bborehole\b|\bspt\b|\bwater table\b/.test(normalized)) return 'borehole-log';
   if (/\brqd\b|\brmr\b|\bucs\b|\bjoint\b|\bcore box\b/.test(normalized)) return 'rock-mass-document';
   if (/\b(chain of custody|required analysis|sample id|parcel id|matrix type|lab use only|certificate of analysis|analyte|reporting limit|source result|surrogate|analytical laboratory|paracel|ccil|liquid limit|plasticity index|atterberg|triaxial|permeability)\b/.test(normalized)) return 'lab-report';
@@ -540,7 +577,8 @@ function buildGeotechDocumentInsightFromValue(input: {
 }): GeotechDocumentInsight {
   const materials = normalizeMaterials(input.mergedValue.materials);
   const classifications = normalizeClassifications(input.mergedValue.classifications);
-  const parameters = normalizeParameters(input.mergedValue.parameters);
+  const parameterSanitization = sanitizeImplausibleSptParameters(normalizeParameters(input.mergedValue.parameters));
+  const parameters = parameterSanitization.parameters;
   const risks = normalizeTextList(input.mergedValue.risks);
   const recommendations = normalizeTextList(input.mergedValue.recommendations);
   const summary = readOptionalString(input.mergedValue, 'summary');
@@ -566,7 +604,10 @@ function buildGeotechDocumentInsightFromValue(input: {
   const safety = createParseSafety(
     status,
     confidence,
-    combineWarnings(input.warnings, normalizeWarnings(input.mergedValue.warnings)),
+    combineWarnings(
+      [...input.warnings, ...parameterSanitization.warnings],
+      normalizeWarnings(input.mergedValue.warnings),
+    ),
   );
 
   return {

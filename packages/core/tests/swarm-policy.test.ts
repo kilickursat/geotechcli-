@@ -93,4 +93,32 @@ describe('Swarm tool policy', () => {
     expect(executeSpy).not.toHaveBeenCalled();
     expect(mockedGenerateChat).toHaveBeenCalled();
   });
+
+  it('returns a deterministic final answer when swarm synthesis fails', async () => {
+    mockedGenerateChat
+      .mockResolvedValueOnce(
+        response('```handoff\n{"to":"simulation","data":{"soil":"sand"},"summary":"parsed"}\n```'),
+      )
+      .mockResolvedValueOnce(
+        response('```handoff\n{"to":"reviewer","results":{"fos":1.6},"summary":"calculated"}\n```'),
+      )
+      .mockResolvedValueOnce(
+        response('```review\n{"verdict":"APPROVED","notes":["policy check"],"confidence":96}\n```'),
+      );
+
+    mockedGenerateText.mockRejectedValue(new Error('hosted synthesis timed out'));
+
+    const session = await runSwarm(
+      'review a shallow foundation check',
+      {} as any,
+      () => {},
+      {},
+    );
+
+    const finalStep = session.steps.at(-1);
+    expect(finalStep?.type).toBe('answer');
+    expect(finalStep?.content).toContain('Swarm analysis completed');
+    expect(finalStep?.content).toContain('hosted synthesis timed out');
+    expect(finalStep?.content).toContain('Simulation output');
+  });
 });

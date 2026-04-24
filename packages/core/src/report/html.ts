@@ -80,11 +80,11 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
   <title>${escapeHtml(dossier.title)}</title>
   <style>
     :root {
-      --bg: #f4f7fb;
-      --panel: rgba(255, 255, 255, 0.94);
-      --panel-strong: rgba(255, 255, 255, 0.98);
-      --border: rgba(19, 63, 120, 0.10);
-      --border-strong: rgba(19, 63, 120, 0.18);
+      --bg: #f7f8fa;
+      --panel: #ffffff;
+      --panel-strong: #ffffff;
+      --border: #d9e1ea;
+      --border-strong: #b8c5d4;
       --text: #1b2533;
       --muted: #607287;
       --accent: #0068d7;
@@ -97,9 +97,9 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
       --danger-soft: rgba(186, 45, 63, 0.12);
       --neutral: #526072;
       --neutral-soft: rgba(82, 96, 114, 0.12);
-      --shadow: 0 22px 52px rgba(20, 42, 74, 0.10);
-      --radius: 24px;
-      --radius-sm: 16px;
+      --shadow: none;
+      --radius: 8px;
+      --radius-sm: 6px;
     }
 
     * { box-sizing: border-box; }
@@ -109,10 +109,7 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
     body {
       font-family: "Segoe UI Variable", "Segoe UI", "Inter", sans-serif;
       color: var(--text);
-      background:
-        radial-gradient(circle at top right, rgba(43, 120, 255, 0.10), transparent 24rem),
-        radial-gradient(circle at 10% 20%, rgba(0, 174, 255, 0.08), transparent 18rem),
-        linear-gradient(180deg, #fbfdff 0%, var(--bg) 100%);
+      background: var(--bg);
     }
 
     .shell {
@@ -124,30 +121,16 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
     }
 
     .panel {
-      background: linear-gradient(180deg, var(--panel-strong), var(--panel));
+      background: var(--panel);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       box-shadow: var(--shadow);
-      backdrop-filter: blur(10px);
     }
 
     .hero {
       padding: 28px;
       display: grid;
       gap: 20px;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .hero::after {
-      content: "";
-      position: absolute;
-      inset: auto -12% -38% auto;
-      width: 24rem;
-      height: 24rem;
-      border-radius: 50%;
-      background: radial-gradient(circle, rgba(0, 104, 215, 0.15), transparent 68%);
-      pointer-events: none;
     }
 
     .hero-head {
@@ -163,8 +146,8 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
       align-items: center;
       gap: 10px;
       padding: 8px 12px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.84);
+      border-radius: var(--radius-sm);
+      background: #f8fafc;
       border: 1px solid var(--border);
       color: var(--muted);
       font-size: 0.84rem;
@@ -258,11 +241,11 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
       line-height: 1.5;
     }
 
-    .tone-accent { background: linear-gradient(180deg, rgba(0, 104, 215, 0.08), rgba(255, 255, 255, 0.92)); }
-    .tone-good { background: linear-gradient(180deg, var(--good-soft), rgba(255, 255, 255, 0.92)); }
-    .tone-warning { background: linear-gradient(180deg, var(--warning-soft), rgba(255, 255, 255, 0.92)); }
-    .tone-danger { background: linear-gradient(180deg, var(--danger-soft), rgba(255, 255, 255, 0.92)); }
-    .tone-neutral { background: linear-gradient(180deg, var(--neutral-soft), rgba(255, 255, 255, 0.92)); }
+    .tone-accent { background: rgba(0, 104, 215, 0.08); }
+    .tone-good { background: var(--good-soft); }
+    .tone-warning { background: var(--warning-soft); }
+    .tone-danger { background: var(--danger-soft); }
+    .tone-neutral { background: var(--neutral-soft); }
 
     .section-card {
       padding: 24px;

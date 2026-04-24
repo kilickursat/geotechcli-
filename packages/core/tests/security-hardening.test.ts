@@ -3,6 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { strToU8, zipSync } from 'fflate';
 import { toolRegistry } from '../src/agents/tools.js';
 import { validateReadPath, validateShellCommand, validateWritePath } from '../src/agents/sandbox.js';
 import { importSkillsFromSource } from '../src/skills/index.js';
@@ -181,6 +182,32 @@ describe('Security hardening regressions', () => {
       expect(() => importSkillsFromSource(outsideSkill)).toThrow(/trusted strong-beta skill locations/i);
     } finally {
       rmSync(outsideSkill, { recursive: true, force: true });
+    }
+  });
+
+  it('blocks trusted-only zip skill imports from outside strong-beta locations', () => {
+    const outsideDir = mkdtempSync(join(tmpdir(), 'geotechcli-untrusted-skill-zip-'));
+    const archivePath = join(outsideDir, 'outside-skill.zip');
+
+    try {
+      writeFileSync(
+        archivePath,
+        zipSync({
+          'outside-skill/SKILL.md': strToU8([
+            '---',
+            'name: outside-zip-skill',
+            'description: minimal prompt-only test skill',
+            '---',
+            '',
+            '# Outside Zip Skill',
+          ].join('\n')),
+          'outside-skill/agents/openai.yaml': strToU8('display_name: Outside Zip Skill\n'),
+        }),
+      );
+
+      expect(() => importSkillsFromSource(archivePath)).toThrow(/trusted strong-beta skill locations/i);
+    } finally {
+      rmSync(outsideDir, { recursive: true, force: true });
     }
   });
 });

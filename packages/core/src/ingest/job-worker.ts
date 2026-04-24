@@ -2,8 +2,14 @@ import { basename, join } from 'node:path';
 import { homedir } from 'node:os';
 import { buildLLMConfig } from '../config/index.js';
 import type { LLMConfig } from '../llm/types.js';
-import { readDocumentPdfPageInputs } from './document-inputs.js';
-import { extractPrimaryPdfPageImages, inspectPdfDocument, type PdfDocumentInspection, type PdfPageClassification } from './pdf.js';
+import { countDocumentPdfPages, readDocumentPdfPageInputs } from './document-inputs.js';
+import {
+  extractPrimaryPdfPageImages,
+  inferPdfDocumentPageCountFallback,
+  inspectPdfDocument,
+  type PdfDocumentInspection,
+  type PdfPageClassification,
+} from './pdf.js';
 import {
   ingestBoreholeLogDocument,
   summarizeBoreholeIngestInspection,
@@ -90,11 +96,23 @@ interface BoreholeProcessingState {
 
 const SLOW_VISUAL_ERROR_PATTERNS = [
   /timeout/i,
+  /\b524\b/i,
+  /upstream(?: request)? (?:timed out|timeout|failed)/i,
   /provider is busy/i,
   /returned no content/i,
   /did not contain assistant text/i,
   /no completion choices/i,
   /empty completion/i,
+  /temporarily unavailable/i,
+  /\b503\b/i,
+  /\b504\b/i,
+];
+
+const RETRYABLE_UPSTREAM_ERROR_PATTERNS = [
+  /timeout/i,
+  /\b524\b/i,
+  /upstream(?: request)? (?:timed out|timeout|failed)/i,
+  /provider is busy/i,
   /temporarily unavailable/i,
   /\b503\b/i,
   /\b504\b/i,
@@ -698,6 +716,10 @@ function isSlowVisualPageError(message: string, classification: PdfPageClassific
   return looksVisual && SLOW_VISUAL_ERROR_PATTERNS.some((pattern) => pattern.test(message));
 }
 
+function isRetryableUpstreamPageError(message: string): boolean {
+  return RETRYABLE_UPSTREAM_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+}
+
 function isFatalProviderStopError(message: string): boolean {
   return FATAL_PROVIDER_STOP_PATTERNS.some((pattern) => pattern.test(message));
 }
@@ -712,6 +734,14 @@ function normalizeCheckpointErrorMessage(message: string): string {
     normalized = updated;
   }
   return normalized;
+}
+
+async function waitForCheckpointRetryBackoff(attempt: number): Promise<void> {
+  const delayMs = Math.min(1000, 100 * Math.max(1, 2 ** Math.max(0, attempt - 1)));
+  await new Promise<void>((resolvePromise) => {
+    const timer = setTimeout(resolvePromise, delayMs);
+    timer.unref?.();
+  });
 }
 
 async function withWorkerPageTimeout<T>(
@@ -827,6 +857,71 @@ function buildInspectionSummary(inspection: PdfDocumentInspection | null | undef
   };
 }
 
+function countCheckpointOcrRecoveredPages(checkpoints: PersistedIngestJobPageCheckpoint[]): number {
+  return checkpoints.filter((page) => page.ocrSource === 'local-ocr' || page.ocrSource === 'vision-ocr').length;
+}
+
+function applyCheckpointOcrRecoveredSummary<T extends PersistedIngestResult>(
+  result: T,
+  checkpoints: PersistedIngestJobPageCheckpoint[],
+): T {
+  const recoveredPageCount = countCheckpointOcrRecoveredPages(checkpoints);
+  if (recoveredPageCount === 0 || !result.inspectionSummary) {
+    return result;
+  }
+
+  return {
+    ...result,
+    inspectionSummary: {
+      ...result.inspectionSummary,
+      ocrRecoveredPageCount: Math.max(result.inspectionSummary.ocrRecoveredPageCount, recoveredPageCount),
+    },
+  };
+}
+
+function buildFallbackWorkerCheckpoints(
+  job: PersistedIngestJobRecord,
+  pageCount: number,
+  timestamp: string,
+): PersistedIngestJobPageCheckpoint[] {
+  if (job.checkpoints.pages.length > 0) {
+    return job.checkpoints.pages;
+  }
+
+  const startPage = job.source.pageRange?.[0] ?? job.segmentation?.pageRange?.[0] ?? 1;
+  return Array.from({ length: pageCount }, (_, index) => ({
+    pageNumber: startPage + index,
+    classification: null,
+    sourceKind: 'pdf-page',
+    weight: 1,
+    status: 'pending',
+    attempts: 0,
+    updatedAt: timestamp,
+  }));
+}
+
+async function inferWorkerPdfPageCount(job: PersistedIngestJobRecord): Promise<number> {
+  if (job.source.totalPages > 0) {
+    return job.source.totalPages;
+  }
+
+  try {
+    const fullPageCount = await countDocumentPdfPages(job.source.filePath);
+    return job.source.pageRange
+      ? Math.max(0, Math.min(fullPageCount, job.source.pageRange[1]) - job.source.pageRange[0] + 1)
+      : fullPageCount;
+  } catch {
+    try {
+      const fullPageCount = inferPdfDocumentPageCountFallback(job.source.filePath);
+      return job.source.pageRange
+        ? Math.max(0, Math.min(fullPageCount, job.source.pageRange[1]) - job.source.pageRange[0] + 1)
+        : fullPageCount;
+    } catch {
+      return 0;
+    }
+  }
+}
+
 function summarizeReviewReasons(findings: Array<{ severity: 'advisory' | 'review' | 'blocking'; message: string }>): string[] {
   return uniqueStrings(
     findings
@@ -873,7 +968,7 @@ function buildSyntheticBoreholeResult(job: PersistedIngestJobRecord, inspection:
     });
   }
 
-  return {
+  return applyCheckpointOcrRecoveredSummary({
     kind: 'geotech-ingest-result',
     schemaVersion: 1,
     documentType: 'borehole-log',
@@ -903,7 +998,7 @@ function buildSyntheticBoreholeResult(job: PersistedIngestJobRecord, inspection:
     reviewRequired: reviewFindings.some((finding) => finding.severity !== 'advisory'),
     confidence: 0,
     canAutoProceed: false,
-  };
+  }, job.checkpoints.pages);
 }
 
 function buildSyntheticGeotechDocumentResult(
@@ -948,7 +1043,7 @@ function buildSyntheticGeotechDocumentResult(
     });
   }
 
-  return {
+  return applyCheckpointOcrRecoveredSummary({
     kind: 'geotech-ingest-result',
     schemaVersion: 1,
     documentType: 'geotech-document',
@@ -986,7 +1081,7 @@ function buildSyntheticGeotechDocumentResult(
     confidence: 0,
     reviewRequired: reviewFindings.some((finding) => finding.severity !== 'advisory'),
     canAutoProceed: false,
-  };
+  }, job.checkpoints.pages);
 }
 
 function dedupeReviewFindings<T extends { code: string; severity: string; scope: string; message: string; pageNumber?: number }>(
@@ -1378,7 +1473,10 @@ async function finalizeJobResult(
         },
         now: dependencies.now,
       });
-      return applyBoreholeFailureDowngrades(result, job.checkpoints.pages);
+      return applyCheckpointOcrRecoveredSummary(
+        applyBoreholeFailureDowngrades(result, job.checkpoints.pages),
+        job.checkpoints.pages,
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (/No pages could be ingested successfully/i.test(message)) {
@@ -1435,7 +1533,10 @@ async function finalizeJobResult(
       now: dependencies.now,
     });
 
-    return applyGeotechFailureDowngrades(result, job.checkpoints.pages);
+    return applyCheckpointOcrRecoveredSummary(
+      applyGeotechFailureDowngrades(result, job.checkpoints.pages),
+      job.checkpoints.pages,
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (/No pages could be ingested successfully/i.test(message)) {
@@ -1497,30 +1598,56 @@ export async function runPersistedIngestJobWorker(
       ? currentJob.inspection
       : inspect(currentJob.source.filePath);
     if (!currentJob.inspection || currentJob.inspection.totalPages === 0) {
-      await mutateJob((job) => ({
-        ...job,
-        inspection,
-        source: {
-          ...job.source,
-          totalPages: inspection.totalPages,
-          weightedPageCost: inspection.pages.reduce((sum, page) => sum + (page.classification === 'image-only' || page.classification === 'text-unreadable' ? 2 : 1), 0),
-        },
-        processing: {
-          ...job.processing,
-          chunkExtractionConcurrency: resolvePersistedIngestJobExtractionConcurrency(job.config, inspection),
-        },
-        checkpoints: {
-          pages: inspection.pages.map((page) => job.checkpoints.pages.find((existing) => existing.pageNumber === page.pageNumber) ?? ({
-            pageNumber: page.pageNumber,
-            classification: page.classification,
-            sourceKind: mapPageSourceKind(page.classification),
-            weight: page.classification === 'image-only' || page.classification === 'text-unreadable' ? 2 : 1,
-            status: 'pending',
-            attempts: 0,
-            updatedAt: nowIso(dependencies.now),
-          })),
-        },
-      }));
+      if (inspection.totalPages > 0) {
+        await mutateJob((job) => ({
+          ...job,
+          inspection,
+          source: {
+            ...job.source,
+            totalPages: inspection.totalPages,
+            weightedPageCost: inspection.pages.reduce((sum, page) => sum + (page.classification === 'image-only' || page.classification === 'text-unreadable' ? 2 : 1), 0),
+          },
+          processing: {
+            ...job.processing,
+            chunkExtractionConcurrency: resolvePersistedIngestJobExtractionConcurrency(job.config, inspection),
+          },
+          checkpoints: {
+            pages: inspection.pages.map((page) => job.checkpoints.pages.find((existing) => existing.pageNumber === page.pageNumber) ?? ({
+              pageNumber: page.pageNumber,
+              classification: page.classification,
+              sourceKind: mapPageSourceKind(page.classification),
+              weight: page.classification === 'image-only' || page.classification === 'text-unreadable' ? 2 : 1,
+              status: 'pending',
+              attempts: 0,
+              updatedAt: nowIso(dependencies.now),
+            })),
+          },
+        }));
+      } else {
+        const inferredPageCount = await inferWorkerPdfPageCount(currentJob);
+
+        if (inferredPageCount > 0) {
+          await mutateJob((job) => {
+            const timestamp = nowIso(dependencies.now);
+            return {
+              ...job,
+              inspection: null,
+              source: {
+                ...job.source,
+                totalPages: Math.max(job.source.totalPages, inferredPageCount),
+                weightedPageCost: Math.max(job.source.weightedPageCost, inferredPageCount),
+              },
+              processing: {
+                ...job.processing,
+                chunkExtractionConcurrency: resolvePersistedIngestJobExtractionConcurrency(job.config, null),
+              },
+              checkpoints: {
+                pages: buildFallbackWorkerCheckpoints(job, inferredPageCount, timestamp),
+              },
+            };
+          });
+        }
+      }
     }
 
     currentJob = loadPersistedIngestJob(jobId) ?? currentJob;
@@ -1597,8 +1724,49 @@ export async function runPersistedIngestJobWorker(
             },
           }));
 
-          try {
-            const processed = await processGeotechDocumentPage(currentJob!, page, config, dependencies);
+          let processed: Awaited<ReturnType<typeof processGeotechDocumentPage>> | null = null;
+          let finalErrorMessage = '';
+          for (let attemptIndex = 0; attemptIndex < 2; attemptIndex += 1) {
+            try {
+              processed = await processGeotechDocumentPage(currentJob!, page, config, dependencies);
+              break;
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              const normalizedMessage = normalizeCheckpointErrorMessage(message);
+              if (
+                attemptIndex === 0
+                && isRetryableUpstreamPageError(normalizedMessage)
+                && !isFatalProviderStopError(normalizedMessage)
+              ) {
+                await waitForCheckpointRetryBackoff(findCheckpoint(currentJob!, page.pageNumber).attempts);
+                await mutateJob((job) => ({
+                  ...job,
+                  updatedAt: nowIso(dependencies.now),
+                  execution: {
+                    ...job.execution,
+                    lastHeartbeatAt: nowIso(dependencies.now),
+                  },
+                  checkpoints: {
+                    pages: job.checkpoints.pages.map((checkpoint) =>
+                      checkpoint.pageNumber === page.pageNumber
+                        ? {
+                            ...checkpoint,
+                            attempts: checkpoint.attempts + 1,
+                            updatedAt: nowIso(dependencies.now),
+                            error: `retrying after upstream timeout: ${normalizedMessage}`,
+                          }
+                        : checkpoint
+                    ),
+                  },
+                }));
+                continue;
+              }
+              finalErrorMessage = normalizedMessage;
+              break;
+            }
+          }
+
+          if (processed) {
             processedNewPages += 1;
             await mutateJob((job) => ({
               ...job,
@@ -1626,9 +1794,8 @@ export async function runPersistedIngestJobWorker(
                 ),
               },
             }));
-          } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            const normalizedMessage = normalizeCheckpointErrorMessage(message);
+          } else {
+            const normalizedMessage = finalErrorMessage || `Page ${page.pageNumber} failed during async ingest.`;
             const checkpoint = findCheckpoint(currentJob!, page.pageNumber);
             if (!fatalProviderStopMessage && isFatalProviderStopError(normalizedMessage)) {
               fatalProviderStopMessage = normalizedMessage;
@@ -1729,8 +1896,49 @@ export async function runPersistedIngestJobWorker(
           },
         }));
 
-        try {
-          const processed = await processBoreholePage(currentJob, page, config, state, dependencies);
+        let processed: Awaited<ReturnType<typeof processBoreholePage>> | null = null;
+        let finalErrorMessage = '';
+        for (let attemptIndex = 0; attemptIndex < 2; attemptIndex += 1) {
+          try {
+            processed = await processBoreholePage(currentJob, page, config, state, dependencies);
+            break;
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            const normalizedMessage = normalizeCheckpointErrorMessage(message);
+            if (
+              attemptIndex === 0
+              && isRetryableUpstreamPageError(normalizedMessage)
+              && !isFatalProviderStopError(normalizedMessage)
+            ) {
+              await waitForCheckpointRetryBackoff(findCheckpoint(currentJob, page.pageNumber).attempts);
+              await mutateJob((job) => ({
+                ...job,
+                updatedAt: nowIso(dependencies.now),
+                execution: {
+                  ...job.execution,
+                  lastHeartbeatAt: nowIso(dependencies.now),
+                },
+                checkpoints: {
+                  pages: job.checkpoints.pages.map((pageCheckpoint) =>
+                    pageCheckpoint.pageNumber === page.pageNumber
+                      ? {
+                          ...pageCheckpoint,
+                          attempts: pageCheckpoint.attempts + 1,
+                          updatedAt: nowIso(dependencies.now),
+                          error: `retrying after upstream timeout: ${normalizedMessage}`,
+                        }
+                      : pageCheckpoint
+                  ),
+                },
+              }));
+              continue;
+            }
+            finalErrorMessage = normalizedMessage;
+            break;
+          }
+        }
+
+        if (processed) {
           processedNewPages += 1;
           state = processed.nextState;
           await mutateJob((job) => ({
@@ -1759,9 +1967,8 @@ export async function runPersistedIngestJobWorker(
               ),
             },
           }));
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          const normalizedMessage = normalizeCheckpointErrorMessage(message);
+        } else {
+          const normalizedMessage = finalErrorMessage || `Page ${page.pageNumber} failed during async ingest.`;
           await mutateJob((job) => ({
             ...job,
             updatedAt: nowIso(dependencies.now),
@@ -1799,7 +2006,7 @@ export async function runPersistedIngestJobWorker(
                         ...pageCheckpoint,
                         status: 'failed',
                         updatedAt: nowIso(dependencies.now),
-                        error: `skipped after upstream provider stop. ${normalizeCheckpointErrorMessage(message)}`,
+                        error: `skipped after upstream provider stop. ${normalizedMessage}`,
                         downgraded: false,
                       }
                     : pageCheckpoint

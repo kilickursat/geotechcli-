@@ -209,6 +209,19 @@ const TEXT_QUALITY_DICTIONARY = new Set([
   'water', 'weight',
 ]);
 
+export function inferPdfDocumentPageCountFallback(input: string | Uint8Array): number {
+  const buffer = typeof input === 'string'
+    ? readFileSync(resolve(input))
+    : Buffer.from(input);
+  const source = buffer.toString('latin1');
+  const pageObjectCount = source.match(/\/Type\s*\/Page(?!s)\b/g)?.length ?? 0;
+  const declaredPageCounts = [...source.matchAll(/\/Type\s*\/Pages\b[\s\S]{0,320}?\/Count\s+(\d+)\b/g)]
+    .map((match) => Number(match[1]))
+    .filter((value) => Number.isInteger(value) && value > 0);
+
+  return Math.max(pageObjectCount, ...declaredPageCounts, 0);
+}
+
 export function inspectPdfDocument(input: string | Uint8Array): PdfDocumentInspection {
   const buffer = typeof input === 'string'
     ? readFileSync(resolve(input))

@@ -1,4 +1,15 @@
-# Changelog
+﻿# Changelog
+
+## [0.4.26] - 2026-04-24
+
+### Strong-Beta Reliability And Ingest UX Fixes
+
+- Fixed bundled strong-beta skills in global npm installs by trusting only the first-party `@geotechcli/core/bundled-skills` archives while keeping arbitrary outside ZIP imports blocked.
+- Changed long PDF ingest to live-wait by default with visible progress, elapsed time, heartbeat/status, page counts, and failures; added `geotech ingest --background` to keep the previous detached-job behavior.
+- Made `geotech ingest --format html`, `wait --format html`, and `result --format html` save/open a real browser dossier by default, with `--no-open` preserving a save-only workflow and compact terminal summaries replacing full table dumps.
+- Hardened PDF ingest jobs with page-count fallbacks, zero-page job rejection, retryable 524/upstream-timeout checkpoints, lower hosted-beta image-heavy concurrency, and completed-partial resume retry behavior.
+- Improved geotechnical report extraction by preserving user-declared report intent, preventing borehole appendix pages from dominating document class, rejecting impossible SPT values from standards references, and preserving raw evidence as warnings.
+- Cleaned strong-beta drift in agent docs, handoff notes, changelog encoding, swarm final synthesis fallback, and effective config display for provider-default text and vision models.
 
 ## [0.4.25] - 2026-04-23
 
@@ -275,29 +286,29 @@
 - Hardened agent sandbox boundaries, hosted-beta abuse controls, and CLI trust surfaces for production-leaning strong-beta use.
 - Kept `geotech status` quota-safe by default, made demo/sample fallbacks explicit, and aligned release verification checks with the current hosted-beta defaults.
 
-## [0.2.0] 窶・2026-03-30
+## [0.2.0] - 2026-03-30
 
 ### Security Fixes (P0)
 
-- **Filesystem sandbox** 窶・All agent filesystem tools (`read_file`, `write_file`, `parse_csv`, `scan_project`, `list_directory`) now validate paths through `sandbox.ts`. Blocks access to `.ssh`, `.aws`, `.gnupg`, `/etc`, `/proc`, and other sensitive system directories. Symlink escape prevention via `realpathSync` re-check.
-- **Shell command hardening** 窶・`run_command` tool now uses centralized `validateShellCommand()`. Blocks `python -c`, `python -m`, pipe operators, redirects, `curl`, `wget`, `sudo`, and all destructive commands. Only allows read-only commands and `python <script.py>`.
+- **Filesystem sandbox** - All agent filesystem tools (`read_file`, `write_file`, `parse_csv`, `scan_project`, `list_directory`) now validate paths through `sandbox.ts`. Blocks access to `.ssh`, `.aws`, `.gnupg`, `/etc`, `/proc`, and other sensitive system directories. Symlink escape prevention via `realpathSync` re-check.
+- **Shell command hardening** - `run_command` tool now uses centralized `validateShellCommand()`. Blocks `python -c`, `python -m`, pipe operators, redirects, `curl`, `wget`, `sudo`, and all destructive commands. Only allows read-only commands and `python <script.py>`.
 - **Fail-closed hosted beta config** Production proxy (`/api/proxy`) now reports unavailable unless `ZHIPU_API_KEY` is configured, and it requires Upstash Redis in production so anonymous rate limiting stays enforced safely.
-- **Registration rate limiting** 窶・`/api/auth` registration endpoint limited to 5 attempts per IP per hour.
+- **Registration rate limiting** - `/api/auth` registration endpoint limited to 5 attempts per IP per hour.
 
 ### New Calculation Modules
 
-- **Pile capacity** (`geotech pile`) 窶・ﾎｱ-method (Tomlinson) for cohesive soils, ﾎｲ-method (Burland) for cohesionless soils, SPT-based (Meyerhof 1976) for driven piles. Supports driven/bored/CFA piles, multi-layer soils, water table, per-layer shaft friction breakdown. References: API RP 2GEO, Eurocode 7 ﾂｧ7.6.
-- **Slope stability** (`geotech slope`) 窶・Bishop Simplified method with automatic critical circle search. Multi-layer soils, water table, surcharge, pseudo-static seismic loading (kh). Returns FOS, stability class (STABLE/MARGINAL/UNSTABLE/CRITICAL), and slice-by-slice results. References: Duncan & Wright (2005), Eurocode 7 ﾂｧ11.
-- **Lateral earth pressure** (`geotech retaining`) 窶・Rankine and Coulomb methods for active, passive, and at-rest (Jaky K0) states. Wall friction angle (ﾎｴ), sloping backfill (ﾎｲ), wall inclination (ﾎｱ), water table, surcharge. Full pressure distribution profile. References: Eurocode 7 ﾂｧ9.
+- **Pile capacity** (`geotech pile`) - alpha-method (Tomlinson) for cohesive soils, beta-method (Burland) for cohesionless soils, SPT-based (Meyerhof 1976) for driven piles. Supports driven/bored/CFA piles, multi-layer soils, water table, per-layer shaft friction breakdown. References: API RP 2GEO, Eurocode 7 section 7.6.
+- **Slope stability** (`geotech slope`) - Bishop Simplified method with automatic critical circle search. Multi-layer soils, water table, surcharge, pseudo-static seismic loading (kh). Returns FOS, stability class (STABLE/MARGINAL/UNSTABLE/CRITICAL), and slice-by-slice results. References: Duncan & Wright (2005), Eurocode 7 section 11.
+- **Lateral earth pressure** (`geotech retaining`) - Rankine and Coulomb methods for active, passive, and at-rest (Jaky K0) states. Wall friction angle (delta), sloping backfill (beta), wall inclination (alpha), water table, surcharge. Full pressure distribution profile. References: Eurocode 7 section 9.
 
 ### Engineering Accuracy Fix
 
-- **Water table correction in bearing capacity** 窶・Implemented 3-case water table correction: (1) GWT above foundation 竊・reduced ﾎｳ' in both Nq and Nﾎｳ terms, (2) GWT within influence zone (D to D+B) 竊・interpolated ﾎｳ_eff in Nﾎｳ term, (3) GWT below D+B 竊・no correction. Previously the `waterTableDepth` parameter was accepted but ignored, which could produce unconservative results for sites with shallow water tables.
+- **Water table correction in bearing capacity** - Implemented 3-case water table correction: (1) GWT above foundation -> reduced gamma' in both Nq and Ngamma terms, (2) GWT within influence zone (D to D+B) -> interpolated gamma_eff in Ngamma term, (3) GWT below D+B -> no correction. Previously the `waterTableDepth` parameter was accepted but ignored, which could produce unconservative results for sites with shallow water tables.
 
 ### Standards Database
 
 - Added **JGS 0121** (Japanese SPT), **JGS 4101** (Japanese pile design), **JSCE C7.11** (NATM tunnel classification), **NEXCO tunnel design**, **JSCE FOS standards**
-- Added Eurocode 7 pile shaft resistance (ﾂｧ7.4), slope stability methods (ﾂｧ11.5), retaining wall design checks (ﾂｧ9.5)
+- Added Eurocode 7 pile shaft resistance (section 7.4), slope stability methods (section 11.5), retaining wall design checks (section 9.5)
 - Added Schmertmann (1970/1978) and Meyerhof pile (1976) provisions
 - Standards database expanded from 12 to 20+ provisions
 
@@ -309,9 +320,9 @@
 
 ### CLI Improvements
 
-- **`--quiet` flag** 窶・Suppress all non-essential output (for scripting).
-- **`--dry-run` flag** 窶・Show what would be calculated without executing.
-- **JSON-safe strong beta output** 窶・Hosted beta AI commands now keep `--json` responses machine-readable on error paths, and status booleans remain readable instead of being over-redacted.
+- **`--quiet` flag** - Suppress all non-essential output (for scripting).
+- **`--dry-run` flag** - Show what would be calculated without executing.
+- **JSON-safe strong beta output** - Hosted beta AI commands now keep `--json` responses machine-readable on error paths, and status booleans remain readable instead of being over-redacted.
 - Removed v0.2 placeholder commands; `settlement` now points to agent workaround.
 - Version bumped to 0.2.0 across all packages.
 
@@ -327,19 +338,20 @@
 
 ---
 
-## [0.1.0] 窶・2026-03-15
+## [0.1.0] - 2026-03-15
 
 Initial release. See README for full feature list.
 
 ### P1 Fixes (added in v0.2.0 final)
 
-- **Persistent CLI usage counters** 窶・`FileUsageStore` replaces `InMemoryUsageStore` in the CLI. Usage counters now persist to `~/.geotechcli/usage.json` across process restarts, so the unregistered 5-call limit and monthly quotas are enforced across sessions. File secured to `0600` permissions.
-- **Email verification flow** 窶・Registration now requires 2 steps: (1) `POST /api/auth {action:"register", email}` sends a 6-digit verification code (10-min TTL, 5 attempts max), (2) `POST /api/auth {action:"verify", email, code}` verifies and creates the account. API key is only returned after verification. Dev mode includes code in response; production requires email delivery (SendGrid/Resend integration point provided).
-- **Structured logging** 窶・`logger.ts` replaces all `console.error/log/warn` in API routes. Production mode outputs JSON lines (Datadog/Cloudflare Logpush compatible); dev mode outputs human-readable. All sensitive fields (`api_key`, `token`, `secret`, `password`) auto-redacted. Proxy route: 0 console calls remaining. Webhook route: 0 console calls remaining.
-- **`--quiet` and `--dry-run` flags fully wired** 窶・Both flags defined in `flags.ts` AND consumed in 6 command handlers (bearing, liquefaction, pile, slope, retaining, ai/agent/swarm). `--quiet` outputs only the key result value (for piping). `--dry-run` shows parameters without executing.
+- **Persistent CLI usage counters** - `FileUsageStore` replaces `InMemoryUsageStore` in the CLI. Usage counters now persist to `~/.geotechcli/usage.json` across process restarts, so the unregistered 5-call limit and monthly quotas are enforced across sessions. File secured to `0600` permissions.
+- **Email verification flow** - Registration now requires 2 steps: (1) `POST /api/auth {action:"register", email}` sends a 6-digit verification code (10-min TTL, 5 attempts max), (2) `POST /api/auth {action:"verify", email, code}` verifies and creates the account. API key is only returned after verification. Dev mode includes code in response; production requires email delivery (SendGrid/Resend integration point provided).
+- **Structured logging** - `logger.ts` replaces all `console.error/log/warn` in API routes. Production mode outputs JSON lines (Datadog/Cloudflare Logpush compatible); dev mode outputs human-readable. All sensitive fields (`api_key`, `token`, `secret`, `password`) auto-redacted. Proxy route: 0 console calls remaining. Webhook route: 0 console calls remaining.
+- **`--quiet` and `--dry-run` flags fully wired** - Both flags defined in `flags.ts` AND consumed in 6 command handlers (bearing, liquefaction, pile, slope, retaining, ai/agent/swarm). `--quiet` outputs only the key result value (for piping). `--dry-run` shows parameters without executing.
 
 ### Pre-Launch Critical Fixes
 
-- **Webhook idempotency** 窶・Stripe webhook handler now tracks processed event IDs in memory (24-hour TTL with hourly cleanup). Duplicate events are detected by `event.id` and acknowledged without re-processing. Prevents double-activation of subscriptions or double-downgrades from retry deliveries. For multi-instance deployments, swap the `Map` for Redis `SET` + `EXPIRE`.
-- **ReAct brain 竊・proper message arrays** 窶・`brain.ts` completely rewritten. Replaces string concatenation (`conversationHistory += ...`) with a proper `ChatMessage[]` array using alternating `user`/`assistant` roles. New `generateChat()` function in the LLM router accepts multi-turn message arrays directly. Context window management: when conversation exceeds ~10K tokens, older tool exchanges are automatically compressed into a summary message (keeps system prompt, user query, and last 4 messages intact). Tool result data is compacted (no pretty-print, truncated at 3K chars) to save tokens.
-- **Swarm agent loop also fixed** 窶・`swarm.ts` `runAgentLoop` rewritten with the same message-array pattern. All 3 swarm agents (interpretation, simulation, reviewer) now use proper multi-turn conversations instead of string concatenation.
+- **Webhook idempotency** - Stripe webhook handler now tracks processed event IDs in memory (24-hour TTL with hourly cleanup). Duplicate events are detected by `event.id` and acknowledged without re-processing. Prevents double-activation of subscriptions or double-downgrades from retry deliveries. For multi-instance deployments, swap the `Map` for Redis `SET` + `EXPIRE`.
+- **ReAct brain: proper message arrays** - `brain.ts` completely rewritten. Replaces string concatenation (`conversationHistory += ...`) with a proper `ChatMessage[]` array using alternating `user`/`assistant` roles. New `generateChat()` function in the LLM router accepts multi-turn message arrays directly. Context window management: when conversation exceeds ~10K tokens, older tool exchanges are automatically compressed into a summary message (keeps system prompt, user query, and last 4 messages intact). Tool result data is compacted (no pretty-print, truncated at 3K chars) to save tokens.
+- **Swarm agent loop also fixed** - `swarm.ts` `runAgentLoop` rewritten with the same message-array pattern. All 3 swarm agents (interpretation, simulation, reviewer) now use proper multi-turn conversations instead of string concatenation.
+

@@ -10,6 +10,7 @@ import {
   createPersistedIngestJob,
   loadPersistedIngestJob,
   resolvePersistedIngestJobExtractionConcurrency,
+  resumePersistedIngestJob,
   runPersistedIngestJobWorker,
   savePersistedIngestJob,
   shouldSegmentHostedBetaLongPdf,
@@ -264,6 +265,7 @@ describe('persisted ingest jobs', () => {
     const job = createPersistedIngestJob({
       documentType: 'geotech-document',
       filePath,
+      totalPagesFallback: 4,
       config: {
         ...makeConfig(),
         provider: 'hosted-beta',
@@ -384,6 +386,83 @@ describe('persisted ingest jobs', () => {
 
     const persisted = loadPersistedIngestJob(job.jobId);
     expect(persisted?.processing.chunkExtractionConcurrency).toBe(1);
+  }, 15_000);
+
+  it('keeps a PDF page-count fallback when lightweight inspection cannot enumerate pages', async () => {
+    const filePath = join(configDir, 'fallback-count-source.pdf');
+    writeFileSync(
+      filePath,
+      [
+        '%PDF-1.7',
+        '1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj',
+        '2 0 obj << /Type /Pages /Count 4 /Kids [] >> endobj',
+        '%%EOF',
+      ].join('\n'),
+    );
+
+    const job = createPersistedIngestJob({
+      documentType: 'geotech-document',
+      filePath,
+      config: makeConfig(),
+    });
+
+    expect(job.source.totalPages).toBe(4);
+    expect(job.checkpoints.pages).toHaveLength(4);
+
+    const completed = await runPersistedIngestJobWorker(job.jobId, {
+      buildLLMConfig: makeConfig,
+      inspectPdfDocument: () => makeInspection(0),
+      readDocumentPdfPageInputs: async () => Array.from({ length: 4 }, (_, index) => ({
+        base64: `fallback-page-${index + 1}`,
+        mimeType: 'image/png',
+        fileBytes: 120,
+        filePath,
+        ext: 'png',
+        kind: 'image' as const,
+        pageNumber: index + 1,
+        totalPages: 4,
+        sourceKind: 'raster-image' as const,
+        normalizedArtifact: {
+          kind: 'image' as const,
+          source: 'full-page-raster' as const,
+          mimeType: 'image/png',
+          fileBytes: 120,
+          textSource: 'none' as const,
+          textQuality: null,
+          warnings: [],
+        },
+      })),
+      recoverDocumentTextHint: async () => ({
+        textHint: undefined,
+        source: 'none' as const,
+        warnings: [],
+        latencyMs: 0,
+        transformed: false,
+      }),
+      interpretGeotechDocumentPage: async (_imageBase64, _mimeType, _config, context) => ({
+        documentClass: 'geotechnical-document',
+        title: `Page ${context.pageNumber}`,
+        summary: `Fallback page ${context.pageNumber}.`,
+        materials: [{ kind: 'soil', description: 'silty sand', uscsSymbol: 'SM', lithology: null }],
+        classifications: [],
+        parameters: [],
+        risks: [],
+        recommendations: [],
+        pageNumber: context.pageNumber ?? null,
+        totalPages: context.totalPages ?? null,
+        rawLLMText: 'mock',
+        latencyMs: 0,
+        parseStatus: 'parsed',
+        confidence: 80,
+        warnings: [],
+        canAutoProceed: true,
+      }),
+    });
+
+    expect(completed.status).toBe('completed');
+    expect(completed.source.totalPages).toBe(4);
+    expect(completed.checkpoints.pages).toHaveLength(4);
+    expect(completed.result?.ingestResult.source.totalPages).toBe(4);
   });
 
   it('runs segmented parent geotech jobs sequentially and merges one final result', async () => {
@@ -531,6 +610,104 @@ describe('persisted ingest jobs', () => {
     expect(resumed.result?.ingestResult.source.successfulPages).toBe(2);
   });
 
+  it('resume resets failed checkpoints from completed partial jobs for retry', async () => {
+    const filePath = join(configDir, 'completed-partial-resume-source.pdf');
+    await writeBlankPdf(filePath, 2);
+
+    const job = createPersistedIngestJob({
+      documentType: 'geotech-document',
+      filePath,
+      inspection: makeInspection(2),
+      config: makeConfig(),
+    });
+
+    const persisted = loadPersistedIngestJob(job.jobId);
+    if (!persisted) {
+      throw new Error('Expected persisted ingest job to exist.');
+    }
+
+    const timestamp = new Date().toISOString();
+    persisted.status = 'completed';
+    persisted.completedAt = timestamp;
+    persisted.checkpoints.pages[0] = {
+      ...persisted.checkpoints.pages[0]!,
+      status: 'completed',
+      completedAt: timestamp,
+      result: {
+        documentClass: 'geotechnical-document',
+        title: 'Completed page',
+        summary: 'Completed before resume.',
+        materials: [],
+        classifications: [],
+        parameters: [],
+        risks: [],
+        recommendations: [],
+        pageNumber: 1,
+        totalPages: 2,
+        rawLLMText: 'mock',
+        latencyMs: 0,
+        parseStatus: 'parsed',
+        confidence: 80,
+        warnings: [],
+        canAutoProceed: true,
+      },
+    };
+    persisted.checkpoints.pages[1] = {
+      ...persisted.checkpoints.pages[1]!,
+      status: 'failed',
+      attempts: 1,
+      error: 'Page 2: upstream request failed with 524 timeout',
+      downgraded: true,
+    };
+    persisted.result = {
+      ingestResult: {
+        kind: 'geotech-ingest-result',
+        schemaVersion: 1,
+        documentType: 'geotech-document',
+        generatedAt: timestamp,
+        source: {
+          filePath,
+          fileName: basename(filePath),
+          inputKind: 'pdf',
+          totalPages: 2,
+          successfulPages: 1,
+          failedPages: 1,
+        },
+        inspection: makeInspection(2),
+        inspectionSummary: null,
+        documentClass: 'geotechnical-document',
+        title: null,
+        summary: null,
+        materials: [],
+        classifications: [],
+        parameters: [],
+        risks: [],
+        recommendations: [],
+        pageAudits: [],
+        pageFailures: ['Page 2: upstream request failed with 524 timeout'],
+        warnings: [],
+        reviewFindings: [],
+        reviewReasons: [],
+        parseStatus: 'partial',
+        confidence: 60,
+        reviewRequired: true,
+        canAutoProceed: false,
+      },
+    };
+    savePersistedIngestJob(persisted);
+
+    expect(() => resumePersistedIngestJob(job.jobId)).toThrow(/child runner|Build @geotechcli\/core/i);
+
+    const queued = loadPersistedIngestJob(job.jobId);
+    expect(queued?.status).toBe('queued');
+    expect(queued?.completedAt).toBeUndefined();
+    expect(queued?.result).toBeUndefined();
+    expect(queued?.checkpoints.pages[0]?.status).toBe('completed');
+    expect(queued?.checkpoints.pages[1]?.status).toBe('pending');
+    expect(queued?.checkpoints.pages[1]?.error).toBeUndefined();
+    expect(queued?.checkpoints.pages[1]?.downgraded).toBe(false);
+  });
+
   it('downgrades slow visual page failures into review findings instead of hard-failing the job', async () => {
     const filePath = join(configDir, 'slow-visual-source.pdf');
     await writeBlankPdf(filePath, 1);
@@ -574,6 +751,78 @@ describe('persisted ingest jobs', () => {
     expect(completed.result?.ingestResult.reviewRequired).toBe(true);
     expect(completed.result?.ingestResult.canAutoProceed).toBe(false);
   }, 15000);
+
+  it('retries 524 upstream timeouts with backoff and carries OCR checkpoint counts into the final summary', async () => {
+    const filePath = join(configDir, 'retry-524-ocr-source.pdf');
+    await writeBlankPdf(filePath, 1);
+
+    const job = createPersistedIngestJob({
+      documentType: 'geotech-document',
+      filePath,
+      inspection: makeInspection(1, () => 'image-only'),
+      config: makeConfig(),
+    });
+
+    const extractGeotechDocumentFactsFromText = vi.fn()
+      .mockRejectedValueOnce(new Error('upstream request failed with 524 timeout'))
+      .mockResolvedValue({
+        documentClass: 'geotechnical-document',
+        title: 'Recovered retry page',
+        summary: 'Recovered after a 524 retry.',
+        materials: [{ kind: 'soil', description: 'silty clay', uscsSymbol: 'CL', lithology: null }],
+        classifications: [],
+        parameters: [],
+        risks: [],
+        recommendations: [],
+        pageNumber: 1,
+        totalPages: 1,
+        rawLLMText: 'mock',
+        latencyMs: 0,
+        parseStatus: 'parsed',
+        confidence: 82,
+        warnings: [],
+        canAutoProceed: true,
+      });
+
+    const completed = await runPersistedIngestJobWorker(job.jobId, {
+      buildLLMConfig: makeConfig,
+      readDocumentPdfPageInputs: async () => [{
+        base64: 'retry-page',
+        mimeType: 'image/png',
+        fileBytes: 120,
+        filePath,
+        ext: 'png',
+        kind: 'image',
+        pageNumber: 1,
+        totalPages: 1,
+        sourceKind: 'raster-image',
+        normalizedArtifact: {
+          kind: 'image',
+          source: 'full-page-raster',
+          mimeType: 'image/png',
+          fileBytes: 120,
+          textSource: 'none',
+          textQuality: null,
+          warnings: [],
+        },
+      }],
+      recoverDocumentTextHint: async () => ({
+        textHint: 'Recovered OCR text with silty clay.',
+        source: 'vision-ocr' as const,
+        warnings: ['Recovered OCR before retry.'],
+        latencyMs: 0,
+        transformed: false,
+      }),
+      extractGeotechDocumentFactsFromText,
+    });
+
+    expect(completed.status).toBe('completed');
+    expect(extractGeotechDocumentFactsFromText).toHaveBeenCalledTimes(2);
+    expect(completed.checkpoints.pages[0]?.attempts).toBe(2);
+    expect(completed.checkpoints.pages[0]?.status).toBe('completed');
+    expect(completed.result?.ingestResult.inspectionSummary?.ocrRecoveredPageCount).toBe(1);
+    expect(completed.result?.ingestResult.pageFailures).toEqual([]);
+  });
 
   it('marks remaining pages failed and completes the job when the provider hits a fatal quota stop', async () => {
     const filePath = join(configDir, 'quota-stop-source.pdf');

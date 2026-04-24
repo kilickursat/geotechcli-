@@ -48,6 +48,7 @@ import {
   readVisionPdfPageInputs,
   type VisionInput,
 } from '../util/vision-output.js';
+import { openFileInBrowser } from '../ui/browser.js';
 
 function formatMaybe(value: string | number | null | undefined, suffix = ''): string {
   if (value == null || value === '') return 'Unavailable';
@@ -100,11 +101,12 @@ function writeHtmlDossier(
   result: ProjectBackedIngestResult,
   options: {
     outputPath?: string;
+    open?: boolean;
     sourceLabel: string;
     storedReview?: PersistedReviewRenderDetails | null;
     approval?: PersistedReviewApprovalRenderDetails | null;
   },
-): string {
+): { outputPath: string; opened: boolean } {
   const dossier = buildIngestDossier(result, {
     sourceLabel: options.sourceLabel,
     storedReview: options.storedReview
@@ -126,8 +128,17 @@ function writeHtmlDossier(
   });
   const outputPath = options.outputPath ?? defaultDossierOutputPath(options.sourceLabel);
   writeFileSync(outputPath, renderIngestDossierAsHtml(dossier));
-  success(`HTML ingest dossier saved to ${outputPath}`);
-  return outputPath;
+  const opened = options.open === false ? false : openFileInBrowser(outputPath);
+  success(
+    opened
+      ? `HTML ingest dossier opened in your browser: ${outputPath}`
+      : `HTML ingest dossier saved to ${outputPath}`,
+  );
+  return { outputPath, opened };
+}
+
+function shouldOpenHtmlDossier(flags: { openInteractivePlot?: boolean }): boolean {
+  return flags.openInteractivePlot !== false;
 }
 
 function startProgress(flags: { json?: boolean; quiet?: boolean }, text: string) {
@@ -364,6 +375,10 @@ function getRawOptionValue(commandLike: unknown, key: string): unknown {
     const current = rawArgs[index];
     if (typeof current !== 'string') {
       continue;
+    }
+
+    if (key === 'open' && current === '--no-open') {
+      return false;
     }
 
     if (current === flag) {
@@ -1038,18 +1053,25 @@ function resolveCommandOptions(
   commandLike: unknown,
   extraKeys: string[] = [],
 ): Record<string, unknown> {
+  const commandSource = commandLike ?? opts;
+  const rawOpts = isRecord(opts) && typeof (opts as { optsWithGlobals?: unknown }).optsWithGlobals !== 'function'
+    ? opts
+    : {};
   const resolvedOpts =
-    typeof (commandLike as { optsWithGlobals?: () => unknown } | null)?.optsWithGlobals === 'function'
-      ? (commandLike as { optsWithGlobals: () => unknown }).optsWithGlobals()
+    typeof (commandSource as { optsWithGlobals?: () => unknown } | null)?.optsWithGlobals === 'function'
+      ? (commandSource as { optsWithGlobals: () => unknown }).optsWithGlobals()
       : undefined;
 
   const resolved: Record<string, unknown> = {
-    ...(isRecord(opts) ? opts : {}),
+    ...rawOpts,
     ...(isRecord(resolvedOpts) ? resolvedOpts : {}),
   };
 
-  for (const key of ['json', 'quiet', 'dryRun', 'output', ...extraKeys]) {
-    const value = getRawOptionValue(commandLike, key) ?? getCommandOptionValue(opts, key) ?? getCommandOptionValue(commandLike, key);
+  for (const key of ['json', 'quiet', 'dryRun', 'output', 'open', 'noOpen', ...extraKeys]) {
+    if (resolved[key] !== undefined) {
+      continue;
+    }
+    const value = getRawOptionValue(commandSource, key) ?? getCommandOptionValue(rawOpts, key) ?? getCommandOptionValue(commandSource, key);
     if (value !== undefined) {
       resolved[key] = value;
     }
@@ -1710,6 +1732,104 @@ function renderIngestJobResult(job: NormalizedIngestJobRecord): void {
   });
 }
 
+function renderCompactIngestResultSummary(
+  result: ProjectBackedIngestResult,
+  options: {
+    title?: string;
+    sourceLabel?: string;
+    persistedReview?: PersistedReviewRenderDetails | null;
+    htmlDossier?: { outputPath: string; opened: boolean } | null;
+  } = {},
+): void {
+  heading(options.title ?? 'Geotechnical Ingest Result');
+  keyValue('Document type', result.documentType);
+  keyValue('Source', options.sourceLabel ?? result.source.fileName ?? result.source.filePath ?? 'Unknown');
+  keyValue('Pages processed', `${result.source.successfulPages}/${result.source.totalPages}`);
+
+  if (result.documentType === 'geotech-document') {
+    keyValue('Materials', String(result.materials.length));
+    keyValue('Parameters', String(result.parameters.length));
+  } else {
+    keyValue('Boreholes extracted', String(result.boreholes.length));
+  }
+
+  keyValue('Confidence', `${result.confidence}%`);
+  keyValue('Review required', result.reviewRequired ? 'Yes' : 'No');
+  keyValue('Auto proceed', result.canAutoProceed ? 'Yes' : 'No');
+
+  if (options.persistedReview) {
+    keyValue('Stored review', options.persistedReview.datasetName);
+  }
+
+  if (options.htmlDossier) {
+    keyValue('HTML dossier', options.htmlDossier.outputPath);
+    keyValue('Opened', options.htmlDossier.opened ? 'Yes' : 'No');
+  }
+
+  console.log('');
+}
+
+function formatIngestJobProgress(job: NormalizedIngestJobRecord): string {
+  const knownPageCount = job.pageCounts.completed + job.pageCounts.failed + job.pageCounts.pending;
+  const totalPages = Math.max(job.source.totalPages, knownPageCount, 1);
+  const resolvedPages = Math.min(totalPages, job.pageCounts.completed + job.pageCounts.failed);
+  const pendingPages = Math.max(job.pageCounts.pending, totalPages - resolvedPages);
+  const failedText = job.pageCounts.failed > 0 ? `, ${job.pageCounts.failed} failed` : '';
+  const segments = job.segmentation?.segments ?? [];
+  const segmentText = segments.length > 0
+    ? `, ${segments.filter((segment) => segment.status === 'completed' || segment.status === 'failed').length}/${segments.length} segments resolved`
+    : '';
+
+  return `Ingest progress: ${resolvedPages}/${totalPages} pages resolved (${job.pageCounts.completed} completed${failedText}, ${pendingPages} pending${segmentText}) - ${job.status}`;
+}
+
+function isWaitTimeoutError(err: unknown, jobId: string): boolean {
+  return err instanceof Error
+    && err.message.includes(`Timed out while waiting for persisted ingest job "${jobId}"`);
+}
+
+async function waitForPersistedIngestJobWithLiveProgress(
+  jobId: string,
+  flags: { json?: boolean; quiet?: boolean },
+): Promise<Awaited<ReturnType<typeof waitForPersistedIngestJob>>> {
+  if (flags.json || flags.quiet) {
+    return waitForPersistedIngestJob(jobId);
+  }
+
+  info(`Waiting for ingest job ${jobId} to finish...`);
+  let lastProgress = '';
+
+  while (true) {
+    try {
+      const record = await waitForPersistedIngestJob(jobId, { pollMs: 250, timeoutMs: 1000 });
+      const normalized = normalizeIngestJobRecord(record);
+      if (normalized) {
+        const progress = formatIngestJobProgress(normalized);
+        if (progress !== lastProgress) {
+          info(progress);
+        }
+      }
+      return record;
+    } catch (err) {
+      if (!isWaitTimeoutError(err, jobId)) {
+        throw err;
+      }
+
+      const record = loadPersistedIngestJob(jobId);
+      const normalized = normalizeIngestJobRecord(record);
+      if (!normalized) {
+        continue;
+      }
+
+      const progress = formatIngestJobProgress(normalized);
+      if (progress !== lastProgress) {
+        info(progress);
+        lastProgress = progress;
+      }
+    }
+  }
+}
+
 export function registerIngestCommand(program: Command): void {
   const cmd = new Command('ingest')
     .description('Extract structured geotechnical data from image/PDF documents')
@@ -1720,11 +1840,13 @@ export function registerIngestCommand(program: Command): void {
     .option('--page-range <start:end>', 'Restrict PDF ingest to a contiguous page range, for example 61:102')
     .option('--borehole-id <id>', 'Override borehole ID for a single continuous borehole log')
     .option('--project <id>', 'Persist the ingest review into a stored project')
+    .option('--background', 'Create a resumable ingest job and return immediately')
     .action(async (filePath, opts) => {
       const flags = getGlobalFlags(opts);
       const outputFormat = resolveIngestPresentationFormat((opts as { format?: unknown }).format);
       assertIngestPresentationMode(flags, outputFormat);
       const wantsHtmlDossier = shouldRenderHtmlDossier(outputFormat, flags.output);
+      const runJobInBackground = Boolean((opts as { background?: unknown }).background) || flags.json || flags.quiet;
       const documentType = String(opts.type ?? 'borehole-log').toLowerCase();
       const supportedTypes = new Set(['borehole-log', 'geotech-document']);
 
@@ -1769,6 +1891,11 @@ export function registerIngestCommand(program: Command): void {
             ? inspectPdfDocument(filePath)
             : null;
         const fullInspection = inspection && inspection.totalPages > 0 ? inspection : null;
+        if (file.kind === 'pdf' && countedPdfPages == null && !fullInspection && !selectedPageRange) {
+          throw new Error(
+            'Could not determine the PDF page count. The file may be encrypted, damaged, or use an unsupported PDF structure.',
+          );
+        }
         if (selectedPageRange && fullInspection && selectedPageRange.endPage > fullInspection.totalPages) {
           throw new Error(`--page-range ${selectedPageRange.startPage}:${selectedPageRange.endPage} exceeds the PDF page count (${fullInspection.totalPages}).`);
         }
@@ -1934,7 +2061,7 @@ export function registerIngestCommand(program: Command): void {
         }
 
         if (shouldRunAsJob) {
-          if (wantsHtmlDossier && flags.output) {
+          if (runJobInBackground && wantsHtmlDossier) {
             throw new Error(
               'HTML ingest dossiers are generated from completed results. Start the job first, then run geotech ingest wait <jobId> --format html --output <file>.',
             );
@@ -1944,6 +2071,7 @@ export function registerIngestCommand(program: Command): void {
             documentType: documentType as 'borehole-log' | 'geotech-document',
             filePath,
             inspection: effectiveInspection,
+            totalPagesFallback: totalPages,
             config,
             projectId: opts.project as string | undefined,
             overrideBoreholeId: opts.boreholeId as string | undefined,
@@ -1958,22 +2086,69 @@ export function registerIngestCommand(program: Command): void {
             return;
           }
 
-          if (normalizedJob) {
+          if (runJobInBackground && normalizedJob && !flags.quiet) {
             renderIngestJobRecord(normalizedJob, {
               title: 'Geotechnical Ingest Job Started',
               includeCommands: true,
             });
           }
 
-          if (!flags.json && segmentationSummary?.segments?.length) {
+          if (runJobInBackground && segmentationSummary?.segments?.length && !flags.quiet) {
             info(
               `Hosted-beta best-result window is ${HOSTED_BETA_EFFECTIVE_PAGE_LIMIT} effective pages; processing as linked segments ${segmentationSummary.segments.map((segment) => `${segment.startPage}-${segment.endPage}`).join(' and ')}.`,
             );
           }
 
-          if (flags.output) {
+          if (runJobInBackground && flags.output) {
             writeFileSync(flags.output, JSON.stringify(job, null, 2));
-            success(`Job details saved to ${flags.output}`);
+            if (!flags.quiet) {
+              success(`Job details saved to ${flags.output}`);
+            }
+          }
+
+          if (runJobInBackground) {
+            return;
+          }
+
+          const waitedRecord = await waitForPersistedIngestJobWithLiveProgress(job.jobId, flags);
+          const completedJob = normalizeIngestJobRecord(waitedRecord);
+          if (!completedJob) {
+            throw new Error(`Persisted ingest job "${job.jobId}" could not be normalized.`);
+          }
+
+          if (completedJob.status !== 'completed' || !completedJob.result?.ingestResult) {
+            renderIngestJobRecord(completedJob, { title: 'Geotechnical Ingest Job Status', includeCommands: true });
+            throw new Error(`Persisted ingest job "${job.jobId}" finished with status "${completedJob.status}".`);
+          }
+
+          const completedResult = completedJob.result.ingestResult;
+          const persistedReview = completedJob.result.persistedReview
+            ? {
+                projectId: completedJob.request.projectId ?? 'Unknown',
+                datasetName: completedJob.result.persistedReview.datasetName,
+                reviewId: completedJob.result.persistedReview.reviewId,
+                createdAt: completedJob.result.persistedReview.createdAt,
+              }
+            : null;
+
+          if (wantsHtmlDossier) {
+            const htmlDossier = writeHtmlDossier(completedResult, {
+              outputPath: flags.output,
+              open: shouldOpenHtmlDossier(flags),
+              sourceLabel: completedResult.source.fileName ?? completedResult.source.filePath ?? completedJob.jobId,
+              storedReview: persistedReview,
+            });
+            renderCompactIngestResultSummary(completedResult, {
+              sourceLabel: completedResult.source.fileName ?? completedResult.source.filePath ?? completedJob.jobId,
+              persistedReview,
+              htmlDossier,
+            });
+          } else {
+            renderIngestJobResult(completedJob);
+            if (flags.output) {
+              writeFileSync(flags.output, JSON.stringify(completedJob.result, null, 2));
+              success(`Results saved to ${flags.output}`);
+            }
           }
           return;
         }
@@ -2103,6 +2278,7 @@ export function registerIngestCommand(program: Command): void {
         if (wantsHtmlDossier) {
           writeHtmlDossier(result, {
             outputPath: flags.output,
+            open: shouldOpenHtmlDossier(flags),
             sourceLabel: result.source.fileName ?? result.source.filePath ?? filePath,
             storedReview: persistedReviewDetails,
           });
@@ -2205,6 +2381,7 @@ export function registerIngestCommand(program: Command): void {
           const dossierDetails = buildPersistedReviewDossierDetails(record, resolvedProjectId);
           writeHtmlDossier(record.result, {
             outputPath: flags.output,
+            open: shouldOpenHtmlDossier(flags),
             sourceLabel: dossierDetails.sourceLabel,
             storedReview: dossierDetails.storedReview,
             approval: dossierDetails.approval,
@@ -2482,7 +2659,7 @@ export function registerIngestCommand(program: Command): void {
       const outputFormat = resolveIngestPresentationFormat(resolvedOpts.format);
       assertIngestPresentationMode(flags, outputFormat);
       const wantsHtmlDossier = shouldRenderHtmlDossier(outputFormat, flags.output);
-      const record = await waitForPersistedIngestJob(String(jobId));
+      const record = await waitForPersistedIngestJobWithLiveProgress(String(jobId), flags);
       const normalized = normalizeIngestJobRecord(record);
       if (!normalized) {
         throw new Error(`Persisted ingest job "${jobId}" could not be normalized.`);
@@ -2513,16 +2690,24 @@ export function registerIngestCommand(program: Command): void {
           }
         : null;
 
-      renderIngestJobResult(normalized);
       if (wantsHtmlDossier) {
-        writeHtmlDossier(completedResult, {
+        const htmlDossier = writeHtmlDossier(completedResult, {
           outputPath: flags.output,
+          open: shouldOpenHtmlDossier(flags),
           sourceLabel: completedResult.source.fileName ?? completedResult.source.filePath ?? normalized.jobId,
           storedReview: persistedReview,
         });
+        renderCompactIngestResultSummary(completedResult, {
+          sourceLabel: completedResult.source.fileName ?? completedResult.source.filePath ?? normalized.jobId,
+          persistedReview,
+          htmlDossier,
+        });
       } else if (flags.output) {
+        renderIngestJobResult(normalized);
         writeFileSync(flags.output, JSON.stringify(record.result, null, 2));
         success(`Results saved to ${flags.output}`);
+      } else {
+        renderIngestJobResult(normalized);
       }
     });
 
@@ -2590,17 +2775,25 @@ export function registerIngestCommand(program: Command): void {
             createdAt: normalized.result.persistedReview.createdAt,
           }
         : null;
-      renderIngestJobResult(normalized);
 
       if (wantsHtmlDossier) {
-        writeHtmlDossier(completedResult, {
+        const htmlDossier = writeHtmlDossier(completedResult, {
           outputPath: flags.output,
+          open: shouldOpenHtmlDossier(flags),
           sourceLabel: completedResult.source.fileName ?? completedResult.source.filePath ?? normalized.jobId,
           storedReview: persistedReview,
         });
+        renderCompactIngestResultSummary(completedResult, {
+          sourceLabel: completedResult.source.fileName ?? completedResult.source.filePath ?? normalized.jobId,
+          persistedReview,
+          htmlDossier,
+        });
       } else if (flags.output) {
+        renderIngestJobResult(normalized);
         writeFileSync(flags.output, JSON.stringify(result, null, 2));
         success(`Results saved to ${flags.output}`);
+      } else {
+        renderIngestJobResult(normalized);
       }
     });
 

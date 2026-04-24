@@ -428,8 +428,17 @@ function isPathWithin(targetPath: string, parentPath: string): boolean {
   return resolvedTarget === resolvedParent || resolvedTarget.startsWith(`${resolvedParent}\\`) || resolvedTarget.startsWith(`${resolvedParent}/`);
 }
 
+function isBundledSkillArchivePath(sourcePath: string): boolean {
+  const resolvedSource = resolve(sourcePath);
+  return getBundledSkillArchivePaths().some((archivePath) => resolve(archivePath) === resolvedSource);
+}
+
 function isTrustedSkillSourcePath(sourcePath: string): boolean {
   const resolvedSource = resolve(sourcePath);
+  if (isBundledSkillArchivePath(resolvedSource)) {
+    return true;
+  }
+
   const trustedRoots = [
     process.cwd(),
     getWorkspaceDir(),
@@ -841,6 +850,14 @@ export function validateInstalledSkill(name: string): SkillValidationResult {
 }
 
 export function importSkillsFromSource(sourcePath: string, options?: { force?: boolean }): SkillImportResult {
+  const resolvedInputSourcePath = resolve(sourcePath);
+  const trusted = isTrustedSkillSourcePath(resolvedInputSourcePath);
+  if (getSkillsRuntimeConfig().trustedOnly && !trusted) {
+    throw new Error(
+      `Skill import blocked: "${resolvedInputSourcePath}" is outside trusted strong-beta skill locations.`,
+    );
+  }
+
   return withPreparedSkillCandidates(sourcePath, ({
     resolvedSourcePath,
     sourceType,
@@ -850,13 +867,6 @@ export function importSkillsFromSource(sourcePath: string, options?: { force?: b
     if (!validation.valid) {
       const errors = validation.issues.filter((issue) => issue.severity === 'error');
       throw new Error(errors.map((issue) => issue.message).join(' '));
-    }
-
-    const trusted = isTrustedSkillSourcePath(sourcePath);
-    if (getSkillsRuntimeConfig().trustedOnly && !trusted) {
-      throw new Error(
-        `Skill import blocked: "${resolvedSourcePath}" is outside trusted strong-beta skill locations.`,
-      );
     }
 
     const sourceLabel = basename(resolvedSourcePath);

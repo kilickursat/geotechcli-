@@ -610,6 +610,39 @@ function validateMergedBorehole(result: BoreholeInterpretation): BoreholeValidat
   };
 }
 
+function sanitizeMergedBoreholeSptValues(result: BoreholeInterpretation): BoreholeInterpretation {
+  const warnings: string[] = [...result.warnings];
+  let changed = false;
+
+  const layers = result.layers.map((layer, index) => {
+    if (layer.sptN == null || layer.sptN <= 200) {
+      return layer;
+    }
+
+    changed = true;
+    warnings.push(
+      `Borehole ${result.boreholeId} layer ${index + 1} ignored implausible SPT N value (${layer.sptN}); it appears to be a standard/reference number rather than a blow count.`,
+    );
+    return {
+      ...layer,
+      sptN: null,
+      notes: uniqueStrings([
+        layer.notes,
+        `Ignored implausible SPT N value ${layer.sptN}.`,
+      ]).join(' ') || null,
+    };
+  });
+
+  return changed
+    ? {
+        ...result,
+        layers,
+        warnings: uniqueStrings(warnings),
+        canAutoProceed: false,
+      }
+    : result;
+}
+
 export function summarizeBoreholeIngestInspection(
   inspection: PdfDocumentInspection | null | undefined,
 ): BoreholeIngestInspectionSummary | null {
@@ -839,7 +872,8 @@ export async function ingestBoreholeLogDocument(
         group.pages,
         options.overrideBoreholeId ?? group.boreholeId ?? undefined,
       ),
-    );
+    )
+    .map(sanitizeMergedBoreholeSptValues);
   const boreholeValidationFeedback = mergedBoreholes.map((borehole) => validateMergedBorehole(borehole));
   const boreholes = mergedBoreholes.map((borehole, index) => {
     const validation = boreholeValidationFeedback[index];

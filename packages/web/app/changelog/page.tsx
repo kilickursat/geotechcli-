@@ -5,8 +5,21 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 const releases = [
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-04-23',
+    date: '2026-04-24',
     tag: `${GEOTECHCLI_VERSION} Release`,
+    changes: [
+      { type: 'fix', text: 'Fixed bundled strong-beta skills in global npm installs by trusting only first-party bundled-skill archives while keeping arbitrary outside ZIP imports blocked' },
+      { type: 'feat', text: 'Changed long PDF ingest to live-wait by default with visible page progress, elapsed time, heartbeat/status, and failure counts, plus --background for detached jobs' },
+      { type: 'feat', text: 'Made ingest HTML format save and open a browser dossier by default for run, wait, and result flows while --no-open keeps save-only automation clean' },
+      { type: 'fix', text: 'Hardened PDF ingest with page-count fallbacks, zero-page job rejection, retryable 524/upstream-timeout checkpoints, image-heavy concurrency control, and completed-partial resume retry behavior' },
+      { type: 'fix', text: 'Improved report extraction by preserving user-declared report intent, limiting borehole appendix dominance, and rejecting impossible SPT values from standards references while retaining warnings as evidence' },
+      { type: 'fix', text: 'Cleaned strong-beta drift across agent docs, handoff notes, changelog encoding, swarm final synthesis fallback, and effective config display for provider defaults' },
+    ],
+  },
+  {
+    version: '0.4.25',
+    date: '2026-04-23',
+    tag: '0.4.25 Release',
     changes: [
       { type: 'feat', text: 'Added hosted-beta long-PDF segmentation for geotechnical report ingest, using a 60 effective-page best-result window with linked sequential packets and one merged final result' },
       { type: 'feat', text: 'Added --page-range <start:end> to geotech ingest so targeted report subsets can be reviewed, rerun, and exported without processing the whole PDF' },

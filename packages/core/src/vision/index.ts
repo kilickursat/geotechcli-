@@ -44,14 +44,28 @@ function getHostedBetaVisionMaxTokens(
 // Vision retry helper — handles upstream empty-content failures
 // ---------------------------------------------------------------------------
 
-function isRecoverableVisionEmptyResponse(error: unknown): boolean {
+function isRecoverableVisionRetryResponse(error: unknown): boolean {
   const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
   return (
     message.includes('returned no content') ||
     message.includes('did not contain assistant text') ||
     message.includes('no completion choices') ||
-    message.includes('empty completion')
+    message.includes('empty completion') ||
+    message.includes('524') ||
+    message.includes('upstream request failed') ||
+    message.includes('upstream request timed out') ||
+    message.includes('upstream timeout') ||
+    message.includes('timed out') ||
+    message.includes('provider is busy') ||
+    message.includes('temporarily unavailable')
   );
+}
+
+async function waitForRecoverableVisionBackoff(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, 100);
+    timer.unref?.();
+  });
 }
 
 /**
@@ -96,9 +110,10 @@ async function visionWithRetry(
       return { text: r1.text, latencyMs: r1.latencyMs, usedFallback: false };
     }
   } catch (error) {
-    if (!isRecoverableVisionEmptyResponse(error)) {
+    if (!isRecoverableVisionRetryResponse(error)) {
       throw error;
     }
+    await waitForRecoverableVisionBackoff();
   }
 
   // Attempt 2: softer plain text prompt
@@ -119,7 +134,7 @@ async function visionWithRetry(
       };
     }
   } catch (error) {
-    if (!isRecoverableVisionEmptyResponse(error)) {
+    if (!isRecoverableVisionRetryResponse(error)) {
       throw error;
     }
   }
@@ -258,6 +273,7 @@ function extractBoreholeFallback(rawText: string, boreholeId?: string): {
   }
 
   const layers: Array<Record<string, unknown>> = [];
+  const warnings: string[] = [];
   const layerRegex = /(\d+(?:\.\d+)?)\s*(?:-|to)\s*(\d+(?:\.\d+)?)\s*m[:\s-]*([^\n.;]+)/gi;
   for (const match of rawText.matchAll(layerRegex)) {
     const description = match[3]?.trim() ?? '';
@@ -267,7 +283,7 @@ function extractBoreholeFallback(rawText: string, boreholeId?: string): {
       depthTo: Number(match[2]),
       description,
       uscsSymbol: inferUscsFromText(description),
-      sptN: sptMatch ? Number(sptMatch[1]) : null,
+      sptN: sptMatch ? sanitizeSptNValue(Number(sptMatch[1]), warnings, description) : null,
       waterContent: null,
       notes: null,
     });
@@ -297,7 +313,10 @@ function extractBoreholeFallback(rawText: string, boreholeId?: string): {
   return {
     value,
     baseStatus: 'partial',
-    warnings: ['Vision model returned narrative text; extracted partial structured borehole fields.'],
+    warnings: [
+      'Vision model returned narrative text; extracted partial structured borehole fields.',
+      ...warnings,
+    ],
   };
 }
 
@@ -697,7 +716,9 @@ function isHostedBetaTemporarilyUnavailable(error: unknown): boolean {
     message.includes('provider is busy') ||
     message.includes('rate limit') ||
     message.includes('retry in about') ||
+    message.includes('524') ||
     message.includes('timed out') ||
+    message.includes('upstream timeout') ||
     message.includes('upstream request failed')
   );
 }
@@ -896,6 +917,33 @@ export interface BoreholeLayer {
   sptN: number | null;
   waterContent: number | null;
   notes: string | null;
+}
+
+function sanitizeSptNValue(
+  value: number | null,
+  warnings: string[],
+  context?: string | null,
+): number | null {
+  if (value == null) {
+    return null;
+  }
+
+  if (value > 200) {
+    warnings.push(
+      `Ignored implausible SPT N value (${value}); it appears to be a standard/reference number rather than a blow count${context ? ` near "${context.slice(0, 80)}"` : ''}.`,
+    );
+    return null;
+  }
+
+  return value;
+}
+
+function readSptNValue(source: Record<string, unknown>, warnings: string[], context?: string | null): number | null {
+  if (source.sptN == null) {
+    return null;
+  }
+
+  return sanitizeSptNValue(readNumber(source, 'sptN', warnings), warnings, context);
 }
 
 export interface BoreholeLogContext {
@@ -1107,9 +1155,10 @@ async function textWithRetry(
       return { text: first.text, latencyMs: first.latencyMs, usedFallback: false };
     }
   } catch (error) {
-    if (!isRecoverableVisionEmptyResponse(error)) {
+    if (!isRecoverableVisionRetryResponse(error)) {
       throw error;
     }
+    await waitForRecoverableVisionBackoff();
   }
 
   try {
@@ -1128,7 +1177,7 @@ async function textWithRetry(
       };
     }
   } catch (error) {
-    if (!isRecoverableVisionEmptyResponse(error)) {
+    if (!isRecoverableVisionRetryResponse(error)) {
       throw error;
     }
   }
@@ -1543,7 +1592,7 @@ async function interpretBoreholeLogTextWithContext(
       depthTo: readNumber(layer, 'depthTo', layerWarnings),
       description: readString(layer, 'description', layerWarnings),
       uscsSymbol: readString(layer, 'uscsSymbol', []),
-      sptN: layer.sptN == null ? null : readNumber(layer, 'sptN', layerWarnings),
+      sptN: readSptNValue(layer, layerWarnings, readString(layer, 'description', [])),
       waterContent:
         layer.waterContent == null ? null : readNumber(layer, 'waterContent', layerWarnings),
       notes: readString(layer, 'notes', []),
@@ -1660,7 +1709,7 @@ export async function interpretBoreholeLogWithContext(
       depthTo: readNumber(layer, 'depthTo', layerWarnings),
       description: readString(layer, 'description', layerWarnings),
       uscsSymbol: readString(layer, 'uscsSymbol', []),
-      sptN: layer.sptN == null ? null : readNumber(layer, 'sptN', layerWarnings),
+      sptN: readSptNValue(layer, layerWarnings, readString(layer, 'description', [])),
       waterContent:
         layer.waterContent == null ? null : readNumber(layer, 'waterContent', layerWarnings),
       notes: readString(layer, 'notes', []),

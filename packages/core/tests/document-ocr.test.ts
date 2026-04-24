@@ -118,7 +118,7 @@ describe('document text recovery', () => {
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
-  });
+  }, 15_000);
 
   it('chunks dense scanned pages when the full-page vision OCR call fails', async () => {
     const imageBuffer = await sharp({

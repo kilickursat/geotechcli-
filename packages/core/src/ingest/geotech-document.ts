@@ -334,6 +334,25 @@ function mergeParameters(results: GeotechDocumentInsight[]): GeotechParameterObs
   return parameters;
 }
 
+function sanitizeImplausibleSptParameters(parameters: GeotechParameterObservation[]): {
+  parameters: GeotechParameterObservation[];
+  warnings: string[];
+} {
+  const warnings: string[] = [];
+  const sanitized = parameters.filter((parameter) => {
+    if (parameter.name.toLowerCase() !== 'sptn' || parameter.numericValue == null || parameter.numericValue <= 200) {
+      return true;
+    }
+
+    warnings.push(
+      `Ignored implausible SPT N value (${parameter.valueText}); it appears to be a standard/reference number rather than a blow count.`,
+    );
+    return false;
+  });
+
+  return { parameters: sanitized, warnings };
+}
+
 function resolvePageConcurrency(
   config: LLMConfig,
   requestedConcurrency?: number,
@@ -757,6 +776,27 @@ function isGenericDocumentTitle(value: string | null | undefined): boolean {
   return /\b(cover sheet|cover page|table of contents|contents|appendix|drawing register|revision history|project information)\b/i.test(value);
 }
 
+function isReportDocumentClass(value: string | null | undefined): boolean {
+  const normalized = value?.trim().toLowerCase();
+  return normalized === 'site-investigation-report'
+    || normalized === 'geotechnical-investigation'
+    || normalized === 'geotechnical-document';
+}
+
+function hasDocumentLevelReportCue(chunk: PreparedGeotechDocumentChunk): boolean {
+  const signalText = [
+    chunk.title,
+    chunk.summary,
+    chunk.text,
+    chunk.headingAncestry.join(' '),
+  ]
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .join(' ')
+    .toLowerCase();
+
+  return /\b(geotechnical report|site investigation|subsurface investigation|executive summary|foundation recommendations?|scope of work|ground model|recommendations?)\b/.test(signalText);
+}
+
 function chooseDocumentClass(chunks: PreparedGeotechDocumentChunk[]): string | null {
   const scores = new Map<string, number>();
   const firstMeaningfulClass = chunks.find((chunk) =>
@@ -792,6 +832,41 @@ function chooseDocumentClass(chunks: PreparedGeotechDocumentChunk[]): string | n
   const ranked = [...scores.entries()].sort((left, right) => right[1] - left[1]);
   if (ranked.length === 0) {
     return firstMeaningfulClass;
+  }
+
+  const hasBoreholeAppendixClass = scores.has('borehole-log');
+  const firstMeaningfulReportChunk = chunks.find((chunk) =>
+    chunk.sectionType !== 'administrative'
+    && chunk.sectionType !== 'visual-appendix'
+    && isReportDocumentClass(chunk.documentClass)
+  );
+  if (hasBoreholeAppendixClass && firstMeaningfulReportChunk) {
+    const reportClass = firstMeaningfulReportChunk.documentClass?.trim() ?? firstMeaningfulClass;
+    const reportScore = [...scores.entries()]
+      .filter(([documentClass]) => isReportDocumentClass(documentClass))
+      .reduce((sum, [, score]) => sum + score, 0);
+    const boreholeScore = scores.get('borehole-log') ?? 0;
+    if (
+      reportClass
+      && (
+        firstMeaningfulClass === reportClass
+        || hasDocumentLevelReportCue(firstMeaningfulReportChunk)
+        || reportScore >= Math.max(18, boreholeScore * 0.15)
+      )
+    ) {
+      return reportClass;
+    }
+  }
+
+  if (
+    hasBoreholeAppendixClass
+    && chunks.some((chunk) =>
+      chunk.sectionType !== 'administrative'
+      && chunk.sectionType !== 'visual-appendix'
+      && hasDocumentLevelReportCue(chunk)
+    )
+  ) {
+    return 'geotechnical-document';
   }
 
   if (
@@ -1139,7 +1214,7 @@ function deriveDocumentFindings(
 
   for (const failure of pageFailures) {
     const pageNumber = Number((failure.match(/^Page (\d+):/) ?? [])[1]);
-    const isTimeout = /timed out/i.test(failure);
+    const isTimeout = /timed out|timeout|\b524\b|upstream request failed/i.test(failure);
     const inspectionPage = Number.isFinite(pageNumber) ? inspection?.pages[pageNumber - 1] : undefined;
     const previousInspectionPage = Number.isFinite(pageNumber) ? inspection?.pages[pageNumber - 2] : undefined;
     const nextInspectionPage = Number.isFinite(pageNumber) ? inspection?.pages[pageNumber] : undefined;
@@ -1418,7 +1493,8 @@ export async function ingestGeotechDocument(
 
   const materials = mergeMaterials(pageResults);
   const classifications = mergeClassifications(pageResults);
-  const parameters = mergeParameters(pageResults);
+  const parameterSanitization = sanitizeImplausibleSptParameters(mergeParameters(pageResults));
+  const parameters = parameterSanitization.parameters;
   const risks = uniqueStrings(pageResults.flatMap((result) => result.risks));
   const recommendations = uniqueStrings(pageResults.flatMap((result) => result.recommendations));
   const summaries = uniqueStrings(pageResults.map((result) => result.summary));
@@ -1459,6 +1535,7 @@ export async function ingestGeotechDocument(
   const allPagesParsed = pageAudits.length > 0 && pageAudits.every((audit) => audit.parseStatus === 'parsed');
   const warnings = uniqueStrings([
     ...documentWarnings,
+    ...parameterSanitization.warnings,
     ...pageResults.flatMap((result) => result.warnings),
   ]);
 
@@ -1501,6 +1578,11 @@ export async function ingestGeotechDocument(
     parseStatus,
     confidence,
     reviewRequired,
-    canAutoProceed: !reviewRequired && parseStatus === 'parsed' && confidence >= 70 && allPagesParsed && pageFailures.length === 0,
+    canAutoProceed: !reviewRequired
+      && parseStatus === 'parsed'
+      && confidence >= 70
+      && allPagesParsed
+      && pageFailures.length === 0
+      && parameterSanitization.warnings.length === 0,
   };
 }

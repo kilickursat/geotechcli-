@@ -1,10 +1,9 @@
-import { spawn } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import type { ChartSpec, VisualizationSource } from '../util/viz.js';
+import { openFileInBrowser } from './browser.js';
 
 const require = createRequire(import.meta.url);
 
@@ -153,43 +152,6 @@ function getOutputPath(sourceName: string, outputPath?: string): string {
 
   const tempDir = mkdtempSync(join(tmpdir(), 'geotechcli-plot-'));
   return join(tempDir, `${slugify(sourceName)}.html`);
-}
-
-function openInBrowser(filePath: string): boolean {
-  if (process.env.GEOTECHCLI_PLOT_NO_OPEN === '1') {
-    return false;
-  }
-
-  const target = pathToFileURL(filePath).href;
-
-  try {
-    if (process.platform === 'win32') {
-      const child = spawn('cmd', ['/c', 'start', '', target], {
-        detached: true,
-        stdio: 'ignore',
-      });
-      child.unref();
-      return true;
-    }
-
-    if (process.platform === 'darwin') {
-      const child = spawn('open', [target], {
-        detached: true,
-        stdio: 'ignore',
-      });
-      child.unref();
-      return true;
-    }
-
-    const child = spawn('xdg-open', [target], {
-      detached: true,
-      stdio: 'ignore',
-    });
-    child.unref();
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function buildHtml(payload: BrowserPayload): string {
@@ -952,7 +914,9 @@ export function renderInteractiveVisualization(
   mkdirSync(dirname(outputPath), { recursive: true });
   writeFileSync(outputPath, html, 'utf-8');
 
-  const opened = options.open === false ? false : openInBrowser(outputPath);
+  const opened = options.open === false
+    ? false
+    : openFileInBrowser(outputPath, { disabledEnvVar: 'GEOTECHCLI_PLOT_NO_OPEN' });
 
   return {
     htmlPath: outputPath,

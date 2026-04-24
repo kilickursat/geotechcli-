@@ -51,6 +51,10 @@ const uiMocks = vi.hoisted(() => ({
   warn: vi.fn(),
 }));
 
+const browserMocks = vi.hoisted(() => ({
+  openFileInBrowser: vi.fn(),
+}));
+
 const fsMocks = vi.hoisted(() => ({
   writeFileSync: vi.fn(),
 }));
@@ -70,6 +74,7 @@ vi.mock('@geotechcli/core', () => ({
     { key: 'quiet', option: '--quiet', description: 'quiet' },
     { key: 'dryRun', option: '--dry-run', description: 'dry run' },
     { key: 'output', option: '--output <file>', description: 'output' },
+    { key: 'noOpen', option: '--no-open', description: 'no open' },
   ],
   ingestBoreholeLogDocument: coreMocks.ingestBoreholeLogDocument,
   ingestGeotechDocument: coreMocks.ingestGeotechDocument,
@@ -117,6 +122,10 @@ vi.mock('../src/ui/terminal.js', () => ({
   error: uiMocks.error,
   info: uiMocks.info,
   warn: uiMocks.warn,
+}));
+
+vi.mock('../src/ui/browser.js', () => ({
+  openFileInBrowser: browserMocks.openFileInBrowser,
 }));
 
 async function loadRegisterIngestCommand(): Promise<(program: Command) => void> {
@@ -221,6 +230,8 @@ describe('registerIngestCommand', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    browserMocks.openFileInBrowser.mockReset();
+    browserMocks.openFileInBrowser.mockReturnValue(false);
     visionMocks.countPdfPages.mockReset();
     visionMocks.estimateHostedBetaVisionBodyBytes.mockReturnValue(1024);
     visionMocks.formatByteSize.mockImplementation((value: number) => `${value} B`);
@@ -455,6 +466,7 @@ describe('registerIngestCommand', () => {
       'Geotechnical-Report.pdf',
       '--type',
       'geotech-document',
+      '--background',
     ], { from: 'user' });
 
     expect(coreMocks.createAndStartPersistedIngestJob).toHaveBeenCalledWith(expect.objectContaining({
@@ -636,6 +648,106 @@ describe('registerIngestCommand', () => {
     expect(coreMocks.ingestBoreholeLogDocument).not.toHaveBeenCalled();
   });
 
+  it('live-waits for large PDF ingest jobs by default in plain mode', async () => {
+    const registerIngestCommand = await loadRegisterIngestCommand();
+    const program = new Command();
+    const inspection = {
+      totalPages: 6,
+      pages: Array.from({ length: 6 }, (_, index) => ({
+        pageNumber: index + 1,
+        classification: 'digital-text',
+      })),
+    };
+    const startedJob = makePersistedIngestJobRecord();
+    const completedResult = {
+      ingestResult: makeBoreholeIngestResult(),
+    };
+    const completedJob = makePersistedIngestJobRecord({
+      status: 'completed',
+      completedAt: '2026-04-22T00:02:00.000Z',
+      result: completedResult,
+      checkpoints: {
+        pages: Array.from({ length: 6 }, (_, index) => ({
+          pageNumber: index + 1,
+          status: 'completed',
+          classification: 'digital-text',
+          sourceKind: 'pdf-page',
+          weight: 1,
+          attempts: 1,
+          updatedAt: '2026-04-22T00:01:00.000Z',
+        })),
+      },
+    });
+
+    visionMocks.readVisionInput.mockReturnValue({
+      base64: 'pdf-base64',
+      mimeType: 'application/pdf',
+      fileBytes: 2048,
+      filePath: 'large.pdf',
+      ext: 'pdf',
+      kind: 'pdf',
+    });
+    coreMocks.inspectPdfDocument.mockReturnValue(inspection);
+    coreMocks.computeWeightedPdfPageCost.mockReturnValue(6);
+    coreMocks.shouldUseAsyncIngestJob.mockReturnValue(true);
+    coreMocks.createAndStartPersistedIngestJob.mockReturnValue(startedJob);
+    coreMocks.waitForPersistedIngestJob.mockResolvedValue(completedJob);
+
+    registerIngestCommand(program);
+
+    await program.parseAsync(['ingest', 'large.pdf'], { from: 'user' });
+
+    expect(coreMocks.createAndStartPersistedIngestJob).toHaveBeenCalledWith(expect.objectContaining({
+      documentType: 'borehole-log',
+      filePath: 'large.pdf',
+      inspection,
+    }));
+    expect(coreMocks.waitForPersistedIngestJob).toHaveBeenCalledWith(startedJob.jobId, {
+      pollMs: 250,
+      timeoutMs: 1000,
+    });
+    expect(uiMocks.info).toHaveBeenCalledWith(`Waiting for ingest job ${startedJob.jobId} to finish...`);
+    expect(uiMocks.heading).toHaveBeenCalledWith('Geotechnical Ingest Result');
+    expect(uiMocks.renderJSON).not.toHaveBeenCalled();
+  });
+
+  it('keeps large PDF ingest jobs detached when --background is used', async () => {
+    const registerIngestCommand = await loadRegisterIngestCommand();
+    const program = new Command();
+    const inspection = {
+      totalPages: 6,
+      pages: Array.from({ length: 6 }, (_, index) => ({
+        pageNumber: index + 1,
+        classification: 'digital-text',
+      })),
+    };
+    const jobRecord = makePersistedIngestJobRecord();
+
+    visionMocks.readVisionInput.mockReturnValue({
+      base64: 'pdf-base64',
+      mimeType: 'application/pdf',
+      fileBytes: 2048,
+      filePath: 'large.pdf',
+      ext: 'pdf',
+      kind: 'pdf',
+    });
+    coreMocks.inspectPdfDocument.mockReturnValue(inspection);
+    coreMocks.shouldUseAsyncIngestJob.mockReturnValue(true);
+    coreMocks.createAndStartPersistedIngestJob.mockReturnValue(jobRecord);
+
+    registerIngestCommand(program);
+
+    await program.parseAsync(['ingest', 'large.pdf', '--background'], { from: 'user' });
+
+    expect(coreMocks.createAndStartPersistedIngestJob).toHaveBeenCalledWith(expect.objectContaining({
+      documentType: 'borehole-log',
+      filePath: 'large.pdf',
+      inspection,
+    }));
+    expect(coreMocks.waitForPersistedIngestJob).not.toHaveBeenCalled();
+    expect(uiMocks.heading).toHaveBeenCalledWith('Geotechnical Ingest Job Started');
+  });
+
   it('loads persisted ingest job status in JSON mode', async () => {
     const registerIngestCommand = await loadRegisterIngestCommand();
     const program = new Command();
@@ -700,6 +812,132 @@ describe('registerIngestCommand', () => {
     expect(uiMocks.renderJSON).toHaveBeenCalledWith(completedResult);
   });
 
+  it('shows live progress while waiting for ingest jobs in plain mode', async () => {
+    const registerIngestCommand = await loadRegisterIngestCommand();
+    const program = new Command();
+    const completedResult = {
+      ingestResult: makeBoreholeIngestResult({
+        source: {
+          filePath: 'large.pdf',
+          fileName: 'large.pdf',
+          inputKind: 'pdf',
+          totalPages: 2,
+          successfulPages: 2,
+          failedPages: 0,
+        },
+      }),
+    };
+    const runningJob = makePersistedIngestJobRecord({
+      source: {
+        filePath: 'large.pdf',
+        fileName: 'large.pdf',
+        inputKind: 'pdf',
+        totalPages: 2,
+        weightedPageCost: 2,
+      },
+    });
+    const completedJob = makePersistedIngestJobRecord({
+      status: 'completed',
+      completedAt: '2026-04-22T00:02:00.000Z',
+      result: completedResult,
+      source: {
+        filePath: 'large.pdf',
+        fileName: 'large.pdf',
+        inputKind: 'pdf',
+        totalPages: 2,
+        weightedPageCost: 2,
+      },
+      checkpoints: {
+        pages: [
+          {
+            pageNumber: 1,
+            status: 'completed',
+            classification: 'digital-text',
+            sourceKind: 'pdf-page',
+            weight: 1,
+            attempts: 1,
+            updatedAt: '2026-04-22T00:01:00.000Z',
+          },
+          {
+            pageNumber: 2,
+            status: 'completed',
+            classification: 'digital-text',
+            sourceKind: 'pdf-page',
+            weight: 1,
+            attempts: 1,
+            updatedAt: '2026-04-22T00:01:30.000Z',
+          },
+        ],
+      },
+    });
+
+    coreMocks.loadPersistedIngestJob.mockReturnValue(runningJob);
+    coreMocks.waitForPersistedIngestJob
+      .mockRejectedValueOnce(new Error(`Timed out while waiting for persisted ingest job "${runningJob.jobId}".`))
+      .mockResolvedValueOnce(completedJob);
+
+    registerIngestCommand(program);
+
+    await program.parseAsync(['ingest', 'wait', runningJob.jobId], { from: 'user' });
+
+    expect(coreMocks.waitForPersistedIngestJob).toHaveBeenNthCalledWith(1, runningJob.jobId, {
+      pollMs: 250,
+      timeoutMs: 1000,
+    });
+    expect(coreMocks.loadPersistedIngestJob).toHaveBeenCalledWith(runningJob.jobId);
+    expect(uiMocks.info).toHaveBeenCalledWith(`Waiting for ingest job ${runningJob.jobId} to finish...`);
+    expect(uiMocks.info).toHaveBeenCalledWith(expect.stringContaining('Ingest progress: 1/2 pages resolved'));
+    expect(uiMocks.heading).toHaveBeenCalledWith('Geotechnical Ingest Result');
+  });
+
+  it('writes and opens a compact HTML dossier when waiting for a completed ingest job', async () => {
+    const registerIngestCommand = await loadRegisterIngestCommand();
+    const program = new Command();
+    const completedResult = {
+      ingestResult: makeBoreholeIngestResult(),
+      persistedReview: {
+        datasetName: 'ingest-review:latest',
+        reviewId: 'review-1',
+        createdAt: '2026-04-22T00:02:00.000Z',
+      },
+    };
+    const jobRecord = makePersistedIngestJobRecord({
+      status: 'completed',
+      completedAt: '2026-04-22T00:02:00.000Z',
+      result: completedResult,
+      request: {
+        projectId: 'demo-project',
+      },
+      checkpoints: {
+        pages: Array.from({ length: 6 }, (_, index) => ({
+          pageNumber: index + 1,
+          status: 'completed',
+          classification: 'digital-text',
+          sourceKind: 'pdf-page',
+          weight: 1,
+          attempts: 1,
+          updatedAt: '2026-04-22T00:01:00.000Z',
+        })),
+      },
+    });
+
+    browserMocks.openFileInBrowser.mockReturnValue(true);
+    coreMocks.waitForPersistedIngestJob.mockResolvedValue(jobRecord);
+
+    registerIngestCommand(program);
+
+    await program.parseAsync(['ingest', 'wait', jobRecord.jobId, '--format', 'html'], { from: 'user' });
+
+    expect(fsMocks.writeFileSync).toHaveBeenCalledWith(
+      'sample.ingest-dossier.html',
+      '<!doctype html><html><body>Dossier</body></html>',
+    );
+    expect(browserMocks.openFileInBrowser).toHaveBeenCalledWith('sample.ingest-dossier.html');
+    expect(uiMocks.success).toHaveBeenCalledWith('HTML ingest dossier opened in your browser: sample.ingest-dossier.html');
+    expect(uiMocks.keyValue).toHaveBeenCalledWith('HTML dossier', 'sample.ingest-dossier.html');
+    expect(uiMocks.renderTable).not.toHaveBeenCalled();
+  });
+
   it('resumes a persisted ingest job in JSON mode', async () => {
     const registerIngestCommand = await loadRegisterIngestCommand();
     const program = new Command();
@@ -745,6 +983,53 @@ describe('registerIngestCommand', () => {
     expect(coreMocks.loadPersistedIngestJob).toHaveBeenCalledWith(jobRecord.jobId);
     expect(coreMocks.loadPersistedIngestJobResult).toHaveBeenCalledWith(jobRecord.jobId);
     expect(uiMocks.renderJSON).toHaveBeenCalledWith(completedResult);
+  });
+
+  it('writes a compact HTML dossier for persisted job results and honors --no-open', async () => {
+    const registerIngestCommand = await loadRegisterIngestCommand();
+    const program = new Command();
+    const completedResult = {
+      ingestResult: makeBoreholeIngestResult(),
+      persistedReview: {
+        datasetName: 'ingest-review:latest',
+        reviewId: 'review-1',
+        createdAt: '2026-04-22T00:02:00.000Z',
+      },
+    };
+    const jobRecord = makePersistedIngestJobRecord({
+      status: 'completed',
+      completedAt: '2026-04-22T00:02:00.000Z',
+      result: completedResult,
+      request: {
+        projectId: 'demo-project',
+      },
+    });
+
+    coreMocks.loadPersistedIngestJob.mockReturnValue(jobRecord);
+    coreMocks.loadPersistedIngestJobResult.mockReturnValue(completedResult);
+
+    registerIngestCommand(program);
+
+    await program.parseAsync([
+      'ingest',
+      'result',
+      jobRecord.jobId,
+      '--format',
+      'html',
+      '--output',
+      'job-result.html',
+      '--no-open',
+    ], { from: 'user' });
+
+    expect(fsMocks.writeFileSync).toHaveBeenCalledWith(
+      'job-result.html',
+      '<!doctype html><html><body>Dossier</body></html>',
+    );
+    expect(browserMocks.openFileInBrowser).not.toHaveBeenCalled();
+    expect(uiMocks.success).toHaveBeenCalledWith('HTML ingest dossier saved to job-result.html');
+    expect(uiMocks.keyValue).toHaveBeenCalledWith('HTML dossier', 'job-result.html');
+    expect(uiMocks.keyValue).toHaveBeenCalledWith('Opened', 'No');
+    expect(uiMocks.renderTable).not.toHaveBeenCalled();
   });
 
   it('cancels a persisted ingest job in JSON mode', async () => {

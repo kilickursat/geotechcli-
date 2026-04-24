@@ -10,6 +10,7 @@ export interface GlobalFlags {
   quiet: boolean;
   dryRun: boolean;
   output?: string;
+  noOpen?: boolean;
   noColor: boolean;
 }
 
@@ -31,13 +32,16 @@ export function getGlobalFlags(opts: Record<string, unknown>): GlobalFlags {
     plot: Boolean(opts.plot),
     saveHtml: opts.saveHtml as string | undefined,
     openInteractivePlot:
-      typeof opts.open === 'boolean'
-        ? opts.open
-        : undefined,
+      opts.open === false || opts.noOpen === true
+        ? false
+        : typeof opts.open === 'boolean'
+          ? opts.open
+          : undefined,
     verbose: Boolean(opts.verbose),
     quiet: Boolean(opts.quiet),
     dryRun: Boolean(opts.dryRun),
     output: opts.output as string | undefined,
+    noOpen: Boolean(opts.noOpen),
     noColor: Boolean(opts.noColor),
   };
 }

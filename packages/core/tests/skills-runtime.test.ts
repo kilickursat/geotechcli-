@@ -2,7 +2,7 @@ import { copyFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   createProject,
@@ -42,6 +42,8 @@ describe('Skills runtime', () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
+
     if (previousConfigDir === undefined) {
       delete process.env.GEOTECHCLI_CONFIG_DIR;
     } else {
@@ -74,11 +76,20 @@ describe('Skills runtime', () => {
   });
 
   it('bootstraps the packaged bundled skill catalog into an empty config directory', () => {
-    const installed = ensureBundledSkillsInstalled();
+    const outsideCwd = mkdtempSync(join(tmpdir(), 'geotechcli-outside-cwd-'));
+    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(outsideCwd);
 
-    expect(installed.length).toBeGreaterThan(40);
-    expect(installed.map((skill) => skill.name)).toContain('shallow-foundation-option-screening');
-    expect(installed.map((skill) => skill.name)).toContain('tunnel-engineering-reviewer');
+    try {
+      const installed = ensureBundledSkillsInstalled();
+
+      expect(installed.length).toBeGreaterThan(40);
+      expect(installed.every((skill) => skill.trusted)).toBe(true);
+      expect(installed.map((skill) => skill.name)).toContain('shallow-foundation-option-screening');
+      expect(installed.map((skill) => skill.name)).toContain('tunnel-engineering-reviewer');
+    } finally {
+      cwdSpy.mockRestore();
+      rmSync(outsideCwd, { recursive: true, force: true });
+    }
   }, 60_000);
 
   it('validates and imports a wave-2 container archive with nested skill zips', () => {

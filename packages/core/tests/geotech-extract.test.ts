@@ -894,6 +894,34 @@ describe('ingestBoreholeLogDocument', () => {
     expect(result.reviewReasons.join(' ')).toMatch(/implausible SPT N/i);
   });
 
+  it('sanitizes standards-reference numbers misread as SPT values while preserving warnings', async () => {
+    const result = await ingestBoreholeLogDocument({
+      config: { provider: 'hosted-beta', apiKey: '', timeout: 1000 },
+      source: { filePath: 'spt-standard.pdf', fileName: 'spt-standard.pdf', inputKind: 'pdf' },
+      inspection: createPdfInspection(['digital-text']),
+      pages: [createPageInput(1, 1)],
+      interpretPageWithContext: vi.fn(async () => createInterpretation({
+        boreholeId: 'BH-SPT',
+        totalDepth: 6,
+        layers: [
+          {
+            depthFrom: 0,
+            depthTo: 6,
+            description: 'Silty sand; standard penetration testing noted by IS 2131 reference.',
+            uscsSymbol: 'SM',
+            sptN: 2131,
+            waterContent: null,
+            notes: null,
+          },
+        ],
+      })),
+    });
+
+    expect(result.boreholes[0]?.layers[0]?.sptN).toBeNull();
+    expect(result.boreholes[0]?.warnings.join(' ')).toMatch(/implausible SPT N value/i);
+    expect(result.reviewFindings.some((finding) => finding.code === 'implausible_spt_n')).toBe(false);
+  });
+
   it('flags low-confidence projected coordinates for manual review', async () => {
     const result = await ingestBoreholeLogDocument({
       config: { provider: 'hosted-beta', apiKey: '', timeout: 1000 },

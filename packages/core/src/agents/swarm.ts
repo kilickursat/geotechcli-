@@ -702,15 +702,32 @@ export async function runSwarm(
 
   trackStep({ agent: 'orchestrator', type: 'thought', content: 'Synthesizing final report from all agents.', timestamp: Date.now() });
 
-  const finalResult = await generateText(
-    `${contextBlock}Task: ${task}\n\nInterpretation output:\n${interpData}\n\nSimulation output:\n${simOutput}\n\nReview status: ${session.reviewPassed ? 'APPROVED' : 'APPROVED WITH NOTES'}\nCorrections applied: ${session.corrections.length > 0 ? session.corrections.join('; ') : 'None'}\n\nSynthesize the final engineering report.`,
-    config,
-    { systemPrompt: orchestratorPrompt(), temperature: 0.2, maxTokens: getHostedSwarmMaxTokens(config, 'final') },
-  );
+  try {
+    const finalResult = await generateText(
+      `${contextBlock}Task: ${task}\n\nInterpretation output:\n${interpData}\n\nSimulation output:\n${simOutput}\n\nReview status: ${session.reviewPassed ? 'APPROVED' : 'APPROVED WITH NOTES'}\nCorrections applied: ${session.corrections.length > 0 ? session.corrections.join('; ') : 'None'}\n\nSynthesize the final engineering report.`,
+      config,
+      { systemPrompt: orchestratorPrompt(), temperature: 0.2, maxTokens: getHostedSwarmMaxTokens(config, 'final') },
+    );
 
-  session.totalTokens += finalResult.usage.totalTokens;
-  session.totalLatencyMs += finalResult.latencyMs;
-  trackStep({ agent: 'orchestrator', type: 'answer', content: finalResult.text, timestamp: Date.now() });
+    session.totalTokens += finalResult.usage.totalTokens;
+    session.totalLatencyMs += finalResult.latencyMs;
+    trackStep({ agent: 'orchestrator', type: 'answer', content: finalResult.text, timestamp: Date.now() });
+  } catch (err) {
+    const fallback = [
+      `Swarm analysis completed, but final hosted synthesis was unavailable: ${err instanceof Error ? err.message : String(err)}`,
+      '',
+      `Review status: ${session.reviewPassed ? 'APPROVED' : 'APPROVED WITH NOTES'}`,
+      `Corrections applied: ${session.corrections.length > 0 ? session.corrections.join('; ') : 'None'}`,
+      '',
+      'Interpretation output:',
+      interpData,
+      '',
+      'Simulation output:',
+      simOutput,
+    ].join('\n');
+
+    trackStep({ agent: 'orchestrator', type: 'answer', content: fallback, timestamp: Date.now() });
+  }
 
   return session;
 }

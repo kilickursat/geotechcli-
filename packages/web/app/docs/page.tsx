@@ -226,10 +226,12 @@ geotech vision log Appendix-2A-Geotechnical-Report-Part-6.pdf
 # Borehole-log extraction from images or PDF packets
 geotech ingest borehole-log.pdf --type borehole-log
 
-# Broader geotechnical report intelligence
+# Broader geotechnical report intelligence.
+# Long PDFs show live progress by default; add --background to detach.
 geotech ingest Geotechnical-Report.pdf --type geotech-document
 
-# Export the self-contained HTML dossier for design review or sharing
+# Export and open the self-contained HTML dossier for design review or sharing.
+# Add --no-open to save the file without launching a browser.
 geotech ingest Geotechnical-Report.pdf --type geotech-document --format html --output geotechnical-dossier.html
 
 # Large hosted-beta reports automatically switch to segmented resumable async jobs
@@ -245,19 +247,23 @@ geotech ingest Geotechnical-Report.pdf --type geotech-document --project demo-pr
 geotech ingest review demo-project --dataset ingest-review:latest --format html --output review-dossier.html
 \`\`\`
 
-The HTML dossier is a self-contained engineering review file with an executive summary, confidence metrics, extracted materials and parameters, review findings, page-by-page evidence cards, and stored-review plus approval context when the ingest is project-backed.
+The HTML dossier is a self-contained engineering review file with an executive summary, confidence metrics, extracted materials and parameters, review findings, page-by-page evidence cards, and stored-review plus approval context when the ingest is project-backed. Interactive terminals open the dossier in the browser by default; use --no-open for save-only workflows.
 
-Hosted-beta reliability note: geotechnical PDFs above the best-result window are now split into linked sequential packets automatically, and the final result plus HTML dossier merge those packets back into one review surface.`,
+Hosted-beta reliability note: geotechnical PDFs above the best-result window are split into resumable page jobs with live progress, retryable transient failures, and merged final results plus HTML dossier output.`,
   },
   {
     id: 'agent',
     title: 'geotech agent (AI)',
-    content: `Multi-agent orchestrator for complex tasks. Routes to specialized Geo, Tunnel, Hydro, Seismic, Slope, and Foundation agents, and can reuse persistent project memory with --project.
+    content: `Agentic geotechnical reasoning. The default Terzaghi agent screens underspecified requests before spending hosted-beta time, can execute deterministic tools when evidence is present, and can reuse persistent project memory with --project. Use --swarm for the Bieniawski/Terzaghi/Hoek multi-agent review path.
 
 \`\`\`bash
+# Default Terzaghi agent
 geotech agent "evaluate TBM selection for 6.5m tunnel in mixed face conditions with 3 bar water pressure"
 
 geotech agent "classify the soil profile and recommend foundation type for a 12-story building"
+
+# Optional swarm orchestration
+geotech agent "review bearing, settlement, and slope risks for this site" --swarm
 
 # Explicitly enable installed skill tools for this one session
 geotech agent "screen shallow foundation options for this site" --skills
@@ -272,7 +278,7 @@ geotech agent "check bearing and settlement for the current foundation concept" 
 geotech agent "analyze slope stability for 15m cut" --output slope-report.md
 \`\`\`
 
-Strong-beta reliability note: single-agent and swarm mode now share the same under-specified hosted-beta intake screen, the same first-turn hosted-beta fallback behavior, and the same case-file deliverable tool bootstrap for report and export follow-on workflows.`,
+Strong-beta reliability note: Terzaghi single-agent mode and optional swarm mode share the same under-specified hosted-beta intake screen, the same first-turn hosted-beta fallback behavior, and the same case-file deliverable tool bootstrap for report and export follow-on workflows.`,
   },
   {
     id: 'export',

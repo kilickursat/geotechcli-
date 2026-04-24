@@ -816,6 +816,76 @@ describe('ingestGeotechDocument', () => {
     expect(result.contentChunks?.[0]?.sectionType).not.toBe('visual-appendix');
   });
 
+  it('keeps full geotechnical reports classified as reports when borehole logs appear in appendices', async () => {
+    const result = await ingestGeotechDocument({
+      config: { provider: 'openai-compatible', timeout: 60000 } as any,
+      source: {
+        filePath: 'full-report.pdf',
+        fileName: 'full-report.pdf',
+        inputKind: 'pdf',
+      },
+      pages: Array.from({ length: 4 }, (_, index) => ({
+        base64: `page-${index + 1}`,
+        mimeType: 'application/pdf',
+        pageNumber: index + 1,
+        totalPages: 4,
+      })),
+      interpretPage: async (_imageBase64, _mimeType, _config, context) => {
+        if (context.pageNumber === 1) {
+          return makeResult({
+            documentClass: 'site-investigation-report',
+            title: 'Geotechnical Investigation Report',
+            summary: 'Executive summary, scope of work, ground model, and foundation recommendations for the site investigation.',
+            materials: [{ kind: 'soil', description: 'site-wide fill and clay profile', uscsSymbol: null, lithology: null }],
+            classifications: [],
+            parameters: [{ name: 'cohesion', valueText: '24', numericValue: 24, unit: 'kPa', material: 'clay', context: 'design summary' }],
+            recommendations: ['Review borehole logs attached in Appendix B as supporting evidence.'],
+            pageNumber: 1,
+            totalPages: 4,
+          }) as any;
+        }
+
+        return makeResult({
+          documentClass: 'borehole-log',
+          title: `Appendix B Borehole BH-${context.pageNumber}`,
+          summary: `Borehole appendix page ${context.pageNumber} with SPT values.`,
+          materials: [{ kind: 'soil', description: 'silty clay', uscsSymbol: 'CL', lithology: null }],
+          classifications: [],
+          parameters: [{ name: 'sptN', valueText: '18', numericValue: 18, unit: null, material: 'silty clay', context: `BH-${context.pageNumber}` }],
+          pageNumber: context.pageNumber ?? null,
+          totalPages: 4,
+        }) as any;
+      },
+    });
+
+    expect(result.documentClass).toBe('site-investigation-report');
+    expect(result.parameters.some((parameter) => parameter.name === 'sptN')).toBe(true);
+  });
+
+  it('drops standards-reference numbers misread as geotech-document SPT values and preserves warnings', async () => {
+    const result = await ingestGeotechDocument({
+      config: { provider: 'openai-compatible', timeout: 60000 } as any,
+      source: {
+        filePath: 'spt-standard.pdf',
+        fileName: 'spt-standard.pdf',
+        inputKind: 'pdf',
+      },
+      pages: [{ base64: 'page-1', mimeType: 'application/pdf', pageNumber: 1, totalPages: 1 }],
+      interpretPage: async () => makeResult({
+        documentClass: 'geotechnical-document',
+        title: 'Field Testing',
+        summary: 'SPT testing standard reference was detected.',
+        materials: [{ kind: 'soil', description: 'silty sand', uscsSymbol: 'SM', lithology: null }],
+        parameters: [{ name: 'sptN', valueText: 'IS 2131', numericValue: 2131, unit: null, material: null, context: 'standard penetration test reference' }],
+        pageNumber: 1,
+        totalPages: 1,
+      }) as any,
+    });
+
+    expect(result.parameters.some((parameter) => parameter.name === 'sptN')).toBe(false);
+    expect(result.warnings.join(' ')).toMatch(/implausible SPT N value/i);
+  });
+
   it('short-circuits zero-word late raster pages when adjacent tail pages are visual-only appendices', async () => {
     const interpretPage = vi.fn();
     const extractTextFacts = vi.fn(async (_pageText: string, _config: any, context: any) => makeResult({
@@ -1144,5 +1214,65 @@ describe('ingestGeotechDocument', () => {
     expect(result.canAutoProceed).toBe(false);
     expect(result.pageAudits[0]?.warnings.join(' ')).toMatch(/chunking a dense document image/i);
     expect(result.pageFailures).toEqual(['Page 3: Hosted beta request timed out after 150s.']);
+  });
+
+  it('keeps broader report classification when borehole appendix pages dominate', async () => {
+    const result = await ingestGeotechDocument({
+      config: { provider: 'openai-compatible', timeout: 60000 } as any,
+      source: {
+        filePath: 'report.pdf',
+        fileName: 'report.pdf',
+        inputKind: 'pdf',
+      },
+      pages: [
+        { base64: 'page-1', mimeType: 'application/pdf', pageNumber: 1, totalPages: 3 },
+        { base64: 'page-2', mimeType: 'application/pdf', pageNumber: 2, totalPages: 3 },
+        { base64: 'page-3', mimeType: 'application/pdf', pageNumber: 3, totalPages: 3 },
+      ],
+      interpretPage: async (_imageBase64, _mimeType, _config, context) => makeResult({
+        documentClass: 'borehole-log',
+        title: context.pageNumber === 1 ? 'Geotechnical report and foundation recommendations' : `Borehole appendix ${context.pageNumber}`,
+        summary: context.pageNumber === 1
+          ? 'Site investigation report with scope of work, ground model, and foundation recommendations.'
+          : 'Borehole log appendix page with SPT observations.',
+        materials: [{ kind: 'soil', description: 'silty sand', uscsSymbol: 'SM', lithology: null }],
+        parameters: [{ name: 'sptN', valueText: '18', numericValue: 18, unit: null, material: null, context: 'borehole appendix' }],
+        pageNumber: context.pageNumber ?? null,
+        totalPages: context.totalPages ?? null,
+        rawLLMText: 'mock',
+      }) as any,
+    });
+
+    expect(result.documentClass).toBe('geotechnical-document');
+    expect(result.materials.length).toBeGreaterThan(0);
+  });
+
+  it('removes implausible SPT parameter values that look like standards references', async () => {
+    const result = await ingestGeotechDocument({
+      config: { provider: 'openai-compatible', timeout: 60000 } as any,
+      source: {
+        filePath: 'report.pdf',
+        fileName: 'report.pdf',
+        inputKind: 'pdf',
+      },
+      pages: [{ base64: 'page-1', mimeType: 'application/pdf', pageNumber: 1, totalPages: 1 }],
+      interpretPage: async (_imageBase64, _mimeType, _config, context) => makeResult({
+        documentClass: 'geotechnical-document',
+        title: 'Field and laboratory methods',
+        summary: 'Standard references and real engineering parameters were extracted.',
+        parameters: [
+          { name: 'sptN', valueText: 'IS 9640', numericValue: 9640, unit: null, material: null, context: 'field methods standard reference' },
+          { name: 'frictionAngle', valueText: '32', numericValue: 32, unit: 'deg', material: 'sand', context: 'design table' },
+        ],
+        pageNumber: context.pageNumber ?? null,
+        totalPages: context.totalPages ?? null,
+        rawLLMText: 'mock',
+      }) as any,
+    });
+
+    expect(result.parameters.some((parameter) => parameter.name === 'sptN')).toBe(false);
+    expect(result.parameters.some((parameter) => parameter.name === 'frictionAngle')).toBe(true);
+    expect(result.warnings.join(' ')).toMatch(/implausible SPT N value/i);
+    expect(result.canAutoProceed).toBe(false);
   });
 });

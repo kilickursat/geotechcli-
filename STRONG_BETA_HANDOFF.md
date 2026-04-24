@@ -1,15 +1,15 @@
 # Strong Beta Handoff
 
-Date: 2026-04-17
+Date: 2026-04-24
 Branch: `strong-beta`
 Repo: `https://github.com/kilickursat/geotechcli-.git`
-Current branch head: `285c318`
-Current release in repo: `0.4.14`
+Current branch head: `813985f` before the v0.4.26 reliability fixes in this work session
+Current release in repo: `0.4.26` local release candidate; remote remains `0.4.25` until the approved commit/tag/push
 Beta host: `https://beta.geotechcli.com`
 Hosted model: `Qwen/Qwen3.5-9B`
 Hosted runtime: Modal.com `L4` GPU, autoscale-to-zero enabled
 
-This file is the current restart point for continuing strong-beta work on another machine.
+This file is a strong-beta restart note. Treat package metadata, `CHANGELOG.md`, and `packages/web/app/api/version` as the release truth when they differ from older historical notes below.
 
 Related internal policy:
 
@@ -88,7 +88,7 @@ Recent budget-safe work:
 - warmup and timeout messaging is now explicit instead of misleading
 - agent timeout budgets were raised to better match actual Modal cold-start behavior, but without adding extra upstream attempts
 
-## What Was Completed Across 0.4.6 to 0.4.11
+## What Was Completed Across 0.4.6 to 0.4.26
 
 ### Release + pipeline alignment
 
@@ -117,7 +117,7 @@ Recent budget-safe work:
 - interactive browser plot viewer replaced the old ASCII-first experience for supported flows
 - plot layout, labels, legends, and viewer chrome were cleaned up significantly
 
-### Latest 0.4.11 changes
+### Historical 0.4.11 changes
 
 - first-turn hosted fallback now explicitly says when the Modal.com GPU is warming up or the timeout budget was exceeded
 - live CLI waiting states now mention Modal warmup during slow hosted responses
@@ -125,7 +125,7 @@ Recent budget-safe work:
 - proxy agent calls now use a single upstream attempt, which is better for the current L4 budget
 - regression coverage was added for warmup/timeout fallback wording and no-retry agent proxy behavior
 
-## What Was Verified Locally Before The 0.4.11 Push
+## Historical Local Verification Before The 0.4.11 Push
 
 These checks passed locally on the latest repo state:
 
@@ -145,16 +145,16 @@ Notes:
 
 ## Current Remote State
 
-As of this handoff:
+As of the 2026-04-24 strong-beta handoff:
 
-- remote `strong-beta` head should be `7ef7a51`
-- latest repo release version is `0.4.11`
+- local `strong-beta` head before these reliability fixes was `813985f`
+- latest public remote release version is `0.4.25` until the v0.4.26 reliability fix commit is pushed
 - GitHub Actions should handle npm publish and beta-site deployment from the version commit
 
 What still needs remote verification after a versioned push:
 
-- npm shows `geotechcli@0.4.14`
-- beta site deployed version endpoint reflects `0.4.14`
+- npm shows the next released `geotechcli` version
+- beta site deployed version endpoint reflects the same next released version
 - hosted-beta path on the deployed site is healthy after the pipeline completes
 - Modal deploy workflow completed when the release affected the hosted Modal runtime or its serving contract
 - Modal health endpoint reflects the expected hosted runtime after deploy

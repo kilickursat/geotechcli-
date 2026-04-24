@@ -1,8 +1,24 @@
 import { Command } from 'commander';
-import { loadConfig, setConfigValue, getConfigValue } from '@geotechcli/core';
+import { loadConfig, setConfigValue, getConfigValue, registry } from '@geotechcli/core';
 import { DEFAULT_LLM_MODEL } from '@geotechcli/core/meta';
 import { heading, keyValue, success, error, dim, renderJSON } from '../ui/terminal.js';
 import chalk from 'chalk';
+
+function getEffectiveModelValue(key: string, value: unknown): unknown {
+  if (key !== 'llm.model' && key !== 'llm.vision_model') {
+    return value;
+  }
+
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return value;
+  }
+
+  const cfg = loadConfig();
+  const adapter = registry.get(cfg.llm.provider);
+  return key === 'llm.vision_model'
+    ? adapter.defaultVisionModel
+    : adapter.defaultModel;
+}
 
 export function registerConfigCommand(program: Command): void {
   const config = new Command('config')
@@ -90,12 +106,14 @@ export function registerConfigCommand(program: Command): void {
     .command('get <key>')
     .description('Get a single config value')
     .action((key: string) => {
-      const value = getConfigValue(key);
+      const rawValue = getConfigValue(key);
 
-      if (value === undefined) {
+      if (rawValue === undefined) {
         error(`Key "${key}" not found in config.`);
         return;
       }
+
+      const value = getEffectiveModelValue(key, rawValue);
 
       // Redact sensitive values
       if (key.includes('api_key') || key.includes('secret')) {

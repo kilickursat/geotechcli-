@@ -22,8 +22,6 @@ import { fileURLToPath } from 'node:url';
 // Constants
 // ---------------------------------------------------------------------------
 
-const GEOTECHCLI_DIR = process.env.GEOTECHCLI_CONFIG_DIR ?? `${homedir()}${sep}.geotechcli`;
-const WORKSPACE_DIR = `${GEOTECHCLI_DIR}${sep}workspace`;
 const SANDBOX_MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 const CORE_PACKAGE_ROOT = resolve(SANDBOX_MODULE_DIR, '..', '..');
 const MONOREPO_ROOT_CANDIDATE = resolve(SANDBOX_MODULE_DIR, '..', '..', '..', '..');
@@ -199,15 +197,24 @@ export function validateEnumerationPath(targetPath: string, extraAllowed?: strin
 // Ensure workspace exists
 // ---------------------------------------------------------------------------
 
+function getGeotechCliDir(): string {
+  return process.env.GEOTECHCLI_CONFIG_DIR ?? `${homedir()}${sep}.geotechcli`;
+}
+
+function getWorkspaceRootDir(): string {
+  return `${getGeotechCliDir()}${sep}workspace`;
+}
+
 export function ensureWorkspace(): string {
-  if (!existsSync(WORKSPACE_DIR)) {
-    mkdirSync(WORKSPACE_DIR, { recursive: true });
+  const workspaceDir = getWorkspaceRootDir();
+  if (!existsSync(workspaceDir)) {
+    mkdirSync(workspaceDir, { recursive: true });
   }
-  return WORKSPACE_DIR;
+  return workspaceDir;
 }
 
 export function getWorkspaceDir(): string {
-  return WORKSPACE_DIR;
+  return getWorkspaceRootDir();
 }
 
 // ---------------------------------------------------------------------------
@@ -245,7 +252,7 @@ export function validatePath(
     const partLower = part.toLowerCase();
     for (const pattern of SENSITIVE_PATTERNS) {
       if (partLower === pattern.toLowerCase() || partLower.includes(pattern.toLowerCase())) {
-        if (resolved.startsWith(GEOTECHCLI_DIR) && mode === 'read') {
+        if (resolved.startsWith(getGeotechCliDir()) && mode === 'read') {
           continue;
         }
         return {
@@ -258,7 +265,7 @@ export function validatePath(
   }
 
   const cwd = process.cwd();
-  const allowedZones = [cwd, WORKSPACE_DIR, ...(extraAllowed ?? [])].map((zone) => resolve(zone));
+  const allowedZones = [cwd, getWorkspaceRootDir(), ...(extraAllowed ?? [])].map((zone) => resolve(zone));
   const isInAllowedZone = isWithinAllowedZones(resolved, allowedZones);
 
   if (!isInAllowedZone) {

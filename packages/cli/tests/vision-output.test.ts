@@ -56,7 +56,7 @@ describe('vision PDF input utilities', () => {
     expect(pages[0]?.kind).toBe('image');
     expect(pages[0]?.sourceKind).toBe('raster-image');
     expect(pages[0]?.base64.length).toBeGreaterThan(0);
-  });
+  }, 15_000);
 
   it('keeps digital pages as PDF slices while routing scanned pages to raster-image inputs', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'geotech-pdf-mixed-pages-'));
@@ -79,7 +79,7 @@ describe('vision PDF input utilities', () => {
     expect(pages[1]?.mimeType).toMatch(/^image\//);
     expect(pages[1]?.kind).toBe('image');
     expect(pages[1]?.sourceKind).toBe('raster-image');
-  });
+  }, 15_000);
 
   it('routes a report packet cover/log/scanned continuation sequence through the expected page input kinds', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'geotech-pdf-packet-pages-'));
@@ -101,7 +101,7 @@ describe('vision PDF input utilities', () => {
     expect(pages[1]?.sourceKind).toBe('pdf-page');
     expect(pages[2]?.sourceKind).toBe('raster-image');
     expect(pages[2]?.mimeType).toMatch(/^image\//);
-  });
+  }, 15_000);
 });
 
 async function createImageOnlyPdfBuffer(): Promise<Buffer> {

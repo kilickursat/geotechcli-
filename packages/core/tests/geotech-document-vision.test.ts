@@ -157,9 +157,9 @@ describe('extractGeotechDocumentFactsFromText', () => {
       { pageNumber: 23, totalPages: 102, pageClassification: 'mixed' },
     );
 
-    expect(generateTextMock).toHaveBeenCalledTimes(1);
+    expect(generateTextMock).toHaveBeenCalledTimes(2);
     expect(insight.summary).toBeTruthy();
-    expect(insight.warnings.join(' ')).toMatch(/used deterministic fallback/i);
+    expect(insight.warnings.join(' ')).toMatch(/fallback retry/i);
     expect(insight.parseStatus).toBe('partial');
   });
 

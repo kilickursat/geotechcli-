@@ -62,15 +62,18 @@ geotech classify rmr --ucs 85 --rqd 72 --spacing 0.4 --condition fair --gw dry
 # AI: classify RMR from a tunnel face photo
 geotech vision rmr tunnel-face.jpg
 
-# AI: ingest a geotechnical report and export an HTML dossier
+# AI: ingest a geotechnical report and open an HTML dossier
 geotech ingest Geotechnical-Report.pdf --type geotech-document --format html --output geotechnical-dossier.html
 
 # Bundled strong-beta skills
 geotech skill list
 geotech skill show shallow-foundation-option-screening
 
-# AI: multi-agent analysis
+# AI: Terzaghi agent analysis
 geotech agent "evaluate foundation options for a 12-story building on soft clay"
+
+# AI: Bieniawski/Terzaghi/Hoek swarm mode for evidence-backed tasks
+geotech agent "review bearing, settlement, and slope risks for this site" --swarm
 
 # AI: explicitly enable installed skills for this session
 geotech agent "screen shallow foundation options for this site" --skills
@@ -144,16 +147,16 @@ These commands now use the hosted beta Qwen path by default.
 | `geotech vision rmr` | Vision-assisted RMR workflow |
 | `geotech vision sensor` | Sensor and chart image interpretation |
 | `geotech vision log` | Borehole log extraction from images or multi-page PDFs |
-| `geotech ingest` | Geotechnical PDF/image ingest for borehole logs and broader report intelligence, with optional HTML dossier output |
+| `geotech ingest` | Geotechnical PDF/image ingest for borehole logs and broader report intelligence, with live PDF progress and optional browser HTML dossier output |
 | `geotech ai-classify` | Natural language soil description to USCS and properties |
 | `geotech gbr chat` | GBR document question answering |
-| `geotech agent` | Multi-agent orchestration with optional project memory |
+| `geotech agent` | Terzaghi single-agent reasoning by default; optional `--swarm` orchestration and project memory |
 | `geotech chat` | Interactive AI session with optional project memory |
 | `geotech report` | AI-generated geotechnical report drafting |
 
 Installed strong-beta skills are available directly through `geotech skill ...`. Agent and chat sessions can opt into skill tools explicitly with `--skills` while the default strong-beta agent path stays unchanged.
 
-Strong-beta reliability note: single-agent and swarm mode now share the same under-specified hosted-beta intake screen, the same first-turn hosted-beta fallback behavior, and the same case-file deliverable tool bootstrap for report and export follow-on workflows.
+Strong-beta reliability note: Terzaghi single-agent mode and optional swarm mode share the same under-specified hosted-beta intake screen, the same first-turn hosted-beta fallback behavior, and the same case-file deliverable tool bootstrap for report and export follow-on workflows.
 
 ## Geotechnical Document Ingest
 
@@ -163,10 +166,12 @@ Strong-beta reliability note: single-agent and swarm mode now share the same und
 # Borehole-log extraction from an image or PDF packet
 geotech ingest borehole-log.pdf --type borehole-log
 
-# Broader report intelligence from a geotechnical report
+# Broader report intelligence from a geotechnical report.
+# Long PDFs show live progress by default; use --background to detach.
 geotech ingest Geotechnical-Report.pdf --type geotech-document
 
-# Export the self-contained HTML dossier for review and sharing
+# Export and open the self-contained HTML dossier for review and sharing.
+# Add --no-open to save the file without launching a browser.
 geotech ingest Geotechnical-Report.pdf --type geotech-document --format html --output geotechnical-dossier.html
 
 # Large hosted-beta reports automatically switch to segmented resumable async ingest jobs

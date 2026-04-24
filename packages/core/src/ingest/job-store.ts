@@ -4,7 +4,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import type { LLMConfig } from '../llm/types.js';
-import type { PdfDocumentInspection, PdfPageClassification } from './pdf.js';
+import { inferPdfDocumentPageCountFallback, type PdfDocumentInspection, type PdfPageClassification } from './pdf.js';
 import type { BoreholeDocumentIngestResult } from './geotech-extract.js';
 import type { GeotechDocumentIngestResult } from './geotech-document.js';
 import {
@@ -103,7 +103,8 @@ export interface PersistedIngestJobRecord {
 export interface CreatePersistedIngestJobOptions {
   documentType: PersistedIngestJobDocumentType;
   filePath: string;
-  inspection: PdfDocumentInspection | null;
+  inspection?: PdfDocumentInspection | null;
+  totalPagesFallback?: number;
   config: Pick<LLMConfig, 'provider' | 'baseUrl' | 'modelId' | 'visionModelId' | 'timeout'>;
   projectId?: string;
   overrideBoreholeId?: string;
@@ -337,6 +338,51 @@ function normalizeSegmentationSummary(value: unknown): IngestSegmentationSummary
   };
 }
 
+function resolvePdfTotalPagesFallback(
+  filePath: string,
+  explicitFallback?: number,
+  pageRange?: [number, number],
+): number {
+  const scopedFallback =
+    explicitFallback != null && Number.isInteger(explicitFallback) && explicitFallback > 0
+      ? explicitFallback
+      : 0;
+  if (scopedFallback > 0) {
+    return pageRange
+      ? Math.min(scopedFallback, Math.max(0, pageRange[1] - pageRange[0] + 1))
+      : scopedFallback;
+  }
+
+  try {
+    const inferred = inferPdfDocumentPageCountFallback(filePath);
+    if (!Number.isInteger(inferred) || inferred <= 0) {
+      return 0;
+    }
+    return pageRange
+      ? Math.max(0, Math.min(inferred, pageRange[1]) - pageRange[0] + 1)
+      : inferred;
+  } catch {
+    return 0;
+  }
+}
+
+function buildFallbackPageCheckpoints(
+  pageCount: number,
+  timestamp: string,
+  pageRange?: [number, number],
+): PersistedIngestJobPageCheckpoint[] {
+  const startPage = pageRange?.[0] ?? 1;
+  return Array.from({ length: pageCount }, (_, index) => ({
+    pageNumber: startPage + index,
+    classification: null,
+    sourceKind: 'pdf-page',
+    weight: 1,
+    status: 'pending',
+    attempts: 0,
+    updatedAt: timestamp,
+  }));
+}
+
 function normalizePersistedIngestJobRecord(value: unknown): PersistedIngestJobRecord | null {
   if (!isRecord(value) || value.kind !== 'geotech-ingest-job-record' || value.schemaVersion !== JOB_SCHEMA_VERSION) {
     return null;
@@ -516,8 +562,20 @@ export function createPersistedIngestJob(
         pages: rawInspection.pages.filter((page) => page.pageNumber >= pageRange[0] && page.pageNumber <= pageRange[1]),
       }
     : rawInspection;
-  const totalPages = inspection?.totalPages ?? 0;
-  const weightedPageCost = inspection ? computeWeightedPdfPageCost(inspection) : totalPages;
+  const fallbackTotalPages = resolvePdfTotalPagesFallback(
+    resolvedFilePath,
+    options.totalPagesFallback,
+    pageRange,
+  );
+  const totalPages = inspection && inspection.totalPages > 0
+    ? inspection.totalPages
+    : fallbackTotalPages;
+  if (totalPages <= 0) {
+    throw new Error(
+      `Cannot create persisted ingest job for "${resolvedFilePath}" because the PDF page count could not be determined.`,
+    );
+  }
+  const weightedPageCost = inspection && inspection.totalPages > 0 ? computeWeightedPdfPageCost(inspection) : totalPages;
   const record: PersistedIngestJobRecord = {
     kind: 'geotech-ingest-job-record',
     schemaVersion: JOB_SCHEMA_VERSION,
@@ -559,7 +617,7 @@ export function createPersistedIngestJob(
       cancelRequested: false,
     },
     checkpoints: {
-      pages: inspection?.pages.map((page) => ({
+      pages: inspection && inspection.totalPages > 0 ? inspection.pages.map((page) => ({
         pageNumber: page.pageNumber,
         classification: page.classification,
         sourceKind: page.classification === 'image-only' || page.classification === 'text-unreadable' ? 'raster-image' : 'pdf-page',
@@ -567,7 +625,7 @@ export function createPersistedIngestJob(
         status: 'pending',
         attempts: 0,
         updatedAt: createdAt,
-      })) ?? [],
+      })) : buildFallbackPageCheckpoints(totalPages, createdAt, pageRange),
     },
   };
 
@@ -804,7 +862,8 @@ export function resumePersistedIngestJob(
     throw new Error(`No persisted ingest job named "${jobId}" was found.`);
   }
 
-  if (current.status === 'completed') {
+  const failedCheckpoints = current.checkpoints.pages.filter((page) => page.status === 'failed');
+  if (current.status === 'completed' && failedCheckpoints.length === 0) {
     return current;
   }
 
@@ -826,12 +885,29 @@ export function resumePersistedIngestJob(
     ...record,
     status: 'queued',
     updatedAt: nowIso(options?.now),
+    completedAt: failedCheckpoints.length > 0 ? undefined : record.completedAt,
     canceledAt: undefined,
+    result: failedCheckpoints.length > 0 ? undefined : record.result,
     execution: {
       ...record.execution,
       cancelRequested: false,
       lastError: undefined,
       pid: undefined,
+    },
+    checkpoints: {
+      pages: record.checkpoints.pages.map((page) =>
+        page.status === 'failed'
+          ? {
+              ...page,
+              status: 'pending',
+              updatedAt: nowIso(options?.now),
+              completedAt: undefined,
+              error: undefined,
+              downgraded: false,
+              result: undefined,
+            }
+          : page
+      ),
     },
   }));
 
