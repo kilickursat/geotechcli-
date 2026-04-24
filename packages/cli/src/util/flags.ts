@@ -41,7 +41,7 @@ export function getGlobalFlags(opts: Record<string, unknown>): GlobalFlags {
     quiet: Boolean(opts.quiet),
     dryRun: Boolean(opts.dryRun),
     output: opts.output as string | undefined,
-    noOpen: Boolean(opts.noOpen),
+    noOpen: opts.open === false || Boolean(opts.noOpen),
     noColor: Boolean(opts.noColor),
   };
 }

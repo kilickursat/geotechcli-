@@ -8,6 +8,18 @@ const releases = [
     date: '2026-04-24',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added geotech analyze [workspace] for deterministic local project manifests with compact terminal output, JSON, and self-contained HTML dossiers' },
+      { type: 'feat', text: 'Added core workspace intelligence for file discovery, geotechnical classification, branch detection, recommendations, and ProjectManifest generation without hosted-beta GPU spend' },
+      { type: 'feat', text: 'Added lightweight CSV/XLSX schema inference for depth, coordinates, borehole/sample IDs, SPT/CPT, lab, monitoring, and signal-style columns' },
+      { type: 'feat', text: 'Added geotech agent ... --workspace <dir> so agent tasks can receive a compact local manifest summary instead of guessing directly from raw files' },
+      { type: 'docs', text: 'Documented geotech analyze ., --branch, --standard, --json, and --format html while keeping GroundModel and workspace-agent planner claims scoped to roadmap layers' },
+    ],
+  },
+  {
+    version: '0.4.27',
+    date: '2026-04-24',
+    tag: '0.4.27 Release',
+    changes: [
       { type: 'fix', text: 'Reduced hosted Qwen Modal L4 admission pressure by defaulting concurrent inputs to 2, adding an explicit max-num-seqs guard, and keeping max containers at 1 for credit-safe operation' },
       { type: 'fix', text: 'Lowered hosted-beta proxy retry pressure with single-attempt vision and agent calls, fewer text retries, and separate per-minute limits for heavier vision and agent requests' },
       { type: 'fix', text: 'Serialized more long mixed PDF ingest jobs on hosted beta so image-only report appendix and tail pages do not flood one GPU queue' },

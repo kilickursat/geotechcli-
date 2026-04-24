@@ -10,9 +10,9 @@ const features = [
       </svg>
     ),
     colorClass: 'teal',
-    name: 'Multi-Agent Orchestration',
-    desc: 'Geo, Foundation, Seismic, Tunnel, Slope, and Hydro agents collaborate through hosted Qwen beta on Modal. No provider key is required for the strong-beta default path.',
-    tag: 'Qwen3.5-9B',
+    name: 'Workspace Analysis',
+    desc: 'Scan a local project folder, classify geotechnical files, infer CSV/XLSX schemas, and open a browser workspace dossier before spending hosted-beta GPU time.',
+    tag: 'Local',
     tagColor: 'teal',
   },
   {

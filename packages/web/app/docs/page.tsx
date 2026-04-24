@@ -218,6 +218,28 @@ geotech vision log Appendix-2A-Geotechnical-Report-Part-6.pdf
 \`\`\``,
   },
   {
+    id: 'analyze',
+    title: 'geotech analyze',
+    content: `Local project-folder intelligence. This deterministic command scans a workspace, builds a project manifest, classifies geotechnical files, samples CSV/XLSX schemas, and records requested branch or standard context without spending hosted-beta GPU time.
+
+\`\`\`bash
+# Compact terminal manifest
+geotech analyze .
+
+# Automation-friendly manifest
+geotech analyze . --json
+
+# Self-contained browser dossier
+geotech analyze . --format html
+
+# Branch and standards context for downstream workflows
+geotech analyze . --branch foundation
+geotech analyze . --standard eurocode7
+\`\`\`
+
+Current strong-beta scope: file discovery, AGS/PDF/image/GIS/CAD classification, CSV/XLSX schema inference, detected branches, warnings, and recommended next steps. The canonical GroundModel, evidence-bound calculations, map visualization, and role-based workspace agent planner are the next roadmap layers, so analyze does not yet auto-run design calculations from the folder.`,
+  },
+  {
     id: 'ingest',
     title: 'geotech ingest',
     content: `Structured ingest for geotechnical PDFs and images. Use \`borehole-log\` for focused borehole extraction and \`geotech-document\` for broader report intelligence such as geology, lithology, classifications, and engineering parameters.
@@ -261,6 +283,9 @@ Hosted-beta reliability note: geotechnical PDFs above the best-result window are
 geotech agent "evaluate TBM selection for 6.5m tunnel in mixed face conditions with 3 bar water pressure"
 
 geotech agent "classify the soil profile and recommend foundation type for a 12-story building"
+
+# Attach a local workspace manifest before calling the agent
+geotech agent "analyze this folder and prepare a foundation screening report" --workspace .
 
 # Optional swarm orchestration
 geotech agent "review bearing, settlement, and slope risks for this site" --swarm

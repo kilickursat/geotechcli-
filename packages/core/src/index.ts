@@ -14,6 +14,10 @@ export * from './meta/index.js';
 // Data ingestion (AGS, CPT)
 export * from './ingest/index.js';
 
+// Workspace intelligence
+export * from './workspace/index.js';
+export * from './tabular/index.js';
+
 // Standards database
 export { queryStandards, listStandards, getStandardById, type StandardProvision, type StandardsQueryResult } from './standards/index.js';
 

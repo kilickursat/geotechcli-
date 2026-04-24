@@ -18,6 +18,7 @@ import { registerSettlementCommands } from './commands/settlement.js';
 import { registerSeepageCommand } from './commands/seepage.js';
 import { registerVizCommand } from './commands/viz.js';
 import { registerSkillCommand } from './commands/skill.js';
+import { registerAnalyzeCommand } from './commands/analyze.js';
 import {
   registerVisionCommand,
   registerAIClassifyCommand,
@@ -54,6 +55,7 @@ registerSettlementCommands(program);
 registerSeepageCommand(program);
 registerVizCommand(program);
 registerIngestCommand(program);
+registerAnalyzeCommand(program);
 
 // Tunnel engineering
 registerTunnelCommands(program);

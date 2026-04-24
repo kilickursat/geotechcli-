@@ -156,8 +156,8 @@ export function Hero() {
           className="text-[var(--text-secondary)] leading-[1.65] max-w-[600px] mb-10 font-normal"
           style={{ fontSize: 'clamp(16px,2vw,19px)' }}
         >
-          Multi-agent orchestration, vision workflows, and AI reasoning powered by{' '}
-          <span style={{ color: 'var(--accent-teal)' }}>Qwen3.5-9B</span> — combined with
+          Local workspace manifests, vision workflows, and AI reasoning powered by{' '}
+          <span style={{ color: 'var(--accent-teal)' }}>Qwen3.5-9B</span> - combined with
           deterministic geotechnical engines. No provider key. No signup. One command.
         </p>
 
@@ -224,20 +224,22 @@ export function Hero() {
           <pre className="px-5 pb-5 font-[var(--font-mono)] text-[13px] leading-[1.9] overflow-x-auto">
             <span style={{ color: 'var(--accent-teal)' }}>$</span>{' '}
             <span style={{ color: 'var(--text-primary)' }}>geotech</span>{' '}
-            <span style={{ color: 'var(--text-secondary)' }}>agent</span>{' '}
-            <span style={{ color: 'var(--accent-cyan)' }}>&quot;evaluate foundation options for 12-story on soft clay&quot;</span>
+            <span style={{ color: 'var(--text-secondary)' }}>analyze</span>{' '}
+            <span style={{ color: 'var(--accent-cyan)' }}>.</span>{' '}
+            <span style={{ color: 'var(--text-secondary)' }}>--branch foundation</span>
             {'\n'}
-            <span style={{ color: 'var(--text-muted)' }}>⠋ Spawning Geo + Foundation + Seismic agents via Qwen3.5-9B...</span>
+            <span style={{ color: 'var(--text-muted)' }}>INFO  Scanning local project workspace...</span>
             {'\n'}
-            <span style={{ color: 'var(--text-muted)' }}>⠙ Geo agent: SPT N=8, clay CU=35 kPa, LL=52% identified</span>
+            <span style={{ color: 'var(--text-muted)' }}>OK    18 files discovered, 9 supported datasets</span>
             {'\n'}
-            <span style={{ color: 'var(--text-muted)' }}>⠹ Foundation agent: pile vs raft analysis running...</span>
+            <span style={{ color: 'var(--text-muted)' }}>OK    CSV/XLSX schemas: SPT, lab, coordinates</span>
             {'\n'}
-            <span style={{ color: 'var(--accent-teal)' }}>✓</span>{' '}
-            <span style={{ color: 'var(--text-primary)' }}>Recommendation: piled raft — 18m bored piles at 450mm dia.</span>
+            <span style={{ color: 'var(--accent-teal)' }}>OK</span>{' '}
+            <span style={{ color: 'var(--text-primary)' }}>Branches: foundation, mapping, site-investigation</span>
             {'\n'}
-            <span style={{ color: 'var(--accent-teal)' }}>✓</span>{' '}
-            <span style={{ color: 'var(--text-primary)' }}>Report saved → ./foundation-analysis.md</span>
+            <span style={{ color: 'var(--accent-teal)' }}>INFO</span>{' '}
+            <span style={{ color: 'var(--text-primary)' }}>Open browser dossier: geotech analyze . --format html</span>
+            {'\n'}
             {'\n'}
             <span style={{ color: 'var(--accent-teal)' }}>$</span>{' '}
             <span

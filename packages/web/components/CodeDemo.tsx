@@ -9,7 +9,7 @@ export function CodeDemo() {
           From raw data to insight.
         </h2>
         <p className="text-[var(--text-secondary)] text-[15px] mt-3 max-w-[500px]">
-          Two commands. Full subsurface analysis. No boilerplate.
+          Local manifests, deterministic checks, and hosted-beta workflows without boilerplate.
         </p>
       </div>
 
@@ -38,8 +38,8 @@ export function CodeDemo() {
 {'\n'}<span className="text-[var(--accent-teal)]">geotech</span> tunnel tbm-predict \
 {'\n'}  <span className="text-[var(--accent-blue)]">--diameter</span> 6.5 <span className="text-[var(--accent-blue)]">--ucs</span> 80 <span className="text-[var(--accent-blue)]">--rqd</span> 65
 {'\n'}
-{'\n'}<span className="text-[var(--text-muted)]"># AI agent for complex tasks</span>
-{'\n'}<span className="text-[var(--accent-teal)]">geotech</span> agent <span className="text-[var(--accent-orange)]">"evaluate foundation options for 12-story building on soft clay"</span>
+{'\n'}<span className="text-[var(--text-muted)]"># Local project manifest</span>
+{'\n'}<span className="text-[var(--accent-teal)]">geotech</span> analyze <span className="text-[var(--accent-orange)]">.</span> <span className="text-[var(--accent-blue)]">--format</span> html
           </pre>
         </div>
 
@@ -56,21 +56,21 @@ export function CodeDemo() {
             </span>
           </div>
           <pre className="p-5 font-[var(--font-mono)] text-[13px] leading-[1.8] text-[var(--text-secondary)] overflow-x-auto">
-            <span className="text-[var(--accent-teal)]">✓</span> Bearing Capacity — Meyerhof
+            <span className="text-[var(--accent-teal)]">OK</span> Bearing Capacity - Meyerhof
 {'\n'}  Ultimate:   <span className="text-[var(--text-primary)]">4,184 kPa</span>
 {'\n'}  Allowable:  <span className="text-[var(--text-primary)]">1,395 kPa</span> (FS=3)
 {'\n'}
-{'\n'}<span className="text-[var(--accent-teal)]">✓</span> Hybrid RMR Classification
-{'\n'}  Vision:     UCS≈85 MPa, RQD≈72%
-{'\n'}  <span className="text-[var(--text-primary)]">RMR = 65</span> → Class II: Good Rock
+{'\n'}<span className="text-[var(--accent-teal)]">OK</span> Hybrid RMR Classification
+{'\n'}  Vision:     UCS approx 85 MPa, RQD approx 72%
+{'\n'}  <span className="text-[var(--text-primary)]">RMR = 65</span> -&gt; Class II: Good Rock
 {'\n'}  Support: spot bolts + 50mm shotcrete
 {'\n'}
-{'\n'}<span className="text-[var(--accent-teal)]">✓</span> TBM Performance
+{'\n'}<span className="text-[var(--accent-teal)]">OK</span> TBM Performance
 {'\n'}  Penetration: <span className="text-[var(--text-primary)]">8.4 mm/rev</span>
 {'\n'}  Daily advance: <span className="text-[var(--text-primary)]">14.2 m/day</span>
 {'\n'}  Cutter life: <span className="text-[var(--text-primary)]">380 m/cutter</span>
 {'\n'}
-{'\n'}<span className="text-[var(--accent-teal)]">✓</span> Agent Report saved → report.md
+{'\n'}<span className="text-[var(--accent-teal)]">OK</span> Workspace dossier saved to .geotech/workspace-dossier.html
           </pre>
         </div>
       </div>

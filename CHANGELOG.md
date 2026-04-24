@@ -1,5 +1,15 @@
 ﻿# Changelog
 
+## [0.4.28] - 2026-04-24
+
+### Workspace Analyze Foundation
+
+- Added `geotech analyze [workspace]` as the first deterministic local project analyst surface, producing compact terminal output, JSON manifests, or a self-contained HTML workspace dossier.
+- Added core workspace intelligence modules for file discovery, geotechnical file classification, ProjectManifest generation, and recommended next workflows without spending hosted-beta GPU time.
+- Added lightweight CSV/XLSX schema inference for depth, time, coordinate, borehole/sample IDs, SPT/CPT, lab, monitoring, and signal-style columns.
+- Added `geotech agent ... --workspace <dir>` so hosted-beta agent tasks can receive a compact local manifest summary without direct file guessing.
+- Added docs and README coverage for `geotech analyze .`, including `--branch`, `--standard`, `--json`, and `--format html` examples while clearly marking GroundModel and agent planner behavior as future roadmap layers.
+
 ## [0.4.27] - 2026-04-24
 
 ### Cost-Aware Hosted-Beta PDF Reliability

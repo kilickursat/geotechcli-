@@ -30,6 +30,8 @@ import {
   buildSwarmSessionProjectRecord,
   persistSwarmCaseFile,
   persistCaseFileEvidence,
+  analyzeWorkspace,
+  type ProjectManifest,
   type GeneratedReport,
   type AgentStep,
   type AgentSession,
@@ -51,6 +53,24 @@ import {
   type VisionInput,
   type VisionPdfPageInput,
 } from '../util/vision-output.js';
+
+function summarizeWorkspaceManifestForAgent(manifest: ProjectManifest): string {
+  const files = manifest.files
+    .slice(0, 18)
+    .map((file) => `- ${file.path}: ${file.classification.datasetType} (${file.classification.kind}, ${Math.round(file.classification.confidence * 100)}% confidence)`)
+    .join('\n');
+  const recommendations = manifest.summary.recommendations.map((item) => `- ${item}`).join('\n');
+
+  return [
+    'Local workspace manifest:',
+    `Root: ${manifest.rootPath}`,
+    `Files: ${manifest.summary.totalFiles} total, ${manifest.summary.supportedFiles} supported, ${manifest.summary.tabularFiles} tabular, ${manifest.summary.pdfFiles} PDFs`,
+    `Detected branches: ${manifest.summary.branches.join(', ') || 'none'}`,
+    files ? `Files:\n${files}` : 'Files: none',
+    recommendations ? `Recommended next steps:\n${recommendations}` : '',
+    manifest.warnings.length > 0 ? `Manifest warnings:\n${manifest.warnings.slice(0, 8).map((warning) => `- ${warning}`).join('\n')}` : '',
+  ].filter(Boolean).join('\n\n');
+}
 
 async function checkQuota(_callType: 'llmCalls' | 'visionCalls' | 'agentCalls'): Promise<boolean> {
   // Strong-beta hosted limits are enforced server-side by the beta proxy.
@@ -1240,13 +1260,21 @@ export function registerAgentCommand(program: Command): void {
     .option('--swarm', 'Use multi-agent swarm (Bieniawski -> Terzaghi -> Hoek)')
     .option('--skills', 'Enable installed skill tools for this session')
     .option('--project <id>', 'Load and persist context to a stored project')
+    .option('--workspace <dir>', 'Scan a local workspace and attach its manifest summary to the agent task')
     .action(async (taskParts: string[], opts) => {
       const flags = getGlobalFlags(opts);
       const task = taskParts.join(' ');
+      let agentTask = task;
       const useSwarm = opts.swarm === true;
       const showLiveStatus = !flags.json && !flags.quiet && !flags.verbose;
 
       if (!(await checkQuota('agentCalls'))) return;
+
+      let workspaceManifest: ProjectManifest | undefined;
+      if (typeof opts.workspace === 'string' && opts.workspace.trim()) {
+        workspaceManifest = await analyzeWorkspace(opts.workspace, {});
+        agentTask = `${task}\n\n${summarizeWorkspaceManifestForAgent(workspaceManifest)}`;
+      }
 
       if (!flags.json) {
         console.log('');
@@ -1273,6 +1301,11 @@ export function registerAgentCommand(program: Command): void {
           console.log('');
         }
 
+        if (workspaceManifest && !flags.json) {
+          console.log(chalk.gray(`  Workspace manifest attached: ${workspaceManifest.summary.totalFiles} files, branches: ${workspaceManifest.summary.branches.join(', ') || 'none'}`));
+          console.log('');
+        }
+
         liveStatus = createLiveStatusController({
           kind: useSwarm ? 'swarm' : 'single',
           enabled: showLiveStatus,
@@ -1281,7 +1314,7 @@ export function registerAgentCommand(program: Command): void {
 
         if (useSwarm) {
           // Multi-agent swarm mode
-          const session = await runSwarm(task, config, (step) => {
+          const session = await runSwarm(agentTask, config, (step) => {
             liveStatus?.onSwarmStep(step);
             if (flags.verbose) {
               renderSwarmStepPlain(step, flags.json, flags.quiet);
@@ -1296,6 +1329,10 @@ export function registerAgentCommand(program: Command): void {
           if (flags.json) {
             renderJSON({
               task,
+              workspace: workspaceManifest ? {
+                rootPath: workspaceManifest.rootPath,
+                summary: workspaceManifest.summary,
+              } : undefined,
               mode: 'swarm',
               answer: answer?.content ?? '',
               reviewPassed: session.reviewPassed,
@@ -1355,7 +1392,7 @@ export function registerAgentCommand(program: Command): void {
 
         } else {
           // Single-agent ReAct mode (default)
-          const session = await runAgent(task, config, (step) => {
+          const session = await runAgent(agentTask, config, (step) => {
             liveStatus?.onAgentStep(step);
             if (flags.verbose) {
               renderAgentStepPlain(step, flags.json, flags.quiet);
@@ -1370,6 +1407,10 @@ export function registerAgentCommand(program: Command): void {
           if (flags.json) {
             renderJSON({
               task,
+              workspace: workspaceManifest ? {
+                rootPath: workspaceManifest.rootPath,
+                summary: workspaceManifest.summary,
+              } : undefined,
               mode: 'single',
               answer: answer?.content ?? '',
               steps: session.steps.map((s) => ({
