@@ -8,6 +8,18 @@ const releases = [
     date: '2026-04-24',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'fix', text: 'Reduced hosted Qwen Modal L4 admission pressure by defaulting concurrent inputs to 2, adding an explicit max-num-seqs guard, and keeping max containers at 1 for credit-safe operation' },
+      { type: 'fix', text: 'Lowered hosted-beta proxy retry pressure with single-attempt vision and agent calls, fewer text retries, and separate per-minute limits for heavier vision and agent requests' },
+      { type: 'fix', text: 'Serialized more long mixed PDF ingest jobs on hosted beta so image-only report appendix and tail pages do not flood one GPU queue' },
+      { type: 'fix', text: 'Added cheaper PDF retry behavior with deterministic partial extraction for text timeouts, skipped duplicate vision OCR on retry, and manual-review downgrades for repeated slow visual tail pages' },
+      { type: 'feat', text: 'Printed the exact browser-dossier command after plain persisted ingest results so users can immediately open the HTML review without rerunning the PDF' },
+    ],
+  },
+  {
+    version: '0.4.26',
+    date: '2026-04-24',
+    tag: '0.4.26 Release',
+    changes: [
       { type: 'fix', text: 'Fixed bundled strong-beta skills in global npm installs by trusting only first-party bundled-skill archives while keeping arbitrary outside ZIP imports blocked' },
       { type: 'feat', text: 'Changed long PDF ingest to live-wait by default with visible page progress, elapsed time, heartbeat/status, and failure counts, plus --background for detached jobs' },
       { type: 'feat', text: 'Made ingest HTML format save and open a browser dossier by default for run, wait, and result flows while --no-open keeps save-only automation clean' },

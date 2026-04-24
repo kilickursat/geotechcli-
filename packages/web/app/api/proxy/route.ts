@@ -27,6 +27,8 @@ import {
   validateMessages,
 } from '../../../lib/beta';
 import type {
+  HostedBetaCallType,
+  HostedBetaClientMode,
   ProxyContentPart,
   ProxyMessage,
   ProxyRequestBody,
@@ -93,8 +95,8 @@ function getUpstreamAttemptCount(callType: 'text' | 'vision' | 'agent'): number 
   // Keep agent requests to a single long-budget attempt so we do not burn extra
   // Modal GPU time retrying an abandoned cold start after the CLI has already moved on.
   if (callType === 'agent') return 1;
-  if (callType === 'vision') return 2;
-  return 4;
+  if (callType === 'vision') return 1;
+  return 2;
 }
 
 function parsePositiveIntegerEnv(rawValue: string | undefined, fallback: number): number {
@@ -128,6 +130,23 @@ function getRetryDelayMs(attempt: number, response?: Response | null): number {
   }
 
   return [1_500, 3_000, 4_500][attempt] ?? 4_500;
+}
+
+async function isHostedBetaIpRateLimited(
+  identity: string,
+  maxRequests: number,
+): Promise<boolean> {
+  return hasHostedBetaRedis()
+    ? isIPRateLimitedRedis(identity, maxRequests, 60_000)
+    : isIPRateLimitedMemory(identity, maxRequests, 60_000);
+}
+
+function getCallTypeRateLimitIdentity(
+  clientIp: string,
+  clientMode: HostedBetaClientMode,
+  callType: HostedBetaCallType,
+): string {
+  return [clientIp, clientMode, callType].join('|');
 }
 
 async function fetchUpstreamWithRetry(
@@ -430,7 +449,8 @@ export async function POST(request: NextRequest) {
   }
 
   const clientIp = extractClientIp(request.headers);
-  const perMinuteLimit = getHostedBetaRequestLimit(clientMode);
+  const globalPerMinuteLimit = getHostedBetaRequestLimit(clientMode);
+  const perMinuteLimit = getHostedBetaRequestLimit(clientMode, callType);
   const bypassHostedBetaLimits = shouldBypassHostedBetaLimits(clientMode);
   const dailyCheck = bypassHostedBetaLimits
     ? {
@@ -441,18 +461,10 @@ export async function POST(request: NextRequest) {
         remaining: Number.MAX_SAFE_INTEGER,
       }
     : await (async () => {
-        const perMinuteLimit = getHostedBetaRequestLimit(clientMode);
-        const ipRateLimited = hasHostedBetaRedis()
-          ? await isIPRateLimitedRedis(
-              clientIp,
-              perMinuteLimit,
-              60_000,
-            )
-          : isIPRateLimitedMemory(
-              clientIp,
-              perMinuteLimit,
-              60_000,
-            );
+        const ipRateLimited = await isHostedBetaIpRateLimited(
+          clientIp,
+          globalPerMinuteLimit,
+        );
 
         if (ipRateLimited) {
           return createHostedBetaErrorResponse(
@@ -466,6 +478,27 @@ export async function POST(request: NextRequest) {
             requestId,
             { mode: clientMode, version: clientVersion },
           );
+        }
+
+        if (callType !== 'text') {
+          const callTypeRateLimited = await isHostedBetaIpRateLimited(
+            getCallTypeRateLimitIdentity(clientIp, clientMode, callType),
+            perMinuteLimit,
+          );
+
+          if (callTypeRateLimited) {
+            return createHostedBetaErrorResponse(
+              429,
+              'Hosted beta rate limit reached.',
+              `Too many ${callType} requests from this network in the last minute. Please wait and retry.`,
+              {
+                code: `${callType}_rate_limited`,
+                retry_after_seconds: 60,
+              },
+              requestId,
+              { mode: clientMode, version: clientVersion },
+            );
+          }
         }
 
         const limitCheck = await checkHostedBetaDailyLimit({

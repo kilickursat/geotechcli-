@@ -17,6 +17,7 @@ import {
   shouldUseAsyncIngestJob,
   waitForPersistedIngestJob,
   type BoreholeInterpretation,
+  type GeotechDocumentInsight,
   type LLMConfig,
   type PdfDocumentInspection,
 } from '../src/index.js';
@@ -62,6 +63,27 @@ function makeBoreholeInterpretation(pageNumber: number, totalPages: number): Bor
     latencyMs: 0,
     parseStatus: 'parsed',
     confidence: 85,
+    warnings: [],
+    canAutoProceed: true,
+  };
+}
+
+function makeGeotechInsight(pageNumber: number, totalPages: number, summary = `Page ${pageNumber}`): GeotechDocumentInsight {
+  return {
+    documentClass: 'geotechnical-document',
+    title: null,
+    summary,
+    materials: [],
+    classifications: [],
+    parameters: [],
+    risks: [],
+    recommendations: [],
+    pageNumber,
+    totalPages,
+    rawLLMText: 'mock',
+    latencyMs: 0,
+    parseStatus: 'parsed',
+    confidence: 82,
     warnings: [],
     canAutoProceed: true,
   };
@@ -256,6 +278,19 @@ describe('persisted ingest jobs', () => {
 
     expect(job.processing.chunkExtractionConcurrency).toBe(1);
     expect(resolvePersistedIngestJobExtractionConcurrency(config, makeInspection(4))).toBe(2);
+  });
+
+  it('serializes hosted-beta extraction for long mixed PDFs with visual tail pressure', () => {
+    const config = {
+      provider: 'hosted-beta',
+      modelId: 'Qwen/Qwen3.5-9B',
+      visionModelId: 'Qwen/Qwen3.5-9B',
+    } satisfies Pick<LLMConfig, 'provider' | 'modelId' | 'visionModelId'>;
+    const inspection = makeInspection(34, (pageNumber) =>
+      pageNumber >= 27 ? 'image-only' : 'mixed'
+    );
+
+    expect(resolvePersistedIngestJobExtractionConcurrency(config, inspection)).toBe(1);
   });
 
   it('recomputes extraction concurrency after worker-side inspection when the async job started without inspection data', async () => {
@@ -822,6 +857,89 @@ describe('persisted ingest jobs', () => {
     expect(completed.checkpoints.pages[0]?.status).toBe('completed');
     expect(completed.result?.ingestResult.inspectionSummary?.ocrRecoveredPageCount).toBe(1);
     expect(completed.result?.ingestResult.pageFailures).toEqual([]);
+  });
+
+  it('falls back to deterministic document facts when text extraction times out', async () => {
+    const filePath = join(configDir, 'text-timeout-fallback.pdf');
+    await writeBlankPdf(filePath, 1);
+
+    const job = createPersistedIngestJob({
+      documentType: 'geotech-document',
+      filePath,
+      inspection: makeInspection(1, () => 'mixed'),
+      config: makeConfig(),
+    });
+    const interpretGeotechDocumentPage = vi.fn();
+
+    const completed = await runPersistedIngestJobWorker(job.jobId, {
+      buildLLMConfig: makeConfig,
+      readDocumentPdfPageInputs: async () => [{
+        base64: 'text-page',
+        mimeType: 'application/pdf',
+        fileBytes: 120,
+        filePath,
+        ext: 'pdf',
+        kind: 'pdf',
+        pageNumber: 1,
+        totalPages: 1,
+        sourceKind: 'pdf-page',
+      }],
+      recoverDocumentTextHint: async () => ({
+        textHint: 'Foundation recommendations indicate silty sand with allowable bearing capacity 35 t/m2 and settlement review required.',
+        source: 'native-text' as const,
+        warnings: [],
+      }),
+      extractGeotechDocumentFactsFromText: async () => {
+        throw new Error('Page 1: text extraction timed out after 60s');
+      },
+      interpretGeotechDocumentPage,
+    });
+
+    expect(completed.status).toBe('completed');
+    expect(completed.checkpoints.pages[0]?.status).toBe('completed');
+    expect(completed.result?.ingestResult.pageFailures).toEqual([]);
+    expect(completed.result?.ingestResult.reviewRequired).toBe(true);
+    expect(completed.result?.ingestResult.warnings.join('\n')).toMatch(/deterministic partial extraction/i);
+    expect(interpretGeotechDocumentPage).not.toHaveBeenCalled();
+  });
+
+  it('marks text recovery attempted so visual interpretation does not rerun OCR blindly', async () => {
+    const filePath = join(configDir, 'no-duplicate-ocr.pdf');
+    await writeBlankPdf(filePath, 1);
+
+    const job = createPersistedIngestJob({
+      documentType: 'geotech-document',
+      filePath,
+      inspection: makeInspection(1, () => 'image-only'),
+      config: makeConfig(),
+    });
+    const interpretGeotechDocumentPage = vi.fn(async (_base64, _mimeType, _config, context) => {
+      expect(context.textRecoveryAttempted).toBe(true);
+      return makeGeotechInsight(1, 1, 'Visual fallback completed.');
+    });
+
+    const completed = await runPersistedIngestJobWorker(job.jobId, {
+      buildLLMConfig: makeConfig,
+      readDocumentPdfPageInputs: async () => [{
+        base64: 'image-page',
+        mimeType: 'image/png',
+        fileBytes: 120,
+        filePath,
+        ext: 'png',
+        kind: 'image',
+        pageNumber: 1,
+        totalPages: 1,
+        sourceKind: 'raster-image',
+      }],
+      recoverDocumentTextHint: async () => {
+        throw new Error('OCR/text recovery timed out after 180s');
+      },
+      interpretGeotechDocumentPage,
+    });
+
+    expect(completed.status).toBe('completed');
+    expect(interpretGeotechDocumentPage).toHaveBeenCalledTimes(1);
+    expect(completed.checkpoints.pages[0]?.ocrWarnings?.join('\n')).toMatch(/recovery failed/i);
   });
 
   it('marks remaining pages failed and completes the job when the provider hits a fatal quota stop', async () => {

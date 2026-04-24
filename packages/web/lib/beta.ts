@@ -9,6 +9,8 @@ export const STRONG_BETA_MODE = true;
 
 const ANONYMOUS_HOSTED_BETA_LIMITS = {
   requestsPerMinutePerIp: 10,
+  visionRequestsPerMinutePerIp: 1,
+  agentRequestsPerMinutePerIp: 1,
   textPerDay: 25,
   visionPerDay: 5,
   agentPerDay: 3,
@@ -16,6 +18,8 @@ const ANONYMOUS_HOSTED_BETA_LIMITS = {
 
 const GEOTECHCLI_HOSTED_BETA_LIMITS = {
   requestsPerMinutePerIp: 20,
+  visionRequestsPerMinutePerIp: 2,
+  agentRequestsPerMinutePerIp: 2,
   textPerDay: 60,
   visionPerDay: 12,
   agentPerDay: 8,
@@ -23,6 +27,8 @@ const GEOTECHCLI_HOSTED_BETA_LIMITS = {
 
 const DEVELOPER_HOSTED_BETA_LIMITS = {
   requestsPerMinutePerIp: Number.MAX_SAFE_INTEGER,
+  visionRequestsPerMinutePerIp: Number.MAX_SAFE_INTEGER,
+  agentRequestsPerMinutePerIp: Number.MAX_SAFE_INTEGER,
   textPerDay: Number.MAX_SAFE_INTEGER,
   visionPerDay: Number.MAX_SAFE_INTEGER,
   agentPerDay: Number.MAX_SAFE_INTEGER,
@@ -30,6 +36,8 @@ const DEVELOPER_HOSTED_BETA_LIMITS = {
 
 export const HOSTED_BETA_LIMITS = {
   requestsPerMinutePerIp: GEOTECHCLI_HOSTED_BETA_LIMITS.requestsPerMinutePerIp,
+  visionRequestsPerMinutePerIp: GEOTECHCLI_HOSTED_BETA_LIMITS.visionRequestsPerMinutePerIp,
+  agentRequestsPerMinutePerIp: GEOTECHCLI_HOSTED_BETA_LIMITS.agentRequestsPerMinutePerIp,
   textPerDay: GEOTECHCLI_HOSTED_BETA_LIMITS.textPerDay,
   visionPerDay: GEOTECHCLI_HOSTED_BETA_LIMITS.visionPerDay,
   agentPerDay: GEOTECHCLI_HOSTED_BETA_LIMITS.agentPerDay,
@@ -344,8 +352,14 @@ function getLimitProfile(clientMode: HostedBetaClientMode) {
     : ANONYMOUS_HOSTED_BETA_LIMITS;
 }
 
-export function getHostedBetaRequestLimit(clientMode: HostedBetaClientMode): number {
-  return getLimitProfile(clientMode).requestsPerMinutePerIp;
+export function getHostedBetaRequestLimit(
+  clientMode: HostedBetaClientMode,
+  callType: HostedBetaCallType = 'text',
+): number {
+  const profile = getLimitProfile(clientMode);
+  if (callType === 'vision') return profile.visionRequestsPerMinutePerIp;
+  if (callType === 'agent') return profile.agentRequestsPerMinutePerIp;
+  return profile.requestsPerMinutePerIp;
 }
 
 export function getDailyLimitForClient(

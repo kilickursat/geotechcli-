@@ -196,6 +196,7 @@ The HTML dossier is a self-contained engineering review file with:
 - stored-review and approval context when the ingest is project-backed
 
 Hosted-beta reliability note: geotechnical PDFs above the best-result window are now split into linked sequential packets automatically, and the final result plus HTML dossier merge those packets back into one review surface.
+Cost-control note: hosted-beta PDF ingest now serializes more long mixed reports, avoids duplicate OCR/vision retries on slow image-only pages, and keeps Modal L4 defaults conservative so the public beta does not burn GPU credits just to create a deeper queue.
 
 ### Bundled Skills
 

@@ -26,6 +26,7 @@ import {
   type GeotechDocumentPageInput,
 } from './geotech-document.js';
 import {
+  extractGeotechDocumentDeterministicFactsFromText,
   extractGeotechDocumentFactsFromText,
   interpretGeotechDocumentPage,
   type GeotechDocumentContext,
@@ -69,6 +70,7 @@ export interface PersistedIngestJobWorkerDependencies {
   transcribeDocumentImageText?: typeof transcribeDocumentImageText;
   interpretGeotechDocumentPage?: typeof interpretGeotechDocumentPage;
   extractGeotechDocumentFactsFromText?: typeof extractGeotechDocumentFactsFromText;
+  extractGeotechDocumentDeterministicFactsFromText?: typeof extractGeotechDocumentDeterministicFactsFromText;
   persistReview?: typeof persistBoreholeIngestReview;
   buildLLMConfig?: typeof buildLLMConfig;
   now?: () => Date;
@@ -126,6 +128,9 @@ const FATAL_PROVIDER_STOP_PATTERNS = [
   /rate limit/i,
   /\b429\b/i,
 ];
+
+const VISUAL_TAIL_RUN_MIN_PAGES = 3;
+const VISUAL_TAIL_RUN_SLOW_FAILURE_THRESHOLD = 2;
 
 function nowIso(now?: () => Date): string {
   return (now ?? (() => new Date()))().toISOString();
@@ -712,8 +717,152 @@ function advanceBoreholeProcessingState(
 }
 
 function isSlowVisualPageError(message: string, classification: PdfPageClassification | null | undefined, sourceKind: string): boolean {
-  const looksVisual = sourceKind === 'raster-image' || classification === 'image-only' || classification === 'text-unreadable';
+  const looksVisual = sourceKind === 'raster-image' || isVisualRunClassification(classification);
   return looksVisual && SLOW_VISUAL_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+}
+
+function isVisualRunClassification(classification: PdfPageClassification | null | undefined): boolean {
+  return classification === 'image-only' || classification === 'text-unreadable' || classification === 'graphics-only';
+}
+
+function isVisualRunCheckpoint(page: PersistedIngestJobPageCheckpoint): boolean {
+  return page.sourceKind === 'raster-image' || isVisualRunClassification(page.classification);
+}
+
+function getInspectionLeadText(
+  inspectionPage: PdfDocumentInspection['pages'][number] | undefined,
+): string {
+  if (!inspectionPage) {
+    return '';
+  }
+
+  return uniqueStrings([
+    ...(inspectionPage.normalizedArtifact?.headingHints ?? []),
+    inspectionPage.normalizedArtifact?.nativeText,
+    inspectionPage.normalizedText,
+  ])
+    .join('\n')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function hasBoreholeAppendixCue(text: string): boolean {
+  return /\b(record of boreholes?|borehole logs?|borehole records?|test pits?|cpt|cone penetration|standard penetration test|spt)\b/i.test(text);
+}
+
+function hasVisualAppendixCue(text: string): boolean {
+  return (
+    /\bappendix\b/i.test(text)
+    && /\b(figures?|plates?|photos?|photographs?|drawings?|plans?|sketches?|site layout|certificates?|laboratory)\b/i.test(text)
+    && !hasBoreholeAppendixCue(text)
+  );
+}
+
+function findConsecutiveVisualRun(
+  job: PersistedIngestJobRecord,
+  pageNumber: number,
+): PersistedIngestJobPageCheckpoint[] {
+  const pages = [...job.checkpoints.pages].sort((left, right) => left.pageNumber - right.pageNumber);
+  const centerIndex = pages.findIndex((page) => page.pageNumber === pageNumber);
+  if (centerIndex < 0 || !isVisualRunCheckpoint(pages[centerIndex]!)) {
+    return [];
+  }
+
+  let startIndex = centerIndex;
+  while (startIndex > 0 && isVisualRunCheckpoint(pages[startIndex - 1]!)) {
+    startIndex -= 1;
+  }
+
+  let endIndex = centerIndex;
+  while (endIndex + 1 < pages.length && isVisualRunCheckpoint(pages[endIndex + 1]!)) {
+    endIndex += 1;
+  }
+
+  return pages.slice(startIndex, endIndex + 1);
+}
+
+function hasNearbyVisualAppendixCue(job: PersistedIngestJobRecord, runStartPage: number): boolean {
+  if (!job.inspection) {
+    return false;
+  }
+
+  const firstCandidatePage = Math.max(1, runStartPage - 3);
+  for (let pageNumber = firstCandidatePage; pageNumber <= runStartPage; pageNumber += 1) {
+    const inspectionPage = job.inspection.pages.find((page) => page.pageNumber === pageNumber);
+    if (hasVisualAppendixCue(getInspectionLeadText(inspectionPage))) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function isTailOrAppendixVisualRun(
+  job: PersistedIngestJobRecord,
+  run: PersistedIngestJobPageCheckpoint[],
+): boolean {
+  if (run.length < VISUAL_TAIL_RUN_MIN_PAGES) {
+    return false;
+  }
+
+  const startPage = run[0]!.pageNumber;
+  const endPage = run[run.length - 1]!.pageNumber;
+  const totalPages = Math.max(job.source.totalPages, job.inspection?.totalPages ?? 0);
+  const touchesTail =
+    totalPages > 0
+    && endPage >= totalPages
+    && startPage >= Math.max(2, Math.ceil(totalPages * 0.55));
+
+  return touchesTail || hasNearbyVisualAppendixCue(job, startPage);
+}
+
+function applyConsecutiveVisualRunDowngrades(
+  job: PersistedIngestJobRecord,
+  triggerPageNumber: number,
+  now?: () => Date,
+): PersistedIngestJobRecord {
+  const run = findConsecutiveVisualRun(job, triggerPageNumber);
+  if (!isTailOrAppendixVisualRun(job, run)) {
+    return job;
+  }
+
+  const slowFailureCount = run.filter((page) =>
+    page.status === 'failed'
+    && page.downgraded
+    && isSlowVisualPageError(page.error ?? '', page.classification, page.sourceKind)
+  ).length;
+  if (slowFailureCount < VISUAL_TAIL_RUN_SLOW_FAILURE_THRESHOLD) {
+    return job;
+  }
+
+  const pendingPageNumbers = new Set(
+    run
+      .filter((page) => page.status === 'pending' && page.pageNumber > triggerPageNumber)
+      .map((page) => page.pageNumber),
+  );
+  if (pendingPageNumbers.size === 0) {
+    return job;
+  }
+
+  const timestamp = nowIso(now);
+  return {
+    ...job,
+    updatedAt: timestamp,
+    checkpoints: {
+      pages: job.checkpoints.pages.map((page) =>
+        pendingPageNumbers.has(page.pageNumber)
+          ? {
+              ...page,
+              status: 'failed',
+              updatedAt: timestamp,
+              error: `Skipped page ${page.pageNumber} after ${slowFailureCount} slow visual failures in a consecutive image-only tail/appendix run.`,
+              downgraded: true,
+            }
+          : page
+      ),
+    },
+  };
 }
 
 function isRetryableUpstreamPageError(message: string): boolean {
@@ -722,6 +871,16 @@ function isRetryableUpstreamPageError(message: string): boolean {
 
 function isFatalProviderStopError(message: string): boolean {
   return FATAL_PROVIDER_STOP_PATTERNS.some((pattern) => pattern.test(message));
+}
+
+function isTextExtractionTimeoutError(message: string): boolean {
+  return (
+    /text extraction timed out/i.test(message)
+    || (
+      /hosted beta request timed out|timed out after \d+s/i.test(message)
+      && !/\b524\b|upstream request failed/i.test(message)
+    )
+  );
 }
 
 function normalizeCheckpointErrorMessage(message: string): string {
@@ -770,6 +929,9 @@ function resolveWorkerPhaseTimeoutMs(
     classification?: PdfPageClassification | null;
     sourceKind?: string | null;
   },
+  options?: {
+    cheapRetry?: boolean;
+  },
 ): number {
   const baseTimeoutMs = Math.min(Math.max(config.timeout ?? 120000, 60000), 120000);
   const isHeavyVisualPage =
@@ -777,9 +939,13 @@ function resolveWorkerPhaseTimeoutMs(
     || input.classification === 'image-only'
     || input.classification === 'text-unreadable';
 
-  return isHeavyVisualPage
+  const phaseTimeoutMs = isHeavyVisualPage
     ? Math.min(Math.max(baseTimeoutMs, 180000), 180000)
     : baseTimeoutMs;
+
+  return options?.cheapRetry
+    ? Math.min(phaseTimeoutMs, isHeavyVisualPage ? 60000 : 90000)
+    : phaseTimeoutMs;
 }
 
 function resolveWorkerTextExtractionTimeoutMs(
@@ -1244,6 +1410,9 @@ async function processGeotechDocumentPage(
   pageInput: PreparedGeotechPageInput,
   config: LLMConfig,
   dependencies: PersistedIngestJobWorkerDependencies,
+  options: {
+    cheapRetry?: boolean;
+  } = {},
 ): Promise<{
   result: GeotechDocumentInsight;
   ocrTextHint?: string;
@@ -1254,6 +1423,9 @@ async function processGeotechDocumentPage(
   const recoverTextHint = dependencies.recoverDocumentTextHint ?? recoverDocumentTextHint;
   const interpretation = dependencies.interpretGeotechDocumentPage ?? interpretGeotechDocumentPage;
   const extractTextFacts = dependencies.extractGeotechDocumentFactsFromText ?? extractGeotechDocumentFactsFromText;
+  const extractDeterministicFacts =
+    dependencies.extractGeotechDocumentDeterministicFactsFromText
+    ?? extractGeotechDocumentDeterministicFactsFromText;
   const transcribe = dependencies.transcribeDocumentImageText ?? transcribeDocumentImageText;
   const inspectionPage = job.inspection?.pages[pageInput.pageNumber - 1] ?? inspect(job.source.filePath).pages[pageInput.pageNumber - 1];
   const lowYieldRole = inferPreflightLowYieldPageRole({
@@ -1284,6 +1456,8 @@ async function processGeotechDocumentPage(
   const phaseTimeoutMs = resolveWorkerPhaseTimeoutMs(config, {
     classification: inspectionPage?.classification,
     sourceKind: pageInput.sourceKind,
+  }, {
+    cheapRetry: options.cheapRetry,
   });
   const phaseConfig: LLMConfig = {
     ...config,
@@ -1292,7 +1466,9 @@ async function processGeotechDocumentPage(
   let pageTextHint: string | undefined;
   let ocrSource: PersistedIngestJobPageCheckpoint['ocrSource'] = 'none';
   let ocrWarnings: string[] = [];
+  let textRecoveryAttempted = false;
   try {
+    textRecoveryAttempted = true;
     const recovery = await withWorkerPageTimeout(
       recoverTextHint({
         existingTextHint: inspectionPage?.normalizedArtifact?.nativeText ?? inspectionPage?.normalizedText,
@@ -1302,6 +1478,7 @@ async function processGeotechDocumentPage(
         config: phaseConfig,
         pdfFilePath: job.source.filePath,
         pdfPageNumber: pageInput.pageNumber,
+        allowVisionOcr: !(options.cheapRetry && pageInput.sourceKind === 'raster-image'),
         visionTranscribe: transcribe,
       }),
       phaseTimeoutMs,
@@ -1322,23 +1499,41 @@ async function processGeotechDocumentPage(
     totalPages: pageInput.totalPages,
     pageClassification: inspectionPage?.classification,
     pageTextHint,
+    textRecoveryAttempted: !pageTextHint && textRecoveryAttempted,
   };
   const extractionTimeoutMs = resolveWorkerTextExtractionTimeoutMs(phaseTimeoutMs, pageTextHint);
   const extractionConfig: LLMConfig = {
     ...config,
     timeout: extractionTimeoutMs,
   };
-  const result = pageTextHint
-    ? await withWorkerPageTimeout(
-      extractTextFacts(pageTextHint, extractionConfig, context),
-      extractionTimeoutMs,
-      `Page ${pageInput.pageNumber}: text extraction timed out after ${Math.round(extractionTimeoutMs / 1000)}s`,
-    )
-    : await withWorkerPageTimeout(
+  let result: GeotechDocumentInsight;
+  if (pageTextHint) {
+    try {
+      result = await withWorkerPageTimeout(
+        extractTextFacts(pageTextHint, extractionConfig, context),
+        extractionTimeoutMs,
+        `Page ${pageInput.pageNumber}: text extraction timed out after ${Math.round(extractionTimeoutMs / 1000)}s`,
+      );
+    } catch (error) {
+      const message = normalizeCheckpointErrorMessage(error instanceof Error ? error.message : String(error));
+      const deterministic = isTextExtractionTimeoutError(message)
+        ? extractDeterministicFacts(pageTextHint, context, {
+            forcePartial: true,
+            warning: `Text extraction timed out (${message}); used deterministic partial extraction instead.`,
+          })
+        : null;
+      if (!deterministic) {
+        throw error;
+      }
+      result = deterministic;
+    }
+  } else {
+    result = await withWorkerPageTimeout(
       interpretation(pageInput.base64, pageInput.mimeType, phaseConfig, context),
       phaseTimeoutMs,
       `Page ${pageInput.pageNumber}: visual page interpretation timed out after ${Math.round(phaseTimeoutMs / 1000)}s`,
     );
+  }
 
   return {
     result,
@@ -1354,6 +1549,9 @@ async function processBoreholePage(
   config: LLMConfig,
   state: BoreholeProcessingState,
   dependencies: PersistedIngestJobWorkerDependencies,
+  options: {
+    cheapRetry?: boolean;
+  } = {},
 ): Promise<{
   result: BoreholeInterpretation;
   nextState: BoreholeProcessingState;
@@ -1368,6 +1566,8 @@ async function processBoreholePage(
   const phaseTimeoutMs = resolveWorkerPhaseTimeoutMs(config, {
     classification: inspectionPage?.classification,
     sourceKind: pageInput.sourceKind,
+  }, {
+    cheapRetry: options.cheapRetry,
   });
   const phaseConfig: LLMConfig = {
     ...config,
@@ -1383,6 +1583,7 @@ async function processBoreholePage(
       config: phaseConfig,
       pdfFilePath: job.source.filePath,
       pdfPageNumber: pageInput.pageNumber,
+      allowVisionOcr: !(options.cheapRetry && pageInput.sourceKind === 'raster-image'),
       visionTranscribe: transcribe,
     }),
     phaseTimeoutMs,
@@ -1609,7 +1810,7 @@ export async function runPersistedIngestJobWorker(
           },
           processing: {
             ...job.processing,
-            chunkExtractionConcurrency: resolvePersistedIngestJobExtractionConcurrency(job.config, inspection),
+            chunkExtractionConcurrency: resolvePersistedIngestJobExtractionConcurrency(job.config, inspection, job.segmentation),
           },
           checkpoints: {
             pages: inspection.pages.map((page) => job.checkpoints.pages.find((existing) => existing.pageNumber === page.pageNumber) ?? ({
@@ -1639,7 +1840,7 @@ export async function runPersistedIngestJobWorker(
               },
               processing: {
                 ...job.processing,
-                chunkExtractionConcurrency: resolvePersistedIngestJobExtractionConcurrency(job.config, null),
+                chunkExtractionConcurrency: resolvePersistedIngestJobExtractionConcurrency(job.config, null, job.segmentation),
               },
               checkpoints: {
                 pages: buildFallbackWorkerCheckpoints(job, inferredPageCount, timestamp),
@@ -1676,6 +1877,10 @@ export async function runPersistedIngestJobWorker(
         currentJob.processing.chunkExtractionConcurrency,
         async (page) => {
           if (isCancelled(jobId)) {
+            return;
+          }
+
+          if (findCheckpoint(currentJob!, page.pageNumber).status !== 'pending') {
             return;
           }
 
@@ -1728,7 +1933,9 @@ export async function runPersistedIngestJobWorker(
           let finalErrorMessage = '';
           for (let attemptIndex = 0; attemptIndex < 2; attemptIndex += 1) {
             try {
-              processed = await processGeotechDocumentPage(currentJob!, page, config, dependencies);
+              processed = await processGeotechDocumentPage(currentJob!, page, config, dependencies, {
+                cheapRetry: attemptIndex > 0,
+              });
               break;
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error);
@@ -1800,27 +2007,31 @@ export async function runPersistedIngestJobWorker(
             if (!fatalProviderStopMessage && isFatalProviderStopError(normalizedMessage)) {
               fatalProviderStopMessage = normalizedMessage;
             }
-            await mutateJob((job) => ({
-              ...job,
-              updatedAt: nowIso(dependencies.now),
-              execution: {
-                ...job.execution,
-                lastHeartbeatAt: nowIso(dependencies.now),
-              },
-              checkpoints: {
-                pages: job.checkpoints.pages.map((pageCheckpoint) =>
-                  pageCheckpoint.pageNumber === page.pageNumber
-                    ? {
-                        ...pageCheckpoint,
-                        status: 'failed',
-                        updatedAt: nowIso(dependencies.now),
-                        error: normalizedMessage,
-                        downgraded: isSlowVisualPageError(normalizedMessage, checkpoint.classification, checkpoint.sourceKind),
-                      }
-                    : pageCheckpoint
-                ),
-              },
-            }));
+            await mutateJob((job) => {
+              const timestamp = nowIso(dependencies.now);
+              const failedJob = {
+                ...job,
+                updatedAt: timestamp,
+                execution: {
+                  ...job.execution,
+                  lastHeartbeatAt: timestamp,
+                },
+                checkpoints: {
+                  pages: job.checkpoints.pages.map((pageCheckpoint) =>
+                    pageCheckpoint.pageNumber === page.pageNumber
+                      ? {
+                          ...pageCheckpoint,
+                          status: 'failed' as const,
+                          updatedAt: timestamp,
+                          error: normalizedMessage,
+                          downgraded: isSlowVisualPageError(normalizedMessage, checkpoint.classification, checkpoint.sourceKind),
+                        }
+                      : pageCheckpoint
+                  ),
+                },
+              };
+              return applyConsecutiveVisualRunDowngrades(failedJob, page.pageNumber, dependencies.now);
+            });
           }
         },
       );
@@ -1900,7 +2111,9 @@ export async function runPersistedIngestJobWorker(
         let finalErrorMessage = '';
         for (let attemptIndex = 0; attemptIndex < 2; attemptIndex += 1) {
           try {
-            processed = await processBoreholePage(currentJob, page, config, state, dependencies);
+            processed = await processBoreholePage(currentJob, page, config, state, dependencies, {
+              cheapRetry: attemptIndex > 0,
+            });
             break;
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);

@@ -24,6 +24,7 @@ export interface RecoverDocumentTextHintOptions {
   pdfFilePath?: string;
   pdfPageNumber?: number;
   minimumLength?: number;
+  allowVisionOcr?: boolean;
   visionTranscribe?: (
     imageBase64: string,
     mimeType: string,
@@ -297,7 +298,12 @@ export async function recoverDocumentTextHint(
     };
   }
 
-  if (options.visionTranscribe) {
+  const allowVisionOcr = options.allowVisionOcr ?? true;
+  if (!allowVisionOcr) {
+    warnings.push('Vision OCR was skipped for this retry because OCR/text recovery had already been attempted for the page.');
+  }
+
+  if (allowVisionOcr && options.visionTranscribe) {
     let recoveredVisionText: string | undefined;
 
     try {

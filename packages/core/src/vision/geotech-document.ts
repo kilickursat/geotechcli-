@@ -689,6 +689,60 @@ function shouldShortCircuitToDeterministicFallback(insight: GeotechDocumentInsig
   return false;
 }
 
+function buildDeterministicGeotechDocumentInsight(
+  normalizedPageText: string,
+  context: GeotechDocumentContext,
+): GeotechDocumentInsight | null {
+  const fallback = extractGeotechDocumentFallback(normalizedPageText);
+  if (!fallback.value) {
+    return null;
+  }
+
+  return buildGeotechDocumentInsightFromValue({
+    mergedValue: fallback.value,
+    baseStatus: fallback.baseStatus,
+    warnings: fallback.warnings,
+    normalizedPageText,
+    context,
+    rawLLMText: '',
+    latencyMs: 0,
+  });
+}
+
+export function extractGeotechDocumentDeterministicFactsFromText(
+  pageText: string,
+  context: GeotechDocumentContext = {},
+  options: {
+    warning?: string;
+    forcePartial?: boolean;
+  } = {},
+): GeotechDocumentInsight | null {
+  const normalizedPageText = pageText.replace(/\s+/g, ' ').trim();
+  if (!normalizedPageText) {
+    return null;
+  }
+
+  const insight = buildDeterministicGeotechDocumentInsight(normalizedPageText, context);
+  if (!insight) {
+    return null;
+  }
+
+  const parseStatus =
+    options.forcePartial && insight.parseStatus !== 'failed'
+      ? 'partial'
+      : insight.parseStatus;
+
+  return {
+    ...insight,
+    parseStatus,
+    confidence: options.forcePartial ? Math.min(insight.confidence, 68) : insight.confidence,
+    canAutoProceed: options.forcePartial ? false : insight.canAutoProceed,
+    warnings: options.warning
+      ? combineWarnings(insight.warnings, [options.warning])
+      : insight.warnings,
+  };
+}
+
 export async function extractGeotechDocumentFactsFromText(
   pageText: string,
   config: LLMConfig,
@@ -721,18 +775,7 @@ export async function extractGeotechDocumentFactsFromText(
   ].filter((value): value is string => Boolean(value));
   const sharedContext = contextParts.join('\n');
   const fallback = extractGeotechDocumentFallback(normalizedPageText);
-  const deterministicFallbackInsight =
-    fallback.value
-      ? buildGeotechDocumentInsightFromValue({
-          mergedValue: fallback.value,
-          baseStatus: fallback.baseStatus,
-          warnings: fallback.warnings,
-          normalizedPageText,
-          context,
-          rawLLMText: '',
-          latencyMs: 0,
-        })
-      : null;
+  const deterministicFallbackInsight = buildDeterministicGeotechDocumentInsight(normalizedPageText, context);
 
   if (deterministicFallbackInsight && shouldShortCircuitToDeterministicFallback(deterministicFallbackInsight)) {
     const deterministicConfidence = Math.max(deterministicFallbackInsight.confidence, 72);

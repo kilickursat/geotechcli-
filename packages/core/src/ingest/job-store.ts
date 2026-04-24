@@ -521,16 +521,30 @@ export function resolvePersistedIngestJobExtractionConcurrency(
     return 1;
   }
 
-  if (
-    config.provider === 'hosted-beta'
-    && inspection
-    && inspection.pages.filter((page) =>
+  if (config.provider === 'hosted-beta' && inspection) {
+    const totalPages = Math.max(inspection.totalPages, inspection.pages.length);
+    const visualPageCount = inspection.pages.filter((page) =>
       page.classification === 'image-only'
       || page.classification === 'text-unreadable'
       || page.classification === 'graphics-only',
-    ).length >= Math.max(2, Math.ceil(inspection.totalPages / 2))
-  ) {
-    return 1;
+    ).length;
+    const weightedPageCost = computeWeightedPdfPageCost(inspection);
+    const hasMixedVisualLoad = visualPageCount > 0 && visualPageCount < totalPages;
+    const hasLongMixedVisualPressure =
+      hasMixedVisualLoad
+      && (
+        (totalPages >= 10 && visualPageCount >= 3)
+        || (totalPages >= 16 && visualPageCount >= 2)
+        || (totalPages >= 24 && visualPageCount >= 1)
+        || (weightedPageCost >= 18 && visualPageCount >= 2)
+      );
+
+    if (
+      visualPageCount >= Math.max(2, Math.ceil(totalPages / 2))
+      || hasLongMixedVisualPressure
+    ) {
+      return 1;
+    }
   }
 
   const provider = config.provider;

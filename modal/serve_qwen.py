@@ -31,16 +31,32 @@ def env_int(name: str, default: int, minimum: int | None = None) -> int:
 def sanitize_extra_args(extra_args: str) -> list[str]:
     tokens = shlex.split(extra_args)
     sanitized: list[str] = []
+    blocked_value_args = {
+        "--num-gpu-blocks-override": "unsupported vLLM arg for hosted-beta L4",
+        "--max-num-seqs": "managed by GEOTECHCLI_VLLM_MAX_NUM_SEQS",
+    }
     index = 0
     while index < len(tokens):
         token = tokens[index]
-        if token == "--num-gpu-blocks-override":
-            skipped_value = tokens[index + 1] if index + 1 < len(tokens) else "<missing>"
-            print(
-                "Ignoring unsupported vLLM arg for hosted-beta L4:",
-                f"{token} {skipped_value}",
+        blocked_arg = next(
+            (
+                arg
+                for arg in blocked_value_args
+                if token == arg or token.startswith(f"{arg}=")
+            ),
+            None,
+        )
+        if blocked_arg:
+            skipped_value = (
+                token.split("=", 1)[1]
+                if token.startswith(f"{blocked_arg}=")
+                else tokens[index + 1] if index + 1 < len(tokens) else "<missing>"
             )
-            index += 2
+            print(
+                f"Ignoring {blocked_value_args[blocked_arg]}:",
+                f"{blocked_arg} {skipped_value}",
+            )
+            index += 1 if token.startswith(f"{blocked_arg}=") else 2
             continue
         sanitized.append(token)
         index += 1
@@ -55,10 +71,11 @@ VLLM_PORT = 8000
 MIN_CONTAINERS = env_int("GEOTECHCLI_MODAL_MIN_CONTAINERS", 0, minimum=0)
 BUFFER_CONTAINERS = env_int("GEOTECHCLI_MODAL_BUFFER_CONTAINERS", 0, minimum=0)
 MAX_CONTAINERS = env_int("GEOTECHCLI_MODAL_MAX_CONTAINERS", 1, minimum=1)
-MAX_CONCURRENT_INPUTS = env_int("GEOTECHCLI_MODAL_MAX_INPUTS", 8, minimum=1)
+MAX_CONCURRENT_INPUTS = env_int("GEOTECHCLI_MODAL_MAX_INPUTS", 2, minimum=1)
 VLLM_PIP_SPEC = os.environ.get("GEOTECHCLI_VLLM_PIP_SPEC", "vllm==0.18.1").strip() or "vllm==0.18.1"
 GPU_MEMORY_UTILIZATION = os.environ.get("GEOTECHCLI_VLLM_GPU_MEMORY_UTILIZATION", "0.90").strip() or "0.90"
 MAX_MODEL_LEN = os.environ.get("GEOTECHCLI_VLLM_MAX_MODEL_LEN", "4096").strip() or "4096"
+MAX_NUM_SEQS = env_int("GEOTECHCLI_VLLM_MAX_NUM_SEQS", 2, minimum=1)
 MM_LIMIT_JSON = os.environ.get("GEOTECHCLI_VLLM_MM_LIMIT_JSON", '{"image": 1}').strip() or '{"image": 1}'
 REASONING_PARSER = os.environ.get("GEOTECHCLI_VLLM_REASONING_PARSER", "qwen3").strip()
 ATTENTION_BACKEND = os.environ.get("GEOTECHCLI_VLLM_ATTENTION_BACKEND", "").strip()
@@ -125,6 +142,8 @@ def serve():
         GPU_MEMORY_UTILIZATION,
         "--max-model-len",
         MAX_MODEL_LEN,
+        "--max-num-seqs",
+        str(MAX_NUM_SEQS),
         "--limit-mm-per-prompt",
         MM_LIMIT_JSON,
         "--enable-prefix-caching",
@@ -154,6 +173,7 @@ def serve():
 
     print(f"Launching hosted beta model: {MODEL_ID}")
     print(f"vLLM package spec: {VLLM_PIP_SPEC}")
+    print(f"vLLM max num seqs: {MAX_NUM_SEQS}")
     print(f"Compilation config: {COMPILATION_CONFIG}")
     print(
         "Autoscaling:",

@@ -1,5 +1,15 @@
 ﻿# Changelog
 
+## [0.4.27] - 2026-04-24
+
+### Cost-Aware Hosted-Beta PDF Reliability
+
+- Reduced the hosted Qwen Modal default admission pressure for the L4 path by lowering concurrent inputs to 2, adding an explicit vLLM `--max-num-seqs` guard, and keeping the default max container count at 1 for credit-safe operation.
+- Lowered hosted-beta proxy retry pressure by making vision and agent upstream calls single-attempt and reducing text retries, with separate per-minute rate limits for heavier vision and agent calls.
+- Serialized more long mixed PDF ingest jobs on hosted beta, especially reports with image-only appendix/tail pages that previously queued too many multimodal requests behind one GPU.
+- Added cheaper PDF retry behavior: deterministic partial extraction for text timeouts, skipped duplicate vision OCR on retry, and downgraded repeated slow image-only tail pages to manual review instead of spending another 180s per page.
+- Added a clear browser-dossier command after plain persisted ingest results so users can immediately open the HTML review when they did not pass `--format html`.
+
 ## [0.4.26] - 2026-04-24
 
 ### Strong-Beta Reliability And Ingest UX Fixes

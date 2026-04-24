@@ -1722,6 +1722,7 @@ function renderIngestJobResult(job: NormalizedIngestJobRecord): void {
       sourceLabel: job.result.ingestResult.source.fileName ?? job.result.ingestResult.source.filePath,
       persistedReview,
     });
+    info(`Open browser dossier: geotech ingest result ${job.jobId} --format html`);
     return;
   }
 
@@ -1730,6 +1731,8 @@ function renderIngestJobResult(job: NormalizedIngestJobRecord): void {
     sourceLabel: job.result.ingestResult.source.fileName ?? job.result.ingestResult.source.filePath,
     persistedReview,
   });
+
+  info(`Open browser dossier: geotech ingest result ${job.jobId} --format html`);
 }
 
 function renderCompactIngestResultSummary(

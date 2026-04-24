@@ -44,6 +44,18 @@ describe('hosted beta controls', () => {
 
   it('gives geotechcli clients more room than anonymous callers', async () => {
     expect(getHostedBetaRequestLimit('geotechcli')).toBeGreaterThan(getHostedBetaRequestLimit('anonymous'));
+    expect(getHostedBetaRequestLimit('geotechcli', 'vision')).toBeGreaterThan(
+      getHostedBetaRequestLimit('anonymous', 'vision'),
+    );
+    expect(getHostedBetaRequestLimit('geotechcli', 'agent')).toBeGreaterThan(
+      getHostedBetaRequestLimit('anonymous', 'agent'),
+    );
+    expect(getHostedBetaRequestLimit('geotechcli', 'vision')).toBeLessThan(
+      getHostedBetaRequestLimit('geotechcli'),
+    );
+    expect(getHostedBetaRequestLimit('geotechcli', 'agent')).toBeLessThan(
+      getHostedBetaRequestLimit('geotechcli'),
+    );
     expect(getDailyLimitForClient('text', 'geotechcli')).toBeGreaterThan(
       getDailyLimitForClient('text', 'anonymous'),
     );
@@ -451,5 +463,125 @@ describe('hosted beta controls', () => {
     expect(response.status).toBe(503);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(body.error?.message).toMatch(/provider is busy/i);
+  });
+
+  it('does not retry upstream vision requests after a transient failure', async () => {
+    vi.stubEnv('MODAL_ENDPOINT_URL', 'https://test--geotechcli-qwen-serve.modal.run/v1/chat/completions');
+
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: {
+            message: 'Rate limit reached for requests',
+          },
+        }),
+        {
+          status: 429,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
+    global.fetch = fetchMock as typeof fetch;
+
+    const route = await import('../app/api/proxy/route.js');
+    const request = new NextRequest('https://example.com/api/proxy', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-geotech-client': 'geotechcli',
+        'x-geotech-client-version': GEOTECHCLI_VERSION,
+      },
+      body: JSON.stringify({
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'Read this borehole log image.' },
+              {
+                type: 'image_url',
+                image_url: { url: 'data:image/png;base64,iVBORw0KGgo=' },
+              },
+            ],
+          },
+        ],
+        model: DEFAULT_LLM_MODEL,
+      }),
+    });
+
+    const response = await route.POST(request);
+    const body = (await response.json()) as {
+      error?: { message?: string; detail?: string };
+    };
+
+    expect(response.status).toBe(503);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(body.error?.message).toMatch(/provider is busy/i);
+  });
+
+  it('applies a lower per-minute limiter to hosted vision requests', async () => {
+    vi.stubEnv('MODAL_ENDPOINT_URL', 'https://test--geotechcli-qwen-serve.modal.run/v1/chat/completions');
+
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(
+      new Response(
+        JSON.stringify({
+          model: DEFAULT_LLM_MODEL,
+          choices: [{ message: { content: 'Vision OK' } }],
+          usage: {
+            prompt_tokens: 12,
+            completion_tokens: 2,
+            total_tokens: 14,
+          },
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    ));
+    global.fetch = fetchMock as typeof fetch;
+
+    const route = await import('../app/api/proxy/route.js');
+    const visionLimit = getHostedBetaRequestLimit('geotechcli', 'vision');
+    let lastResponse: Response | null = null;
+
+    for (let index = 0; index <= visionLimit; index += 1) {
+      const request = new NextRequest('https://example.com/api/proxy', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-forwarded-for': '203.0.113.77',
+          'x-geotech-client': 'geotechcli',
+          'x-geotech-client-version': GEOTECHCLI_VERSION,
+        },
+        body: JSON.stringify({
+          messages: [
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: `Read borehole log image ${index}.` },
+                {
+                  type: 'image_url',
+                  image_url: { url: 'data:image/png;base64,iVBORw0KGgo=' },
+                },
+              ],
+            },
+          ],
+          model: DEFAULT_LLM_MODEL,
+        }),
+      });
+
+      lastResponse = await route.POST(request);
+      if (index < visionLimit) {
+        expect(lastResponse.status).toBe(200);
+      }
+    }
+
+    const lastBody = (await lastResponse?.json()) as {
+      error?: { code?: string };
+    };
+
+    expect(lastResponse?.status).toBe(429);
+    expect(lastBody.error?.code).toBe('vision_rate_limited');
+    expect(fetchMock).toHaveBeenCalledTimes(visionLimit);
   });
 });

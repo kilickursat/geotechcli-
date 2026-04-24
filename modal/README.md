@@ -1,4 +1,4 @@
-# Modal Deployment — geotechCLI Qwen Backend
+# Modal Deployment - geotechCLI Qwen Backend
 
 Serves `Qwen/Qwen3.5-9B` on an NVIDIA L4 GPU via [Modal](https://modal.com).
 
@@ -37,6 +37,7 @@ Serves `Qwen/Qwen3.5-9B` on an NVIDIA L4 GPU via [Modal](https://modal.com).
 - **Idle timeout**: 10 minutes. The GPU container freezes after 10 minutes with no requests.
 - **Cold start**: initial warm-up happens on first request after freeze. Hugging Face and vLLM caches are persisted in Modal Volumes.
 - **Request limiting**: handled by the Cloudflare hosted-beta proxy so the Modal server can stay OpenAI-compatible.
+- **Credit-safe defaults**: the L4 deployment defaults to one container, two concurrent admitted requests, and vLLM `--max-num-seqs 2` so slow multimodal PDF pages do not create an expensive queue.
 
 ## Environment
 
@@ -45,6 +46,8 @@ Serves `Qwen/Qwen3.5-9B` on an NVIDIA L4 GPU via [Modal](https://modal.com).
 - Model: Qwen/Qwen3.5-9B
 - Max context: 4096 tokens
 - Max output: 4096 tokens
+- Default concurrent inputs: 2
+- Default vLLM max sequences: 2
 
 ## Compatibility Overrides
 
@@ -72,12 +75,14 @@ runtime without hardcoding secrets or editing user-facing docs first.
 - `GEOTECHCLI_MODAL_MAX_CONTAINERS`
   Default: `1`
 - `GEOTECHCLI_MODAL_MAX_INPUTS`
-  Default: `8`
+  Default: `2`
+- `GEOTECHCLI_VLLM_MAX_NUM_SEQS`
+  Default: `2`
 
 These are intended for deploy-time compatibility testing, not for storing
 secrets. Keep tokens in Modal secrets or server environment variables only.
 
-For the hosted-beta L4 path, avoid `--num-gpu-blocks-override` in
-`GEOTECHCLI_VLLM_EXTRA_ARGS`. vLLM documents that flag as a testing override,
-and it can force an otherwise stable startup into KV-cache OOM on tight-memory
-single-GPU deployments.
+For the hosted-beta L4 path, avoid `--num-gpu-blocks-override` and
+`--max-num-seqs` in `GEOTECHCLI_VLLM_EXTRA_ARGS`. The launcher strips those
+flags because GPU block overrides can force KV-cache OOM and max sequence
+admission is managed by `GEOTECHCLI_VLLM_MAX_NUM_SEQS`.
