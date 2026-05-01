@@ -50,7 +50,7 @@ export class ZhipuAdapter implements ProviderAdapter {
   ): Promise<CompletionResponse> {
     if (!config.apiKey) {
       throw new Error(
-        'Zhipu API key is required. Set it via `geotech config set llm.api_key <key>` or ZHIPU_API_KEY env var.',
+        'Z.ai API key is required. Set it via `geotech config set llm.api_key <key>`, ZHIPU_API_KEY, or ZAI_API_KEY.',
       );
     }
 
@@ -100,7 +100,8 @@ export class ZhipuAdapter implements ProviderAdapter {
       body.response_format = { type: 'json_object' };
     }
 
-    const url = `${this.baseUrl}/chat/completions`;
+    const baseUrl = (config.baseUrl?.trim() || this.baseUrl).replace(/\/+$/, '');
+    const url = `${baseUrl}/chat/completions`;
     const start = Date.now();
 
     const res = await fetch(url, {

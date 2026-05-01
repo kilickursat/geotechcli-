@@ -34,6 +34,17 @@ const lockCliPkg = lockfile.packages?.['packages/cli'];
 const lockCorePkg = lockfile.packages?.['packages/core'];
 const lockWebPkg = lockfile.packages?.['packages/web'];
 
+assert(metadata.defaults.provider === 'hosted-beta', 'Strong beta must keep hosted-beta as the public default provider.');
+assert(metadata.defaults.model === 'glm-5.1', `Default text model must be glm-5.1, found ${metadata.defaults.model}.`);
+assert(metadata.defaults.visionModel === 'glm-5v-turbo', `Default vision model must be glm-5v-turbo, found ${metadata.defaults.visionModel}.`);
+assert(
+  Array.isArray(metadata.proxyModels) &&
+    metadata.proxyModels.includes('glm-5.1') &&
+    metadata.proxyModels.includes('glm-5v-turbo') &&
+    !metadata.proxyModels.some((model) => /qwen/i.test(model)),
+  'Supported proxy models must include the GLM text and vision defaults and must not include stale Qwen defaults.',
+);
+
 for (const pkg of [cliPkg, corePkg, webPkg]) {
   assert(
     pkg.version === metadata.version,
@@ -127,15 +138,35 @@ assert(
   '.env.example must point at the beta geotechcli.com host for both proxy and app URL.',
 );
 assert(
-  envExample.includes('MODAL_ENDPOINT_URL=') &&
-    envExample.includes('MODAL_API_TOKEN='),
-  '.env.example must document the Modal hosted-beta endpoint and optional bearer token.',
+  envExample.includes('ZHIPU_API_KEY=') &&
+    envExample.includes('ZHIPU_API_BASE_URL=https://api.z.ai/api/paas/v4') &&
+    !envExample.includes('MODAL_ENDPOINT_URL=') &&
+    !envExample.includes('MODAL_API_TOKEN='),
+  '.env.example must document Z.ai hosted-beta secrets and must not advertise Modal as the active hosted-beta upstream.',
 );
 assert(
   !envExample.includes('GEOTECHCLI_PROXY_URL=https://geotechcli.com/api/proxy') &&
     !envExample.includes('NEXT_PUBLIC_APP_URL=https://geotechcli.com') &&
     !envExample.includes('ZAI_API_BASE_URL='),
-  '.env.example must not reference the legacy apex host or the retired Z.AI upstream.',
+  '.env.example must not reference the legacy apex host or duplicate Z.ai env aliases.',
+);
+
+const proxyRouteSource = readText('packages', 'web', 'app', 'api', 'proxy', 'route.ts');
+assert(
+  proxyRouteSource.includes('getHostedBetaUpstreamApiKey') &&
+    proxyRouteSource.includes('getHostedBetaUpstreamChatCompletionsUrl') &&
+    !proxyRouteSource.includes('MODAL_ENDPOINT_URL') &&
+    !proxyRouteSource.includes('MODAL_API_TOKEN') &&
+    !proxyRouteSource.includes('modal.run'),
+  'Hosted beta proxy must use the Z.ai/ZHIPU upstream secret path and must not call the legacy Modal endpoint.',
+);
+
+const modalDeployWorkflow = readText('.github', 'workflows', 'modal-deploy.yml');
+assert(
+  !modalDeployWorkflow.includes('branches: [strong-beta]') &&
+    modalDeployWorkflow.includes('run_legacy_modal_deploy') &&
+    modalDeployWorkflow.includes('Deploy Legacy Qwen to Modal'),
+  'Legacy Modal workflow must remain present but disabled from automatic strong-beta pushes.',
 );
 
 const docsSource = readText('packages', 'web', 'app', 'docs', 'page.tsx');

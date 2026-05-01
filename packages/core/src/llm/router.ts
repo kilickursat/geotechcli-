@@ -58,7 +58,7 @@ registry.register(
   }),
 );
 
-// "openai-compatible" catch-all for Qwen on Modal, Ollama, vLLM, etc.
+// "openai-compatible" catch-all for local OpenAI-compatible servers, Ollama, vLLM, etc.
 registry.register(
   new OpenAICompatibleAdapter({
     name: 'openai-compatible',

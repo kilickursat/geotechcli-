@@ -157,7 +157,7 @@ export function Hero() {
           style={{ fontSize: 'clamp(16px,2vw,19px)' }}
         >
           Local GroundModels, vision workflows, and AI reasoning powered by{' '}
-          <span style={{ color: 'var(--accent-teal)' }}>Qwen3.5-9B</span> - combined with
+          <span style={{ color: 'var(--accent-teal)' }}>GLM 5.1</span> - combined with
           deterministic geotechnical engines. No provider key. No signup. One command.
         </p>
 

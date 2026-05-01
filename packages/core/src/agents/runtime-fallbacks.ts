@@ -55,7 +55,7 @@ export function buildDeterministicFallbackAnswer(
   const normalized = userQuery.toLowerCase();
   const fallbackLead =
     mode === 'warming_timeout'
-      ? 'Hosted model on Modal.com GPU is warming up or exceeded the current timeout budget, so the agent switched to deterministic fallback reasoning instead of returning no analysis.'
+      ? 'Hosted GLM provider is busy or exceeded the current timeout budget, so the agent switched to deterministic fallback reasoning instead of returning no analysis.'
       : 'Hosted beta was temporarily unavailable, so the agent switched to deterministic fallback reasoning instead of returning no analysis.';
 
   const intakeFallback = buildGeotechnicalFallbackAnswer(userQuery, sessionContext);
@@ -111,7 +111,7 @@ export function buildDeterministicFallbackAnswer(
 
   return [
     mode === 'warming_timeout'
-      ? 'Hosted model on Modal.com GPU is warming up or exceeded the current timeout budget, and this request does not currently have a direct deterministic fallback in geotechCLI.'
+      ? 'Hosted GLM provider is busy or exceeded the current timeout budget, and this request does not currently have a direct deterministic fallback in geotechCLI.'
       : 'Hosted beta was temporarily unavailable, and this request does not currently have a direct deterministic fallback in geotechCLI.',
     'Retry shortly, or reformulate the task as one of the built-in deterministic commands so the CLI can continue without the hosted model.',
   ].join('\n\n');

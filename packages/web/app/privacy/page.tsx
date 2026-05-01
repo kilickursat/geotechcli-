@@ -14,7 +14,7 @@ const sections = [
   {
     title: 'What happens in strong beta',
     points: [
-      'AI, vision, and agent commands use the hosted Qwen beta path by default.',
+      'AI, vision, and agent commands use the hosted GLM beta path by default.',
       'That means requests are forwarded from the CLI to the geotechCLI beta gateway and then to the model provider needed to answer them.',
       'Deterministic calculations stay local and do not require an AI provider.',
     ],
@@ -31,9 +31,9 @@ const sections = [
     title: 'Important provider note',
     points: [
       'A response still requires sending the request to the model provider that generates it.',
-      'In strong beta, the hosted default is Qwen3.5-9B on Modal unless the user intentionally switches to another provider.',
-      'The hosted model runs on dedicated Modal GPU infrastructure. User prompts are processed in real-time and not stored or used for model training.',
-      'For the hosted beta path, provider-side handling follows Modal platform terms in addition to geotechCLI server behavior.',
+      'In strong beta, the hosted defaults are glm-5.1 for text and agent reasoning, and glm-5v-turbo for vision unless the user intentionally switches to another provider.',
+      'The hosted model path is backed by Z.ai. User prompts are processed in real-time and not stored or used for model training by geotechCLI.',
+      'For the hosted beta path, provider-side handling follows Z.ai platform terms in addition to geotechCLI server behavior.',
     ],
   },
 ];

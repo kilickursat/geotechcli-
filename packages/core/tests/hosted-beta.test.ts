@@ -55,6 +55,9 @@ describe('HostedBetaAdapter', () => {
       'X-Geotech-Client': 'geotechcli',
       'X-Geotech-Call-Type': 'text',
     });
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      model: DEFAULT_LLM_MODEL,
+    });
   });
 
   it('forwards hosted-beta developer auth when a trusted auth key is configured', async () => {

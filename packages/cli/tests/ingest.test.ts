@@ -67,7 +67,7 @@ vi.mock('@geotechcli/core', () => ({
   cancelPersistedIngestJob: coreMocks.cancelPersistedIngestJob,
   computeWeightedPdfPageCost: coreMocks.computeWeightedPdfPageCost,
   createAndStartPersistedIngestJob: coreMocks.createAndStartPersistedIngestJob,
-  DEFAULT_LLM_VISION_MODEL: 'Qwen/Qwen3.5-9B',
+  DEFAULT_LLM_VISION_MODEL: 'glm-5v-turbo',
   HOSTED_BETA_EFFECTIVE_PAGE_LIMIT: 60,
   GLOBAL_FLAG_DEFINITIONS: [
     { key: 'json', option: '--json', description: 'json' },
@@ -240,7 +240,7 @@ describe('registerIngestCommand', () => {
       provider: 'openai-compatible',
       apiKey: 'test-key',
       timeout: 1000,
-      visionModelId: 'Qwen/Qwen3.5-9B',
+      visionModelId: 'glm-5v-turbo',
     });
     coreMocks.buildIngestDossier.mockReturnValue({
       title: 'Dossier',
@@ -430,7 +430,7 @@ describe('registerIngestCommand', () => {
       provider: 'hosted-beta',
       apiKey: 'test-key',
       timeout: 1000,
-      visionModelId: 'Qwen/Qwen3.5-9B',
+      visionModelId: 'glm-5v-turbo',
     });
     coreMocks.inspectPdfDocument.mockReturnValue({
       totalPages: 102,

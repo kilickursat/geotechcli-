@@ -6,7 +6,7 @@ const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || 'https://beta.geotechc
 export const metadata: Metadata = {
   title: 'geotechCLI Strong Beta - Geotechnical CLI',
   description:
-    'Strong beta for geotechCLI. Deterministic geotechnical calculations and hosted Qwen beta access are live now with privacy-first guardrails.',
+    'Strong beta for geotechCLI. Deterministic geotechnical calculations and hosted GLM beta access are live now with privacy-first guardrails.',
   keywords: [
     'geotechnical engineering',
     'CLI',
@@ -22,7 +22,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(appUrl),
   openGraph: {
     title: 'geotechCLI Strong Beta',
-    description: 'Privacy-first strong beta for a geotechnical engineering CLI with deterministic workflows and hosted Qwen beta access live now.',
+    description: 'Privacy-first strong beta for a geotechnical engineering CLI with deterministic workflows and hosted GLM beta access live now.',
     url: appUrl,
     siteName: 'geotechCLI',
     type: 'website',
@@ -30,7 +30,7 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary_large_image',
     title: 'geotechCLI Strong Beta',
-    description: 'Privacy-first deterministic geotechnical CLI workflows and hosted Qwen beta access are live now.',
+    description: 'Privacy-first deterministic geotechnical CLI workflows and hosted GLM beta access are live now.',
   },
 };
 

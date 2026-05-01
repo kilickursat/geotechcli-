@@ -1,5 +1,15 @@
 ﻿# Changelog
 
+## [0.4.30] - 2026-05-01
+
+### Hosted GLM Default Swap
+
+- Swapped the strong-beta hosted AI defaults from Qwen on Modal to Z.ai GLM, using `glm-5.1` for text and agent reasoning and `glm-5v-turbo` for vision.
+- Kept the public CLI contract on `hosted-beta`, so end users still get default AI access without bringing their own provider key.
+- Retargeted the beta proxy, environment docs, release guardrails, and website copy around the server-side `ZHIPU_API_KEY` secret.
+- Disabled the legacy Modal deploy workflow by default while preserving it as a manual historical fallback.
+- Added guardrails for GLM proxy model defaults and provider-neutral timeout/fallback wording.
+
 ## [0.4.29] - 2026-04-24
 
 ### GroundModel Truth Layer

@@ -26,7 +26,7 @@ export default function PricingPage() {
             <div>
               <h3 className="font-semibold mb-2">How does AI work in this beta branch?</h3>
               <p className="text-[var(--text-secondary)] text-sm leading-relaxed">
-                AI commands now use hosted Qwen beta access by default, so end users
+                AI commands now use hosted GLM beta access by default, so end users
                 do not need to bring their own API key. The current default model
                 family is {DEFAULT_LLM_MODEL} for text and {DEFAULT_LLM_VISION_MODEL}{' '}
                 for vision, with server-side rate limits protecting the beta.

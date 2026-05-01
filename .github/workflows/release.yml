@@ -92,6 +92,8 @@ jobs:
           export EXPECTED_VERSION=$(node -p "require('./packages/core/package.json').version")
           node <<'NODE'
           const expectedVersion = process.env.EXPECTED_VERSION;
+          const expectedTextModel = 'glm-5.1';
+          const expectedVisionModel = 'glm-5v-turbo';
           const checks = [
             {
               url: `https://beta.geotechcli.com/api/version?ts=${Date.now()}`,
@@ -107,9 +109,12 @@ jobs:
                 if (!payload || payload.version !== expectedVersion) {
                   return `expected version=${expectedVersion}, received ${JSON.stringify(payload)}`;
                 }
+                if (payload.defaults?.text !== expectedTextModel || payload.defaults?.vision !== expectedVisionModel) {
+                  return `expected GLM defaults, received ${JSON.stringify(payload.defaults)}`;
+                }
                 return null;
               },
-              description: `beta version endpoint exposes ${expectedVersion}`,
+              description: `beta version endpoint exposes ${expectedVersion} with GLM defaults`,
             },
             {
               url: `https://beta.geotechcli.com/api/proxy?ts=${Date.now()}`,
@@ -118,9 +123,45 @@ jobs:
                 pragma: 'no-cache',
               },
               async validate(response) {
-                return response.status === 200 ? null : `unexpected status=${response.status}`;
+                const payload = await response.json().catch(() => null);
+                if (response.status !== 200) {
+                  return `unexpected status=${response.status}, payload=${JSON.stringify(payload)}`;
+                }
+                if (payload?.defaults?.text !== expectedTextModel || payload?.defaults?.vision !== expectedVisionModel) {
+                  return `expected GLM proxy defaults, received ${JSON.stringify(payload?.defaults)}`;
+                }
+                return null;
               },
-              description: 'beta proxy GET health returns 200',
+              description: 'beta proxy GET health returns 200 with GLM defaults',
+            },
+            {
+              url: 'https://beta.geotechcli.com/api/proxy',
+              method: 'POST',
+              headers: {
+                'content-type': 'application/json',
+                'x-geotech-client': 'geotechcli',
+                'x-geotech-client-version': expectedVersion,
+              },
+              body: JSON.stringify({
+                messages: [{ role: 'user', content: 'Reply with exactly: OK' }],
+                maxTokens: 16,
+                temperature: 0,
+              }),
+              async validate(response) {
+                const payload = await response.json().catch(() => null);
+                if (response.status !== 200) {
+                  return `unexpected status=${response.status}, payload=${JSON.stringify(payload)}`;
+                }
+                if (payload?.model !== expectedTextModel) {
+                  return `expected model=${expectedTextModel}, received ${JSON.stringify(payload?.model)}`;
+                }
+                const content = payload?.choices?.[0]?.message?.content ?? '';
+                if (!/OK/i.test(content)) {
+                  return `expected OK response, received ${JSON.stringify(content)}`;
+                }
+                return null;
+              },
+              description: 'beta proxy live GLM text completion succeeds',
             },
           ];
 
@@ -132,8 +173,10 @@ jobs:
               for (let attempt = 1; attempt <= 20; attempt += 1) {
                 try {
                   const response = await fetch(check.url, {
+                    method: check.method ?? 'GET',
                     redirect: 'follow',
                     headers: check.headers,
+                    body: check.body,
                   });
                   const validationError = await check.validate(response);
                   if (!validationError) {

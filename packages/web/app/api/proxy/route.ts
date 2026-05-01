@@ -13,13 +13,17 @@ import {
   createHostedBetaErrorResponse,
   extractClientIp,
   getHostedBetaDeveloperAuthStatus,
+  getHostedBetaAllowedModelsForCallType,
   getHostedBetaRequestLimit,
   getHostedBetaConfigIssue,
   getHostedBetaDefaultModel,
+  getHostedBetaUpstreamApiKey,
+  getHostedBetaUpstreamChatCompletionsUrl,
   hasHostedBetaRedis,
   incrementHostedBetaUsage,
   inferHostedBetaCallType,
   isHostedBetaModel,
+  isHostedBetaModelAllowedForCallType,
   isIPRateLimitedMemory,
   resolveHostedBetaClientMode,
   shouldBypassHostedBetaLimits,
@@ -36,9 +40,6 @@ import type {
 
 const MAX_BODY_SIZE_BYTES = 8 * 1024 * 1024;
 const MAX_TOKENS = 4096;
-const MODAL_CHAT_COMPLETIONS_URL =
-  process.env.MODAL_ENDPOINT_URL?.trim() ??
-  'https://kursatkilic6648--geotechcli-qwen-serve.modal.run/v1/chat/completions';
 
 const HOSTED_BETA_SYSTEM_PROMPT = `You are the hosted beta AI backend for geotechCLI.
 Stay focused on geotechnical engineering tasks: soil mechanics, rock mechanics, foundations, tunnels, slopes, groundwater, instrumentation, and engineering reporting.
@@ -92,8 +93,8 @@ function getUpstreamTimeoutMs(callType: 'text' | 'vision' | 'agent'): number {
 }
 
 function getUpstreamAttemptCount(callType: 'text' | 'vision' | 'agent'): number {
-  // Keep agent requests to a single long-budget attempt so we do not burn extra
-  // Modal GPU time retrying an abandoned cold start after the CLI has already moved on.
+  // Keep heavier requests to a single long-budget attempt so the public beta
+  // does not multiply upstream spend after the CLI has already moved on.
   if (callType === 'agent') return 1;
   if (callType === 'vision') return 1;
   return 2;
@@ -159,13 +160,11 @@ async function fetchUpstreamWithRetry(
 
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     try {
-      const response = await fetch(MODAL_CHAT_COMPLETIONS_URL, {
+      const response = await fetch(getHostedBetaUpstreamChatCompletionsUrl(), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(process.env.MODAL_API_TOKEN
-            ? { Authorization: `Bearer ${process.env.MODAL_API_TOKEN}` }
-            : {}),
+          Authorization: `Bearer ${getHostedBetaUpstreamApiKey()}`,
         },
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(getUpstreamTimeoutMs(callType)),
@@ -448,6 +447,22 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  if (!isHostedBetaModelAllowedForCallType(model, callType)) {
+    const allowedModels = getHostedBetaAllowedModelsForCallType(callType);
+    return createHostedBetaErrorResponse(
+      400,
+      'Unsupported hosted beta model for this request type.',
+      `Allowed ${callType} model${allowedModels.length === 1 ? '' : 's'}: ${allowedModels.join(', ')}`,
+      {
+        code: 'unsupported_model_for_call_type',
+        requested_model: model,
+        call_type: callType,
+      },
+      requestId,
+      { mode: clientMode, version: clientVersion },
+    );
+  }
+
   const clientIp = extractClientIp(request.headers);
   const globalPerMinuteLimit = getHostedBetaRequestLimit(clientMode);
   const perMinuteLimit = getHostedBetaRequestLimit(clientMode, callType);
@@ -552,16 +567,15 @@ export async function POST(request: NextRequest) {
     upstreamResponse = await fetchUpstreamWithRetry(upstreamBody, callType);
   } catch (err) {
     const timedOut = err instanceof Error && /abort|timeout/i.test(err.message);
-    const detail =
-      timedOut
-        ? `Hosted model on Modal.com GPU is warming up or the upstream ${callType} request exceeded the ${Math.round(getUpstreamTimeoutMs(callType) / 1000)}s timeout budget.`
-        : err instanceof Error
-          ? err.message
-          : String(err);
+    const detail = timedOut
+      ? `Hosted GLM upstream request exceeded the ${Math.round(getUpstreamTimeoutMs(callType) / 1000)}s timeout budget.`
+      : err instanceof Error
+        ? err.message
+        : String(err);
     return createHostedBetaErrorResponse(
       timedOut ? 504 : 502,
       timedOut
-        ? 'Hosted model on Modal.com GPU timed out.'
+        ? 'Hosted GLM upstream timed out.'
         : 'Hosted beta upstream request failed.',
       detail,
       { code: timedOut ? 'upstream_timeout' : 'upstream_request_failed' },

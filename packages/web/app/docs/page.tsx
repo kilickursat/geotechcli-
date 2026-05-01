@@ -26,7 +26,7 @@ npm -v
 npm install -g geotechcli
 \`\`\`
 
-Use the official Node.js installer or a trusted OS package manager. Deterministic commands work immediately after install, and strong-beta AI commands use the hosted Qwen gateway by default. Verify installation:
+Use the official Node.js installer or a trusted OS package manager. Deterministic commands work immediately after install, and strong-beta AI commands use the hosted GLM gateway by default. Verify installation:
 
 \`\`\`bash
 geotech --version
@@ -63,7 +63,7 @@ geotech config set llm.model meta-llama/Llama-3.1-8B-Instruct:cerebras
 geotech config set llm.model deepseek-ai/DeepSeek-V3:cheapest
 
 # HF vision model for geotech vision commands
-geotech config set llm.vision_model Qwen/Qwen3.5-9B
+geotech config set llm.vision_model glm-5v-turbo
 
 # OpenAI — advanced beta with your own key
 geotech config set llm.provider openai
@@ -73,16 +73,16 @@ geotech config set llm.api_key sk-...
 geotech config set llm.provider anthropic
 geotech config set llm.api_key sk-ant-...
 
-# Self-hosted model (e.g. Qwen on VPS)
+# Self-hosted model (OpenAI-compatible endpoint)
 geotech config set llm.provider openai-compatible
 geotech config set llm.base_url http://your-vps:8000/v1
-geotech config set llm.model Qwen/Qwen3.5-9B
+geotech config set llm.model local-model-id
 
 # Reset to defaults
 geotech config reset
 \`\`\`
 
-Strong-beta behavior: deterministic commands work immediately after install. AI, vision, and agent commands use hosted Qwen access by default, with server-side rate limits and no user provider key required. Bring-your-own provider keys remain available as an advanced override.
+Strong-beta behavior: deterministic commands work immediately after install. AI, vision, and agent commands use hosted GLM access by default, with server-side rate limits and no user provider key required. Bring-your-own provider keys remain available as an advanced override.
 
 Installed skills are also bundled in strong beta. Direct geotech skill commands are ready immediately, while geotech agent and geotech chat can opt into skill tools per session with the --skills flag.
 
@@ -198,7 +198,7 @@ geotech tunnel cutter-wear --cai 3.5 --ucs 120 --distance 5000 --cutters 48
   {
     id: 'vision',
     title: 'geotech vision (AI)',
-    content: `AI-powered image analysis. Uses hosted Qwen beta by default.
+    content: `AI-powered image analysis. Uses hosted GLM vision by default.
 
 \`\`\`bash
 # Core box analysis → RQD, fracture spacing, weathering
@@ -271,7 +271,7 @@ geotech ingest review demo-project --dataset ingest-review:latest --format html 
 
 The HTML dossier is a self-contained engineering review file with an executive summary, confidence metrics, extracted materials and parameters, review findings, page-by-page evidence cards, and stored-review plus approval context when the ingest is project-backed. Interactive terminals open the dossier in the browser by default; use --no-open for save-only workflows.
 
-Hosted-beta reliability note: geotechnical PDFs above the best-result window are split into resumable page jobs with live progress, retryable transient failures, and merged final results plus HTML dossier output. The hosted-beta path keeps Modal L4 defaults conservative, serializes more long mixed reports, and avoids duplicate OCR/vision retries on slow image-only pages to protect the credit pool.`,
+Hosted-beta reliability note: geotechnical PDFs above the best-result window are split into resumable page jobs with live progress, retryable transient failures, and merged final results plus HTML dossier output. The hosted-beta path serializes more long mixed reports and avoids duplicate OCR/vision retries on slow image-only pages to protect the credit pool.`,
   },
   {
     id: 'agent',
@@ -393,7 +393,7 @@ export default function DocsPage() {
       <main className="pt-24 px-12 pb-16 max-w-[900px]">
         <h1 className="text-4xl font-bold tracking-tight mb-4">Strong Beta Docs</h1>
         <p className="text-[var(--text-secondary)] text-base mb-12">
-          Strong beta reference for geotechCLI commands, hosted multimodal Qwen defaults, and optional advanced provider overrides.
+          Strong beta reference for geotechCLI commands, hosted multimodal GLM defaults, and optional advanced provider overrides.
         </p>
 
         {/* Table of contents */}

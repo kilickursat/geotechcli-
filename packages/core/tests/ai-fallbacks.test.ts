@@ -10,7 +10,7 @@ describe('AI fallback behavior', () => {
   function hostedBetaSuccessResponse(content: string): Response {
     return new Response(
       JSON.stringify({
-        model: 'Qwen/Qwen3.5-9B',
+        model: 'glm-5.1',
         choices: [{ message: { role: 'assistant', content } }],
         usage: {
           prompt_tokens: 120,
@@ -124,13 +124,13 @@ describe('AI fallback behavior', () => {
     expect(answer?.content).toMatch(/EPB/);
   });
 
-  it('explains modal warmup or timeout budget exhaustion on the first agent turn', async () => {
+  it('explains hosted GLM timeout budget exhaustion on the first agent turn', async () => {
     global.fetch = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
           error: {
-            message: 'Hosted model on Modal.com GPU timed out.',
-            detail: 'Hosted model on Modal.com GPU is warming up or the upstream agent request exceeded the 240s timeout budget.',
+            message: 'Hosted GLM upstream timed out.',
+            detail: 'Hosted GLM upstream request exceeded the 240s timeout budget.',
           },
         }),
         {
@@ -154,7 +154,7 @@ describe('AI fallback behavior', () => {
     );
 
     const answer = session.steps.find((step) => step.type === 'answer');
-    expect(answer?.content).toMatch(/Modal\.com GPU/i);
+    expect(answer?.content).toMatch(/Hosted GLM provider/i);
     expect(answer?.content).toMatch(/timeout budget/i);
     expect(answer?.content).toMatch(/EPB/);
   });

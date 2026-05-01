@@ -269,11 +269,11 @@ function createLiveStatusController(options: {
       ? [
           {
             afterMs: 20_000,
-            text: 'Hosted model on Modal.com GPU may still be warming up...',
+            text: 'Hosted GLM provider is still responding...',
           },
           {
             afterMs: 95_000,
-            text: 'Still waiting on the Modal.com GPU response. geotechCLI will fall back if the timeout budget is exceeded.',
+            text: 'Still waiting on the hosted GLM response. geotechCLI will fall back if the timeout budget is exceeded.',
           },
         ]
       : [];
@@ -332,7 +332,7 @@ function createLiveStatusController(options: {
           break;
         case 'error':
           if (/modal\.com gpu|warming up|timeout budget|timed out/i.test(step.content)) {
-            pin('Hosted model on Modal.com GPU is warming up or slow. Terzaghi is switching paths...');
+            pin('Hosted GLM provider is busy or slow. Terzaghi is switching paths...');
           } else if (/temporarily unavailable|request failed|fetch failed|retry/i.test(step.content)) {
             pin('Hosted beta hit a bump. Terzaghi is recovering...');
           } else {
@@ -371,7 +371,7 @@ function createLiveStatusController(options: {
           break;
         case 'error':
           if (/modal\.com gpu|warming up|timeout budget|timed out/i.test(step.content)) {
-            pin(`Hosted model on Modal.com GPU is warming up or slow. ${label} is switching paths...`);
+            pin(`Hosted GLM provider is busy or slow. ${label} is switching paths...`);
           } else {
             pin(`${label} hit an issue and is recovering...`);
           }

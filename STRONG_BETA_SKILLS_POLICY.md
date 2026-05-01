@@ -20,7 +20,7 @@ It exists to protect the current healthy `0.4.11` beta while skills are introduc
 - Skills must not increase hosted-beta retries, background warmup behavior, or hidden token usage by default.
 - Skills must not bypass existing guardrails, case-file persistence, sandboxing, or error-path honesty.
 - Skills must not require a user API key on `strong-beta`.
-- A push is not considered a public beta release unless the intended version is aligned across GitHub, npm, the beta site on Cloudflare, and the hosted Modal deployment used by the beta proxy.
+- A push is not considered a public beta release unless the intended version is aligned across GitHub, npm, the beta site on Cloudflare, and the hosted GLM proxy contract.
 
 ## Skill Integration Model
 
@@ -79,8 +79,8 @@ It exists to protect the current healthy `0.4.11` beta while skills are introduc
 - GitHub `strong-beta` head contains the intended release commit.
 - npm publishes the matching `geotechcli` and `@geotechcli/core` package versions where applicable.
 - Cloudflare deploys the matching beta site and proxy behavior.
-- Modal GitHub Actions deploy updates the hosted runtime when the change affects the Modal app or hosted-beta runtime contract.
-- Post-release verification must confirm the live beta site, the published CLI, and the hosted Modal health endpoint are all serving the expected release/runtime state.
+- The legacy Modal GitHub Actions deploy remains disabled by default unless explicitly used as a manual fallback.
+- Post-release verification must confirm the live beta site, the published CLI, and the hosted GLM proxy health endpoint are all serving the expected release/runtime state.
 
 ## Strong-Beta Acceptance Criteria
 

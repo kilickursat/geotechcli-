@@ -208,7 +208,7 @@ export function buildLLMConfig(): import('../llm/types.js').LLMConfig & { timeou
       apiKey = preferEnv(process.env.GEOTECHCLI_AUTH_API_KEY, config.auth.api_key);
       break;
     case 'zhipu':
-      apiKey = preferEnv(process.env.ZHIPU_API_KEY, config.llm.api_key);
+      apiKey = preferEnv(process.env.ZHIPU_API_KEY, process.env.ZAI_API_KEY, config.llm.api_key);
       break;
     case 'openai':
       apiKey = preferEnv(process.env.OPENAI_API_KEY, config.llm.api_key);
@@ -218,7 +218,7 @@ export function buildLLMConfig(): import('../llm/types.js').LLMConfig & { timeou
       break;
     case 'openai-compatible':
       apiKey = preferEnv(
-        process.env.QWEN_VPS_API_KEY,
+        process.env.OPENAI_COMPATIBLE_API_KEY,
         process.env.OPENAI_API_KEY,
         config.llm.api_key,
       );
@@ -238,14 +238,19 @@ export function buildLLMConfig(): import('../llm/types.js').LLMConfig & { timeou
     baseUrl =
       preferEnv(process.env.GEOTECHCLI_PROXY_URL, config.llm.base_url) ||
       'https://beta.geotechcli.com/api/proxy';
+  } else if (provider === 'zhipu') {
+    baseUrl = preferEnv(process.env.ZHIPU_API_BASE_URL, process.env.ZAI_API_BASE_URL, config.llm.base_url) || undefined;
   } else if (provider === 'openai-compatible') {
-    baseUrl = preferEnv(process.env.QWEN_VPS_BASE_URL, process.env.MODAL_ENDPOINT_URL, config.llm.base_url) || undefined;
+    baseUrl = preferEnv(
+      process.env.OPENAI_COMPATIBLE_BASE_URL,
+      config.llm.base_url,
+    ) || undefined;
   }
 
   // Resolve model overrides
   let modelId = config.llm.model || undefined;
   if (provider === 'openai-compatible') {
-    modelId = preferEnv(process.env.QWEN_VPS_MODEL_ID, config.llm.model) || undefined;
+    modelId = preferEnv(process.env.OPENAI_COMPATIBLE_MODEL_ID, config.llm.model) || undefined;
   }
 
   return {

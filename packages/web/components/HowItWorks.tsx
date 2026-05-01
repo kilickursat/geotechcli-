@@ -14,7 +14,7 @@ const steps = [
     accent: 'var(--accent-cyan)',
     glow: 'rgba(0,196,255,0.2)',
     title: 'Analyze',
-    desc: 'Run deterministic calculations or send AI commands against the hosted Qwen beta. Results in seconds, not spreadsheets.',
+    desc: 'Run deterministic calculations or send AI commands against the hosted GLM beta. Results in seconds, not spreadsheets.',
     cli: { prompt: 'var(--accent-cyan)', line: 'geotech bearing --depth 5 --phi 30 --cohesion 25' },
   },
   {

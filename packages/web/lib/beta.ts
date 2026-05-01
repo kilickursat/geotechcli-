@@ -71,6 +71,7 @@ const TEXT_CONTENT_LIMIT = 50_000;
 const IMAGE_DATA_URI_LIMIT = 8_000_000;
 const MESSAGE_LIMIT = 24;
 const DAILY_TTL_SECONDS = 2 * 24 * 60 * 60;
+const DEFAULT_ZHIPU_API_BASE_URL = 'https://api.z.ai/api/paas/v4';
 
 type InMemoryStore = {
   ipBuckets: Map<string, number[]>;
@@ -121,9 +122,24 @@ export function isHostedBetaProduction(): boolean {
   return process.env.NODE_ENV === 'production';
 }
 
+export function getHostedBetaUpstreamApiKey(): string {
+  return process.env.ZHIPU_API_KEY?.trim() || process.env.ZAI_API_KEY?.trim() || '';
+}
+
+export function getHostedBetaUpstreamChatCompletionsUrl(): string {
+  const explicitUrl = process.env.ZHIPU_CHAT_COMPLETIONS_URL?.trim();
+  if (explicitUrl) {
+    return explicitUrl;
+  }
+
+  const baseUrl = (process.env.ZHIPU_API_BASE_URL?.trim() || DEFAULT_ZHIPU_API_BASE_URL)
+    .replace(/\/+$/, '');
+  return `${baseUrl}/chat/completions`;
+}
+
 export function getHostedBetaConfigIssue(): string | null {
-  if (!process.env.MODAL_ENDPOINT_URL?.trim()) {
-    return 'Hosted beta AI is not configured yet. Set MODAL_ENDPOINT_URL on the server.';
+  if (!getHostedBetaUpstreamApiKey()) {
+    return 'Hosted beta AI is not configured yet. Set ZHIPU_API_KEY on the server.';
   }
 
   if (isHostedBetaProduction() && !hasHostedBetaRedis()) {
@@ -139,6 +155,19 @@ export function getHostedBetaDefaultModel(callType: HostedBetaCallType): string 
 
 export function isHostedBetaModel(model: string): boolean {
   return SUPPORTED_PROXY_MODELS.includes(model);
+}
+
+export function getHostedBetaAllowedModelsForCallType(callType: HostedBetaCallType): string[] {
+  return callType === 'vision'
+    ? [DEFAULT_LLM_VISION_MODEL]
+    : [DEFAULT_LLM_MODEL];
+}
+
+export function isHostedBetaModelAllowedForCallType(
+  model: string,
+  callType: HostedBetaCallType,
+): boolean {
+  return getHostedBetaAllowedModelsForCallType(callType).includes(model);
 }
 
 export function isGeotechCliClient(headers: Headers): boolean {

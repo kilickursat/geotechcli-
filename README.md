@@ -26,8 +26,8 @@ geotechCLI is a terminal-first geotechnical engineering product that combines de
 ## Strong Beta Status
 
 - Deterministic commands are available now.
-- Hosted Qwen beta access is available now with no user API key required.
-- Text and vision default to `Qwen/Qwen3.5-9B` served on Modal.com (NVIDIA L4 GPU).
+- Hosted GLM beta access is available now with no user API key required.
+- Text/agent reasoning defaults to `glm-5.1`; vision defaults to `glm-5v-turbo` through Z.ai.
 - Server-side rate limits protect the hosted beta credit pool.
 - Signup, billing, and paid entitlements are intentionally disabled on `strong-beta`.
 
@@ -161,7 +161,7 @@ These commands are the public strong-beta foundation and are available now.
 
 ### AI-Assisted
 
-These commands now use the hosted beta Qwen path by default.
+These commands now use the hosted beta GLM path by default.
 
 | Command | Description |
 |---------|-------------|
@@ -218,7 +218,7 @@ The HTML dossier is a self-contained engineering review file with:
 - stored-review and approval context when the ingest is project-backed
 
 Hosted-beta reliability note: geotechnical PDFs above the best-result window are now split into linked sequential packets automatically, and the final result plus HTML dossier merge those packets back into one review surface.
-Cost-control note: hosted-beta PDF ingest now serializes more long mixed reports, avoids duplicate OCR/vision retries on slow image-only pages, and keeps Modal L4 defaults conservative so the public beta does not burn GPU credits just to create a deeper queue.
+Cost-control note: hosted-beta PDF ingest now serializes more long mixed reports and avoids duplicate OCR/vision retries on slow image-only pages so the public beta does not burn provider credits just to create a deeper queue.
 
 ### Bundled Skills
 
@@ -277,8 +277,8 @@ Most calculation and analysis commands support:
 In `strong-beta`, AI commands default to the hosted beta provider, so a user does not need to bring their own API key.
 
 - Default provider: `hosted-beta`
-- Default text model: `Qwen/Qwen3.5-9B`
-- Default vision model: `Qwen/Qwen3.5-9B`
+- Default text model: `glm-5.1`
+- Default vision model: `glm-5v-turbo`
 
 ```bash
 # Confirm the strong-beta defaults
@@ -305,7 +305,7 @@ geotech config set llm.api_key sk-ant-...
 # Optional advanced override: self-hosted OpenAI-compatible endpoint
 geotech config set llm.provider openai-compatible
 geotech config set llm.base_url http://localhost:11434/v1
-geotech config set llm.model Qwen/Qwen3.5-9B
+geotech config set llm.model local-model-id
 ```
 
 ## Pricing
@@ -317,7 +317,7 @@ geotech config set llm.model Qwen/Qwen3.5-9B
 | **Pro** | Coming Soon | Not active in this branch |
 | **Annual** | Coming Soon | Not active in this branch |
 
-Strong beta currently gives users deterministic commands plus hosted Qwen beta access with limits. Managed commercial plans and entitlements come later.
+Strong beta currently gives users deterministic commands plus hosted GLM beta access with limits. Managed commercial plans and entitlements come later.
 
 ## Security and Privacy
 

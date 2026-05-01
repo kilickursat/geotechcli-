@@ -27,7 +27,7 @@ function makeConfig(): LLMConfig {
     provider: 'openai-compatible',
     apiKey: 'test-key',
     timeout: 1000,
-    visionModelId: 'Qwen/Qwen3.5-9B',
+    visionModelId: 'glm-5v-turbo',
   };
 }
 
@@ -256,8 +256,8 @@ describe('persisted ingest jobs', () => {
   it('serializes async hosted-beta extraction for image-heavy inspections', () => {
     const config = {
       provider: 'hosted-beta',
-      modelId: 'Qwen/Qwen3.5-9B',
-      visionModelId: 'Qwen/Qwen3.5-9B',
+      modelId: 'glm-5.1',
+      visionModelId: 'glm-5v-turbo',
     } satisfies Pick<LLMConfig, 'provider' | 'modelId' | 'visionModelId'>;
     const inspection = makeInspection(4, (pageNumber) => (pageNumber <= 3 ? 'image-only' : 'digital-text'));
     const concurrency = resolvePersistedIngestJobExtractionConcurrency(config, inspection);
@@ -272,7 +272,7 @@ describe('persisted ingest jobs', () => {
       config: {
         ...makeConfig(),
         provider: 'hosted-beta',
-        modelId: 'Qwen/Qwen3.5-9B',
+        modelId: 'glm-5.1',
       },
     });
 
@@ -283,8 +283,8 @@ describe('persisted ingest jobs', () => {
   it('serializes hosted-beta extraction for long mixed PDFs with visual tail pressure', () => {
     const config = {
       provider: 'hosted-beta',
-      modelId: 'Qwen/Qwen3.5-9B',
-      visionModelId: 'Qwen/Qwen3.5-9B',
+      modelId: 'glm-5.1',
+      visionModelId: 'glm-5v-turbo',
     } satisfies Pick<LLMConfig, 'provider' | 'modelId' | 'visionModelId'>;
     const inspection = makeInspection(34, (pageNumber) =>
       pageNumber >= 27 ? 'image-only' : 'mixed'
@@ -304,7 +304,7 @@ describe('persisted ingest jobs', () => {
       config: {
         ...makeConfig(),
         provider: 'hosted-beta',
-        modelId: 'Qwen/Qwen3.5-9B',
+        modelId: 'glm-5.1',
       },
     });
 
@@ -314,7 +314,7 @@ describe('persisted ingest jobs', () => {
       buildLLMConfig: () => ({
         ...makeConfig(),
         provider: 'hosted-beta',
-        modelId: 'Qwen/Qwen3.5-9B',
+        modelId: 'glm-5.1',
       }),
       inspectPdfDocument: () => makeInspection(4, (pageNumber) => (pageNumber <= 3 ? 'image-only' : 'digital-text')),
       readDocumentPdfPageInputs: async () => [
@@ -512,7 +512,7 @@ describe('persisted ingest jobs', () => {
       config: {
         ...makeConfig(),
         provider: 'hosted-beta',
-        modelId: 'Qwen/Qwen3.5-9B',
+        modelId: 'glm-5.1',
       },
       segmentation: {
         mode: 'segmented-parent',
@@ -544,7 +544,7 @@ describe('persisted ingest jobs', () => {
       buildLLMConfig: () => ({
         ...makeConfig(),
         provider: 'hosted-beta',
-        modelId: 'Qwen/Qwen3.5-9B',
+        modelId: 'glm-5.1',
       }),
       readDocumentPdfPageInputs: async (inputFilePath, options) => {
         const totalPages = options?.inspection?.totalPages ?? 31;

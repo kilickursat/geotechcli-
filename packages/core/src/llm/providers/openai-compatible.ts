@@ -29,11 +29,11 @@ interface OpenAIChatResponse {
  *
  * Works with:
  *   - OpenAI proper (api.openai.com)
- *   - Qwen on VPS via vLLM / Ollama (any OpenAI-compatible server)
+ *   - local vLLM / Ollama / LM Studio servers (any OpenAI-compatible server)
  *   - Together, Groq, Fireworks, Deepseek, etc.
  *
  * This is the adapter used when Zhipu credits expire and you swap
- * to Qwen 3.5 4B on your VPS. Just change the baseUrl and modelId
+ * to a model on your own endpoint. Just change the baseUrl and modelId
  * in config — zero code changes needed.
  */
 export class OpenAICompatibleAdapter implements ProviderAdapter {

@@ -12,7 +12,7 @@ describe('borehole log interpretation', () => {
   function hostedBetaSuccessResponse(content: string): Response {
     return new Response(
       JSON.stringify({
-        model: 'Qwen/Qwen3.5-9B',
+        model: 'glm-5v-turbo',
         choices: [{ message: { role: 'assistant', content } }],
         usage: {
           prompt_tokens: 180,

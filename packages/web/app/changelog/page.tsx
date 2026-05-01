@@ -5,8 +5,20 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 const releases = [
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-04-24',
+    date: '2026-05-01',
     tag: `${GEOTECHCLI_VERSION} Release`,
+    changes: [
+      { type: 'feat', text: 'Swapped the strong-beta hosted AI defaults to Z.ai GLM, using glm-5.1 for text and agent reasoning and glm-5v-turbo for vision' },
+      { type: 'fix', text: 'Kept the public CLI contract on hosted-beta so end users still get default AI access without bringing their own provider key' },
+      { type: 'fix', text: 'Retargeted the beta proxy, environment docs, release guardrails, and website copy around the server-side ZHIPU_API_KEY secret' },
+      { type: 'fix', text: 'Disabled the legacy Modal deploy workflow by default while preserving it as a manual historical fallback' },
+      { type: 'fix', text: 'Added guardrails for GLM proxy model defaults and provider-neutral timeout and fallback wording' },
+    ],
+  },
+  {
+    version: '0.4.29',
+    date: '2026-04-24',
+    tag: '0.4.29 Release',
     changes: [
       { type: 'feat', text: 'Added the canonical GroundModel v1 contract for workspace analysis, binding boreholes, SPT tests, groundwater, lab parameters, monitoring series, and rejected observations into one engineering model' },
       { type: 'feat', text: 'Added evidence-bound extraction for sampled CSV/XLSX data so analyze JSON and dossiers show source file, sheet, row, column, confidence, raw value, and normalized value' },

@@ -9,8 +9,8 @@ describe('provider multimodal capabilities', () => {
   it('keeps hosted beta image-capable but not natively PDF-capable through the public proxy', () => {
     const capabilities = resolveProviderCapabilities({
       provider: 'hosted-beta',
-      modelId: 'Qwen/Qwen3.5-9B',
-      visionModelId: 'Qwen/Qwen3.5-9B',
+      modelId: 'glm-5.1',
+      visionModelId: 'glm-5v-turbo',
     });
 
     expect(capabilities.visionImages).toBe(true);

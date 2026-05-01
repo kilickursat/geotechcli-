@@ -1,18 +1,18 @@
 # geotechCLI Development Status
 
-Last updated: 2026-04-24
+Last updated: 2026-05-01
 
 ## Current Work
 
-We are shipping the v0.4.29 engineering truth layer for `geotech analyze` and `geotech agent --workspace`.
+We are shipping the v0.4.30 hosted GLM default swap for the strong-beta AI path.
 
 Current focus:
 
-- Add canonical `GroundModel` v1 for local workspace analysis.
-- Bind extracted CSV/XLSX facts to explicit evidence references.
-- Add deterministic verifier findings before agent/report synthesis.
-- Upgrade analyze JSON, terminal, and HTML dossier outputs with GroundModel/verifier sections.
-- Keep the path local and cost-aware so this work does not add Modal GPU usage.
+- Keep the public provider as `hosted-beta` so users do not bring their own key.
+- Route hosted text and agent reasoning to `glm-5.1`.
+- Route hosted vision to `glm-5v-turbo`.
+- Use the server-side `ZHIPU_API_KEY` secret in GitHub and Cloudflare.
+- Keep the legacy Modal deploy workflow present but disabled by default.
 
 ## Done So Far
 
@@ -50,6 +50,13 @@ Current focus:
 - Added deterministic verifier checks for rejected SPT values, missing groundwater, missing coordinates, undeclared local CRS, unknown standards, duplicate SPT depths, and no-evidence workspaces.
 - Added tests for GroundModel construction, evidence binding, rejected SPT standards-reference values, and analyze JSON/HTML output.
 
+### v0.4.30 Hosted GLM Default Swap
+
+- Swapped hosted-beta defaults from Qwen on Modal to Z.ai GLM.
+- Kept the no-user-key public beta contract through the existing hosted-beta proxy.
+- Updated the proxy, docs, changelog, environment contract, and release guardrails for `glm-5.1` and `glm-5v-turbo`.
+- Disabled legacy Modal deploy automation while preserving the workflow for manual fallback.
+
 ## Left To Do
 
 Highest-value next work:
@@ -68,7 +75,7 @@ Highest-value next work:
 ## Cost And Reliability Notes
 
 - Prefer local deterministic parsing before hosted-beta or vision calls.
-- Do not use Modal health checks or live multimodal tests unless needed for release validation.
+- Do not use legacy Modal health checks unless manually validating the disabled fallback workflow.
 - Keep hosted-beta image-heavy PDF workflows serialized and rate-limited until more GPU budget is available.
 - Public docs should only advertise behavior that is implemented, tested, and aligned across CLI/core/web.
 

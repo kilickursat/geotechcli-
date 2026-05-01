@@ -11,16 +11,22 @@ describe('hosted-beta config defaults', () => {
   let previousProxyUrl: string | undefined;
   let previousHostedBetaAuthKey: string | undefined;
   let previousSkillsFlag: string | undefined;
+  let previousZhipuApiKey: string | undefined;
+  let previousZhipuBaseUrl: string | undefined;
 
   beforeEach(() => {
     previousConfigDir = process.env.GEOTECHCLI_CONFIG_DIR;
     previousProxyUrl = process.env.GEOTECHCLI_PROXY_URL;
     previousHostedBetaAuthKey = process.env.GEOTECHCLI_AUTH_API_KEY;
     previousSkillsFlag = process.env.GEOTECHCLI_ENABLE_SKILLS;
+    previousZhipuApiKey = process.env.ZHIPU_API_KEY;
+    previousZhipuBaseUrl = process.env.ZHIPU_API_BASE_URL;
     configDir = mkdtempSync(join(tmpdir(), 'geotechcli-config-'));
     process.env.GEOTECHCLI_CONFIG_DIR = configDir;
     delete process.env.GEOTECHCLI_PROXY_URL;
     delete process.env.GEOTECHCLI_ENABLE_SKILLS;
+    delete process.env.ZHIPU_API_KEY;
+    delete process.env.ZHIPU_API_BASE_URL;
   });
 
   afterEach(() => {
@@ -46,6 +52,18 @@ describe('hosted-beta config defaults', () => {
       delete process.env.GEOTECHCLI_ENABLE_SKILLS;
     } else {
       process.env.GEOTECHCLI_ENABLE_SKILLS = previousSkillsFlag;
+    }
+
+    if (previousZhipuApiKey === undefined) {
+      delete process.env.ZHIPU_API_KEY;
+    } else {
+      process.env.ZHIPU_API_KEY = previousZhipuApiKey;
+    }
+
+    if (previousZhipuBaseUrl === undefined) {
+      delete process.env.ZHIPU_API_BASE_URL;
+    } else {
+      process.env.ZHIPU_API_BASE_URL = previousZhipuBaseUrl;
     }
 
     rmSync(configDir, { recursive: true, force: true });
@@ -122,5 +140,36 @@ describe('hosted-beta config defaults', () => {
     const llmConfig = buildLLMConfig();
 
     expect(llmConfig.skillsEnabled).toBe(true);
+  });
+
+  it('uses ZHIPU_API_KEY and ZHIPU_API_BASE_URL for direct Z.ai provider overrides', () => {
+    process.env.ZHIPU_API_KEY = 'zhipu-env-key';
+    process.env.ZHIPU_API_BASE_URL = 'https://api.z.ai/api/paas/v4';
+
+    saveConfig({
+      llm: {
+        provider: 'zhipu',
+        api_key: '',
+        model: 'glm-5.1',
+        vision_model: 'glm-5v-turbo',
+        base_url: '',
+        timeout: 60000,
+      },
+      auth: {
+        api_key: '',
+        tier: 'free',
+      },
+      cli: {
+        color: true,
+        verbose: false,
+      },
+    });
+
+    const llmConfig = buildLLMConfig();
+    expect(llmConfig.provider).toBe('zhipu');
+    expect(llmConfig.apiKey).toBe('zhipu-env-key');
+    expect(llmConfig.baseUrl).toBe('https://api.z.ai/api/paas/v4');
+    expect(llmConfig.modelId).toBe('glm-5.1');
+    expect(llmConfig.visionModelId).toBe('glm-5v-turbo');
   });
 });

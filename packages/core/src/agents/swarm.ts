@@ -334,7 +334,7 @@ async function runAgentLoop(
           type: 'thought',
           content:
             fallbackMode === 'warming_timeout'
-              ? 'Hosted model on Modal.com GPU is warming up or hit the current timeout budget. Switching to deterministic fallback reasoning.'
+              ? 'Hosted GLM provider is busy or hit the current timeout budget. Switching to deterministic fallback reasoning.'
               : 'Hosted beta is temporarily unavailable. Switching to deterministic fallback reasoning.',
           timestamp: Date.now(),
         });

@@ -1,11 +1,11 @@
 {
-  "version": "0.4.29",
+  "version": "0.4.30",
   "defaults": {
     "provider": "hosted-beta",
-    "model": "Qwen/Qwen3.5-9B",
-    "visionModel": "Qwen/Qwen3.5-9B"
+    "model": "glm-5.1",
+    "visionModel": "glm-5v-turbo"
   },
-  "proxyModels": ["Qwen/Qwen3.5-9B"],
+  "proxyModels": ["glm-5.1", "glm-5v-turbo"],
   "globalFlags": [
     {
       "key": "json",

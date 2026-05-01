@@ -1,6 +1,11 @@
 import { NextRequest } from 'next/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_LLM_MODEL, DEFAULT_LLM_PROVIDER, GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
+import {
+  DEFAULT_LLM_MODEL,
+  DEFAULT_LLM_PROVIDER,
+  DEFAULT_LLM_VISION_MODEL,
+  GEOTECHCLI_VERSION,
+} from '@geotechcli/core/meta';
 
 import {
   checkHostedBetaDailyLimit,
@@ -21,7 +26,6 @@ afterEach(() => {
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
 });
-
 describe('hosted beta controls', () => {
   it('exposes a no-store deployed version endpoint for beta smoke checks', async () => {
     const route = await import('../app/api/version/route.js');
@@ -179,7 +183,7 @@ describe('hosted beta controls', () => {
   });
 
   it('returns request ids on GET and anonymous POST rejections', async () => {
-    vi.stubEnv('MODAL_ENDPOINT_URL', 'https://test--geotechcli-qwen-serve.modal.run/v1/chat/completions');
+    vi.stubEnv('ZHIPU_API_KEY', 'test-zhipu-key');
 
     const route = await import('../app/api/proxy/route.js');
 
@@ -218,7 +222,7 @@ describe('hosted beta controls', () => {
   }, 15_000);
 
   it('retries transient upstream 429 responses for geotechcli clients', async () => {
-    vi.stubEnv('MODAL_ENDPOINT_URL', 'https://test--geotechcli-qwen-serve.modal.run/v1/chat/completions');
+    vi.stubEnv('ZHIPU_API_KEY', 'test-zhipu-key');
 
     const fetchMock = vi
       .fn()
@@ -285,7 +289,7 @@ describe('hosted beta controls', () => {
   });
 
   it('clamps hosted-beta output tokens before forwarding upstream', async () => {
-    vi.stubEnv('MODAL_ENDPOINT_URL', 'https://test--geotechcli-qwen-serve.modal.run/v1/chat/completions');
+    vi.stubEnv('ZHIPU_API_KEY', 'test-zhipu-key');
 
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
@@ -323,13 +327,65 @@ describe('hosted beta controls', () => {
     const response = await route.POST(request);
     expect(response.status).toBe(200);
 
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const upstreamBody = JSON.parse(String(init.body)) as { max_tokens?: number };
+    expect(url).toBe('https://api.z.ai/api/paas/v4/chat/completions');
+    expect(init.headers).toMatchObject({
+      Authorization: 'Bearer test-zhipu-key',
+    });
     expect(upstreamBody.max_tokens).toBe(800);
   });
 
+  it('uses the GLM vision default for image requests without a model override', async () => {
+    vi.stubEnv('ZHIPU_API_KEY', 'test-zhipu-key');
+
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          model: DEFAULT_LLM_VISION_MODEL,
+          choices: [{ message: { content: 'Vision OK' } }],
+          usage: {
+            prompt_tokens: 10,
+            completion_tokens: 2,
+            total_tokens: 12,
+          },
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
+    global.fetch = fetchMock as typeof fetch;
+
+    const route = await import('../app/api/proxy/route.js');
+    const request = new NextRequest('https://example.com/api/proxy', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-geotech-client': 'geotechcli',
+      },
+      body: JSON.stringify({
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Read this borehole log image.' },
+            { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBORw0KGgo=' } },
+          ],
+        }],
+      }),
+    });
+
+    const response = await route.POST(request);
+    expect(response.status).toBe(200);
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const upstreamBody = JSON.parse(String(init.body)) as { model?: string };
+    expect(upstreamBody.model).toBe(DEFAULT_LLM_VISION_MODEL);
+  });
+
   it('rejects invalid developer auth instead of silently treating it as a public client', async () => {
-    vi.stubEnv('MODAL_ENDPOINT_URL', 'https://test--geotechcli-qwen-serve.modal.run/v1/chat/completions');
+    vi.stubEnv('ZHIPU_API_KEY', 'test-zhipu-key');
     vi.stubEnv('GEOTECHCLI_DEVELOPER_API_KEY', 'gtdev_live_key');
 
     const route = await import('../app/api/proxy/route.js');
@@ -358,7 +414,7 @@ describe('hosted beta controls', () => {
   });
 
   it('bypasses public hosted-beta limits for a valid developer key', async () => {
-    vi.stubEnv('MODAL_ENDPOINT_URL', 'https://test--geotechcli-qwen-serve.modal.run/v1/chat/completions');
+    vi.stubEnv('ZHIPU_API_KEY', 'test-zhipu-key');
     vi.stubEnv('GEOTECHCLI_DEVELOPER_API_KEY', 'gtdev_live_key');
 
     const fetchMock = vi.fn().mockImplementation(async () =>
@@ -419,7 +475,7 @@ describe('hosted beta controls', () => {
   });
 
   it('does not retry upstream agent requests after a transient failure', async () => {
-    vi.stubEnv('MODAL_ENDPOINT_URL', 'https://test--geotechcli-qwen-serve.modal.run/v1/chat/completions');
+    vi.stubEnv('ZHIPU_API_KEY', 'test-zhipu-key');
 
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
@@ -466,7 +522,7 @@ describe('hosted beta controls', () => {
   });
 
   it('does not retry upstream vision requests after a transient failure', async () => {
-    vi.stubEnv('MODAL_ENDPOINT_URL', 'https://test--geotechcli-qwen-serve.modal.run/v1/chat/completions');
+    vi.stubEnv('ZHIPU_API_KEY', 'test-zhipu-key');
 
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
@@ -504,7 +560,7 @@ describe('hosted beta controls', () => {
             ],
           },
         ],
-        model: DEFAULT_LLM_MODEL,
+        model: DEFAULT_LLM_VISION_MODEL,
       }),
     });
 
@@ -519,12 +575,12 @@ describe('hosted beta controls', () => {
   });
 
   it('applies a lower per-minute limiter to hosted vision requests', async () => {
-    vi.stubEnv('MODAL_ENDPOINT_URL', 'https://test--geotechcli-qwen-serve.modal.run/v1/chat/completions');
+    vi.stubEnv('ZHIPU_API_KEY', 'test-zhipu-key');
 
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(
       new Response(
         JSON.stringify({
-          model: DEFAULT_LLM_MODEL,
+          model: DEFAULT_LLM_VISION_MODEL,
           choices: [{ message: { content: 'Vision OK' } }],
           usage: {
             prompt_tokens: 12,
@@ -566,7 +622,7 @@ describe('hosted beta controls', () => {
               ],
             },
           ],
-          model: DEFAULT_LLM_MODEL,
+          model: DEFAULT_LLM_VISION_MODEL,
         }),
       });
 

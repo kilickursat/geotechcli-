@@ -32,7 +32,7 @@ const program = new Command();
 
 program
   .name('geotech')
-  .description('AI-native CLI for geotechnical engineering with hosted Qwen beta access')
+  .description('AI-native CLI for geotechnical engineering with hosted GLM beta access')
   .version(GEOTECHCLI_VERSION, '-v, --version');
 
 program.addHelpText('beforeAll', () => {
@@ -61,7 +61,7 @@ registerAnalyzeCommand(program);
 registerTunnelCommands(program);
 
 // ---------------------------------------------------------------------------
-// AI-assisted commands (strong beta defaults to the hosted Qwen gateway on Modal)
+// AI-assisted commands (strong beta defaults to the hosted GLM gateway)
 // ---------------------------------------------------------------------------
 registerVisionCommand(program);
 registerAIClassifyCommand(program);

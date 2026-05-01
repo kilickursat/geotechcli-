@@ -1,13 +1,14 @@
 # Strong Beta Handoff
 
-Date: 2026-04-24
+Date: 2026-05-01
 Branch: `strong-beta`
 Repo: `https://github.com/kilickursat/geotechcli-.git`
-Current branch head: `813985f` before the v0.4.26 reliability fixes in this work session
-Current release in repo: `0.4.26` local release candidate; remote remains `0.4.25` until the approved commit/tag/push
+Current branch head: see git history for the latest `strong-beta` release commit
+Current release in repo: `0.4.30` local release candidate until the approved commit/tag/push
 Beta host: `https://beta.geotechcli.com`
-Hosted model: `Qwen/Qwen3.5-9B`
-Hosted runtime: Modal.com `L4` GPU, autoscale-to-zero enabled
+Hosted text/agent model: `glm-5.1`
+Hosted vision model: `glm-5v-turbo`
+Hosted runtime: Z.ai API through the Cloudflare hosted-beta proxy
 
 This file is a strong-beta restart note. Treat package metadata, `CHANGELOG.md`, and `packages/web/app/api/version` as the release truth when they differ from older historical notes below.
 
@@ -34,7 +35,7 @@ What strong beta provides now:
 - public landing page, docs, changelog, and privacy pages
 - installable CLI through npm
 - deterministic geotechnical commands
-- hosted Qwen beta AI without requiring end users to bring their own API key
+- hosted GLM beta AI without requiring end users to bring their own API key
 - hosted text and vision routed through the beta proxy
 - anonymous rate limiting and daily usage controls
 - no signup requirement
@@ -55,32 +56,28 @@ What strong beta should not claim yet:
 - `packages/cli` is the published CLI surface
 - `packages/core` contains deterministic engineering logic, hosted-beta routing, agent orchestration, intake/preflight logic, and shared metadata
 - default provider is `hosted-beta`
-- default text model is `Qwen/Qwen3.5-9B`
-- default vision model is `Qwen/Qwen3.5-9B`
+- default text model is `glm-5.1`
+- default vision model is `glm-5v-turbo`
 
 ### Web + Proxy
 
 - `packages/web` is the Next.js + OpenNext + Cloudflare beta site
 - `packages/web/app/api/proxy/route.ts` is the hosted-beta proxy
-- proxy forwards to Modal's OpenAI-compatible vLLM endpoint
-- proxy still retries transient text and vision failures, but agent requests are now single-attempt to avoid wasting L4 time during cold starts
+- proxy forwards to Z.ai using the server-side `ZHIPU_API_KEY`
+- proxy still retries transient text failures, but vision and agent requests remain single-attempt to avoid multiplying hosted-provider spend
 
-### Modal
+### Legacy Modal
 
-- hosted model is served from `modal/serve_qwen.py`
-- current deployment target is `Qwen/Qwen3.5-9B`
-- GPU target is `L4`
-- autoscale-to-zero is enabled with a `scaledown_window` of `600` seconds
-- cold starts are expected and accepted for now because the current budget is constrained
+- `modal/serve_qwen.py` remains in the repo as a legacy fallback
+- `.github/workflows/modal-deploy.yml` is disabled by default and can be run manually only with explicit input
+- it is no longer the active hosted-beta runtime
 
 ## Budget Posture
 
 Important constraint:
 
-- budget is roughly `$30`
-- current GPU is `L4` at roughly `$0.80/hour`
-- do not switch to always-warm behavior by default
-- do not add retries or scaling patterns that silently multiply GPU time
+- shared hosted credits are now on Z.ai GLM rather than Modal GPU spend
+- do not add retries or scaling patterns that silently multiply provider spend
 
 Recent budget-safe work:
 

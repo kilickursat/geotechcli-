@@ -12,7 +12,7 @@ const tiers = [
     badge: 'Active',
     features: [
       'Unlimited deterministic calculations',
-      'Hosted Qwen beta access with no user provider key',
+      'Hosted GLM beta access with no user provider key',
       `Current defaults: ${DEFAULT_LLM_MODEL} and ${DEFAULT_LLM_VISION_MODEL}`,
       'Server-side rate limits and abuse protection',
       'Docs, changelog, and feedback-driven updates',
@@ -29,7 +29,7 @@ const tiers = [
     highlight: false,
     badge: 'Planned',
     features: [
-      'Hosted Qwen usage tiers are under evaluation',
+      'Hosted GLM usage tiers are under evaluation',
       'Roadmap pricing only, not purchasable in beta',
       'Feedback from strong-beta will shape final limits',
     ],
@@ -80,7 +80,7 @@ export function Pricing() {
           Strong beta now. Commercial rollout later.
         </h2>
         <p className="text-[var(--text-secondary)] text-[15px] mt-3 max-w-[480px] mx-auto">
-          Deterministic calculations and hosted Qwen beta access are live now.
+          Deterministic calculations and hosted GLM beta access are live now.
           Paid tiers are still being introduced carefully in later waves.
         </p>
       </div>

@@ -104,7 +104,7 @@ const workflows = [
 
 const betaFeatures = [
   'Unlimited deterministic calculations',
-  'Hosted Qwen beta access with no user provider key',
+  'Hosted GLM beta access with no user provider key',
   'No signup or billing during this wave',
   'Docs, changelog, and feedback-driven iterations',
 ] as const;

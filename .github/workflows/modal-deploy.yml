@@ -1,9 +1,13 @@
-name: Modal Deploy
+name: Legacy Modal Deploy
 
 on:
-  push:
-    branches: [strong-beta]
   workflow_dispatch:
+    inputs:
+      run_legacy_modal_deploy:
+        description: 'Run the disabled legacy Modal/Qwen deploy path'
+        required: true
+        type: boolean
+        default: false
 
 concurrency:
   group: modal-deploy-${{ github.ref }}
@@ -11,7 +15,8 @@ concurrency:
 
 jobs:
   deploy:
-    name: Deploy Qwen to Modal
+    name: Deploy Legacy Qwen to Modal
+    if: ${{ inputs.run_legacy_modal_deploy == true }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
