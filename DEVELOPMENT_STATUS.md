@@ -4,7 +4,7 @@ Last updated: 2026-05-01
 
 ## Current Work
 
-We are shipping the v0.4.30 hosted GLM default swap for the strong-beta AI path.
+We are shipping the v0.4.31 hosted GLM default swap and live-smoke fix for the strong-beta AI path.
 
 Current focus:
 
@@ -56,6 +56,12 @@ Current focus:
 - Kept the no-user-key public beta contract through the existing hosted-beta proxy.
 - Updated the proxy, docs, changelog, environment contract, and release guardrails for `glm-5.1` and `glm-5v-turbo`.
 - Disabled legacy Modal deploy automation while preserving the workflow for manual fallback.
+
+### v0.4.31 Hosted GLM Live Smoke Fix
+
+- Disabled GLM thinking mode by default in the hosted-beta proxy for lower-latency final content.
+- Added an environment override for future deeper-reasoning tests.
+- Kept the live release smoke aligned with the no-user-key hosted-beta path.
 
 ## Left To Do
 

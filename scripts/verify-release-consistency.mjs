@@ -140,6 +140,7 @@ assert(
 assert(
   envExample.includes('ZHIPU_API_KEY=') &&
     envExample.includes('ZHIPU_API_BASE_URL=https://api.z.ai/api/paas/v4') &&
+    envExample.includes('GEOTECHCLI_HOSTED_BETA_THINKING_MODE=disabled') &&
     !envExample.includes('MODAL_ENDPOINT_URL=') &&
     !envExample.includes('MODAL_API_TOKEN='),
   '.env.example must document Z.ai hosted-beta secrets and must not advertise Modal as the active hosted-beta upstream.',

@@ -8,6 +8,16 @@ const releases = [
     date: '2026-05-01',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'fix', text: 'Disabled GLM thinking mode by default in the hosted-beta proxy so low-latency text calls return final assistant content instead of spending tiny smoke-test budgets on reasoning tokens' },
+      { type: 'fix', text: 'Added GEOTECHCLI_HOSTED_BETA_THINKING_MODE=disabled to the environment contract, with an opt-in path for future deeper reasoning tests' },
+      { type: 'fix', text: 'Kept the Z.ai GLM model defaults and live release smoke checks aligned with the hosted-beta no-user-key contract' },
+    ],
+  },
+  {
+    version: '0.4.30',
+    date: '2026-05-01',
+    tag: '0.4.30 Release',
+    changes: [
       { type: 'feat', text: 'Swapped the strong-beta hosted AI defaults to Z.ai GLM, using glm-5.1 for text and agent reasoning and glm-5v-turbo for vision' },
       { type: 'fix', text: 'Kept the public CLI contract on hosted-beta so end users still get default AI access without bringing their own provider key' },
       { type: 'fix', text: 'Retargeted the beta proxy, environment docs, release guardrails, and website copy around the server-side ZHIPU_API_KEY secret' },

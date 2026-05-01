@@ -115,6 +115,12 @@ function getHostedBetaOutputTokenCap(callType: 'text' | 'vision' | 'agent'): num
   return parsePositiveIntegerEnv(process.env.GEOTECHCLI_HOSTED_BETA_MAX_TOKENS_TEXT, 800);
 }
 
+function getHostedBetaThinkingMode(): 'disabled' | 'enabled' {
+  return process.env.GEOTECHCLI_HOSTED_BETA_THINKING_MODE === 'enabled'
+    ? 'enabled'
+    : 'disabled';
+}
+
 function isTransientUpstreamStatus(status: number): boolean {
   return status === 429 || status === 502 || status === 503 || status === 504;
 }
@@ -549,6 +555,10 @@ export async function POST(request: NextRequest) {
     messages: buildUpstreamMessages(body.messages),
     stream: false,
   };
+
+  if (model === DEFAULT_LLM_MODEL) {
+    upstreamBody.thinking = { type: getHostedBetaThinkingMode() };
+  }
 
   if (body.temperature !== undefined) {
     upstreamBody.temperature = body.temperature;

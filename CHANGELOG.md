@@ -1,5 +1,13 @@
 ﻿# Changelog
 
+## [0.4.31] - 2026-05-01
+
+### Hosted GLM Live Smoke Fix
+
+- Disabled GLM thinking mode by default in the hosted-beta proxy so low-latency text calls return final assistant content instead of spending tiny smoke-test budgets on reasoning tokens.
+- Added `GEOTECHCLI_HOSTED_BETA_THINKING_MODE=disabled` to the environment contract, with an opt-in path for future deeper reasoning tests.
+- Kept the Z.ai GLM model defaults and live release smoke checks aligned with the hosted-beta no-user-key contract.
+
 ## [0.4.30] - 2026-05-01
 
 ### Hosted GLM Default Swap

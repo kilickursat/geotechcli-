@@ -328,12 +328,16 @@ describe('hosted beta controls', () => {
     expect(response.status).toBe(200);
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    const upstreamBody = JSON.parse(String(init.body)) as { max_tokens?: number };
+    const upstreamBody = JSON.parse(String(init.body)) as {
+      max_tokens?: number;
+      thinking?: { type?: string };
+    };
     expect(url).toBe('https://api.z.ai/api/paas/v4/chat/completions');
     expect(init.headers).toMatchObject({
       Authorization: 'Bearer test-zhipu-key',
     });
     expect(upstreamBody.max_tokens).toBe(800);
+    expect(upstreamBody.thinking).toEqual({ type: 'disabled' });
   });
 
   it('uses the GLM vision default for image requests without a model override', async () => {
