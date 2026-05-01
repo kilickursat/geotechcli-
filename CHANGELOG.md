@@ -1,5 +1,14 @@
 ﻿# Changelog
 
+## [0.4.33] - 2026-05-01
+
+### Hosted GLM PDF Vision Fix
+
+- Forced hosted-beta PDF page inputs through provider-safe raster images so `geotech vision log` no longer sends native PDF parts to the GLM vision model.
+- Applied the same hosted-beta PDF raster path to CLI ingest and agent ingest tools, preserving native PDF pages only for providers that can support them.
+- Raised the public CLI hosted-beta vision burst window to four requests per minute so one-page image-only PDF workflows can complete OCR and structured extraction without self-rate-limiting.
+- Added regression coverage for forced raster PDF page inputs on digital-text PDFs.
+
 ## [0.4.32] - 2026-05-01
 
 ### Hosted GLM Vision Smoke Fix

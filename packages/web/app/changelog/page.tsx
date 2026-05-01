@@ -8,6 +8,17 @@ const releases = [
     date: '2026-05-01',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'fix', text: 'Forced hosted-beta PDF page inputs through provider-safe raster images so geotech vision log no longer sends native PDF parts to the GLM vision model' },
+      { type: 'fix', text: 'Applied the same hosted-beta PDF raster path to CLI ingest and agent ingest tools while preserving native PDF pages for providers that can support them' },
+      { type: 'fix', text: 'Raised the public CLI hosted-beta vision burst window to four requests per minute so one-page image-only PDF workflows can complete OCR and structured extraction without self-rate-limiting' },
+      { type: 'fix', text: 'Added regression coverage for forced raster PDF page inputs on digital-text PDFs' },
+    ],
+  },
+  {
+    version: '0.4.32',
+    date: '2026-05-01',
+    tag: '0.4.32 Release',
+    changes: [
       { type: 'fix', text: 'Disabled GLM thinking mode for the hosted glm-5v-turbo vision path so borehole-log ingest and vision commands return final assistant content instead of empty completions' },
       { type: 'fix', text: 'Fixed the CLI vision retry backoff so recoverable hosted vision failures no longer let Node exit with an unsettled top-level await warning before the fallback attempt runs' },
       { type: 'fix', text: 'Added regression coverage for forwarding disabled thinking mode on GLM vision proxy requests' },

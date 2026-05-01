@@ -444,7 +444,12 @@ toolRegistry.register(
           overrideBoreholeId: args.boreholeId as string | undefined,
           inspection,
           image: file.kind === 'pdf' ? undefined : file,
-          pages: file.kind === 'pdf' ? await readDocumentPdfPageInputs(filePath, { inspection }) : undefined,
+          pages: file.kind === 'pdf'
+            ? await readDocumentPdfPageInputs(filePath, {
+              inspection,
+              forceRasterImages: config.provider === 'hosted-beta',
+            })
+            : undefined,
         });
 
         const persistedReview =
@@ -478,7 +483,12 @@ toolRegistry.register(
         source: buildDocumentSource(filePath, file.kind === 'pdf' ? 'pdf' : 'image'),
         inspection,
         image: file.kind === 'pdf' ? undefined : file,
-        pages: file.kind === 'pdf' ? await readDocumentPdfPageInputs(filePath, { inspection }) : undefined,
+        pages: file.kind === 'pdf'
+          ? await readDocumentPdfPageInputs(filePath, {
+            inspection,
+            forceRasterImages: config.provider === 'hosted-beta',
+          })
+          : undefined,
       });
 
       const persistedReview =

@@ -928,7 +928,10 @@ export function registerVisionCommand(program: Command): void {
         if (file.kind === 'pdf') {
           const pdfInspection = inspectPdfDocument(filePath);
           const effectiveInspection = pdfInspection.totalPages > 0 ? pdfInspection : null;
-          const pageInputs = await readVisionPdfPageInputs(filePath, { inspection: effectiveInspection });
+          const pageInputs = await readVisionPdfPageInputs(filePath, {
+            inspection: effectiveInspection,
+            forceRasterImages: config.provider === 'hosted-beta',
+          });
           if (!flags.json && !flags.quiet && pageInputs.length > 1) {
             info(`PDF contains ${pageInputs.length} pages. Processing borehole log pages sequentially.`);
           }

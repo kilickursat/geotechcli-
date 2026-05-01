@@ -50,6 +50,7 @@ export interface DocumentPdfPageNormalizedArtifact {
 export interface ReadDocumentPdfPageInputsOptions {
   inspection?: PdfDocumentInspection | null;
   preferExtractedPageImages?: boolean;
+  forceRasterImages?: boolean;
   dependencies?: {
     extractPageImages?: typeof extractPrimaryPdfPageImages;
     renderPageImage?: typeof renderPdfPageImage;
@@ -168,7 +169,7 @@ export async function readDocumentPdfPageInputs(
   const renderPageImage = options?.dependencies?.renderPageImage ?? renderPdfPageImage;
   const shouldAttemptRasterExtraction =
     options?.preferExtractedPageImages !== false
-    && options?.inspection != null;
+    && (options?.inspection != null || options?.forceRasterImages === true);
   const extractedImages =
     !shouldAttemptRasterExtraction
       ? []
@@ -183,7 +184,8 @@ export async function readDocumentPdfPageInputs(
     const inspectionPage = options?.inspection?.pages[index];
     const extractedImage = extractedImageByPage.get(pageNumber);
     const shouldPreferRasterImage =
-      inspectionPage?.classification === 'image-only'
+      options?.forceRasterImages === true
+      || inspectionPage?.classification === 'image-only'
       || inspectionPage?.classification === 'text-unreadable'
       || inspectionPage?.normalizedArtifact?.textSource === 'native-text-low-quality';
 

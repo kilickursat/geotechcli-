@@ -2183,7 +2183,10 @@ export function registerIngestCommand(program: Command): void {
                 if (selectedPageRange) {
                   await writePdfPageSubset(filePath, selectedPageRange, pdfInputPath);
                 }
-                const pageInputs = await readVisionPdfPageInputs(pdfInputPath, { inspection: scopedInspection });
+                const pageInputs = await readVisionPdfPageInputs(pdfInputPath, {
+                  inspection: scopedInspection,
+                  forceRasterImages: config.provider === 'hosted-beta',
+                });
                 for (const pageInput of pageInputs) {
                   maybeCheckHostedBetaVisionPayload(config, pageInput, requestDetails);
                 }

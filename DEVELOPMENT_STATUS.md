@@ -4,7 +4,7 @@ Last updated: 2026-05-01
 
 ## Current Work
 
-We are shipping the v0.4.32 hosted GLM vision smoke fix for the strong-beta AI path.
+We are shipping the v0.4.33 hosted GLM PDF vision fix for the strong-beta AI path.
 
 Current focus:
 
@@ -68,6 +68,13 @@ Current focus:
 - Disabled GLM thinking mode for the hosted `glm-5v-turbo` vision path.
 - Fixed the CLI vision retry backoff so recoverable hosted vision failures do not exit with an unsettled top-level await warning.
 - Added regression coverage for GLM vision proxy requests carrying disabled thinking mode.
+
+### v0.4.33 Hosted GLM PDF Vision Fix
+
+- Forced hosted-beta PDF page inputs through raster image payloads before GLM vision calls.
+- Applied the raster PDF path to `geotech vision log`, CLI ingest, and agent ingest tools.
+- Raised the CLI hosted-beta vision burst window to four requests per minute while keeping daily limits in place.
+- Added regression coverage for forced raster PDF inputs on digital-text PDFs.
 
 ## Left To Do
 

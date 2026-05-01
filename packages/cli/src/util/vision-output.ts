@@ -43,6 +43,7 @@ export async function readVisionPdfPageInputs(
   options?: {
     inspection?: PdfDocumentInspection | null;
     preferExtractedPageImages?: boolean;
+    forceRasterImages?: boolean;
   },
 ): Promise<VisionPdfPageInput[]> {
   return readDocumentPdfPageInputs(filePath, options);

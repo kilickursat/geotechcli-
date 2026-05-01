@@ -18,7 +18,7 @@ const ANONYMOUS_HOSTED_BETA_LIMITS = {
 
 const GEOTECHCLI_HOSTED_BETA_LIMITS = {
   requestsPerMinutePerIp: 20,
-  visionRequestsPerMinutePerIp: 2,
+  visionRequestsPerMinutePerIp: 4,
   agentRequestsPerMinutePerIp: 2,
   textPerDay: 60,
   visionPerDay: 12,

@@ -147,6 +147,51 @@ describe('inspectPdfDocument', { timeout: 15000 }, () => {
     expect(pageInputs[0]?.normalizedArtifact.textSource).toBe('none');
   });
 
+  it('can force PDF pages to raster images for providers without native PDF support', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-force-raster-pdf-'));
+    tempDirs.push(dir);
+
+    const pdfPath = join(dir, 'digital-text.pdf');
+    const pdfBytes = await createPdfBuffer([
+      {
+        lines: [
+          'BH-09 Page 1',
+          '0 - 2 m sandy clay',
+        ],
+      },
+    ]);
+    await writeFile(pdfPath, pdfBytes);
+
+    const inspection = inspectPdfDocument(pdfBytes);
+    const pageInputs = await readDocumentPdfPageInputs(pdfPath, {
+      inspection,
+      forceRasterImages: true,
+      dependencies: {
+        extractPageImages: async () => [],
+        renderPageImage: async () => ({
+          pageNumber: 1,
+          totalPages: 1,
+          objectRef: 'page-render:1',
+          mimeType: 'image/png',
+          width: 612,
+          height: 792,
+          byteLength: 4,
+          source: 'page-render',
+          warnings: [],
+          data: Uint8Array.from([0x89, 0x50, 0x4e, 0x47]),
+        }),
+      },
+    });
+
+    expect(inspection.pages[0]?.classification).toBe('digital-text');
+    expect(pageInputs).toHaveLength(1);
+    expect(pageInputs[0]?.mimeType).toBe('image/png');
+    expect(pageInputs[0]?.kind).toBe('image');
+    expect(pageInputs[0]?.sourceKind).toBe('raster-image');
+    expect(pageInputs[0]?.normalizedArtifact.source).toBe('full-page-raster');
+    expect(pageInputs[0]?.normalizedArtifact.textSource).toBe('native-text');
+  });
+
   it('rerenders extracted raster payloads that are not provider-safe images', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'geotech-unsafe-raster-pdf-'));
     tempDirs.push(dir);
