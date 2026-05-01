@@ -8,6 +8,16 @@ const releases = [
     date: '2026-05-01',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'fix', text: 'Disabled GLM thinking mode for the hosted glm-5v-turbo vision path so borehole-log ingest and vision commands return final assistant content instead of empty completions' },
+      { type: 'fix', text: 'Fixed the CLI vision retry backoff so recoverable hosted vision failures no longer let Node exit with an unsettled top-level await warning before the fallback attempt runs' },
+      { type: 'fix', text: 'Added regression coverage for forwarding disabled thinking mode on GLM vision proxy requests' },
+    ],
+  },
+  {
+    version: '0.4.31',
+    date: '2026-05-01',
+    tag: '0.4.31 Release',
+    changes: [
       { type: 'fix', text: 'Disabled GLM thinking mode by default in the hosted-beta proxy so low-latency text calls return final assistant content instead of spending tiny smoke-test budgets on reasoning tokens' },
       { type: 'fix', text: 'Added GEOTECHCLI_HOSTED_BETA_THINKING_MODE=disabled to the environment contract, with an opt-in path for future deeper reasoning tests' },
       { type: 'fix', text: 'Kept the Z.ai GLM model defaults and live release smoke checks aligned with the hosted-beta no-user-key contract' },

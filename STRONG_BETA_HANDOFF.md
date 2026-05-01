@@ -4,7 +4,7 @@ Date: 2026-05-01
 Branch: `strong-beta`
 Repo: `https://github.com/kilickursat/geotechcli-.git`
 Current branch head: see git history for the latest `strong-beta` release commit
-Current release in repo: `0.4.31` local release candidate until the approved commit/tag/push
+Current release in repo: `0.4.32` local release candidate until the approved commit/tag/push
 Beta host: `https://beta.geotechcli.com`
 Hosted text/agent model: `glm-5.1`
 Hosted vision model: `glm-5v-turbo`

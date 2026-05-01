@@ -4,7 +4,7 @@ Last updated: 2026-05-01
 
 ## Current Work
 
-We are shipping the v0.4.31 hosted GLM default swap and live-smoke fix for the strong-beta AI path.
+We are shipping the v0.4.32 hosted GLM vision smoke fix for the strong-beta AI path.
 
 Current focus:
 
@@ -62,6 +62,12 @@ Current focus:
 - Disabled GLM thinking mode by default in the hosted-beta proxy for lower-latency final content.
 - Added an environment override for future deeper-reasoning tests.
 - Kept the live release smoke aligned with the no-user-key hosted-beta path.
+
+### v0.4.32 Hosted GLM Vision Smoke Fix
+
+- Disabled GLM thinking mode for the hosted `glm-5v-turbo` vision path.
+- Fixed the CLI vision retry backoff so recoverable hosted vision failures do not exit with an unsettled top-level await warning.
+- Added regression coverage for GLM vision proxy requests carrying disabled thinking mode.
 
 ## Left To Do
 

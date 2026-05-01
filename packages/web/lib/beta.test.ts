@@ -384,8 +384,12 @@ describe('hosted beta controls', () => {
     expect(response.status).toBe(200);
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    const upstreamBody = JSON.parse(String(init.body)) as { model?: string };
+    const upstreamBody = JSON.parse(String(init.body)) as {
+      model?: string;
+      thinking?: { type?: string };
+    };
     expect(upstreamBody.model).toBe(DEFAULT_LLM_VISION_MODEL);
+    expect(upstreamBody.thinking).toEqual({ type: 'disabled' });
   });
 
   it('rejects invalid developer auth instead of silently treating it as a public client', async () => {

@@ -1,5 +1,13 @@
 ﻿# Changelog
 
+## [0.4.32] - 2026-05-01
+
+### Hosted GLM Vision Smoke Fix
+
+- Disabled GLM thinking mode for the hosted `glm-5v-turbo` vision path so borehole-log ingest and vision commands return final assistant content instead of empty completions.
+- Fixed the CLI vision retry backoff so recoverable hosted vision failures no longer let Node exit with an unsettled top-level await warning before the fallback attempt runs.
+- Added regression coverage for forwarding disabled thinking mode on GLM vision proxy requests.
+
 ## [0.4.31] - 2026-05-01
 
 ### Hosted GLM Live Smoke Fix

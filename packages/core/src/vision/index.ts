@@ -62,10 +62,7 @@ function isRecoverableVisionRetryResponse(error: unknown): boolean {
 }
 
 async function waitForRecoverableVisionBackoff(): Promise<void> {
-  await new Promise<void>((resolve) => {
-    const timer = setTimeout(resolve, 100);
-    timer.unref?.();
-  });
+  await new Promise<void>((resolve) => setTimeout(resolve, 100));
 }
 
 /**

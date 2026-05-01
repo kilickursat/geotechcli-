@@ -556,7 +556,7 @@ export async function POST(request: NextRequest) {
     stream: false,
   };
 
-  if (model === DEFAULT_LLM_MODEL) {
+  if (model === DEFAULT_LLM_MODEL || model === DEFAULT_LLM_VISION_MODEL) {
     upstreamBody.thinking = { type: getHostedBetaThinkingMode() };
   }
 
