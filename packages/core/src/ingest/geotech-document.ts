@@ -1,4 +1,4 @@
-import type { LLMConfig } from '../llm/types.js';
+import type { CompletionResponse, LLMConfig } from '../llm/types.js';
 import { generateText } from '../llm/router.js';
 import { resolveProviderCapabilities } from '../llm/index.js';
 import { parseJsonObject } from '../vision/parse.js';
@@ -1043,6 +1043,11 @@ function buildSynthesisEvidence(input: {
   ].join('\n');
 }
 
+function isEmptySynthesisResponseError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /no content|empty.*content|assistant text|did not contain assistant text/i.test(message);
+}
+
 async function synthesizeGeotechDocumentResult(input: {
   config: LLMConfig;
   result: Omit<GeotechDocumentIngestResult, 'synthesis' | 'contentChunks'> & {
@@ -1084,13 +1089,27 @@ ${buildSynthesisEvidence({
     contentChunks,
   }).slice(0, 9000)}`;
 
-  const response = await generateText(prompt, input.config, {
-    systemPrompt: 'You are a senior geotechnical engineer synthesizing extracted report evidence into a review brief. Use cautious, evidence-bound language. Respond with JSON only.',
-    temperature: 0.1,
-    jsonMode: true,
-    maxTokens: 1200,
-    thinkingMode: 'enabled',
-  });
+  const requestSynthesis = async (thinkingMode: 'enabled' | 'disabled'): Promise<CompletionResponse> =>
+    generateText(prompt, input.config, {
+      systemPrompt: 'You are a senior geotechnical engineer synthesizing extracted report evidence into a review brief. Use cautious, evidence-bound language. Respond with JSON only.',
+      temperature: 0.1,
+      jsonMode: true,
+      maxTokens: 1200,
+      thinkingMode,
+    });
+
+  let response: CompletionResponse;
+  try {
+    response = await requestSynthesis('enabled');
+    if (!response.text.trim()) {
+      response = await requestSynthesis('disabled');
+    }
+  } catch (error) {
+    if (!isEmptySynthesisResponseError(error)) {
+      throw error;
+    }
+    response = await requestSynthesis('disabled');
+  }
   const parsed = parseJsonObject(response.text);
   if (!parsed.value) {
     return {

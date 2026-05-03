@@ -1,5 +1,13 @@
 ﻿# Changelog
 
+## [0.4.35] - 2026-05-03
+
+### GLM-5.1 Synthesis Retry Fix
+
+- Kept GLM thinking enabled for final report synthesis as the first attempt, then retried once without thinking when Z.ai returns an empty/no-content assistant response.
+- Prevented successful visual ingest runs from showing a `GLM-5.1 synthesis failed` warning when the fallback synthesis response is valid.
+- Added regression coverage for the hosted-beta synthesis fallback path so the dossier brief remains populated after an empty thinking-mode completion.
+
 ## [0.4.34] - 2026-05-03
 
 ### Hosted GLM-OCR Report Synthesis

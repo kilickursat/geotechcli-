@@ -4,7 +4,7 @@ Last updated: 2026-05-03
 
 ## Current Work
 
-We are shipping the v0.4.34 hosted GLM-OCR report synthesis and dossier UX release for the strong-beta AI path.
+We are shipping the v0.4.35 GLM-5.1 synthesis retry hotfix for the strong-beta AI path.
 
 Current focus:
 
@@ -12,6 +12,7 @@ Current focus:
 - Route hosted text and agent reasoning to `glm-5.1`.
 - Route hosted vision to `glm-5v-turbo`.
 - Route hosted PDF/table layout extraction to `glm-ocr`.
+- Retry final report synthesis without thinking when GLM-5.1 returns an empty thinking-mode response.
 - Use the server-side `ZHIPU_API_KEY` secret in GitHub and Cloudflare.
 - Keep the legacy Modal deploy workflow present but disabled by default.
 
@@ -84,6 +85,12 @@ Current focus:
 - Raised hosted-beta public CLI daily limits for text, vision, layout, and agent workflows while preserving tighter anonymous caps.
 - Improved the HTML dossier with report takeaways, grouped key parameters, stage badges, extraction overview, confidence meters, and shadcn-style collapsed audit details.
 - Added regression coverage for synchronous ingest, persisted async jobs, direct visual extraction, GLM-OCR fallback, hosted layout limits, and dossier HTML rendering.
+
+### v0.4.35 GLM-5.1 Synthesis Retry Fix
+
+- Kept GLM thinking enabled for final report synthesis as the first attempt.
+- Added a no-content fallback retry without thinking for hosted GLM-5.1 synthesis responses.
+- Added regression coverage so valid fallback synthesis populates the dossier without a stale synthesis-failed warning.
 
 ## Left To Do
 

@@ -8,6 +8,16 @@ const releases = [
     date: '2026-05-03',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'fix', text: 'Kept GLM thinking enabled for final report synthesis as the first attempt, then retried once without thinking when Z.ai returns an empty/no-content assistant response' },
+      { type: 'fix', text: 'Prevented successful visual ingest runs from showing a GLM-5.1 synthesis failed warning when the fallback synthesis response is valid' },
+      { type: 'fix', text: 'Added regression coverage for the hosted-beta synthesis fallback path so the dossier brief remains populated after an empty thinking-mode completion' },
+    ],
+  },
+  {
+    version: '0.4.34',
+    date: '2026-05-03',
+    tag: '0.4.34 Release',
+    changes: [
       { type: 'feat', text: 'Added hosted GLM-OCR layout parsing with a separate layout quota bucket, configurable public limits, and developer key/IP bypass support' },
       { type: 'feat', text: 'Wired geotechnical document ingest to prefer GLM-OCR layout text before GLM-5V visual extraction, then run GLM-5.1 synthesis for report takeaways, ground model, key parameters, interpretation, and limitations' },
       { type: 'fix', text: 'Raised public hosted-beta CLI defaults to 300 text, 120 vision, 80 layout, and 40 agent requests per day while preserving tighter anonymous caps' },
