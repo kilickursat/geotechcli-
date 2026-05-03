@@ -281,4 +281,60 @@ describe('ingest dossier HTML', () => {
     expect(html).toContain('BH3');
     expect(html).toContain('Dashed layer boundaries indicate missing or unverified stratum intervals.');
   });
+
+  it('builds a conceptual profile from retained inspection and chunk evidence when parameters omit depth rows', () => {
+    const scheduleText = [
+      'Schedule of boreholes is tabulated below.',
+      'Bore Hole No. Terminating Depth (m) Water Table below EGL (m)',
+      'BH - 1 10.00 Not found',
+      'BH - 2 10.00 Not found',
+      'BH - 3 10.00 Not found',
+      'The boring was carried out up to maximum depth of 10.00 m.',
+    ].join('\n');
+    const dossier = buildIngestDossier(makeGeotechResult({
+      summary: 'Foundation parameters were extracted, but borehole schedule details came from retained page text.',
+      materials: [
+        { kind: 'rock', description: 'rock', uscsSymbol: null, lithology: null },
+        { kind: 'groundwater', description: 'water table', uscsSymbol: null, lithology: null },
+      ],
+      parameters: [
+        { name: 'sptN', valueText: '15', numericValue: 15, unit: 'blows/ft', material: 'BH-3', context: 'Depth 1.5, footing table' },
+      ],
+      inspection: {
+        kind: 'pdf-document-inspection',
+        totalPages: 2,
+        pages: [
+          {
+            pageNumber: 2,
+            totalPages: 2,
+            classification: 'digital-text',
+            extractedText: scheduleText,
+            normalizedText: scheduleText,
+            normalizedArtifact: { nativeText: scheduleText },
+          },
+        ],
+      } as any,
+      contentChunks: [
+        {
+          chunkId: 'page-22',
+          pageRange: [22, 22],
+          headingAncestry: ['Conclusion'],
+          scope: 'section',
+          sectionType: 'ground-model',
+          significance: 90,
+          text: 'Around BH - 1, hard clayey silt at top followed by a weathered rock layer. Around BH - 2, hard clayey silt followed by a very dense silty sand layer. Around BH - 3, medium dense to dense silty sand continues up to terminating depth.',
+          sourcePages: [22],
+        },
+      ],
+    }));
+
+    const html = renderIngestDossierAsHtml(dossier);
+
+    expect(dossier.boreholeProfile?.maxDepth).toBe(10);
+    expect(dossier.boreholeProfile?.columns.map((column) => column.boreholeId)).toEqual(['BH1', 'BH2', 'BH3']);
+    expect(dossier.boreholeProfile?.columns[0]?.layers.length).toBeGreaterThan(0);
+    expect(html).toContain('<svg class="borehole-profile"');
+    expect(html).toContain('TD 10.00 m');
+    expect(html).toContain('Use source logs before treating the profile as design-grade stratigraphy.');
+  });
 });

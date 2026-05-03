@@ -14,7 +14,7 @@ const tiers = [
       'Unlimited deterministic calculations',
       'Hosted GLM beta access with no user provider key',
       `Current defaults: ${DEFAULT_LLM_MODEL} and ${DEFAULT_LLM_VISION_MODEL}`,
-      'Server-side rate limits and abuse protection',
+      'Higher CLI limits with stricter anonymous caps',
       'Docs, changelog, and feedback-driven updates',
       'No signup or billing during this wave',
     ],

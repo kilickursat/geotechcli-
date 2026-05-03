@@ -8,6 +8,17 @@ const releases = [
     date: '2026-05-03',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'fix', text: 'Raised installed-CLI hosted beta defaults to 2,000 text, 600 vision, 600 layout, and 200 agent requests per day for image-heavy PDF development runs' },
+      { type: 'fix', text: 'Raised anonymous hosted beta defaults moderately while keeping stricter abuse protection than installed CLI traffic' },
+      { type: 'fix', text: 'Hardened Geotechnical Intelligence Dossier borehole-profile inference to use retained inspection text and content chunks when structured parameter rows omit depth data' },
+      { type: 'fix', text: 'Added regression coverage for profile generation from real report-style borehole schedule and conclusion text' },
+    ],
+  },
+  {
+    version: '0.4.36',
+    date: '2026-05-03',
+    tag: '0.4.36 Release',
+    changes: [
       { type: 'feat', text: 'Redesigned HTML ingest dossiers as a premium Geotechnical Intelligence Dossier with a sticky sidebar, executive facts, review actions, engineering insight cards, and source-evidence navigation' },
       { type: 'feat', text: 'Added an evidence-first trust table for extracted and missing engineering parameters with source page, confidence, review posture, and evidence snippets' },
       { type: 'feat', text: 'Added a lightweight borehole stratigraphy SVG view for retained borehole and layer evidence, with dashed boundaries for uncertain or missing intervals' },

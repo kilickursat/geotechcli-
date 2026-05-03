@@ -4,7 +4,7 @@ Last updated: 2026-05-03
 
 ## Current Work
 
-We are shipping the v0.4.36 Geotechnical Intelligence Dossier UX release for the strong-beta report review path.
+We are shipping the v0.4.37 hosted development headroom and dossier profile-evidence patch for the strong-beta report review path.
 
 Current focus:
 
@@ -14,6 +14,7 @@ Current focus:
 - Route hosted PDF/table layout extraction to `glm-ocr`.
 - Retry final report synthesis without thinking when GLM-5.1 returns an empty thinking-mode response.
 - Present HTML ingest results as an evidence-first Geotechnical Intelligence Dossier with a premium review dashboard.
+- Raise hosted-beta public limits enough for image-heavy PDF development runs, while keeping developer key/IP bypass unlimited.
 - Use the server-side `ZHIPU_API_KEY` secret in GitHub and Cloudflare.
 - Keep the legacy Modal deploy workflow present but disabled by default.
 
@@ -101,6 +102,13 @@ Current focus:
 - Added a lightweight borehole stratigraphy SVG view for retained borehole/layer evidence, with dashed boundaries for uncertain intervals.
 - Moved GLM/model-stage details and raw page audit tables into a collapsed Processing Audit section.
 - Added regression coverage for the premium layout, trust layer, source evidence, processing audit, and borehole visualization.
+
+### v0.4.37 Hosted Development Headroom and Dossier Profile Evidence
+
+- Raised installed-CLI hosted-beta defaults to 2,000 text, 600 vision, 600 layout, and 200 agent requests per day.
+- Raised anonymous hosted-beta defaults moderately while preserving stricter abuse protection than installed CLI traffic.
+- Hardened dossier borehole-profile inference to use retained inspection text and content chunks for borehole IDs, terminating depth, and conceptual layer evidence.
+- Added regression coverage for real report-style borehole schedule and conclusion text when structured depth parameters are missing.
 
 ## Left To Do
 

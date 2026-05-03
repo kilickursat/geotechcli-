@@ -51,9 +51,9 @@ export default function PricingPage() {
             <div>
               <h3 className="font-semibold mb-2">Will there be hosted AI limits?</h3>
               <p className="text-[var(--text-secondary)] text-sm leading-relaxed">
-                Yes. Strong beta already uses strict server-side rate limits and
-                anti-abuse controls so users can evaluate the product without
-                exhausting the hosted compute budget.
+                Yes. Strong beta uses higher installed-CLI development limits,
+                stricter anonymous caps, and anti-abuse controls so users can
+                evaluate the product without exhausting the hosted compute budget.
               </p>
             </div>
           </div>

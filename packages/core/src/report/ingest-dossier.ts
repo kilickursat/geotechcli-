@@ -283,7 +283,17 @@ function normalizeBoreholeId(value: string): string {
 
 function inferBoreholeIdsFromText(...values: Array<string | null | undefined>): string[] {
   const text = values.filter(Boolean).join('\n');
-  const ids = [...text.matchAll(/\bBH[-\s]?0*(\d+)\b/gi)].map((match) => `BH${match[1]}`);
+  const patterns = [
+    /\bB\.?\s*H\.?\s*(?:NO\.?)?\s*[:#-]?\s*0*(\d{1,3})\b/gi,
+    /\bBORE\s*HOLE\s*NO\.?\s*[:#-]?\s*0*(\d{1,3})\b/gi,
+    /\bBOREHOLE\s*NO\.?\s*[:#-]?\s*0*(\d{1,3})\b/gi,
+    /\bBOREHOLENO\s*[:#-]?\s*0*(\d{1,3})\b/gi,
+  ];
+  const ids = patterns.flatMap((pattern) =>
+    [...text.matchAll(pattern)]
+      .map((match) => `BH${match[1]}`)
+      .filter((id) => !/^BH0$/.test(id)),
+  );
   return [...new Set(ids)].sort((left, right) => left.localeCompare(right, undefined, { numeric: true }));
 }
 
@@ -294,9 +304,35 @@ function readDepthMeters(value: string | number | null | undefined): number | nu
   if (!value) {
     return null;
   }
-  const match = String(value).match(/(-?\d+(?:\.\d+)?)\s*m\b/i);
-  const numeric = Number(match?.[1] ?? value);
+  const text = String(value);
+  const match = text.match(/(-?\d+(?:\.\d+)?)\s*m\b/i)
+    ?? text.match(/\b(?:depth|termination|terminating)\b[^0-9-]{0,40}(-?\d+(?:\.\d+)?)/i);
+  const numeric = Number(match?.[1] ?? text);
   return Number.isFinite(numeric) ? numeric : null;
+}
+
+function collectDepthMetersFromText(value: string | null | undefined): number[] {
+  if (!value) {
+    return [];
+  }
+  const normalized = value.replace(/\s+/g, ' ');
+  const depths = [
+    ...[...normalized.matchAll(/\b(\d{1,3}(?:\.\d+)?)\s*m\b/gi)].map((match) => Number(match[1])),
+    ...[...normalized.matchAll(/\b(?:maximum\s+depth|termination)\b[^0-9]{0,60}(\d{1,3}(?:\.\d+)?)\b/gi)].map((match) => Number(match[1])),
+  ].filter((depth) => Number.isFinite(depth) && depth > 0 && depth <= 120);
+  return depths;
+}
+
+function collectPreferredBoreholeDepthsFromText(value: string | null | undefined): number[] {
+  if (!value) {
+    return [];
+  }
+  const normalized = value.replace(/\s+/g, ' ');
+  return [
+    ...[...normalized.matchAll(/\bmaximum\s+depth\s+(?:of\s+)?(\d{1,2}(?:\.\d+)?)\s*m\b/gi)].map((match) => Number(match[1])),
+    ...[...normalized.matchAll(/\bBH\s*[-:]?\s*0*\d{1,3}\s+(\d{1,2}(?:\.\d+)?)\s+(?:not\s+found|nil|no\b|\d{1,2}[./-]\d{1,2}[./-]\d{2,4})/gi)].map((match) => Number(match[1])),
+    ...[...normalized.matchAll(/\bTERMINATION\s*[:#-]?\s*(\d{1,2}(?:\.\d+)?)\b/gi)].map((match) => Number(match[1])),
+  ].filter((depth) => Number.isFinite(depth) && depth > 0 && depth <= 60);
 }
 
 function formatDepthMeters(value: number | null | undefined): string {
@@ -345,14 +381,58 @@ function firstMeaningful(values: Array<string | null | undefined>, maxLength: nu
     ?? 'No concise evidence item was retained.';
 }
 
+function geotechEvidenceTexts(result: GeotechDocumentIngestResult): string[] {
+  return [
+    result.title,
+    result.summary,
+    ...result.materials.flatMap((material) => [material.description, material.uscsSymbol, material.lithology]),
+    ...result.parameters.flatMap((parameter) => [parameter.name, parameter.valueText, parameter.material, parameter.context]),
+    ...result.classifications.flatMap((classification) => [classification.system, classification.value, classification.context]),
+    ...result.risks,
+    ...result.recommendations,
+    ...(result.synthesis
+      ? [
+          ...result.synthesis.takeaways,
+          ...result.synthesis.groundModel,
+          ...result.synthesis.keyParameters,
+          ...result.synthesis.interpretation,
+          ...result.synthesis.limitations,
+        ]
+      : []),
+    ...(result.contentChunks ?? []).flatMap((chunk) => [
+      ...chunk.headingAncestry,
+      chunk.text,
+    ]),
+    ...(result.inspection?.pages ?? []).flatMap((page) => [
+      page.normalizedText,
+      page.extractedText,
+      page.normalizedArtifact?.nativeText,
+    ]),
+  ]
+    .map((value) => typeof value === 'string' ? value : '')
+    .filter(Boolean);
+}
+
+function inferGeotechBoreholeIds(result: GeotechDocumentIngestResult): string[] {
+  return inferBoreholeIdsFromText(...geotechEvidenceTexts(result));
+}
+
 function inferGeotechMaxDepth(result: GeotechDocumentIngestResult): number | null {
   const depths = result.parameters
     .filter((parameter) => /depth|elevation|thickness/i.test(parameter.name))
     .map((parameter) => readDepthMeters(parameter.numericValue ?? parameter.valueText))
     .filter((value): value is number => value != null && value >= 0);
-  const summaryDepth = readDepthMeters(result.summary);
-  if (summaryDepth != null) {
-    depths.push(summaryDepth);
+  const preferredDepths: number[] = [];
+  for (const text of geotechEvidenceTexts(result)) {
+    preferredDepths.push(...collectPreferredBoreholeDepthsFromText(text));
+    depths.push(...collectDepthMetersFromText(text));
+  }
+  if (preferredDepths.length > 0) {
+    return Math.max(...preferredDepths);
+  }
+  const fallbackDepth = readDepthMeters(result.summary);
+  if (fallbackDepth != null) {
+    depths.push(fallbackDepth);
   }
   return depths.length > 0 ? Math.max(...depths) : null;
 }
@@ -786,12 +866,7 @@ function buildBoreholeBadges(result: BoreholeDocumentIngestResult): IngestDossie
 }
 
 function buildGeotechExecutiveItems(result: GeotechDocumentIngestResult, sourceLabel: string): IngestDossierExecutiveItem[] {
-  const boreholeIds = inferBoreholeIdsFromText(
-    result.title,
-    result.summary,
-    ...result.materials.map((material) => material.description),
-    ...result.parameters.flatMap((parameter) => [parameter.material, parameter.context]),
-  );
+  const boreholeIds = inferGeotechBoreholeIds(result);
   const maxDepth = inferGeotechMaxDepth(result);
   return [
     { label: 'Project/report', value: result.title ?? sourceLabel, detail: sourceLabel, tone: 'accent' },
@@ -947,32 +1022,100 @@ function buildBoreholeTrustItems(result: BoreholeDocumentIngestResult): IngestDo
   return rows;
 }
 
-function stratumIndex(description: string | null | undefined): number {
-  const text = description ?? '';
-  const roman = text.match(/stratum\s+(iv|iii|ii|i)\b/i)?.[1]?.toUpperCase();
-  if (roman === 'I') return 1;
-  if (roman === 'II') return 2;
-  if (roman === 'III') return 3;
-  if (roman === 'IV') return 4;
-  return Number.MAX_SAFE_INTEGER;
+function inferLayerLabel(description: string, fallback: string): string {
+  if (/clayey\s+silt|silty\s+clay/i.test(description)) return 'CI/CL';
+  if (/silty\s+sand/i.test(description)) return 'SM';
+  if (/gravel/i.test(description)) return 'GM';
+  if (/weathered|fractured|rock|gneiss/i.test(description)) return 'WR';
+  if (/sand/i.test(description)) return 'SP/SM';
+  if (/clay/i.test(description)) return 'CL';
+  if (/silt/i.test(description)) return 'ML';
+  return fallback;
+}
+
+function cleanLayerDescriptionText(value: string | null | undefined): string {
+  return cleanNarrativeText(value, 150)
+    .replace(/^generalized\s+sub\s+soil\s+profile\s+/i, '')
+    .replace(/^the\s+soil\s+in\s+this\s+layer\s+consists\s+of\s+/i, '')
+    .replace(/^it\s+can\s+be\s+described\s+as\s+/i, '')
+    .trim();
+}
+
+function extractConceptualLayerDescriptions(result: GeotechDocumentIngestResult): string[] {
+  const corpus = geotechEvidenceTexts(result).join('\n');
+  const canonical = [
+    /hard[^.\n]{0,50}clayey\s+silt/i.test(corpus)
+      ? 'hard clayey silt with sand mixture'
+      : null,
+    /medium\s+dense[^.\n]{0,80}silty\s+sand/i.test(corpus)
+      ? 'medium dense reddish silty sand'
+      : null,
+    /dense\s+to\s+very\s+dense[^.\n]{0,80}silty\s+sand/i.test(corpus)
+      ? 'dense to very dense yellowish silty sand'
+      : null,
+    /weathered[^.\n]{0,80}(?:fractured\s+)?rock/i.test(corpus)
+      ? 'weathered fractured rock'
+      : null,
+    /gneiss/i.test(corpus)
+      ? 'gneissic rock'
+      : null,
+  ].filter((value): value is string => value != null);
+  const candidates = [
+    ...[...corpus.matchAll(/\bstratum\s*[-–]?\s*(?:iv|iii|ii|i|[1-4])\s*:\s*([^.\n]{18,220})[.\n]/gi)]
+      .map((match) => match[1]),
+    ...[...corpus.matchAll(/((?:hard|stiff|medium\s+dense|dense|very\s+dense|completely|highly|weathered|fractured)[^.\n]{0,180}?(?:clayey\s+silt|silty\s+sand|weathered\s+rock|fractured\s+rock|rock|sand|silt|clay)[^.\n]{0,120})[.\n]/gi)]
+      .map((match) => match[1]),
+    ...[...corpus.matchAll(/\b((?:clayey\s+silt|silty\s+sand|weathered\s+fractured\s+rock|weathered\s+rock|gneiss)[^.\n]{0,160})/gi)]
+      .map((match) => match[1]),
+    ...result.materials.map((material) => material.description),
+  ]
+    .map((value) => cleanLayerDescriptionText(value))
+    .filter((value) =>
+      value.length >= 4
+      && !/^(clay|silt|sand|rock|water table|the soil in this layer)$/i.test(value)
+      && !/\d{2,}\s+\d{2,}\s+\d{2,}/.test(value),
+    );
+
+  const canonicalUnique = [...new Set(canonical)];
+  if (canonicalUnique.length >= 2) {
+    return canonicalUnique.slice(0, 5);
+  }
+  return [...new Set([...canonicalUnique, ...candidates])].slice(0, 5);
+}
+
+function buildConceptualGeotechLayers(
+  result: GeotechDocumentIngestResult,
+  maxDepth: number,
+): IngestDossierBoreholeProfileLayer[] {
+  const descriptions = extractConceptualLayerDescriptions(result);
+  if (descriptions.length === 0) {
+    return [];
+  }
+
+  const layerHeight = maxDepth / descriptions.length;
+  return descriptions.map((description, index) => ({
+    depthFrom: Number((index * layerHeight).toFixed(2)),
+    depthTo: Number(((index + 1) * layerHeight).toFixed(2)),
+    label: inferLayerLabel(description, `L${index + 1}`),
+    description,
+    uscsSymbol: inferLayerLabel(description, `L${index + 1}`),
+    tone: materialTone(description, inferLayerLabel(description, '')),
+    uncertain: true,
+  }));
 }
 
 function buildGeotechBoreholeProfile(result: GeotechDocumentIngestResult): IngestDossierBoreholeProfile | undefined {
-  const boreholeIds = inferBoreholeIdsFromText(
-    result.title,
-    result.summary,
-    ...result.parameters.flatMap((parameter) => [parameter.material, parameter.context]),
-  );
+  const boreholeIds = inferGeotechBoreholeIds(result);
   const maxDepth = inferGeotechMaxDepth(result);
-  if (boreholeIds.length === 0 || maxDepth == null || maxDepth <= 0 || result.materials.length === 0) {
+  if (boreholeIds.length === 0 || maxDepth == null || maxDepth <= 0) {
     return undefined;
   }
 
-  const materials = [...result.materials].sort((left, right) =>
-    stratumIndex(left.description) - stratumIndex(right.description)
-    || left.description.localeCompare(right.description),
-  ).slice(0, 8);
-  const layerHeight = maxDepth / Math.max(1, materials.length);
+  const conceptualLayers = buildConceptualGeotechLayers(result, maxDepth);
+  if (conceptualLayers.length === 0) {
+    return undefined;
+  }
+
   const depthsByBorehole = new Map<string, number>();
   for (const parameter of result.parameters) {
     if (!/depth/i.test(parameter.name)) {
@@ -993,19 +1136,12 @@ function buildGeotechBoreholeProfile(result: GeotechDocumentIngestResult): Inges
       boreholeId,
       totalDepth: depthsByBorehole.get(boreholeId) ?? maxDepth,
       waterTableDepth: null,
-      layers: materials.map((material, index) => ({
-        depthFrom: Number((index * layerHeight).toFixed(2)),
-        depthTo: Number(((index + 1) * layerHeight).toFixed(2)),
-        label: material.uscsSymbol ?? material.kind,
-        description: displayTableText(material.description, 140),
-        uscsSymbol: material.uscsSymbol,
-        tone: materialTone(material.description, material.uscsSymbol),
-        uncertain: true,
-      })),
+      layers: conceptualLayers,
     })),
     notes: [
       'Conceptual visualization from retained material observations.',
       'Dashed layer boundaries indicate missing or unverified stratum intervals.',
+      'Use source logs before treating the profile as design-grade stratigraphy.',
     ],
   };
 }

@@ -8,25 +8,25 @@ import { NextResponse } from 'next/server';
 export const STRONG_BETA_MODE = true;
 
 const ANONYMOUS_HOSTED_BETA_LIMITS = {
-  requestsPerMinutePerIp: 10,
-  visionRequestsPerMinutePerIp: 1,
-  agentRequestsPerMinutePerIp: 1,
-  layoutRequestsPerMinutePerIp: 1,
-  textPerDay: 30,
-  visionPerDay: 8,
-  agentPerDay: 4,
-  layoutPerDay: 4,
+  requestsPerMinutePerIp: 20,
+  visionRequestsPerMinutePerIp: 2,
+  agentRequestsPerMinutePerIp: 2,
+  layoutRequestsPerMinutePerIp: 2,
+  textPerDay: 100,
+  visionPerDay: 20,
+  agentPerDay: 8,
+  layoutPerDay: 20,
 } as const;
 
 const GEOTECHCLI_HOSTED_BETA_LIMITS = {
-  requestsPerMinutePerIp: 60,
-  visionRequestsPerMinutePerIp: 10,
-  agentRequestsPerMinutePerIp: 6,
-  layoutRequestsPerMinutePerIp: 8,
-  textPerDay: 300,
-  visionPerDay: 120,
-  agentPerDay: 40,
-  layoutPerDay: 80,
+  requestsPerMinutePerIp: 180,
+  visionRequestsPerMinutePerIp: 30,
+  agentRequestsPerMinutePerIp: 20,
+  layoutRequestsPerMinutePerIp: 30,
+  textPerDay: 2000,
+  visionPerDay: 600,
+  agentPerDay: 200,
+  layoutPerDay: 600,
 } as const;
 
 const DEVELOPER_HOSTED_BETA_LIMITS = {

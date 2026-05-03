@@ -82,7 +82,7 @@ geotech config set llm.model local-model-id
 geotech config reset
 \`\`\`
 
-Strong-beta behavior: deterministic commands work immediately after install. AI, vision, and agent commands use hosted GLM access by default, with server-side rate limits and no user provider key required. Bring-your-own provider keys remain available as an advanced override.
+Strong-beta behavior: deterministic commands work immediately after install. AI, vision, and agent commands use hosted GLM access by default, with higher installed-CLI development limits, stricter anonymous caps, and no user provider key required. Bring-your-own provider keys remain available as an advanced override.
 
 Installed skills are also bundled in strong beta. Direct geotech skill commands are ready immediately, while geotech agent and geotech chat can opt into skill tools per session with the --skills flag.
 

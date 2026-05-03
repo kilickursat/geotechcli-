@@ -83,6 +83,14 @@ function sourceModeLabel(sourceHint?: string): string {
   }
 }
 
+function compactSvgText(value: string | null | undefined, maxLength = 28): string {
+  const normalized = (value ?? '').replace(/\s+/g, ' ').trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  return `${normalized.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
+}
+
 function renderMetric(metric: IngestDossier['metrics'][number]): string {
   const percent = parsePercent(metric.value);
   return `
@@ -193,10 +201,13 @@ function renderBoreholeProfile(profile: IngestDossierBoreholeProfile | undefined
     const rectHeight = Math.max(18, ((Math.min(profile.maxDepth, layer.depthTo) - Math.max(0, layer.depthFrom)) / profile.maxDepth) * plotHeight);
     const midY = y + rectHeight / 2;
     return `
-      <rect x="${x}" y="${y.toFixed(2)}" width="${columnWidth}" height="${rectHeight.toFixed(2)}" rx="8"
-        fill="${toneColor(layer.tone)}" stroke="#7a8aa0" stroke-width="1.2" ${layer.uncertain ? 'stroke-dasharray="6 5"' : ''} />
-      <text x="${x + 10}" y="${midY.toFixed(2)}" class="profile-label">${escapeHtml(layer.label)}</text>
-      <text x="${x + 10}" y="${(midY + 16).toFixed(2)}" class="profile-small">${escapeHtml(layer.description)}</text>
+      <g>
+        <title>${escapeHtml(`${layer.depthFrom.toFixed(2)}-${layer.depthTo.toFixed(2)} ${profile.depthUnit}: ${layer.description}`)}</title>
+        <rect x="${x}" y="${y.toFixed(2)}" width="${columnWidth}" height="${rectHeight.toFixed(2)}" rx="8"
+          fill="${toneColor(layer.tone)}" stroke="#7a8aa0" stroke-width="1.2" ${layer.uncertain ? 'stroke-dasharray="6 5"' : ''} />
+        <text x="${x + 10}" y="${midY.toFixed(2)}" class="profile-label">${escapeHtml(layer.label)}</text>
+        <text x="${x + 10}" y="${(midY + 16).toFixed(2)}" class="profile-small">${escapeHtml(compactSvgText(layer.description))}</text>
+      </g>
     `;
   };
 

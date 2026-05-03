@@ -70,8 +70,10 @@ describe('hosted beta controls', () => {
     expect(getDailyLimitForClient('agent', 'geotechcli')).toBeGreaterThan(
       getDailyLimitForClient('agent', 'anonymous'),
     );
-    expect(getDailyLimitForClient('layout', 'geotechcli')).toBe(80);
-    expect(getDailyLimitForClient('vision', 'geotechcli')).toBe(120);
+    expect(getDailyLimitForClient('layout', 'geotechcli')).toBe(600);
+    expect(getDailyLimitForClient('vision', 'geotechcli')).toBe(600);
+    expect(getDailyLimitForClient('text', 'anonymous')).toBe(100);
+    expect(getDailyLimitForClient('vision', 'anonymous')).toBe(20);
   });
 
   it('recognizes a valid developer key before falling back to public client modes', () => {

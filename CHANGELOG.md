@@ -1,5 +1,14 @@
 ﻿# Changelog
 
+## [0.4.37] - 2026-05-03
+
+### Hosted Development Headroom and Dossier Profile Evidence
+
+- Raised installed-CLI hosted beta defaults to 2,000 text, 600 vision, 600 layout, and 200 agent requests per day so image-heavy PDF development runs can complete without exhausting the public daily bucket.
+- Raised anonymous hosted beta defaults moderately while keeping stricter abuse protection than installed CLI traffic.
+- Hardened Geotechnical Intelligence Dossier borehole-profile inference to use retained inspection text and content chunks for borehole IDs, terminating depth, and conceptual layer evidence when structured parameter rows omit depth data.
+- Added regression coverage for profile generation from real report-style borehole schedule and conclusion text.
+
 ## [0.4.36] - 2026-05-03
 
 ### Geotechnical Intelligence Dossier UX

@@ -28,7 +28,7 @@ geotechCLI is a terminal-first geotechnical engineering product that combines de
 - Deterministic commands are available now.
 - Hosted GLM beta access is available now with no user API key required.
 - Text/agent reasoning defaults to `glm-5.1`; vision defaults to `glm-5v-turbo`; PDF/table layout extraction uses hosted `glm-ocr` through Z.ai.
-- Server-side rate limits protect the hosted beta credit pool.
+- Server-side rate limits protect the hosted beta credit pool, with higher installed-CLI limits for development runs and stricter anonymous caps.
 - Signup, billing, and paid entitlements are intentionally disabled on `strong-beta`.
 
 ## Install
