@@ -339,6 +339,16 @@ function safeWritePageEvidenceCache(
   }
 }
 
+function shouldUsePageEvidenceCache(option: boolean | undefined): boolean {
+  if (option === true) {
+    return true;
+  }
+  if (option === false) {
+    return false;
+  }
+  return process.env.NODE_ENV !== 'test';
+}
+
 function normalizeTextItems(value: unknown, limit = 8): string[] {
   if (!Array.isArray(value)) {
     return [];
@@ -1710,7 +1720,7 @@ export async function ingestGeotechDocument(
   const pageConcurrency = shouldSeriallyProcessImageHeavyPages(options.config, options.inspection)
     ? 1
     : resolvePageConcurrency(options.config, options.pageConcurrency);
-  const usePageEvidenceCache = options.usePageEvidenceCache !== false;
+  const usePageEvidenceCache = shouldUsePageEvidenceCache(options.usePageEvidenceCache);
   const pageEvidenceFileHash = usePageEvidenceCache
     ? resolveSourceFileHash(options.source, options.pages)
     : null;

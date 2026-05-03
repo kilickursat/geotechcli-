@@ -8,6 +8,16 @@ const releases = [
     date: '2026-05-03',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'fix', text: 'Disabled automatic page evidence cache reuse under Vitest unless a test opts in explicitly, preventing synthetic page fixtures from reusing stale cached extraction output across tests' },
+      { type: 'fix', text: 'Kept production and local CLI cache defaults unchanged, so repeated real PDF ingest still reuses unchanged page evidence' },
+      { type: 'fix', text: 'Verified the full core test workspace after the cache-isolation fix' },
+    ],
+  },
+  {
+    version: '0.4.38',
+    date: '2026-05-03',
+    tag: '0.4.38 Release',
+    changes: [
       { type: 'feat', text: 'Added a durable page evidence cache keyed by source file hash, page hash, page number, model version, preprocessing version, and schema version' },
       { type: 'fix', text: 'Reused cached geotechnical page evidence on reruns so repeated PDF ingest can skip duplicate OCR, GLM-OCR, GLM-5V, and page extraction work when inputs are unchanged' },
       { type: 'fix', text: 'Persisted cache audit metadata through async ingest checkpoints, segmented child-job merges, final page audits, CLI summaries, and HTML dossier processing audit views' },

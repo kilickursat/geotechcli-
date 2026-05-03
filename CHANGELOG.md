@@ -1,5 +1,13 @@
 ﻿# Changelog
 
+## [0.4.39] - 2026-05-03
+
+### CI Cache Isolation Hotfix
+
+- Disabled automatic page evidence cache reuse under Vitest unless a test opts in explicitly, preventing synthetic page fixtures from reusing stale cached extraction output across tests.
+- Kept production and local CLI cache defaults unchanged, so repeated real PDF ingest still reuses unchanged page evidence.
+- Verified the full core test workspace locally after the cache-isolation fix.
+
 ## [0.4.38] - 2026-05-03
 
 ### Page Evidence Cache Foundation

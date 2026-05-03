@@ -297,6 +297,7 @@ describe('ingestGeotechDocument', () => {
         transcribePageImageText,
         extractTextFacts,
         interpretPage: vi.fn(),
+        usePageEvidenceCache: true,
       };
 
       const first = await ingestGeotechDocument(input);

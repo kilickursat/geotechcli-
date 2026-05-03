@@ -4,7 +4,7 @@ Last updated: 2026-05-03
 
 ## Current Work
 
-We are shipping the v0.4.38 page evidence cache foundation for repeatable geotechnical PDF/report extraction.
+We are shipping the v0.4.39 CI cache-isolation hotfix for the page evidence cache foundation.
 
 Current focus:
 
@@ -118,6 +118,12 @@ Current focus:
 - Persisted cache audit metadata through async ingest checkpoints, segmented child-job merges, final page audits, CLI summaries, and HTML dossier processing audit views.
 - Kept cache I/O best-effort so inaccessible local cache storage does not fail otherwise valid page extraction.
 - Added regression coverage for cache key stability, corrupt cache misses, invalidation, sync ingest reuse, async job reuse, and dossier cache presentation.
+
+### v0.4.39 CI Cache Isolation Hotfix
+
+- Disabled automatic page evidence cache reuse under Vitest unless a test opts in explicitly, preventing synthetic page fixtures from reusing stale cached extraction output across tests.
+- Kept production and local CLI cache defaults unchanged, so repeated real PDF ingest still reuses unchanged page evidence.
+- Verified the full core test workspace locally after the cache-isolation fix.
 
 ## Left To Do
 
