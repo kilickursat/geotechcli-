@@ -8,6 +8,18 @@ const releases = [
     date: '2026-05-03',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added a durable page evidence cache keyed by source file hash, page hash, page number, model version, preprocessing version, and schema version' },
+      { type: 'fix', text: 'Reused cached geotechnical page evidence on reruns so repeated PDF ingest can skip duplicate OCR, GLM-OCR, GLM-5V, and page extraction work when inputs are unchanged' },
+      { type: 'fix', text: 'Persisted cache audit metadata through async ingest checkpoints, segmented child-job merges, final page audits, CLI summaries, and HTML dossier processing audit views' },
+      { type: 'fix', text: 'Kept cache I/O best-effort so inaccessible local cache storage never turns a valid page extraction into a failed page' },
+      { type: 'fix', text: 'Added regression coverage for cache key stability, corrupt cache misses, invalidation, sync ingest reuse, async job reuse, and dossier cache presentation' },
+    ],
+  },
+  {
+    version: '0.4.37',
+    date: '2026-05-03',
+    tag: '0.4.37 Release',
+    changes: [
       { type: 'fix', text: 'Raised installed-CLI hosted beta defaults to 2,000 text, 600 vision, 600 layout, and 200 agent requests per day for image-heavy PDF development runs' },
       { type: 'fix', text: 'Raised anonymous hosted beta defaults moderately while keeping stricter abuse protection than installed CLI traffic' },
       { type: 'fix', text: 'Hardened Geotechnical Intelligence Dossier borehole-profile inference to use retained inspection text and content chunks when structured parameter rows omit depth data' },

@@ -233,9 +233,9 @@ describe('ingest dossier HTML', () => {
     const parameters = dossier.tables.find((table) => table.title === 'Key engineering parameters');
 
     expect(dossier.summary).toBe('Clay Layer 2 UCS 42 MPa and friction Angle 32 deg.');
-    expect(pageAudit?.columns).toEqual(['Page', 'Class', 'Status', 'Confidence', 'Source', 'Signals', 'Warnings']);
-    expect(pageAudit?.rows).toContainEqual(['2', 'digital-text', 'parsed', '92%', 'native-text', '1 material, 1 class, 1 parameter', '-']);
-    expect(pageAudit?.rows).toContainEqual(['5', 'image-only', 'partial', '58%', 'vision-ocr', '1 material, 1 class, 1 parameter', '1']);
+    expect(pageAudit?.columns).toEqual(['Page', 'Class', 'Status', 'Confidence', 'Source', 'Cache', 'Signals', 'Warnings']);
+    expect(pageAudit?.rows).toContainEqual(['2', 'digital-text', 'parsed', '92%', 'native-text', '-', '1 material, 1 class, 1 parameter', '-']);
+    expect(pageAudit?.rows).toContainEqual(['5', 'image-only', 'partial', '58%', 'vision-ocr', '-', '1 material, 1 class, 1 parameter', '1']);
     expect(parameters?.rows).toContainEqual(['Index/lab', 'unit Weight', '18 kN/m3', 'kN/m3', 'silty sand', '-', '81%', 'allowable Bearing Pressure 35 t/m2 strength 2 kg/cm2 permeability 1 e-6 m/s']);
 
     const html = renderIngestDossierAsHtml(dossier);
@@ -243,7 +243,7 @@ describe('ingest dossier HTML', () => {
     expect(html).toContain('<strong>Processing Audit</strong>');
     expect(html).toContain('Model stages, page audit matrix, warnings, and operational details');
     expect(html).toContain('<h2>Page audit matrix</h2>');
-    expect(html).toContain('Per-page extraction status, source path, retained signal counts, and warning volume.');
+    expect(html).toContain('Per-page extraction status, source path, cache reuse, retained signal counts, and warning volume.');
     expect(html).toContain('<details class="audit-drawer" id="processing-audit">');
     expect(html).toContain('class="chip stage-chip"');
     expect(html).toContain('Needs review?');

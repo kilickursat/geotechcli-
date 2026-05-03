@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import type { LLMConfig } from '../llm/types.js';
 import { inferPdfDocumentPageCountFallback, type PdfDocumentInspection, type PdfPageClassification } from './pdf.js';
 import type { BoreholeDocumentIngestResult } from './geotech-extract.js';
-import type { GeotechDocumentIngestResult } from './geotech-document.js';
+import type { GeotechDocumentIngestResult, GeotechDocumentPageEvidenceCacheAudit } from './geotech-document.js';
 import {
   buildHostedBetaPdfSegments,
   HOSTED_BETA_EFFECTIVE_PAGE_LIMIT,
@@ -36,6 +36,7 @@ export interface PersistedIngestJobPageCheckpoint {
   ocrTextHint?: string;
   ocrSource?: 'native-text' | 'pdfjs-text' | 'local-ocr' | 'vision-ocr' | 'vision-visual' | 'glm-ocr' | 'none';
   ocrWarnings?: string[];
+  evidenceCache?: GeotechDocumentPageEvidenceCacheAudit;
   result?: unknown;
 }
 
@@ -210,6 +211,52 @@ function isPersistedIngestJobPageStatus(value: unknown): value is PersistedInges
   return value === 'pending' || value === 'completed' || value === 'failed';
 }
 
+function normalizeEvidenceCacheAudit(value: unknown): GeotechDocumentPageEvidenceCacheAudit | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const status = asOptionalString(value.status);
+  if (status !== 'hit' && status !== 'miss' && status !== 'stored' && status !== 'skipped') {
+    return undefined;
+  }
+
+  const entryId = asOptionalString(value.entryId);
+  const cacheKey = asOptionalString(value.cacheKey);
+  const fileHash = asOptionalString(value.fileHash);
+  const pageHash = asOptionalString(value.pageHash);
+  const pageNumber = asOptionalNumber(value.pageNumber);
+  const modelVersion = asOptionalString(value.modelVersion);
+  const preprocessingVersion = asOptionalString(value.preprocessingVersion);
+  const schemaVersion = asOptionalNumber(value.schemaVersion);
+  if (
+    !entryId
+    || !cacheKey
+    || !fileHash
+    || !pageHash
+    || pageNumber == null
+    || !modelVersion
+    || !preprocessingVersion
+    || schemaVersion == null
+  ) {
+    return undefined;
+  }
+
+  return {
+    status,
+    entryId,
+    cacheKey,
+    fileHash,
+    pageHash,
+    pageNumber,
+    modelVersion,
+    preprocessingVersion,
+    schemaVersion,
+    createdAt: asOptionalString(value.createdAt),
+    reason: asOptionalString(value.reason),
+  };
+}
+
 function normalizePageCheckpoint(value: unknown, index: number, now: string): PersistedIngestJobPageCheckpoint | null {
   if (!isRecord(value)) {
     return null;
@@ -249,6 +296,7 @@ function normalizePageCheckpoint(value: unknown, index: number, now: string): Pe
           return normalized ? [normalized] : [];
         })
       : undefined,
+    evidenceCache: normalizeEvidenceCacheAudit(value.evidenceCache),
     result: value.result,
   };
 }

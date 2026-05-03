@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import type { CompletionResponse, LLMConfig } from '../llm/types.js';
 import { generateText } from '../llm/router.js';
 import { resolveProviderCapabilities } from '../llm/index.js';
@@ -16,6 +17,19 @@ import { transcribeDocumentImageText } from '../vision/index.js';
 import { recoverDocumentTextHint, type DocumentTextHintSource } from '../vision/ocr.js';
 import type { PdfDocumentInspection, PdfPageClassification } from './pdf.js';
 import type { IngestSegmentationSummary } from './segmentation.js';
+import {
+  PAGE_EVIDENCE_CACHE_SCHEMA_VERSION,
+  buildPageEvidenceCacheKey,
+  buildPageEvidenceModelVersion,
+  buildPageEvidencePreprocessingVersion,
+  hashBuffer,
+  hashString,
+  readPageEvidenceCache,
+  writePageEvidenceCache,
+  type PageEvidenceCacheEntry,
+  type PageEvidenceCacheKeyParts,
+  type WritePageEvidenceCacheInput,
+} from './page-evidence-cache.js';
 
 export interface GeotechDocumentVisionInput {
   base64: string;
@@ -38,6 +52,22 @@ export interface GeotechDocumentSource {
   segmentation?: IngestSegmentationSummary;
 }
 
+export type GeotechDocumentPageEvidenceCacheStatus = 'hit' | 'miss' | 'stored' | 'skipped';
+
+export interface GeotechDocumentPageEvidenceCacheAudit {
+  status: GeotechDocumentPageEvidenceCacheStatus;
+  entryId: string;
+  cacheKey: string;
+  fileHash: string;
+  pageHash: string;
+  pageNumber: number;
+  modelVersion: string;
+  preprocessingVersion: string;
+  schemaVersion: number;
+  createdAt?: string;
+  reason?: string;
+}
+
 export interface GeotechDocumentPageAudit {
   pageNumber: number;
   classification: PdfPageClassification | null;
@@ -47,6 +77,7 @@ export interface GeotechDocumentPageAudit {
   materialCount: number;
   classificationCount: number;
   parameterCount: number;
+  evidenceCache?: GeotechDocumentPageEvidenceCacheAudit;
   warnings: string[];
 }
 
@@ -159,12 +190,153 @@ export interface IngestGeotechDocumentOptions {
       contentChunks?: GeotechDocumentContentChunk[];
     };
   }) => Promise<GeotechDocumentSynthesis | null>;
+  usePageEvidenceCache?: boolean;
   pageConcurrency?: number;
   now?: () => Date;
 }
 
 function uniqueStrings(values: Array<string | null | undefined>): string[] {
   return [...new Set(values.filter((value): value is string => typeof value === 'string' && value.trim().length > 0))];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isParseStatus(value: unknown): value is ParseStatus {
+  return value === 'parsed' || value === 'partial' || value === 'failed';
+}
+
+function asCachedGeotechDocumentInsight(value: unknown): GeotechDocumentInsight | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  if (
+    !isParseStatus(value.parseStatus)
+    || typeof value.confidence !== 'number'
+    || !Array.isArray(value.warnings)
+    || !Array.isArray(value.materials)
+    || !Array.isArray(value.classifications)
+    || !Array.isArray(value.parameters)
+    || !Array.isArray(value.risks)
+    || !Array.isArray(value.recommendations)
+  ) {
+    return null;
+  }
+
+  return value as unknown as GeotechDocumentInsight;
+}
+
+interface GeotechDocumentPageEvidenceCacheContext {
+  parts: PageEvidenceCacheKeyParts;
+  cacheKey: string;
+  entryId: string;
+  pageNumber: number;
+}
+
+function resolveSourceFileHash(
+  source: GeotechDocumentSource,
+  pages: GeotechDocumentPageInput[] | undefined,
+): string {
+  const sourceFilePath = source.filePath ?? pages?.find((page) => page.filePath)?.filePath;
+  if (sourceFilePath) {
+    try {
+      return hashBuffer(readFileSync(sourceFilePath));
+    } catch {
+      // Fall through to a stable metadata hash when the source is a synthetic test input.
+    }
+  }
+
+  return hashString(JSON.stringify({
+    filePath: source.filePath ?? null,
+    fileName: source.fileName ?? null,
+    inputKind: source.inputKind,
+    pageRange: source.pageRange ?? null,
+  }));
+}
+
+function resolveEvidenceCachePageNumber(
+  source: GeotechDocumentSource,
+  page: GeotechDocumentPageInput,
+): number {
+  const pageRange = source.segmentation?.pageRange ?? source.pageRange;
+  if (pageRange && page.pageNumber < pageRange[0]) {
+    return pageRange[0] + page.pageNumber - 1;
+  }
+  return page.pageNumber;
+}
+
+function buildPageEvidenceCacheContext(input: {
+  source: GeotechDocumentSource;
+  page: GeotechDocumentPageInput;
+  fileHash: string;
+  modelVersion: string;
+  preprocessingVersion: string;
+}): GeotechDocumentPageEvidenceCacheContext {
+  const pageNumber = resolveEvidenceCachePageNumber(input.source, input.page);
+  const pageHash = hashString(`${input.page.mimeType}\n${input.page.base64}`);
+  const parts: PageEvidenceCacheKeyParts = {
+    fileHash: input.fileHash,
+    pageHash,
+    pageNumber,
+    modelVersion: input.modelVersion,
+    preprocessingVersion: input.preprocessingVersion,
+    schemaVersion: PAGE_EVIDENCE_CACHE_SCHEMA_VERSION,
+  };
+  const cacheKey = buildPageEvidenceCacheKey(parts);
+  return {
+    parts,
+    cacheKey,
+    entryId: cacheKey.slice(0, 12),
+    pageNumber,
+  };
+}
+
+function buildPageEvidenceCacheAudit(
+  context: GeotechDocumentPageEvidenceCacheContext,
+  status: GeotechDocumentPageEvidenceCacheStatus,
+  entry?: PageEvidenceCacheEntry | null,
+  reason?: string,
+): GeotechDocumentPageEvidenceCacheAudit {
+  return {
+    status,
+    entryId: context.entryId,
+    cacheKey: context.cacheKey,
+    fileHash: context.parts.fileHash,
+    pageHash: context.parts.pageHash,
+    pageNumber: context.pageNumber,
+    modelVersion: context.parts.modelVersion,
+    preprocessingVersion: context.parts.preprocessingVersion,
+    schemaVersion: context.parts.schemaVersion ?? PAGE_EVIDENCE_CACHE_SCHEMA_VERSION,
+    createdAt: entry?.createdAt,
+    reason,
+  };
+}
+
+function safeReadPageEvidenceCache(context: GeotechDocumentPageEvidenceCacheContext): PageEvidenceCacheEntry | null {
+  try {
+    return readPageEvidenceCache(context.parts);
+  } catch {
+    return null;
+  }
+}
+
+function safeWritePageEvidenceCache(
+  context: GeotechDocumentPageEvidenceCacheContext,
+  evidence: WritePageEvidenceCacheInput,
+  now: () => Date,
+): { entry: PageEvidenceCacheEntry | null; error?: string } {
+  try {
+    return {
+      entry: writePageEvidenceCache(context.parts, evidence, { now }),
+    };
+  } catch (error) {
+    return {
+      entry: null,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 function normalizeTextItems(value: unknown, limit = 8): string[] {
@@ -1538,6 +1710,16 @@ export async function ingestGeotechDocument(
   const pageConcurrency = shouldSeriallyProcessImageHeavyPages(options.config, options.inspection)
     ? 1
     : resolvePageConcurrency(options.config, options.pageConcurrency);
+  const usePageEvidenceCache = options.usePageEvidenceCache !== false;
+  const pageEvidenceFileHash = usePageEvidenceCache
+    ? resolveSourceFileHash(options.source, options.pages)
+    : null;
+  const pageEvidenceModelVersion = usePageEvidenceCache
+    ? buildPageEvidenceModelVersion(options.config)
+    : '';
+  const pageEvidencePreprocessingVersion = usePageEvidenceCache
+    ? buildPageEvidencePreprocessingVersion(options.config)
+    : '';
 
   if (options.pages && options.pages.length > 0) {
     const pages = [...options.pages].sort((left, right) => left.pageNumber - right.pageNumber);
@@ -1556,6 +1738,19 @@ export async function ingestGeotechDocument(
         ?? inspectionPage?.normalizedText
         ?? undefined;
       let textHintSource: GeotechDocumentPageAudit['textHintSource'] = pageTextHint?.trim() ? 'native-text' : 'none';
+      const cacheContext = usePageEvidenceCache && pageEvidenceFileHash
+        ? buildPageEvidenceCacheContext({
+            source: options.source,
+            page,
+            fileHash: pageEvidenceFileHash,
+            modelVersion: pageEvidenceModelVersion,
+            preprocessingVersion: pageEvidencePreprocessingVersion,
+          })
+        : null;
+      const cachedEvidence = cacheContext ? safeReadPageEvidenceCache(cacheContext) : null;
+      let evidenceCache = cacheContext
+        ? buildPageEvidenceCacheAudit(cacheContext, cachedEvidence ? 'hit' : 'miss', cachedEvidence)
+        : undefined;
 
       try {
         if (lowYieldRole && inspectionPage) {
@@ -1570,6 +1765,9 @@ export async function ingestGeotechDocument(
                 : 'Figure/appendix page was summarized without a full multimodal extraction call.',
             ],
             ocrRecovered: false,
+            evidenceCache: cacheContext
+              ? buildPageEvidenceCacheAudit(cacheContext, 'skipped', null, 'low-yield page classified before model extraction')
+              : evidenceCache,
             result: buildPreflightLowYieldInsight({
               role: lowYieldRole,
               inspectionPage,
@@ -1577,6 +1775,26 @@ export async function ingestGeotechDocument(
               totalPages: page.totalPages,
             }),
           };
+        }
+
+        const cachedResult = asCachedGeotechDocumentInsight(cachedEvidence?.extractionResult);
+        if (cachedResult) {
+          return {
+            ok: true as const,
+            pageNumber: page.pageNumber,
+            inspectionPage,
+            textHintSource: cachedEvidence!.source,
+            recoveryWarnings: cachedEvidence!.warnings,
+            ocrRecovered: cachedEvidence!.source === 'local-ocr' || cachedEvidence!.source === 'vision-ocr' || cachedEvidence!.source === 'glm-ocr',
+            evidenceCache,
+            result: cachedResult,
+          };
+        }
+
+        const cachedTextHint = cachedEvidence?.textHint;
+        if (cachedTextHint) {
+          pageTextHint = cachedTextHint;
+          textHintSource = cachedEvidence.source;
         }
 
         const pageTimeoutMs = resolvePagePhaseTimeoutMs(options.config, {
@@ -1592,7 +1810,7 @@ export async function ingestGeotechDocument(
           page,
           inspectionPage,
           textHint: pageTextHint,
-        })) {
+        }) && !cachedTextHint) {
           const context: GeotechDocumentContext = {
             pageNumber: page.pageNumber,
             totalPages: page.totalPages,
@@ -1604,6 +1822,17 @@ export async function ingestGeotechDocument(
             pageTimeoutMs,
             `Page ${page.pageNumber}: direct visual page interpretation timed out after ${Math.round(pageTimeoutMs / 1000)}s`,
           );
+          if (cacheContext) {
+            const stored = safeWritePageEvidenceCache(cacheContext, {
+              source: 'vision-visual',
+              warnings: ['Skipped OCR-only transcription and used direct visual extraction for an image-heavy hosted-beta page.'],
+              transformed: false,
+              extractionResult: result,
+            }, now);
+            evidenceCache = stored.entry
+              ? buildPageEvidenceCacheAudit(cacheContext, 'stored', stored.entry)
+              : buildPageEvidenceCacheAudit(cacheContext, 'skipped', null, `cache write failed: ${stored.error}`);
+          }
 
           return {
             ok: true as const,
@@ -1612,27 +1841,41 @@ export async function ingestGeotechDocument(
             textHintSource: 'vision-visual' as const,
             recoveryWarnings: ['Skipped OCR-only transcription and used direct visual extraction for an image-heavy hosted-beta page.'],
             ocrRecovered: false,
+            evidenceCache,
             result,
           };
         }
-        const recovery = await withPageTimeout(
-          recoverDocumentTextHint({
-            existingTextHint: pageTextHint,
-            existingTextAccepted: inspectionPage?.normalizedArtifact?.textQuality.accepted ?? true,
-            imageBase64: page.base64,
-            mimeType: page.mimeType,
-            config: pagePhaseConfig,
-            pdfFilePath: page.filePath,
-            pdfPageNumber: page.pageNumber,
-            visionTranscribe: transcribePageImageText,
-          }),
-          pageTimeoutMs,
-          `Page ${page.pageNumber}: OCR/text recovery timed out after ${Math.round(pageTimeoutMs / 1000)}s`,
-        );
-        if (recovery.textHint) {
-          pageTextHint = recovery.textHint;
+        let recoveryWarnings = cachedEvidence?.warnings ?? [];
+        let recoverySource: DocumentTextHintSource = textHintSource;
+        let recoveryTransformed = cachedEvidence?.transformed ?? false;
+        let layoutSummary = cachedEvidence?.layoutSummary;
+
+        if (!cachedTextHint) {
+          const recovery = await withPageTimeout(
+            recoverDocumentTextHint({
+              existingTextHint: pageTextHint,
+              existingTextAccepted: inspectionPage?.normalizedArtifact?.textQuality.accepted ?? true,
+              imageBase64: page.base64,
+              mimeType: page.mimeType,
+              config: pagePhaseConfig,
+              pdfFilePath: page.filePath,
+              pdfPageNumber: page.pageNumber,
+              visionTranscribe: transcribePageImageText,
+            }),
+            pageTimeoutMs,
+            `Page ${page.pageNumber}: OCR/text recovery timed out after ${Math.round(pageTimeoutMs / 1000)}s`,
+          );
+          if (recovery.textHint) {
+            pageTextHint = recovery.textHint;
+          }
+          recoveryWarnings = recovery.warnings;
+          recoverySource = recovery.source;
+          recoveryTransformed = recovery.transformed;
+          layoutSummary = recovery.layout
+            ? `GLM-OCR parsed ${recovery.layout.pages.length} page(s), ${recovery.layout.pages.reduce((sum, layoutPage) => sum + layoutPage.tables.length, 0)} table(s).`
+            : undefined;
         }
-        textHintSource = recovery.source;
+        textHintSource = recoverySource;
 
         const context: GeotechDocumentContext = {
           pageNumber: page.pageNumber,
@@ -1658,13 +1901,38 @@ export async function ingestGeotechDocument(
             `Page ${page.pageNumber}: visual page interpretation timed out after ${Math.round(pageTimeoutMs / 1000)}s`,
           );
 
+        if (cacheContext && !cachedEvidence) {
+          const stored = safeWritePageEvidenceCache(cacheContext, {
+            textHint: pageTextHint,
+            source: textHintSource,
+            warnings: recoveryWarnings,
+            transformed: recoveryTransformed,
+            layoutSummary,
+            extractionResult: result,
+          }, now);
+          evidenceCache = stored.entry
+            ? buildPageEvidenceCacheAudit(cacheContext, 'stored', stored.entry)
+            : buildPageEvidenceCacheAudit(cacheContext, 'skipped', null, `cache write failed: ${stored.error}`);
+        } else if (cacheContext && cachedEvidence && !cachedResult) {
+          safeWritePageEvidenceCache(cacheContext, {
+            textHint: pageTextHint,
+            source: textHintSource,
+            warnings: recoveryWarnings,
+            transformed: recoveryTransformed,
+            layoutSummary,
+            extractionResult: result,
+            createdAt: cachedEvidence.createdAt,
+          }, now);
+        }
+
         return {
           ok: true as const,
           pageNumber: page.pageNumber,
           inspectionPage,
           textHintSource,
-          recoveryWarnings: recovery.warnings,
-          ocrRecovered: recovery.source === 'local-ocr' || recovery.source === 'vision-ocr' || recovery.source === 'glm-ocr',
+          recoveryWarnings,
+          ocrRecovered: textHintSource === 'local-ocr' || textHintSource === 'vision-ocr' || textHintSource === 'glm-ocr',
+          evidenceCache,
           result,
         };
       } catch (error) {
@@ -1673,6 +1941,7 @@ export async function ingestGeotechDocument(
           pageNumber: page.pageNumber,
           inspectionPage,
           textHintSource,
+          evidenceCache,
           error: normalizePageErrorMessage(error instanceof Error ? error.message : String(error)),
         };
       }
@@ -1710,6 +1979,7 @@ export async function ingestGeotechDocument(
           materialCount: settled.result.materials.length,
           classificationCount: settled.result.classifications.length,
           parameterCount: settled.result.parameters.length,
+          evidenceCache: settled.evidenceCache,
           warnings: uniqueStrings([
             ...settled.recoveryWarnings,
             ...settled.result.warnings,
@@ -1728,6 +1998,7 @@ export async function ingestGeotechDocument(
         materialCount: 0,
         classificationCount: 0,
         parameterCount: 0,
+        evidenceCache: settled.evidenceCache,
         warnings: [settled.error],
       });
     }

@@ -29,6 +29,7 @@ geotechCLI is a terminal-first geotechnical engineering product that combines de
 - Hosted GLM beta access is available now with no user API key required.
 - Text/agent reasoning defaults to `glm-5.1`; vision defaults to `glm-5v-turbo`; PDF/table layout extraction uses hosted `glm-ocr` through Z.ai.
 - Server-side rate limits protect the hosted beta credit pool, with higher installed-CLI limits for development runs and stricter anonymous caps.
+- Local page evidence caching reuses unchanged PDF page extraction results across reruns to reduce repeated OCR/vision calls and improve audit traceability.
 - Signup, billing, and paid entitlements are intentionally disabled on `strong-beta`.
 
 ## Install
@@ -217,11 +218,11 @@ The HTML dossier is a self-contained Geotechnical Intelligence Dossier with:
 - extracted materials, classifications, grouped engineering parameters, and normalized section map
 - a lightweight borehole stratigraphy visualization when borehole/layer evidence is available
 - source evidence cards for page-level review
-- collapsed Processing Audit details for page audit matrices, operational warnings, and native text, GLM-OCR, GLM-5V, and GLM-5.1 synthesis stage badges
+- collapsed Processing Audit details for page audit matrices, local evidence cache status, operational warnings, and native text, GLM-OCR, GLM-5V, and GLM-5.1 synthesis stage badges
 - stored-review and approval context when the ingest is project-backed
 
 Hosted-beta reliability note: geotechnical PDFs above the best-result window are now split into linked sequential packets automatically, and the final result plus HTML dossier merge those packets back into one review surface.
-Cost-control note: hosted-beta PDF ingest now tries GLM-OCR layout parsing before vision OCR, routes image-only pages into GLM-5V visual extraction only when layout/text is insufficient, and marks direct visual pages for human review as `vision-visual`.
+Cost-control note: hosted-beta PDF ingest now tries GLM-OCR layout parsing before vision OCR, routes image-only pages into GLM-5V visual extraction only when layout/text is insufficient, caches compact page evidence locally by file/page/model/preprocessing/schema hash, and marks direct visual pages for human review as `vision-visual`.
 
 ### Bundled Skills
 

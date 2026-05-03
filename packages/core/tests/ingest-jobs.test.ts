@@ -942,6 +942,76 @@ describe('persisted ingest jobs', () => {
     expect(completed.checkpoints.pages[0]?.ocrWarnings?.join('\n')).toMatch(/recovery failed/i);
   });
 
+  it('reuses durable page evidence across persisted geotech-document ingest jobs', async () => {
+    const filePath = join(configDir, 'page-cache-source.pdf');
+    await writeBlankPdf(filePath, 1);
+    const pageInput = {
+      base64: 'same-rendered-page',
+      mimeType: 'image/png',
+      fileBytes: 120,
+      filePath,
+      ext: 'png',
+      kind: 'image',
+      pageNumber: 1,
+      totalPages: 1,
+      sourceKind: 'raster-image',
+    } as const;
+
+    const firstJob = createPersistedIngestJob({
+      documentType: 'geotech-document',
+      filePath,
+      inspection: makeInspection(1),
+      config: makeConfig(),
+    });
+    const recoverDocumentTextHint = vi.fn(async () => ({
+      textHint: 'Recovered OCR evidence: silty sand SPT N 18.',
+      source: 'vision-ocr' as const,
+      warnings: [],
+      latencyMs: 10,
+      transformed: false,
+    }));
+    const extractGeotechDocumentFactsFromText = vi.fn(async () => makeGeotechInsight(1, 1, 'Recovered page evidence.'));
+
+    const firstCompleted = await runPersistedIngestJobWorker(firstJob.jobId, {
+      buildLLMConfig: makeConfig,
+      readDocumentPdfPageInputs: async () => [pageInput],
+      recoverDocumentTextHint,
+      extractGeotechDocumentFactsFromText,
+    });
+
+    expect(firstCompleted.status).toBe('completed');
+    expect(firstCompleted.checkpoints.pages[0]?.evidenceCache?.status).toBe('stored');
+    expect(recoverDocumentTextHint).toHaveBeenCalledTimes(1);
+    expect(extractGeotechDocumentFactsFromText).toHaveBeenCalledTimes(1);
+
+    const secondJob = createPersistedIngestJob({
+      documentType: 'geotech-document',
+      filePath,
+      inspection: makeInspection(1),
+      config: makeConfig(),
+    });
+    const recoverOnHit = vi.fn(async () => {
+      throw new Error('OCR should be skipped on page evidence cache hit.');
+    });
+    const extractOnHit = vi.fn(async () => {
+      throw new Error('Page extraction should be skipped on page evidence cache hit.');
+    });
+
+    const secondCompleted = await runPersistedIngestJobWorker(secondJob.jobId, {
+      buildLLMConfig: makeConfig,
+      readDocumentPdfPageInputs: async () => [pageInput],
+      recoverDocumentTextHint: recoverOnHit,
+      extractGeotechDocumentFactsFromText: extractOnHit,
+    });
+
+    expect(secondCompleted.status).toBe('completed');
+    expect(secondCompleted.checkpoints.pages[0]?.evidenceCache?.status).toBe('hit');
+    expect(secondCompleted.result?.ingestResult.pageAudits[0]?.evidenceCache?.status).toBe('hit');
+    expect(secondCompleted.result?.ingestResult.pageAudits[0]?.textHintSource).toBe('vision-ocr');
+    expect(recoverOnHit).not.toHaveBeenCalled();
+    expect(extractOnHit).not.toHaveBeenCalled();
+  });
+
   it('marks remaining pages failed and completes the job when the provider hits a fatal quota stop', async () => {
     const filePath = join(configDir, 'quota-stop-source.pdf');
     await writeBlankPdf(filePath, 3);

@@ -1,5 +1,6 @@
 import { basename, join } from 'node:path';
 import { homedir } from 'node:os';
+import { readFileSync } from 'node:fs';
 import { buildLLMConfig } from '../config/index.js';
 import type { LLMConfig } from '../llm/types.js';
 import { countDocumentPdfPages, readDocumentPdfPageInputs } from './document-inputs.js';
@@ -23,6 +24,7 @@ import {
   inferPreflightLowYieldPageRole,
   type GeotechDocumentFinding,
   type GeotechDocumentIngestResult,
+  type GeotechDocumentPageEvidenceCacheAudit,
   type GeotechDocumentPageInput,
 } from './geotech-document.js';
 import {
@@ -39,6 +41,19 @@ import {
   type BoreholeLogContext,
 } from '../vision/index.js';
 import { recoverDocumentTextHint } from '../vision/ocr.js';
+import {
+  PAGE_EVIDENCE_CACHE_SCHEMA_VERSION,
+  buildPageEvidenceCacheKey,
+  buildPageEvidenceModelVersion,
+  buildPageEvidencePreprocessingVersion,
+  hashBuffer,
+  hashString,
+  readPageEvidenceCache,
+  writePageEvidenceCache,
+  type PageEvidenceCacheEntry,
+  type PageEvidenceCacheKeyParts,
+  type WritePageEvidenceCacheInput,
+} from './page-evidence-cache.js';
 import { persistBoreholeIngestReview } from './review-store.js';
 import {
   buildPersistedIngestJobSegments,
@@ -138,6 +153,145 @@ function nowIso(now?: () => Date): string {
 
 function uniqueStrings(values: Array<string | null | undefined>): string[] {
   return [...new Set(values.filter((value): value is string => typeof value === 'string' && value.trim().length > 0))];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isGeotechParseStatus(value: unknown): value is GeotechDocumentInsight['parseStatus'] {
+  return value === 'parsed' || value === 'partial' || value === 'failed';
+}
+
+function asCachedGeotechDocumentInsight(value: unknown): GeotechDocumentInsight | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  if (
+    !isGeotechParseStatus(value.parseStatus)
+    || typeof value.confidence !== 'number'
+    || !Array.isArray(value.warnings)
+    || !Array.isArray(value.materials)
+    || !Array.isArray(value.classifications)
+    || !Array.isArray(value.parameters)
+    || !Array.isArray(value.risks)
+    || !Array.isArray(value.recommendations)
+  ) {
+    return null;
+  }
+
+  return value as unknown as GeotechDocumentInsight;
+}
+
+interface WorkerPageEvidenceCacheContext {
+  parts: PageEvidenceCacheKeyParts;
+  cacheKey: string;
+  entryId: string;
+  pageNumber: number;
+}
+
+function resolveWorkerPageEvidenceFileHash(job: PersistedIngestJobRecord): string {
+  const filePath = getJobSourceDisplayPath(job);
+  try {
+    return hashBuffer(readFileSync(filePath));
+  } catch {
+    return hashString(JSON.stringify({
+      filePath,
+      fileName: getJobSourceDisplayName(job),
+      pageRange: job.source.pageRange ?? job.segmentation?.pageRange ?? null,
+    }));
+  }
+}
+
+function resolveWorkerEvidencePageNumber(
+  job: PersistedIngestJobRecord,
+  pageNumber: number,
+): number {
+  if (job.segmentation?.mode === 'segment-child') {
+    return job.segmentation.pageRange[0] + pageNumber - 1;
+  }
+  const pageRange = job.source.pageRange ?? job.segmentation?.pageRange;
+  if (pageRange && pageNumber < pageRange[0]) {
+    return pageRange[0] + pageNumber - 1;
+  }
+  return pageNumber;
+}
+
+function buildWorkerPageEvidenceCacheContext(input: {
+  job: PersistedIngestJobRecord;
+  pageInput: PreparedPdfPageInputBase;
+  config: LLMConfig;
+}): WorkerPageEvidenceCacheContext {
+  const pageNumber = resolveWorkerEvidencePageNumber(input.job, input.pageInput.pageNumber);
+  const parts: PageEvidenceCacheKeyParts = {
+    fileHash: resolveWorkerPageEvidenceFileHash(input.job),
+    pageHash: hashString(`${input.pageInput.mimeType}\n${input.pageInput.base64}`),
+    pageNumber,
+    modelVersion: buildPageEvidenceModelVersion(input.config),
+    preprocessingVersion: buildPageEvidencePreprocessingVersion(input.config),
+    schemaVersion: PAGE_EVIDENCE_CACHE_SCHEMA_VERSION,
+  };
+  const cacheKey = buildPageEvidenceCacheKey(parts);
+  return {
+    parts,
+    cacheKey,
+    entryId: cacheKey.slice(0, 12),
+    pageNumber,
+  };
+}
+
+function buildWorkerPageEvidenceCacheAudit(
+  context: WorkerPageEvidenceCacheContext,
+  status: GeotechDocumentPageEvidenceCacheAudit['status'],
+  entry?: PageEvidenceCacheEntry | null,
+  reason?: string,
+): GeotechDocumentPageEvidenceCacheAudit {
+  return {
+    status,
+    entryId: context.entryId,
+    cacheKey: context.cacheKey,
+    fileHash: context.parts.fileHash,
+    pageHash: context.parts.pageHash,
+    pageNumber: context.pageNumber,
+    modelVersion: context.parts.modelVersion,
+    preprocessingVersion: context.parts.preprocessingVersion,
+    schemaVersion: context.parts.schemaVersion ?? PAGE_EVIDENCE_CACHE_SCHEMA_VERSION,
+    createdAt: entry?.createdAt,
+    reason,
+  };
+}
+
+function safeReadWorkerPageEvidenceCache(context: WorkerPageEvidenceCacheContext): PageEvidenceCacheEntry | null {
+  try {
+    return readPageEvidenceCache(context.parts);
+  } catch {
+    return null;
+  }
+}
+
+function safeWriteWorkerPageEvidenceCache(
+  context: WorkerPageEvidenceCacheContext,
+  evidence: WritePageEvidenceCacheInput,
+  now?: () => Date,
+): { entry: PageEvidenceCacheEntry | null; error?: string } {
+  try {
+    return {
+      entry: writePageEvidenceCache(context.parts, evidence, { now }),
+    };
+  } catch (error) {
+    return {
+      entry: null,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+function remapPageEvidenceCacheAudit(
+  audit: GeotechDocumentPageEvidenceCacheAudit | undefined,
+  originalPageNumber: number,
+): GeotechDocumentPageEvidenceCacheAudit | undefined {
+  return audit ? { ...audit, pageNumber: originalPageNumber } : undefined;
 }
 
 function getJobSourceDisplayPath(job: PersistedIngestJobRecord): string {
@@ -353,6 +507,7 @@ function mergeSegmentChildJobIntoParentJob(
           ocrTextHint: childCheckpoint.ocrTextHint,
           ocrSource: childCheckpoint.ocrSource,
           ocrWarnings: childCheckpoint.ocrWarnings,
+          evidenceCache: remapPageEvidenceCacheAudit(childCheckpoint.evidenceCache, pageCheckpoint.pageNumber),
           result: remappedResult,
         };
       }),
@@ -1062,17 +1217,38 @@ function applyCheckpointOcrRecoveredSummary<T extends PersistedIngestResult>(
   checkpoints: PersistedIngestJobPageCheckpoint[],
 ): T {
   const recoveredPageCount = countCheckpointOcrRecoveredPages(checkpoints);
-  if (recoveredPageCount === 0 || !result.inspectionSummary) {
-    return result;
+  let nextResult: PersistedIngestResult = result;
+
+  if (recoveredPageCount > 0 && result.inspectionSummary) {
+    nextResult = {
+      ...nextResult,
+      inspectionSummary: {
+        ...nextResult.inspectionSummary!,
+        ocrRecoveredPageCount: Math.max(nextResult.inspectionSummary!.ocrRecoveredPageCount, recoveredPageCount),
+      },
+    };
   }
 
-  return {
-    ...result,
-    inspectionSummary: {
-      ...result.inspectionSummary,
-      ocrRecoveredPageCount: Math.max(result.inspectionSummary.ocrRecoveredPageCount, recoveredPageCount),
-    },
-  };
+  if (nextResult.documentType === 'geotech-document') {
+    const checkpointByPage = new Map(
+      checkpoints.map((checkpoint) => [checkpoint.pageNumber, checkpoint] as const),
+    );
+    if (checkpointByPage.size > 0) {
+      nextResult = {
+        ...nextResult,
+        pageAudits: nextResult.pageAudits.map((audit) => {
+          const checkpoint = checkpointByPage.get(audit.pageNumber);
+          return {
+            ...audit,
+            textHintSource: checkpoint?.ocrSource ?? audit.textHintSource,
+            evidenceCache: audit.evidenceCache ?? checkpoint?.evidenceCache,
+          };
+        }),
+      } as GeotechDocumentIngestResult;
+    }
+  }
+
+  return nextResult as T;
 }
 
 function buildFallbackWorkerCheckpoints(
@@ -1267,6 +1443,7 @@ function buildSyntheticGeotechDocumentResult(
       materialCount: 0,
       classificationCount: 0,
       parameterCount: 0,
+      evidenceCache: page.evidenceCache,
       warnings: page.error ? [page.error] : [],
     })),
     pageFailures,
@@ -1448,6 +1625,7 @@ async function processGeotechDocumentPage(
   ocrTextHint?: string;
   ocrSource?: PersistedIngestJobPageCheckpoint['ocrSource'];
   ocrWarnings?: string[];
+  evidenceCache?: GeotechDocumentPageEvidenceCacheAudit;
 }> {
   const inspect = dependencies.inspectPdfDocument ?? inspectPdfDocument;
   const recoverTextHint = dependencies.recoverDocumentTextHint ?? recoverDocumentTextHint;
@@ -1457,6 +1635,9 @@ async function processGeotechDocumentPage(
     dependencies.extractGeotechDocumentDeterministicFactsFromText
     ?? extractGeotechDocumentDeterministicFactsFromText;
   const transcribe = dependencies.transcribeDocumentImageText ?? transcribeDocumentImageText;
+  const cacheContext = buildWorkerPageEvidenceCacheContext({ job, pageInput, config });
+  const cachedEvidence = safeReadWorkerPageEvidenceCache(cacheContext);
+  let evidenceCache = buildWorkerPageEvidenceCacheAudit(cacheContext, cachedEvidence ? 'hit' : 'miss', cachedEvidence);
   const inspectionPage = job.inspection?.pages[pageInput.pageNumber - 1] ?? inspect(job.source.filePath).pages[pageInput.pageNumber - 1];
   const lowYieldRole = inferPreflightLowYieldPageRole({
     inspectionPage,
@@ -1481,6 +1662,7 @@ async function processGeotechDocumentPage(
           ? 'Administrative/cover page was summarized without a full multimodal extraction call.'
           : 'Figure/appendix page was summarized without a full multimodal extraction call.',
       ],
+      evidenceCache: buildWorkerPageEvidenceCacheAudit(cacheContext, 'skipped', null, 'low-yield page classified before model extraction'),
     };
   }
   const phaseTimeoutMs = resolveWorkerPhaseTimeoutMs(config, {
@@ -1498,18 +1680,35 @@ async function processGeotechDocumentPage(
   let ocrSource: PersistedIngestJobPageCheckpoint['ocrSource'] = 'none';
   let ocrWarnings: string[] = [];
   let textRecoveryAttempted = false;
+  const cachedResult = asCachedGeotechDocumentInsight(cachedEvidence?.extractionResult);
+  if (cachedResult) {
+    return {
+      result: cachedResult,
+      ocrTextHint: normalizeTextHint(cachedEvidence?.textHint),
+      ocrSource: cachedEvidence?.source,
+      ocrWarnings: cachedEvidence?.warnings ?? [],
+      evidenceCache,
+    };
+  }
+
+  const cachedTextHint = normalizeTextHint(cachedEvidence?.textHint);
+  if (cachedTextHint) {
+    pageTextHint = cachedTextHint;
+    ocrSource = cachedEvidence?.source;
+    ocrWarnings = cachedEvidence?.warnings ?? [];
+  }
   const directVisualPreferred = shouldPreferDirectGeotechVisualExtraction({
     config,
     pageInput,
     inspectionPage,
-    textHint: initialPageTextHint,
-  });
+    textHint: pageTextHint ?? initialPageTextHint,
+  }) && !cachedTextHint;
   if (directVisualPreferred) {
     ocrSource = 'vision-visual';
     ocrWarnings = ['Skipped OCR-only transcription and used direct visual extraction for an image-heavy hosted-beta page.'];
   }
   try {
-    if (!directVisualPreferred) {
+    if (!directVisualPreferred && !cachedTextHint) {
       textRecoveryAttempted = true;
       const recovery = await withWorkerPageTimeout(
         recoverTextHint({
@@ -1530,6 +1729,12 @@ async function processGeotechDocumentPage(
       pageTextHint = normalizeTextHint(recovery.textHint);
       ocrSource = recovery.source;
       ocrWarnings = recovery.warnings;
+      if (recovery.layout) {
+        ocrWarnings = uniqueStrings([
+          ...ocrWarnings,
+          `GLM-OCR parsed ${recovery.layout.pages.length} page(s), ${recovery.layout.pages.reduce((sum, layoutPage) => sum + layoutPage.tables.length, 0)} table(s) for cached page evidence.`,
+        ]);
+      }
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -1580,11 +1785,35 @@ async function processGeotechDocumentPage(
     );
   }
 
+  if (!cachedEvidence) {
+    const stored = safeWriteWorkerPageEvidenceCache(cacheContext, {
+      textHint: pageTextHint,
+      source: ocrSource ?? 'none',
+      warnings: ocrWarnings,
+      transformed: false,
+      extractionResult: result,
+    }, dependencies.now);
+    evidenceCache = stored.entry
+      ? buildWorkerPageEvidenceCacheAudit(cacheContext, 'stored', stored.entry)
+      : buildWorkerPageEvidenceCacheAudit(cacheContext, 'skipped', null, `cache write failed: ${stored.error}`);
+  } else if (!cachedResult) {
+    safeWriteWorkerPageEvidenceCache(cacheContext, {
+      textHint: pageTextHint,
+      source: ocrSource ?? 'none',
+      warnings: ocrWarnings,
+      transformed: cachedEvidence.transformed,
+      layoutSummary: cachedEvidence.layoutSummary,
+      extractionResult: result,
+      createdAt: cachedEvidence.createdAt,
+    }, dependencies.now);
+  }
+
   return {
     result,
     ocrTextHint: pageTextHint,
     ocrSource,
     ocrWarnings,
+    evidenceCache,
   };
 }
 
@@ -1777,6 +2006,7 @@ async function finalizeJobResult(
           latencyMs: 0,
         };
       },
+      usePageEvidenceCache: false,
       now: dependencies.now,
     });
 
@@ -2041,6 +2271,7 @@ export async function runPersistedIngestJobWorker(
                         ocrTextHint: processed.ocrTextHint,
                         ocrSource: processed.ocrSource,
                         ocrWarnings: processed.ocrWarnings,
+                        evidenceCache: processed.evidenceCache,
                         result: processed.result,
                       }
                     : checkpoint

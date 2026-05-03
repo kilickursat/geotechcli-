@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ingestGeotechDocument, type GeotechDocumentIngestResult } from '../src/index.js';
@@ -244,6 +247,80 @@ describe('ingestGeotechDocument', () => {
     expect(result.reviewRequired).toBe(true);
     expect(result.canAutoProceed).toBe(false);
     expect(result.reviewFindings.some((finding) => finding.code === 'parameters_not_detected')).toBe(true);
+  });
+
+  it('reuses durable page evidence on rerun without repeating OCR or page extraction', async () => {
+    const previousConfigDir = process.env.GEOTECHCLI_CONFIG_DIR;
+    const configDir = mkdtempSync(join(tmpdir(), 'geotechcli-geotech-cache-'));
+    process.env.GEOTECHCLI_CONFIG_DIR = configDir;
+
+    try {
+      const transcribePageImageText = vi.fn(async () => ({
+        text: 'Recovered OCR text: BH-1 silty sand SPT N 18 at page 1.',
+        latencyMs: 15,
+        usedFallback: false,
+        warnings: [],
+      }));
+      const extractTextFacts = vi.fn(async (_pageText: string, _config: any, context: any) => makeResult({
+        documentClass: 'borehole-log',
+        summary: 'Cached borehole evidence was extracted.',
+        materials: [
+          { kind: 'soil', description: 'silty sand', uscsSymbol: 'SM', lithology: null },
+        ],
+        parameters: [
+          { name: 'sptN', valueText: '18', numericValue: 18, unit: null, material: 'silty sand', context: 'page 1' },
+        ],
+        pageNumber: context.pageNumber ?? null,
+        totalPages: context.totalPages ?? null,
+        rawLLMText: 'mock',
+        latencyMs: 12,
+        parseStatus: 'parsed',
+        confidence: 88,
+      }) as any);
+
+      const input = {
+        config: { provider: 'openai-compatible', timeout: 60000, visionModelId: 'glm-5v-turbo' } as any,
+        source: {
+          filePath: 'cached-report.pdf',
+          fileName: 'cached-report.pdf',
+          inputKind: 'pdf' as const,
+        },
+        pages: [
+          {
+            base64: Buffer.from('fake-raster-page').toString('base64'),
+            mimeType: 'image/png',
+            pageNumber: 1,
+            totalPages: 1,
+            sourceKind: 'raster-image' as const,
+          },
+        ],
+        transcribePageImageText,
+        extractTextFacts,
+        interpretPage: vi.fn(),
+      };
+
+      const first = await ingestGeotechDocument(input);
+      expect(first.pageAudits[0]?.evidenceCache?.status).toBe('stored');
+      expect(transcribePageImageText).toHaveBeenCalledTimes(1);
+      expect(extractTextFacts).toHaveBeenCalledTimes(1);
+
+      transcribePageImageText.mockClear();
+      extractTextFacts.mockClear();
+
+      const second = await ingestGeotechDocument(input);
+      expect(second.pageAudits[0]?.evidenceCache?.status).toBe('hit');
+      expect(second.pageAudits[0]?.textHintSource).toBe('vision-ocr');
+      expect(second.parameters[0]?.name).toBe('sptN');
+      expect(transcribePageImageText).not.toHaveBeenCalled();
+      expect(extractTextFacts).not.toHaveBeenCalled();
+    } finally {
+      if (previousConfigDir === undefined) {
+        delete process.env.GEOTECHCLI_CONFIG_DIR;
+      } else {
+        process.env.GEOTECHCLI_CONFIG_DIR = previousConfigDir;
+      }
+      rmSync(configDir, { recursive: true, force: true });
+    }
   });
 
   it('sends hosted-beta image-only and text-unreadable raster pages directly to visual interpretation', async () => {

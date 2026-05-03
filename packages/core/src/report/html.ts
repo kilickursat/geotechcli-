@@ -294,7 +294,14 @@ function renderSourceEvidence(dossier: IngestDossier): string {
               <span>${escapeHtml(card.parseStatus)} | ${escapeHtml(`${card.confidence}%`)}</span>
             </div>
             <h3>${escapeHtml(card.title)}</h3>
-            <p>${escapeHtml(sourceModeLabel(card.sourceHint))}</p>
+            <p>${escapeHtml([
+              sourceModeLabel(card.sourceHint),
+              card.cacheStatus === 'hit'
+                ? 'Evidence cache reused'
+                : card.cacheStatus === 'stored'
+                  ? 'Evidence cached for reruns'
+                  : null,
+            ].filter(Boolean).join(' | '))}</p>
             ${card.highlights.length > 0 ? `<ul>${card.highlights.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : '<p>No strong structured highlight was retained for this page.</p>'}
             ${card.warnings.length > 0 ? `<small>Human verification recommended: ${escapeHtml(String(card.warnings.length))} retained warning(s).</small>` : ''}
           </article>

@@ -1,5 +1,15 @@
 ﻿# Changelog
 
+## [0.4.38] - 2026-05-03
+
+### Page Evidence Cache Foundation
+
+- Added a durable page evidence cache keyed by source file hash, page hash, page number, model version, preprocessing version, and schema version.
+- Reused cached geotechnical page evidence on reruns so repeated PDF ingest can skip duplicate OCR, GLM-OCR, GLM-5V, and page extraction work when the page/model/preprocessing inputs are unchanged.
+- Persisted cache audit metadata through async ingest checkpoints, segmented child-job merges, final page audits, CLI summaries, and HTML dossier processing audit views.
+- Kept cache I/O best-effort so inaccessible local cache storage never turns a valid page extraction into a failed page.
+- Added regression coverage for cache key stability, corrupt cache misses, model/preprocessing/schema invalidation, sync ingest reuse, async job reuse, and dossier cache presentation.
+
 ## [0.4.37] - 2026-05-03
 
 ### Hosted Development Headroom and Dossier Profile Evidence

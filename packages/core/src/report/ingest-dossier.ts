@@ -48,6 +48,8 @@ export interface IngestDossierPageCard {
   confidence: number;
   tone: IngestDossierTone;
   sourceHint?: string;
+  cacheStatus?: string;
+  cacheEntryId?: string;
   sectionType?: string;
   scope?: string;
   stageBadges?: string[];
@@ -505,6 +507,31 @@ function toneFromParseStatus(parseStatus: string, confidence: number): IngestDos
   return 'good';
 }
 
+function evidenceCacheStatusLabel(status: string | undefined): string {
+  switch (status) {
+    case 'hit':
+      return 'cache hit';
+    case 'stored':
+      return 'cache stored';
+    case 'miss':
+      return 'cache miss';
+    case 'skipped':
+      return 'cache skipped';
+    default:
+      return 'cache unavailable';
+  }
+}
+
+function evidenceCacheTableCell(audit: GeotechDocumentPageAudit): string {
+  if (!audit.evidenceCache) {
+    return '-';
+  }
+  const label = evidenceCacheStatusLabel(audit.evidenceCache.status);
+  return audit.evidenceCache.entryId
+    ? `${label} (${audit.evidenceCache.entryId})`
+    : label;
+}
+
 function formatFindingMessage(finding: {
   message: string;
   pageNumber?: number;
@@ -585,14 +612,15 @@ function buildGeotechTables(result: GeotechDocumentIngestResult): IngestDossierT
   if (result.pageAudits.length > 0) {
     auditTables.push({
       title: 'Page audit matrix',
-      description: 'Per-page extraction status, source path, retained signal counts, and warning volume.',
-      columns: ['Page', 'Class', 'Status', 'Confidence', 'Source', 'Signals', 'Warnings'],
+      description: 'Per-page extraction status, source path, cache reuse, retained signal counts, and warning volume.',
+      columns: ['Page', 'Class', 'Status', 'Confidence', 'Source', 'Cache', 'Signals', 'Warnings'],
       rows: result.pageAudits.map((audit) => [
         String(audit.pageNumber),
         audit.classification ?? 'unknown',
         audit.parseStatus,
         `${audit.confidence}%`,
         audit.textHintSource,
+        evidenceCacheTableCell(audit),
         [
           audit.materialCount > 0 ? `${audit.materialCount} material` : null,
           audit.classificationCount > 0 ? `${audit.classificationCount} class` : null,
@@ -704,6 +732,7 @@ function buildGeotechPageCards(result: GeotechDocumentIngestResult): IngestDossi
       audit.textHintSource === 'glm-ocr' ? 'GLM-OCR' : undefined,
       audit.textHintSource === 'vision-ocr' ? 'GLM vision OCR' : undefined,
       audit.textHintSource === 'vision-visual' ? 'GLM-5V visual' : undefined,
+      audit.evidenceCache ? evidenceCacheStatusLabel(audit.evidenceCache.status) : undefined,
       result.synthesis?.sourcePages.includes(audit.pageNumber) ? 'GLM-5.1 synthesis' : undefined,
     ]);
     const highlights = uniqueStrings([
@@ -721,6 +750,8 @@ function buildGeotechPageCards(result: GeotechDocumentIngestResult): IngestDossi
       confidence: audit.confidence,
       tone: toneFromParseStatus(audit.parseStatus, audit.confidence),
       sourceHint: audit.textHintSource,
+      cacheStatus: audit.evidenceCache?.status,
+      cacheEntryId: audit.evidenceCache?.entryId,
       sectionType: chunk?.sectionType,
       scope: chunk?.scope,
       stageBadges,
@@ -826,6 +857,8 @@ function buildBoreholeSections(result: BoreholeDocumentIngestResult): IngestDoss
 
 function buildGeotechMetrics(result: GeotechDocumentIngestResult): IngestDossierMetric[] {
   const statusCounts = countGeotechPageStatuses(result);
+  const cacheHits = result.pageAudits.filter((audit) => audit.evidenceCache?.status === 'hit').length;
+  const cacheStored = result.pageAudits.filter((audit) => audit.evidenceCache?.status === 'stored').length;
   return [
     { label: 'Pages processed', value: `${result.source.successfulPages}/${result.source.totalPages}`, tone: result.source.failedPages > 0 ? 'warning' : 'good' },
     { label: 'Confidence', value: `${result.confidence}%`, tone: toneFromParseStatus(result.parseStatus ?? 'parsed', result.confidence) },
@@ -833,6 +866,7 @@ function buildGeotechMetrics(result: GeotechDocumentIngestResult): IngestDossier
     { label: 'Materials', value: String(result.materials.length), detail: `${result.classifications.length} classifications`, tone: result.materials.length > 0 ? 'good' : 'warning' },
     { label: 'Parameters', value: String(result.parameters.length), detail: result.documentClass ?? 'No document class', tone: result.parameters.length > 0 ? 'good' : 'warning' },
     { label: 'OCR hints', value: String(result.inspectionSummary?.ocrRecoveredPageCount ?? 0), detail: `${result.inspectionSummary?.imageHeavyPageCount ?? 0} image-heavy pages`, tone: (result.inspectionSummary?.ocrRecoveredPageCount ?? 0) > 0 ? 'good' : 'neutral' },
+    { label: 'Evidence cache', value: String(cacheHits), detail: `${cacheStored} stored this run`, tone: cacheHits > 0 ? 'good' : cacheStored > 0 ? 'accent' : 'neutral' },
   ];
 }
 

@@ -627,7 +627,6 @@ function renderIngestResultReport(
     keyValue('Image-heavy pages', String(result.inspectionSummary.imageHeavyPageCount));
     keyValue('Recovered OCR hints', String(result.inspectionSummary.ocrRecoveredPageCount));
   }
-
   renderPersistedReviewDetails(options?.persistedReview, options?.approval ?? null);
 
   console.log('');
@@ -733,6 +732,12 @@ function renderGeotechDocumentResultReport(
     warnings: string[];
     reviewFindings?: unknown;
     reviewReasons?: unknown;
+    pageAudits?: Array<{
+      pageNumber: number;
+      evidenceCache?: {
+        status?: string;
+      };
+    }>;
   },
   options?: {
     title?: string;
@@ -759,6 +764,11 @@ function renderGeotechDocumentResultReport(
     keyValue('PDF classes', formatClassificationSummary(result.inspectionSummary.pageClassificationCounts));
     keyValue('Image-heavy pages', String(result.inspectionSummary.imageHeavyPageCount));
     keyValue('Recovered OCR hints', String(result.inspectionSummary.ocrRecoveredPageCount));
+  }
+  const cacheHits = (result.pageAudits ?? []).filter((audit) => audit.evidenceCache?.status === 'hit').length;
+  const cacheStored = (result.pageAudits ?? []).filter((audit) => audit.evidenceCache?.status === 'stored').length;
+  if (cacheHits > 0 || cacheStored > 0) {
+    keyValue('Evidence cache', `${cacheHits} hit, ${cacheStored} stored`);
   }
 
   renderPersistedReviewDetails(options?.persistedReview, options?.approval ?? null);

@@ -55,6 +55,8 @@ export {
   type GeotechDocumentSource,
   type GeotechDocumentContentChunk,
   type GeotechDocumentPageAudit,
+  type GeotechDocumentPageEvidenceCacheAudit,
+  type GeotechDocumentPageEvidenceCacheStatus,
   type GeotechDocumentFindingSeverity,
   type GeotechDocumentFindingScope,
   type GeotechDocumentFinding,
@@ -155,5 +157,23 @@ export {
   runPersistedIngestJobWorker,
   type PersistedIngestJobWorkerDependencies,
 } from './job-worker.js';
+export {
+  PAGE_EVIDENCE_CACHE_SCHEMA_VERSION,
+  PAGE_EVIDENCE_PREPROCESSING_VERSION,
+  buildPageEvidenceCacheKey,
+  buildPageEvidenceModelVersion,
+  buildPageEvidencePreprocessingVersion,
+  clearPageEvidenceCache,
+  getPageEvidenceCacheDir,
+  getPageEvidenceCachePath,
+  hashBuffer as hashPageEvidenceBuffer,
+  hashString as hashPageEvidenceString,
+  readPageEvidenceCache,
+  writePageEvidenceCache,
+  type PageEvidenceCacheEntry,
+  type PageEvidenceCacheKeyParts,
+  type WritePageEvidenceCacheInput,
+  type WritePageEvidenceCacheOptions,
+} from './page-evidence-cache.js';
 export { parseAGS, parseAGSContent, type AGSFile, type AGSGroup } from './ags.js';
 export { parseCPT, parseCPTContent, type CPTProfile, type CPTReading, type CPTParseOptions } from './cpt.js';

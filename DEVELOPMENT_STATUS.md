@@ -4,7 +4,7 @@ Last updated: 2026-05-03
 
 ## Current Work
 
-We are shipping the v0.4.37 hosted development headroom and dossier profile-evidence patch for the strong-beta report review path.
+We are shipping the v0.4.38 page evidence cache foundation for repeatable geotechnical PDF/report extraction.
 
 Current focus:
 
@@ -14,6 +14,7 @@ Current focus:
 - Route hosted PDF/table layout extraction to `glm-ocr`.
 - Retry final report synthesis without thinking when GLM-5.1 returns an empty thinking-mode response.
 - Present HTML ingest results as an evidence-first Geotechnical Intelligence Dossier with a premium review dashboard.
+- Cache compact page evidence by file hash, page hash, preprocessing settings, model version, and schema version so reruns can reuse trusted page extraction work.
 - Raise hosted-beta public limits enough for image-heavy PDF development runs, while keeping developer key/IP bypass unlimited.
 - Use the server-side `ZHIPU_API_KEY` secret in GitHub and Cloudflare.
 - Keep the legacy Modal deploy workflow present but disabled by default.
@@ -110,6 +111,14 @@ Current focus:
 - Hardened dossier borehole-profile inference to use retained inspection text and content chunks for borehole IDs, terminating depth, and conceptual layer evidence.
 - Added regression coverage for real report-style borehole schedule and conclusion text when structured depth parameters are missing.
 
+### v0.4.38 Page Evidence Cache Foundation
+
+- Added a durable page evidence cache keyed by source file hash, page hash, page number, model version, preprocessing version, and schema version.
+- Reused cached geotechnical page evidence on reruns so repeated PDF ingest can skip duplicate OCR, GLM-OCR, GLM-5V, and page extraction work when inputs are unchanged.
+- Persisted cache audit metadata through async ingest checkpoints, segmented child-job merges, final page audits, CLI summaries, and HTML dossier processing audit views.
+- Kept cache I/O best-effort so inaccessible local cache storage does not fail otherwise valid page extraction.
+- Added regression coverage for cache key stability, corrupt cache misses, invalidation, sync ingest reuse, async job reuse, and dossier cache presentation.
+
 ## Left To Do
 
 Highest-value next work:
@@ -119,8 +128,8 @@ Highest-value next work:
 - Add deterministic calculation routing from GroundModel into bearing, settlement, pile, liquefaction, and slope workflows.
 - Add map visualization from GroundModel coordinates and local CRS assumptions.
 - Expand the lightweight dossier borehole SVG into richer strip logs, SPT-depth plots, lab charts, and monitoring plots.
-- Add PDF/image preprocessing before vision: render, classify, deskew, crop tables/log panels, OCR cache, and page-level reuse.
-- Add document/page caching by file hash, page hash, preprocessing settings, model version, and extraction schema version.
+- Expand PDF/image preprocessing before vision with deskew, crop tables/log panels, and normalized page-region assets.
+- Add benchmark fixtures that measure first-run vs cached rerun latency, provider call count, confidence, and source-page traceability.
 - Add `geotech signal analyze` for settlement, piezometer, inclinometer, vibration, load-test, and time-series data.
 - Add role-based swarm planning over structured evidence: WorkspaceScout, DataEngineer, GroundModeler, StandardsChecker, DesignEngineer, RiskReviewer, ReportEngineer.
 - Add benchmark evaluation fixtures for boreholes, CPT, lab, reports, monitoring, sensor, pile load, and signal datasets.
