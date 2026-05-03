@@ -8,6 +8,18 @@ const releases = [
     date: '2026-05-03',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Redesigned HTML ingest dossiers as a premium Geotechnical Intelligence Dossier with a sticky sidebar, executive facts, review actions, engineering insight cards, and source-evidence navigation' },
+      { type: 'feat', text: 'Added an evidence-first trust table for extracted and missing engineering parameters with source page, confidence, review posture, and evidence snippets' },
+      { type: 'feat', text: 'Added a lightweight borehole stratigraphy SVG view for retained borehole and layer evidence, with dashed boundaries for uncertain or missing intervals' },
+      { type: 'fix', text: 'Moved model-stage and raw page audit details into a collapsed Processing Audit section so the main report stays engineering-decision-first' },
+      { type: 'fix', text: 'Added regression coverage for the premium dossier layout, trust layer, source evidence, processing audit, and borehole visualization' },
+    ],
+  },
+  {
+    version: '0.4.35',
+    date: '2026-05-03',
+    tag: '0.4.35 Release',
+    changes: [
       { type: 'fix', text: 'Kept GLM thinking enabled for final report synthesis as the first attempt, then retried once without thinking when Z.ai returns an empty/no-content assistant response' },
       { type: 'fix', text: 'Prevented successful visual ingest runs from showing a GLM-5.1 synthesis failed warning when the fallback synthesis response is valid' },
       { type: 'fix', text: 'Added regression coverage for the hosted-beta synthesis fallback path so the dossier brief remains populated after an empty thinking-mode completion' },

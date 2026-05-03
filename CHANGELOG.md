@@ -1,5 +1,15 @@
 ﻿# Changelog
 
+## [0.4.36] - 2026-05-03
+
+### Geotechnical Intelligence Dossier UX
+
+- Redesigned HTML ingest dossiers as a premium Geotechnical Intelligence Dossier with a sticky sidebar, executive facts, review actions, engineering insight cards, and source-evidence navigation.
+- Added an evidence-first trust table for extracted and missing engineering parameters, including source page, confidence, review posture, and evidence snippets.
+- Added a lightweight borehole stratigraphy SVG view for retained borehole/layer evidence, with dashed boundaries for uncertain or missing intervals.
+- Moved model-stage and raw page audit details into a collapsed Processing Audit section so the main report stays engineering-decision-first instead of extraction-log-first.
+- Added regression coverage for the premium dossier layout, trust layer, source evidence, processing audit, and borehole visualization.
+
 ## [0.4.35] - 2026-05-03
 
 ### GLM-5.1 Synthesis Retry Fix

@@ -60,6 +60,55 @@ export interface IngestDossierNarrativeSection {
   paragraphs: string[];
 }
 
+export interface IngestDossierExecutiveItem {
+  label: string;
+  value: string;
+  detail?: string;
+  tone?: IngestDossierTone;
+}
+
+export interface IngestDossierInsightCard {
+  title: string;
+  body: string;
+  tone: IngestDossierTone;
+  detail?: string;
+}
+
+export interface IngestDossierTrustItem {
+  item: string;
+  value: string;
+  sourcePage: string;
+  confidence: string;
+  review: string;
+  evidence: string;
+  tone: IngestDossierTone;
+}
+
+export interface IngestDossierBoreholeProfileLayer {
+  depthFrom: number;
+  depthTo: number;
+  label: string;
+  description: string;
+  uscsSymbol?: string | null;
+  tone: IngestDossierTone;
+  uncertain?: boolean;
+}
+
+export interface IngestDossierBoreholeProfileColumn {
+  boreholeId: string;
+  totalDepth: number | null;
+  waterTableDepth: number | null;
+  layers: IngestDossierBoreholeProfileLayer[];
+}
+
+export interface IngestDossierBoreholeProfile {
+  title: string;
+  maxDepth: number;
+  depthUnit: string;
+  columns: IngestDossierBoreholeProfileColumn[];
+  notes: string[];
+}
+
 export interface IngestDossierStoredReview {
   projectId: string;
   datasetName: string;
@@ -87,6 +136,10 @@ export interface IngestDossier {
   tables: IngestDossierTable[];
   pageCards: IngestDossierPageCard[];
   sections: IngestDossierNarrativeSection[];
+  executiveItems: IngestDossierExecutiveItem[];
+  insightCards: IngestDossierInsightCard[];
+  trustItems: IngestDossierTrustItem[];
+  boreholeProfile?: IngestDossierBoreholeProfile;
   storedReview?: IngestDossierStoredReview;
   approval?: IngestDossierApproval;
   footerNotes: string[];
@@ -221,6 +274,106 @@ function sourcePageText(value: string | null | undefined): string {
     .map((match) => match[1])
     .filter((entry): entry is string => Boolean(entry));
   return matches.length > 0 ? [...new Set(matches)].join(', ') : '-';
+}
+
+function normalizeBoreholeId(value: string): string {
+  const match = value.match(/\bBH[-\s]?0*(\d+)\b/i);
+  return match ? `BH${match[1]}` : value.trim().toUpperCase();
+}
+
+function inferBoreholeIdsFromText(...values: Array<string | null | undefined>): string[] {
+  const text = values.filter(Boolean).join('\n');
+  const ids = [...text.matchAll(/\bBH[-\s]?0*(\d+)\b/gi)].map((match) => `BH${match[1]}`);
+  return [...new Set(ids)].sort((left, right) => left.localeCompare(right, undefined, { numeric: true }));
+}
+
+function readDepthMeters(value: string | number | null | undefined): number | null {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (!value) {
+    return null;
+  }
+  const match = String(value).match(/(-?\d+(?:\.\d+)?)\s*m\b/i);
+  const numeric = Number(match?.[1] ?? value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function formatDepthMeters(value: number | null | undefined): string {
+  return value != null && Number.isFinite(value) ? `${value.toFixed(2)} m` : 'Unavailable';
+}
+
+function materialTone(description: string | null | undefined, uscsSymbol?: string | null): IngestDossierTone {
+  const text = `${description ?? ''} ${uscsSymbol ?? ''}`.toLowerCase();
+  if (/rock|shale|limestone|sandstone|fractured|weathered/.test(text)) return 'neutral';
+  if (/clay|ci|cl|ch/.test(text)) return 'warning';
+  if (/sand|sm|sp|sw|gravel|gm|gp|gw/.test(text)) return 'accent';
+  return 'good';
+}
+
+function humanDocumentType(value: string | null | undefined): string {
+  if (!value) {
+    return 'Geotechnical document';
+  }
+  return value
+    .split(/[-_]+/g)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function includesParameter(result: GeotechDocumentIngestResult, pattern: RegExp): boolean {
+  return result.parameters.some((parameter) =>
+    pattern.test(`${parameter.name} ${parameter.valueText} ${parameter.unit ?? ''} ${parameter.material ?? ''} ${parameter.context ?? ''}`),
+  );
+}
+
+function buildMissingCriticalItems(result: GeotechDocumentIngestResult): string[] {
+  const missing: string[] = [];
+  if (!includesParameter(result, /ground\s*water|water\s*table/i)) missing.push('groundwater level');
+  if (!includesParameter(result, /\bspt\b|standard\s*penetration/i)) missing.push('SPT N-values');
+  if (!includesParameter(result, /\brqd\b/i)) missing.push('RQD');
+  if (!includesParameter(result, /cohesion|\bc\b/i)) missing.push('cohesion');
+  if (!includesParameter(result, /friction|phi|angle/i)) missing.push('friction angle');
+  return missing;
+}
+
+function firstMeaningful(values: Array<string | null | undefined>, maxLength: number): string {
+  return values
+    .map((value) => cleanNarrativeText(value, maxLength))
+    .find(Boolean)
+    ?? 'No concise evidence item was retained.';
+}
+
+function inferGeotechMaxDepth(result: GeotechDocumentIngestResult): number | null {
+  const depths = result.parameters
+    .filter((parameter) => /depth|elevation|thickness/i.test(parameter.name))
+    .map((parameter) => readDepthMeters(parameter.numericValue ?? parameter.valueText))
+    .filter((value): value is number => value != null && value >= 0);
+  const summaryDepth = readDepthMeters(result.summary);
+  if (summaryDepth != null) {
+    depths.push(summaryDepth);
+  }
+  return depths.length > 0 ? Math.max(...depths) : null;
+}
+
+function inferKeyConcern(result: GeotechDocumentIngestResult): string {
+  const weatheredRock = result.materials.find((material) => /weathered|fractured|rock/i.test(material.description));
+  return firstMeaningful([
+    result.risks[0],
+    weatheredRock ? `${weatheredRock.description} may affect bearing capacity, excavation stability, or foundation selection.` : null,
+    result.synthesis?.interpretation[0],
+  ], 180);
+}
+
+function inferMainLimitation(result: GeotechDocumentIngestResult): string {
+  const missing = buildMissingCriticalItems(result);
+  return firstMeaningful([
+    result.synthesis?.limitations[0],
+    missing.length > 0 ? `Missing or unverified: ${missing.join(', ')}.` : null,
+    result.reviewReasons[0],
+    result.warnings[0],
+  ], 180);
 }
 
 function countGeotechPageStatuses(result: GeotechDocumentIngestResult): Record<'parsed' | 'partial' | 'failed', number> {
@@ -632,6 +785,277 @@ function buildBoreholeBadges(result: BoreholeDocumentIngestResult): IngestDossie
   ];
 }
 
+function buildGeotechExecutiveItems(result: GeotechDocumentIngestResult, sourceLabel: string): IngestDossierExecutiveItem[] {
+  const boreholeIds = inferBoreholeIdsFromText(
+    result.title,
+    result.summary,
+    ...result.materials.map((material) => material.description),
+    ...result.parameters.flatMap((parameter) => [parameter.material, parameter.context]),
+  );
+  const maxDepth = inferGeotechMaxDepth(result);
+  return [
+    { label: 'Project/report', value: result.title ?? sourceLabel, detail: sourceLabel, tone: 'accent' },
+    { label: 'Document type', value: humanDocumentType(result.documentClass ?? result.documentType), tone: 'accent' },
+    {
+      label: 'Processing status',
+      value: result.reviewRequired ? 'Parsed, review required' : 'Parsed',
+      detail: result.parseStatus,
+      tone: result.reviewRequired ? 'warning' : 'good',
+    },
+    { label: 'Confidence', value: `${result.confidence}%`, tone: toneFromParseStatus(result.parseStatus, result.confidence) },
+    { label: 'Boreholes detected', value: boreholeIds.length > 0 ? boreholeIds.join(', ') : 'Not explicitly detected', tone: boreholeIds.length > 0 ? 'good' : 'warning' },
+    { label: 'Max depth', value: formatDepthMeters(maxDepth), tone: maxDepth != null ? 'good' : 'warning' },
+    { label: 'Key engineering concern', value: inferKeyConcern(result), tone: 'warning' },
+    { label: 'Main limitation', value: inferMainLimitation(result), tone: result.reviewRequired ? 'warning' : 'neutral' },
+  ];
+}
+
+function buildBoreholeExecutiveItems(result: BoreholeDocumentIngestResult, sourceLabel: string): IngestDossierExecutiveItem[] {
+  const boreholeIds = result.boreholes.map((borehole) => borehole.boreholeId).filter(Boolean);
+  const maxDepth = result.boreholes
+    .map((borehole) => borehole.totalDepth)
+    .filter((value): value is number => value != null && Number.isFinite(value))
+    .reduce<number | null>((max, value) => max == null ? value : Math.max(max, value), null);
+  const firstWarning = result.reviewReasons[0] ?? result.warnings[0] ?? null;
+  return [
+    { label: 'Project/report', value: result.boreholes[0]?.projectName ?? sourceLabel, detail: sourceLabel, tone: 'accent' },
+    { label: 'Document type', value: 'Borehole log', tone: 'accent' },
+    {
+      label: 'Processing status',
+      value: result.reviewRequired ? 'Parsed, review required' : 'Parsed',
+      tone: result.reviewRequired ? 'warning' : 'good',
+    },
+    { label: 'Confidence', value: `${result.confidence}%`, tone: result.confidence >= 70 ? 'good' : 'warning' },
+    { label: 'Boreholes detected', value: boreholeIds.length > 0 ? boreholeIds.join(', ') : 'Not explicitly detected', tone: boreholeIds.length > 0 ? 'good' : 'warning' },
+    { label: 'Max depth', value: formatDepthMeters(maxDepth), tone: maxDepth != null ? 'good' : 'warning' },
+    { label: 'Key engineering concern', value: firstMeaningful([firstWarning, result.boreholes[0]?.summary], 180), tone: firstWarning ? 'warning' : 'neutral' },
+    { label: 'Main limitation', value: firstWarning ? cleanNarrativeText(firstWarning, 180) : 'No blocking limitation retained.', tone: firstWarning ? 'warning' : 'good' },
+  ];
+}
+
+function buildGeotechInsightCards(result: GeotechDocumentIngestResult): IngestDossierInsightCard[] {
+  const groundConditions = firstMeaningful([
+    result.synthesis?.groundModel[0],
+    result.synthesis?.takeaways[0],
+    result.summary,
+    result.materials.length > 0
+      ? `${result.materials.map((material) => material.description).slice(0, 4).join(', ')}.`
+      : null,
+  ], 260);
+  const designImplications = firstMeaningful([
+    result.synthesis?.interpretation[0],
+    result.risks[0],
+    result.recommendations[0],
+  ], 260);
+  const missing = buildMissingCriticalItems(result);
+  const verificationFocus = result.reviewRequired
+    ? 'Human verification is recommended before this extraction is reused for design, reporting, or approval.'
+    : 'No retained review gate blocks downstream use, but source-page verification is still recommended.';
+
+  return [
+    { title: 'Ground conditions', body: groundConditions, tone: 'accent' },
+    { title: 'Design implications', body: designImplications, tone: 'warning' },
+    {
+      title: 'Missing critical data',
+      body: missing.length > 0 ? `Not extracted or not corroborated: ${missing.join(', ')}.` : 'No common critical parameter gap was detected in the retained extraction.',
+      tone: missing.length > 0 ? 'warning' : 'good',
+    },
+    { title: 'Verification focus', body: verificationFocus, tone: result.reviewRequired ? 'warning' : 'good' },
+  ];
+}
+
+function buildBoreholeInsightCards(result: BoreholeDocumentIngestResult): IngestDossierInsightCard[] {
+  const summaries = result.boreholes.map((borehole) => borehole.summary).filter(Boolean);
+  const missingWater = result.boreholes.filter((borehole) => borehole.waterTableDepth == null).length;
+  return [
+    { title: 'Ground conditions', body: firstMeaningful(summaries, 260), tone: 'accent' },
+    {
+      title: 'Design implications',
+      body: result.reviewRequired
+        ? 'At least one borehole or page needs verification before the extracted profile is used as engineering input.'
+        : 'The borehole profile is ready for engineering review against the source log.',
+      tone: result.reviewRequired ? 'warning' : 'good',
+    },
+    {
+      title: 'Missing critical data',
+      body: missingWater > 0 ? `Groundwater was not extracted for ${missingWater} borehole(s).` : 'Groundwater was retained where available.',
+      tone: missingWater > 0 ? 'warning' : 'good',
+    },
+    { title: 'Verification focus', body: result.reviewReasons[0] ?? 'Check layer boundaries, depth scale, and any low-confidence borehole metadata.', tone: result.reviewRequired ? 'warning' : 'neutral' },
+  ];
+}
+
+function buildGeotechTrustItems(result: GeotechDocumentIngestResult): IngestDossierTrustItem[] {
+  const visualExtractionUsed = result.pageAudits.some((audit) => audit.textHintSource === 'vision-visual' || audit.textHintSource === 'vision-ocr');
+  const rows = result.parameters.slice(0, 16).map<IngestDossierTrustItem>((parameter) => {
+    const sourcePage = sourcePageText(parameter.context);
+    const reviewNeeded = result.reviewRequired || sourcePage === '-' || visualExtractionUsed;
+    const valueText = displayTableText(parameter.valueText, 80);
+    const unitText = displayTableText(parameter.unit, 28);
+    const valueWithUnit =
+      unitText !== '-' && valueText !== '-' && !valueText.toLowerCase().includes(unitText.toLowerCase())
+        ? `${valueText} ${unitText}`
+        : valueText;
+    return {
+      item: displayTableText(parameter.name, 80),
+      value: valueWithUnit || '-',
+      sourcePage,
+      confidence: `${result.confidence}%`,
+      review: reviewNeeded ? (visualExtractionUsed ? 'Visual verification recommended' : 'Manual review recommended') : 'Ready for review',
+      evidence: displayTableText(parameter.context, 180),
+      tone: reviewNeeded ? 'warning' : 'good',
+    };
+  });
+
+  for (const missing of buildMissingCriticalItems(result).slice(0, 6)) {
+    rows.push({
+      item: missing,
+      value: 'Not extracted',
+      sourcePage: '-',
+      confidence: 'Low',
+      review: 'Required',
+      evidence: 'No corroborated value was retained in the extraction.',
+      tone: 'warning',
+    });
+  }
+
+  return rows;
+}
+
+function buildBoreholeTrustItems(result: BoreholeDocumentIngestResult): IngestDossierTrustItem[] {
+  const rows: IngestDossierTrustItem[] = [];
+  for (const borehole of result.boreholes.slice(0, 8)) {
+    rows.push({
+      item: `${borehole.boreholeId} total depth`,
+      value: formatDepthMeters(borehole.totalDepth),
+      sourcePage: borehole.pageNumber != null ? String(borehole.pageNumber) : '-',
+      confidence: `${borehole.confidence}%`,
+      review: borehole.parseStatus === 'parsed' && !result.reviewRequired ? 'Ready for review' : 'Manual review recommended',
+      evidence: cleanNarrativeText(borehole.summary, 180) || 'Borehole depth retained from structured extraction.',
+      tone: borehole.parseStatus === 'parsed' && borehole.confidence >= 70 ? 'good' : 'warning',
+    });
+    rows.push({
+      item: `${borehole.boreholeId} groundwater`,
+      value: borehole.waterTableDepth != null ? formatDepthMeters(borehole.waterTableDepth) : 'Not extracted',
+      sourcePage: borehole.pageNumber != null ? String(borehole.pageNumber) : '-',
+      confidence: borehole.waterTableDepth != null ? `${borehole.confidence}%` : 'Low',
+      review: borehole.waterTableDepth != null ? 'Verify against source log' : 'Required',
+      evidence: borehole.waterTableDepth != null ? 'Groundwater value retained from structured extraction.' : 'No groundwater value was retained.',
+      tone: borehole.waterTableDepth != null ? 'good' : 'warning',
+    });
+  }
+  return rows;
+}
+
+function stratumIndex(description: string | null | undefined): number {
+  const text = description ?? '';
+  const roman = text.match(/stratum\s+(iv|iii|ii|i)\b/i)?.[1]?.toUpperCase();
+  if (roman === 'I') return 1;
+  if (roman === 'II') return 2;
+  if (roman === 'III') return 3;
+  if (roman === 'IV') return 4;
+  return Number.MAX_SAFE_INTEGER;
+}
+
+function buildGeotechBoreholeProfile(result: GeotechDocumentIngestResult): IngestDossierBoreholeProfile | undefined {
+  const boreholeIds = inferBoreholeIdsFromText(
+    result.title,
+    result.summary,
+    ...result.parameters.flatMap((parameter) => [parameter.material, parameter.context]),
+  );
+  const maxDepth = inferGeotechMaxDepth(result);
+  if (boreholeIds.length === 0 || maxDepth == null || maxDepth <= 0 || result.materials.length === 0) {
+    return undefined;
+  }
+
+  const materials = [...result.materials].sort((left, right) =>
+    stratumIndex(left.description) - stratumIndex(right.description)
+    || left.description.localeCompare(right.description),
+  ).slice(0, 8);
+  const layerHeight = maxDepth / Math.max(1, materials.length);
+  const depthsByBorehole = new Map<string, number>();
+  for (const parameter of result.parameters) {
+    if (!/depth/i.test(parameter.name)) {
+      continue;
+    }
+    const id = inferBoreholeIdsFromText(parameter.material, parameter.context)[0];
+    const depth = readDepthMeters(parameter.numericValue ?? parameter.valueText);
+    if (id && depth != null) {
+      depthsByBorehole.set(id, Math.max(depthsByBorehole.get(id) ?? 0, depth));
+    }
+  }
+
+  return {
+    title: 'Borehole Stratigraphy Visualization',
+    maxDepth,
+    depthUnit: 'm',
+    columns: boreholeIds.map((boreholeId) => ({
+      boreholeId,
+      totalDepth: depthsByBorehole.get(boreholeId) ?? maxDepth,
+      waterTableDepth: null,
+      layers: materials.map((material, index) => ({
+        depthFrom: Number((index * layerHeight).toFixed(2)),
+        depthTo: Number(((index + 1) * layerHeight).toFixed(2)),
+        label: material.uscsSymbol ?? material.kind,
+        description: displayTableText(material.description, 140),
+        uscsSymbol: material.uscsSymbol,
+        tone: materialTone(material.description, material.uscsSymbol),
+        uncertain: true,
+      })),
+    })),
+    notes: [
+      'Conceptual visualization from retained material observations.',
+      'Dashed layer boundaries indicate missing or unverified stratum intervals.',
+    ],
+  };
+}
+
+function buildBoreholeProfile(result: BoreholeDocumentIngestResult): IngestDossierBoreholeProfile | undefined {
+  if (result.boreholes.length === 0) {
+    return undefined;
+  }
+  const maxDepth = result.boreholes.reduce((max, borehole) => {
+    const layerMax = Math.max(
+      0,
+      ...borehole.layers.map((layer) => layer.depthTo ?? layer.depthFrom ?? 0),
+    );
+    return Math.max(max, borehole.totalDepth ?? 0, layerMax);
+  }, 0);
+  if (maxDepth <= 0) {
+    return undefined;
+  }
+
+  return {
+    title: 'Borehole Stratigraphy Visualization',
+    maxDepth,
+    depthUnit: 'm',
+    columns: result.boreholes.map((borehole) => ({
+      boreholeId: borehole.boreholeId,
+      totalDepth: borehole.totalDepth,
+      waterTableDepth: borehole.waterTableDepth,
+      layers: borehole.layers
+        .map((layer, index): IngestDossierBoreholeProfileLayer | null => {
+          const depthFrom = layer.depthFrom ?? (index === 0 ? 0 : null);
+          const depthTo = layer.depthTo ?? borehole.totalDepth ?? maxDepth;
+          if (depthFrom == null || depthTo == null || depthTo <= depthFrom) {
+            return null;
+          }
+          return {
+            depthFrom,
+            depthTo,
+            label: layer.uscsSymbol ?? layer.notes ?? `Layer ${index + 1}`,
+            description: displayTableText(layer.description, 140),
+            uscsSymbol: layer.uscsSymbol ?? null,
+            tone: materialTone(layer.description, layer.uscsSymbol),
+            uncertain: layer.depthFrom == null || layer.depthTo == null,
+          };
+        })
+        .filter((layer): layer is IngestDossierBoreholeProfileLayer => layer != null),
+    })),
+    notes: ['Layer blocks are scaled to extracted depth intervals. Missing boundaries are shown as uncertain.'],
+  };
+}
+
 function buildFooterNotes(result: IngestDossierSourceResult): string[] {
   return uniqueStrings([
     result.source.fileName ?? result.source.filePath ?? null,
@@ -680,6 +1104,10 @@ export function buildIngestDossier(
       tables: buildGeotechTables(geotechResult),
       pageCards: buildGeotechPageCards(geotechResult),
       sections: buildGeotechSections(geotechResult),
+      executiveItems: buildGeotechExecutiveItems(geotechResult, sourceLabel),
+      insightCards: buildGeotechInsightCards(geotechResult),
+      trustItems: buildGeotechTrustItems(geotechResult),
+      boreholeProfile: buildGeotechBoreholeProfile(geotechResult),
       storedReview,
       approval,
       footerNotes: buildFooterNotes(geotechResult),
@@ -705,6 +1133,10 @@ export function buildIngestDossier(
     tables: buildBoreholeTables(boreholeResult),
     pageCards: buildBoreholePageCards(boreholeResult),
     sections: buildBoreholeSections(boreholeResult),
+    executiveItems: buildBoreholeExecutiveItems(boreholeResult, sourceLabel),
+    insightCards: buildBoreholeInsightCards(boreholeResult),
+    trustItems: buildBoreholeTrustItems(boreholeResult),
+    boreholeProfile: buildBoreholeProfile(boreholeResult),
     storedReview,
     approval,
     footerNotes: buildFooterNotes(boreholeResult),

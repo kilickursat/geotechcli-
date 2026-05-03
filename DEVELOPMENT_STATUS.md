@@ -4,7 +4,7 @@ Last updated: 2026-05-03
 
 ## Current Work
 
-We are shipping the v0.4.35 GLM-5.1 synthesis retry hotfix for the strong-beta AI path.
+We are shipping the v0.4.36 Geotechnical Intelligence Dossier UX release for the strong-beta report review path.
 
 Current focus:
 
@@ -13,6 +13,7 @@ Current focus:
 - Route hosted vision to `glm-5v-turbo`.
 - Route hosted PDF/table layout extraction to `glm-ocr`.
 - Retry final report synthesis without thinking when GLM-5.1 returns an empty thinking-mode response.
+- Present HTML ingest results as an evidence-first Geotechnical Intelligence Dossier with a premium review dashboard.
 - Use the server-side `ZHIPU_API_KEY` secret in GitHub and Cloudflare.
 - Keep the legacy Modal deploy workflow present but disabled by default.
 
@@ -92,6 +93,15 @@ Current focus:
 - Added a no-content fallback retry without thinking for hosted GLM-5.1 synthesis responses.
 - Added regression coverage so valid fallback synthesis populates the dossier without a stale synthesis-failed warning.
 
+### v0.4.36 Geotechnical Intelligence Dossier UX
+
+- Redesigned HTML ingest dossiers around a premium dashboard layout with sticky navigation, executive facts, review actions, and source-evidence sections.
+- Added engineering insight cards for ground conditions, design implications, missing critical data, and verification focus.
+- Added an evidence-first trust table for retained and missing parameters with source page, confidence, review posture, and evidence snippets.
+- Added a lightweight borehole stratigraphy SVG view for retained borehole/layer evidence, with dashed boundaries for uncertain intervals.
+- Moved GLM/model-stage details and raw page audit tables into a collapsed Processing Audit section.
+- Added regression coverage for the premium layout, trust layer, source evidence, processing audit, and borehole visualization.
+
 ## Left To Do
 
 Highest-value next work:
@@ -100,7 +110,7 @@ Highest-value next work:
 - Expand verifier from data-quality checks into calculation-readiness checks.
 - Add deterministic calculation routing from GroundModel into bearing, settlement, pile, liquefaction, and slope workflows.
 - Add map visualization from GroundModel coordinates and local CRS assumptions.
-- Add richer borehole strip logs, SPT-depth plots, lab charts, and monitoring plots to the dossier.
+- Expand the lightweight dossier borehole SVG into richer strip logs, SPT-depth plots, lab charts, and monitoring plots.
 - Add PDF/image preprocessing before vision: render, classify, deskew, crop tables/log panels, OCR cache, and page-level reuse.
 - Add document/page caching by file hash, page hash, preprocessing settings, model version, and extraction schema version.
 - Add `geotech signal analyze` for settlement, piezometer, inclinometer, vibration, load-test, and time-series data.

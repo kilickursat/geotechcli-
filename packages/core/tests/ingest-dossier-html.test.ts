@@ -206,10 +206,15 @@ describe('ingest dossier HTML', () => {
     const html = renderIngestDossierAsHtml(dossier);
 
     expect(html).toContain('<!doctype html>');
-    expect(html).toContain('geotechCLI ingest dossier');
+    expect(html).toContain('Geotechnical Intelligence Dossier');
+    expect(html).toContain('AI-assisted extraction, verification, and engineering interpretation from geotechnical reports.');
+    expect(html).toContain('Engineering Parameters');
     expect(html).toContain('Key engineering parameters');
     expect(html).toContain('Segment execution');
-    expect(html).toContain('Page map');
+    expect(html).toContain('Source Evidence');
+    expect(html).toContain('Processing Audit');
+    expect(html).toContain('Approve Extraction');
+    expect(html).toContain('Ask Geotech Agent');
     expect(html).toContain('Stored review');
     expect(html).toContain('Clay &lt; shale &gt; profile &amp; lab data.');
     expect(html).toContain('Recovered OCR hints should be spot-checked.');
@@ -235,12 +240,15 @@ describe('ingest dossier HTML', () => {
 
     const html = renderIngestDossierAsHtml(dossier);
 
-    expect(html).toContain('<h2>Extraction overview</h2>');
-    expect(html).toContain('Page outcomes at a glance');
+    expect(html).toContain('<strong>Processing Audit</strong>');
+    expect(html).toContain('Model stages, page audit matrix, warnings, and operational details');
     expect(html).toContain('<h2>Page audit matrix</h2>');
     expect(html).toContain('Per-page extraction status, source path, retained signal counts, and warning volume.');
-    expect(html).toContain('<details class="panel section-card disclosure" id="page-audit-matrix">');
+    expect(html).toContain('<details class="audit-drawer" id="processing-audit">');
     expect(html).toContain('class="chip stage-chip"');
+    expect(html).toContain('Needs review?');
+    expect(html).toContain('Evidence snippet');
+    expect(html).toContain('Visual extraction used');
     expect(html.indexOf('<h2>Key engineering parameters</h2>')).toBeLessThan(html.indexOf('<h2>Page audit matrix</h2>'));
     expect(html).toContain('Clay Layer 2 UCS 42 MPa and friction Angle 32 deg.');
     expect(html).not.toContain('ClayLayer2UCS42MPa');
@@ -251,5 +259,26 @@ describe('ingest dossier HTML', () => {
     expect(html).toContain('native-text');
     expect(html).toContain('vision-ocr');
     expect(html).toContain('GLM-5.1 synthesis');
+    expect(html.indexOf('GLM-5.1 synthesis')).toBeGreaterThan(html.indexOf('Processing Audit'));
+  });
+
+  it('renders a conceptual borehole stratigraphy profile when borehole IDs and depths are retained', () => {
+    const dossier = buildIngestDossier(makeGeotechResult({
+      summary: 'BH1, BH2, and BH3 were drilled to 10.00 m with weathered rock at depth.',
+      parameters: [
+        { name: 'depth', valueText: '10.00 m', numericValue: 10, unit: 'm', material: 'BH1', context: 'Page 27 borehole log' },
+        { name: 'depth', valueText: '10.00 m', numericValue: 10, unit: 'm', material: 'BH2', context: 'Page 27 borehole log' },
+        { name: 'depth', valueText: '10.00 m', numericValue: 10, unit: 'm', material: 'BH3', context: 'Page 27 borehole log' },
+      ],
+    }));
+
+    const html = renderIngestDossierAsHtml(dossier);
+
+    expect(dossier.boreholeProfile?.columns.map((column) => column.boreholeId)).toEqual(['BH1', 'BH2', 'BH3']);
+    expect(html).toContain('<svg class="borehole-profile"');
+    expect(html).toContain('BH1');
+    expect(html).toContain('BH2');
+    expect(html).toContain('BH3');
+    expect(html).toContain('Dashed layer boundaries indicate missing or unverified stratum intervals.');
   });
 });

@@ -269,7 +269,7 @@ geotech ingest Geotechnical-Report.pdf --type geotech-document --project demo-pr
 geotech ingest review demo-project --dataset ingest-review:latest --format html --output review-dossier.html
 \`\`\`
 
-The HTML dossier is a self-contained engineering review file with report takeaways, ground model, key parameters, interpretation, limitations, confidence metrics, extracted materials, an extraction overview strip, page audit matrix, review findings, page-by-page evidence cards, and stored-review plus approval context when the ingest is project-backed. Interactive terminals open the dossier in the browser by default; use --no-open for save-only workflows.
+The HTML dossier is a self-contained Geotechnical Intelligence Dossier with sticky navigation, executive facts, review actions, engineering insight cards, an evidence-first trust table, source evidence, lightweight borehole stratigraphy visualization when layer evidence is available, and stored-review plus approval context when the ingest is project-backed. Technical model-stage details, page audit matrices, and operational warnings live in a collapsed Processing Audit section. Interactive terminals open the dossier in the browser by default; use --no-open for save-only workflows.
 
 Hosted-beta reliability note: geotechnical PDFs above the best-result window are split into resumable page jobs with live progress, retryable transient failures, and merged final results plus HTML dossier output. The hosted-beta path runs GLM-OCR layout extraction before vision OCR, uses GLM-5V visual interpretation only where layout/text is insufficient, and feeds compact evidence into GLM-5.1 synthesis for human-readable report interpretation.`,
   },
