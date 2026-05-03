@@ -1,5 +1,19 @@
 ﻿# Changelog
 
+## [0.4.34] - 2026-05-03
+
+### Hosted GLM-OCR Report Synthesis
+
+- Added a hosted GLM-OCR layout parsing path with a separate `layout` quota bucket, configurable public limits, and developer key/IP bypass support.
+- Wired geotechnical document ingest to prefer GLM-OCR layout text before GLM-5V visual extraction, then run a GLM-5.1 synthesis pass for report takeaways, ground model, key parameters, interpretation, and limitations.
+- Raised public hosted-beta CLI defaults to 300 text, 120 vision, 80 layout, and 40 agent requests per day while preserving tighter anonymous caps.
+- Routed hosted-beta image-only, graphics-only, and text-unreadable report pages directly into structured GLM visual extraction when no accepted text exists, avoiding duplicate OCR-only vision calls before interpretation.
+- Marked direct visual page extraction as `vision-visual` in page audits and forced manual review before approval, so high-confidence image-only results do not silently auto-proceed without source-page verification.
+- Improved the HTML ingest dossier with report takeaways, grouped parameter tables, stage badges, an extraction overview strip, confidence meters, cleaner engineering brief text, and shortened table/page-card fragments for human review.
+- Applied a shadcn-style static dossier presentation pass so key engineering tables come before operational audit details, with raw page audit tables collapsed by default.
+- Preserved engineering units such as `kN/m3`, `t/m2`, `kg/cm2`, and `m/s` in dossier presentation while still cleaning OCR-like spacing.
+- Added regression coverage for synchronous ingest, persisted async jobs, direct visual extraction, and dossier HTML rendering.
+
 ## [0.4.33] - 2026-05-01
 
 ### Hosted GLM PDF Vision Fix

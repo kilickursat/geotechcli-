@@ -5,8 +5,24 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 const releases = [
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-05-01',
+    date: '2026-05-03',
     tag: `${GEOTECHCLI_VERSION} Release`,
+    changes: [
+      { type: 'feat', text: 'Added hosted GLM-OCR layout parsing with a separate layout quota bucket, configurable public limits, and developer key/IP bypass support' },
+      { type: 'feat', text: 'Wired geotechnical document ingest to prefer GLM-OCR layout text before GLM-5V visual extraction, then run GLM-5.1 synthesis for report takeaways, ground model, key parameters, interpretation, and limitations' },
+      { type: 'fix', text: 'Raised public hosted-beta CLI defaults to 300 text, 120 vision, 80 layout, and 40 agent requests per day while preserving tighter anonymous caps' },
+      { type: 'fix', text: 'Routed hosted-beta image-only, graphics-only, and text-unreadable report pages directly into structured GLM visual extraction when no accepted text exists, avoiding duplicate OCR-only vision calls before interpretation' },
+      { type: 'fix', text: 'Marked direct visual page extraction as vision-visual in page audits and forced manual review before approval so high-confidence image-only results do not silently auto-proceed' },
+      { type: 'feat', text: 'Improved the HTML ingest dossier with report takeaways, grouped parameter tables, stage badges, an extraction overview strip, confidence meters, cleaner engineering brief text, and shortened table/page-card fragments for human review' },
+      { type: 'feat', text: 'Applied a shadcn-style static dossier presentation pass so key engineering tables come before operational audit details, with raw page audit tables collapsed by default' },
+      { type: 'fix', text: 'Preserved engineering units such as kN/m3, t/m2, kg/cm2, and m/s in dossier presentation while still cleaning OCR-like spacing' },
+      { type: 'fix', text: 'Added regression coverage for synchronous ingest, persisted async jobs, direct visual extraction, and dossier HTML rendering' },
+    ],
+  },
+  {
+    version: '0.4.33',
+    date: '2026-05-01',
+    tag: '0.4.33 Release',
     changes: [
       { type: 'fix', text: 'Forced hosted-beta PDF page inputs through provider-safe raster images so geotech vision log no longer sends native PDF parts to the GLM vision model' },
       { type: 'fix', text: 'Applied the same hosted-beta PDF raster path to CLI ingest and agent ingest tools while preserving native PDF pages for providers that can support them' },

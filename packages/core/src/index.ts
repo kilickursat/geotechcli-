@@ -116,6 +116,13 @@ export {
   type GeotechMaterialObservation,
   type GeotechParameterObservation,
 } from './vision/geotech-document.js';
+export {
+  parseDocumentLayoutWithGlmOcr,
+  supportsGlmOcrLayoutParsing,
+  type GlmOcrLayoutElement,
+  type GlmOcrLayoutPage,
+  type GlmOcrLayoutResult,
+} from './vision/layout-ocr.js';
 
 // Report generation
 export {

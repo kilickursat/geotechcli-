@@ -79,13 +79,21 @@ function makeGeotechResult(
     ],
     risks: ['Weathered shale durability should be verified before final design adoption.'],
     recommendations: ['Confirm representative sampling before final design.'],
+    synthesis: {
+      takeaways: ['The report indicates stiff clay over weathered shale with laboratory strength values.'],
+      groundModel: ['Stiff clay transitions to weathered shale at depth.'],
+      keyParameters: ['Cohesion 25 kPa for stiff clay; UCS 42 MPa for weathered shale.'],
+      interpretation: ['Strength parameters should be verified against source pages before design adoption.'],
+      limitations: ['Page 5 requires manual review.'],
+      sourcePages: [2, 5],
+    },
     contentChunks: [
       {
         chunkId: 'chunk-1',
         pageRange: [2, 3],
         headingAncestry: ['Subsurface Conditions'],
         scope: 'section',
-        sectionType: 'subsurface-profile',
+        sectionType: 'ground-model',
         significance: 93,
         text: 'Stiff clay transitions to weathered shale at depth with laboratory strength testing in the appendix.',
         sourcePages: [2, 3],
@@ -168,9 +176,15 @@ describe('ingest dossier HTML', () => {
     expect(dossier.badges.some((badge) => badge.label === 'Document class' && badge.value === 'site-investigation-report')).toBe(true);
     expect(dossier.metrics.some((metric) => metric.label === 'Parameters' && metric.value === '2')).toBe(true);
     expect(dossier.findings[0]?.label).toBe('Needs review');
-    expect(dossier.tables.some((table) => table.title === 'Engineering parameters')).toBe(true);
+    expect(dossier.tables.some((table) => table.title === 'Key engineering parameters')).toBe(true);
     expect(dossier.tables.some((table) => table.title === 'Segment execution')).toBe(true);
+    expect(dossier.tables.map((table) => table.title).slice(0, 3)).toEqual([
+      'Key engineering parameters',
+      'Material observations',
+      'Classifications',
+    ]);
     expect(dossier.pageCards).toHaveLength(2);
+    expect(dossier.pageCards[0]?.stageBadges).toEqual(['native text', 'GLM-5.1 synthesis']);
     expect(dossier.pageCards[1]?.warnings[0]).toContain('Page 5 timed out');
     expect(dossier.storedReview?.datasetName).toBe('ingest-review:school-packet');
     expect(dossier.approval?.approvedBy).toBe('Lead reviewer');
@@ -193,7 +207,7 @@ describe('ingest dossier HTML', () => {
 
     expect(html).toContain('<!doctype html>');
     expect(html).toContain('geotechCLI ingest dossier');
-    expect(html).toContain('Engineering parameters');
+    expect(html).toContain('Key engineering parameters');
     expect(html).toContain('Segment execution');
     expect(html).toContain('Page map');
     expect(html).toContain('Stored review');
@@ -201,5 +215,41 @@ describe('ingest dossier HTML', () => {
     expect(html).toContain('Recovered OCR hints should be spot-checked.');
     expect(html).toContain('not engineering sign-off');
     expect(html).toContain('geotechCLI v');
+  });
+
+  it('renders extraction overview, page audit matrix, and cleaned summary text', () => {
+    const dossier = buildIngestDossier(makeGeotechResult({
+      summary: 'ClayLayer2UCS42MPa and frictionAngle32deg.',
+      parameters: [
+        { name: 'unitWeight', valueText: '18kN/m3', numericValue: 18, unit: 'kN/m3', material: 'silty sand', context: 'allowableBearingPressure35t/m2 strength2kg/cm2 permeability1e-6m/s' },
+      ],
+    }));
+    const pageAudit = dossier.tables.find((table) => table.title === 'Page audit matrix');
+    const parameters = dossier.tables.find((table) => table.title === 'Key engineering parameters');
+
+    expect(dossier.summary).toBe('Clay Layer 2 UCS 42 MPa and friction Angle 32 deg.');
+    expect(pageAudit?.columns).toEqual(['Page', 'Class', 'Status', 'Confidence', 'Source', 'Signals', 'Warnings']);
+    expect(pageAudit?.rows).toContainEqual(['2', 'digital-text', 'parsed', '92%', 'native-text', '1 material, 1 class, 1 parameter', '-']);
+    expect(pageAudit?.rows).toContainEqual(['5', 'image-only', 'partial', '58%', 'vision-ocr', '1 material, 1 class, 1 parameter', '1']);
+    expect(parameters?.rows).toContainEqual(['Index/lab', 'unit Weight', '18 kN/m3', 'kN/m3', 'silty sand', '-', '81%', 'allowable Bearing Pressure 35 t/m2 strength 2 kg/cm2 permeability 1 e-6 m/s']);
+
+    const html = renderIngestDossierAsHtml(dossier);
+
+    expect(html).toContain('<h2>Extraction overview</h2>');
+    expect(html).toContain('Page outcomes at a glance');
+    expect(html).toContain('<h2>Page audit matrix</h2>');
+    expect(html).toContain('Per-page extraction status, source path, retained signal counts, and warning volume.');
+    expect(html).toContain('<details class="panel section-card disclosure" id="page-audit-matrix">');
+    expect(html).toContain('class="chip stage-chip"');
+    expect(html.indexOf('<h2>Key engineering parameters</h2>')).toBeLessThan(html.indexOf('<h2>Page audit matrix</h2>'));
+    expect(html).toContain('Clay Layer 2 UCS 42 MPa and friction Angle 32 deg.');
+    expect(html).not.toContain('ClayLayer2UCS42MPa');
+    expect(html).toContain('18 kN/m3');
+    expect(html).toContain('35 t/m2');
+    expect(html).toContain('2 kg/cm2');
+    expect(html).toContain('1 e-6 m/s');
+    expect(html).toContain('native-text');
+    expect(html).toContain('vision-ocr');
+    expect(html).toContain('GLM-5.1 synthesis');
   });
 });

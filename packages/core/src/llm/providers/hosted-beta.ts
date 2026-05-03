@@ -163,6 +163,7 @@ export class HostedBetaAdapter implements ProviderAdapter {
       temperature: request.temperature,
       maxTokens: request.maxTokens,
       jsonMode: request.jsonMode ?? false,
+      thinkingMode: request.thinkingMode,
     };
 
     const start = Date.now();

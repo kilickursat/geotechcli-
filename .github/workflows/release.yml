@@ -94,6 +94,7 @@ jobs:
           const expectedVersion = process.env.EXPECTED_VERSION;
           const expectedTextModel = 'glm-5.1';
           const expectedVisionModel = 'glm-5v-turbo';
+          const expectedLayoutModel = 'glm-ocr';
           const checks = [
             {
               url: `https://beta.geotechcli.com/api/version?ts=${Date.now()}`,
@@ -133,6 +134,24 @@ jobs:
                 return null;
               },
               description: 'beta proxy GET health returns 200 with GLM defaults',
+            },
+            {
+              url: `https://beta.geotechcli.com/api/proxy/layout?ts=${Date.now()}`,
+              headers: {
+                'cache-control': 'no-cache',
+                pragma: 'no-cache',
+              },
+              async validate(response) {
+                const payload = await response.json().catch(() => null);
+                if (response.status !== 200) {
+                  return `unexpected status=${response.status}, payload=${JSON.stringify(payload)}`;
+                }
+                if (payload?.model !== expectedLayoutModel || payload?.endpoint !== 'layout_parsing') {
+                  return `expected GLM-OCR layout health, received ${JSON.stringify(payload)}`;
+                }
+                return null;
+              },
+              description: 'beta layout proxy GET health returns 200 with GLM-OCR defaults',
             },
             {
               url: 'https://beta.geotechcli.com/api/proxy',

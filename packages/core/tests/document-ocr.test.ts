@@ -19,6 +19,7 @@ describe('document text recovery', () => {
         provider: 'hosted-beta',
         apiKey: '',
       },
+      allowLayoutOcr: false,
       visionTranscribe,
     });
 
@@ -43,6 +44,7 @@ describe('document text recovery', () => {
         provider: 'hosted-beta',
         apiKey: '',
       },
+      allowLayoutOcr: false,
       visionTranscribe,
     });
 
@@ -67,6 +69,7 @@ describe('document text recovery', () => {
         provider: 'hosted-beta',
         apiKey: '',
       },
+      allowLayoutOcr: false,
       visionTranscribe,
     });
 
@@ -74,6 +77,46 @@ describe('document text recovery', () => {
     expect(result.textHint).toContain('Recovered OCR text');
     expect(result.warnings.join(' ')).toMatch(/fallback/i);
     expect(visionTranscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses GLM-OCR layout parsing before vision OCR when hosted layout text is available', async () => {
+    const layoutParse = vi.fn().mockResolvedValue({
+      provider: 'hosted-beta',
+      model: 'GLM-OCR',
+      markdown: '## Page 1\n| Depth | SPT N |\n| 2.0 m | 12 |',
+      text: 'Depth 2.0 m SPT N 12 silty sand',
+      pages: [{
+        pageNumber: 1,
+        width: 612,
+        height: 792,
+        elements: [],
+        text: 'Depth 2.0 m SPT N 12 silty sand',
+        tables: ['| Depth | SPT N |\n| 2.0 m | 12 |'],
+        formulas: [],
+        images: [],
+      }],
+      usage: { promptTokens: 10, completionTokens: 4, totalTokens: 14 },
+      latencyMs: 25,
+      warnings: [],
+    });
+    const visionTranscribe = vi.fn();
+
+    const result = await recoverDocumentTextHint({
+      imageBase64: Buffer.from('fake-image').toString('base64'),
+      mimeType: 'image/png',
+      config: {
+        provider: 'hosted-beta',
+        apiKey: '',
+      },
+      layoutParse,
+      visionTranscribe,
+    });
+
+    expect(result.source).toBe('glm-ocr');
+    expect(result.textHint).toContain('SPT N 12');
+    expect(result.layout?.pages[0]?.tables[0]).toContain('Depth');
+    expect(layoutParse).toHaveBeenCalledTimes(1);
+    expect(visionTranscribe).not.toHaveBeenCalled();
   });
 
   it('uses high-fidelity PDF text fallback before image OCR when native PDF text is degraded', async () => {
@@ -108,6 +151,7 @@ describe('document text recovery', () => {
           provider: 'hosted-beta',
           apiKey: '',
         },
+        allowLayoutOcr: false,
         visionTranscribe,
       });
 
@@ -154,6 +198,7 @@ describe('document text recovery', () => {
         provider: 'hosted-beta',
         apiKey: '',
       },
+      allowLayoutOcr: false,
       visionTranscribe,
     });
 

@@ -5,8 +5,13 @@ import { tmpdir } from 'node:os';
 import { assessPdfTextQuality } from '../ingest/pdf.js';
 import type { LLMConfig } from '../llm/types.js';
 import { extractPdfPageTextFromBuffer, preprocessVisionImageBuffer } from './preprocess.js';
+import {
+  parseDocumentLayoutWithGlmOcr,
+  supportsGlmOcrLayoutParsing,
+  type GlmOcrLayoutResult,
+} from './layout-ocr.js';
 
-export type DocumentTextHintSource = 'native-text' | 'pdfjs-text' | 'local-ocr' | 'vision-ocr' | 'none';
+export type DocumentTextHintSource = 'native-text' | 'pdfjs-text' | 'local-ocr' | 'vision-ocr' | 'vision-visual' | 'glm-ocr' | 'none';
 
 export interface VisionTranscriptionLike {
   text: string;
@@ -24,7 +29,13 @@ export interface RecoverDocumentTextHintOptions {
   pdfFilePath?: string;
   pdfPageNumber?: number;
   minimumLength?: number;
+  allowLayoutOcr?: boolean;
   allowVisionOcr?: boolean;
+  layoutParse?: (
+    documentBase64: string,
+    mimeType: string,
+    config: LLMConfig,
+  ) => Promise<GlmOcrLayoutResult>;
   visionTranscribe?: (
     imageBase64: string,
     mimeType: string,
@@ -38,6 +49,7 @@ export interface RecoverDocumentTextHintResult {
   warnings: string[];
   latencyMs: number;
   transformed: boolean;
+  layout?: GlmOcrLayoutResult;
 }
 
 let cachedLocalTesseractAvailability: boolean | null = null;
@@ -51,13 +63,13 @@ async function loadSharp(): Promise<any | null> {
   }
 }
 
-function normalizeTextHint(value: string | null | undefined): string | undefined {
+function normalizeTextHint(value: string | null | undefined, maxLength = 1600): string | undefined {
   if (typeof value !== 'string') {
     return undefined;
   }
 
   const normalized = value.replace(/\s+/g, ' ').trim();
-  return normalized ? normalized.slice(0, 1600) : undefined;
+  return normalized ? normalized.slice(0, maxLength) : undefined;
 }
 
 function looksLikeVisionOcrCommentary(value: string): boolean {
@@ -261,6 +273,41 @@ export async function recoverDocumentTextHint(
     }
   }
 
+  const allowLayoutOcr = options.allowLayoutOcr ?? true;
+  if (allowLayoutOcr && supportsGlmOcrLayoutParsing(options.config)) {
+    const layoutParse = options.layoutParse ?? parseDocumentLayoutWithGlmOcr;
+    try {
+      const layout = await layoutParse(
+        options.imageBase64,
+        options.mimeType,
+        options.config,
+      );
+      const layoutText = normalizeTextHint(layout.text || layout.markdown, 6000);
+      if (layoutText && layoutText.length >= minimumLength) {
+        return {
+          textHint: layoutText,
+          source: 'glm-ocr',
+          warnings: [
+            ...nativeTextWarnings,
+            ...layout.warnings,
+            `Recovered GLM-OCR layout text with ${layout.pages.length} parsed page(s).`,
+          ],
+          latencyMs: Date.now() - start,
+          transformed: false,
+          layout,
+        };
+      }
+      nativeTextWarnings.push('GLM-OCR layout parsing returned no usable text hint for this page.');
+      nativeTextWarnings.push(...layout.warnings);
+    } catch (error) {
+      nativeTextWarnings.push(
+        `GLM-OCR layout parsing failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  } else if (!allowLayoutOcr) {
+    nativeTextWarnings.push('GLM-OCR layout parsing was skipped for this retry because layout recovery had already been attempted for the page.');
+  }
+
   if (!options.mimeType.startsWith('image/')) {
     const nativeWarnings =
       !existingTextAccepted && seededText
@@ -277,9 +324,9 @@ export async function recoverDocumentTextHint(
         : seededText
           ? []
           : ['No image-based OCR path was available for this non-image page input.'],
-      latencyMs: 0,
-      transformed: false,
-    };
+        latencyMs: 0,
+        transformed: false,
+      };
   }
 
   const warnings: string[] = [...nativeTextWarnings];

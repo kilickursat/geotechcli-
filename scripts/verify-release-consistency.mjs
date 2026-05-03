@@ -41,8 +41,9 @@ assert(
   Array.isArray(metadata.proxyModels) &&
     metadata.proxyModels.includes('glm-5.1') &&
     metadata.proxyModels.includes('glm-5v-turbo') &&
+    metadata.proxyModels.includes('glm-ocr') &&
     !metadata.proxyModels.some((model) => /qwen/i.test(model)),
-  'Supported proxy models must include the GLM text and vision defaults and must not include stale Qwen defaults.',
+  'Supported proxy models must include the GLM text, vision, and OCR defaults and must not include stale Qwen defaults.',
 );
 
 for (const pkg of [cliPkg, corePkg, webPkg]) {
@@ -138,8 +139,11 @@ assert(
   '.env.example must point at the beta geotechcli.com host for both proxy and app URL.',
 );
 assert(
-  envExample.includes('ZHIPU_API_KEY=') &&
+    envExample.includes('ZHIPU_API_KEY=') &&
     envExample.includes('ZHIPU_API_BASE_URL=https://api.z.ai/api/paas/v4') &&
+    envExample.includes('ZHIPU_LAYOUT_PARSING_URL=') &&
+    envExample.includes('GEOTECHCLI_HOSTED_BETA_LIMITS_JSON=') &&
+    envExample.includes('GEOTECHCLI_DEVELOPER_IP_ALLOWLIST=') &&
     envExample.includes('GEOTECHCLI_HOSTED_BETA_THINKING_MODE=disabled') &&
     !envExample.includes('MODAL_ENDPOINT_URL=') &&
     !envExample.includes('MODAL_API_TOKEN='),
@@ -153,6 +157,7 @@ assert(
 );
 
 const proxyRouteSource = readText('packages', 'web', 'app', 'api', 'proxy', 'route.ts');
+const proxyLayoutRouteSource = readText('packages', 'web', 'app', 'api', 'proxy', 'layout', 'route.ts');
 assert(
   proxyRouteSource.includes('getHostedBetaUpstreamApiKey') &&
     proxyRouteSource.includes('getHostedBetaUpstreamChatCompletionsUrl') &&
@@ -160,6 +165,13 @@ assert(
     !proxyRouteSource.includes('MODAL_API_TOKEN') &&
     !proxyRouteSource.includes('modal.run'),
   'Hosted beta proxy must use the Z.ai/ZHIPU upstream secret path and must not call the legacy Modal endpoint.',
+);
+assert(
+  proxyLayoutRouteSource.includes('getHostedBetaUpstreamLayoutParsingUrl') &&
+    proxyLayoutRouteSource.includes('layout_parsing') &&
+    proxyLayoutRouteSource.includes('glm-ocr') &&
+    proxyLayoutRouteSource.includes("'layout'"),
+  'Hosted beta layout proxy must route GLM-OCR through the Z.ai layout_parsing endpoint and the separate layout quota.',
 );
 
 const modalDeployWorkflow = readText('.github', 'workflows', 'modal-deploy.yml');

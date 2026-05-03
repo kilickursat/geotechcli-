@@ -967,6 +967,32 @@ function resolveWorkerTextExtractionTimeoutMs(
   return baseTimeoutMs;
 }
 
+function shouldPreferDirectGeotechVisualExtraction(input: {
+  config: LLMConfig;
+  pageInput: PreparedGeotechPageInput;
+  inspectionPage?: PdfDocumentInspection['pages'][number];
+  textHint?: string | null;
+}): boolean {
+  if (input.config.provider !== 'hosted-beta') {
+    return false;
+  }
+
+  const hasAcceptedText =
+    typeof input.textHint === 'string'
+    && input.textHint.trim().length >= 24
+    && (input.inspectionPage?.normalizedArtifact?.textQuality.accepted ?? false);
+  if (hasAcceptedText) {
+    return false;
+  }
+
+  return input.pageInput.sourceKind === 'raster-image'
+    && (
+      input.inspectionPage?.classification === 'image-only'
+      || input.inspectionPage?.classification === 'graphics-only'
+      || input.inspectionPage?.classification === 'text-unreadable'
+    );
+}
+
 async function preparePdfPageInputs(
   filePath: string,
   inspection: PdfDocumentInspection | null,
@@ -1024,7 +1050,11 @@ function buildInspectionSummary(inspection: PdfDocumentInspection | null | undef
 }
 
 function countCheckpointOcrRecoveredPages(checkpoints: PersistedIngestJobPageCheckpoint[]): number {
-  return checkpoints.filter((page) => page.ocrSource === 'local-ocr' || page.ocrSource === 'vision-ocr').length;
+  return checkpoints.filter((page) =>
+    page.ocrSource === 'local-ocr'
+    || page.ocrSource === 'vision-ocr'
+    || page.ocrSource === 'glm-ocr'
+  ).length;
 }
 
 function applyCheckpointOcrRecoveredSummary<T extends PersistedIngestResult>(
@@ -1463,30 +1493,44 @@ async function processGeotechDocumentPage(
     ...config,
     timeout: phaseTimeoutMs,
   };
+  const initialPageTextHint = inspectionPage?.normalizedArtifact?.nativeText ?? inspectionPage?.normalizedText;
   let pageTextHint: string | undefined;
   let ocrSource: PersistedIngestJobPageCheckpoint['ocrSource'] = 'none';
   let ocrWarnings: string[] = [];
   let textRecoveryAttempted = false;
+  const directVisualPreferred = shouldPreferDirectGeotechVisualExtraction({
+    config,
+    pageInput,
+    inspectionPage,
+    textHint: initialPageTextHint,
+  });
+  if (directVisualPreferred) {
+    ocrSource = 'vision-visual';
+    ocrWarnings = ['Skipped OCR-only transcription and used direct visual extraction for an image-heavy hosted-beta page.'];
+  }
   try {
-    textRecoveryAttempted = true;
-    const recovery = await withWorkerPageTimeout(
-      recoverTextHint({
-        existingTextHint: inspectionPage?.normalizedArtifact?.nativeText ?? inspectionPage?.normalizedText,
-        existingTextAccepted: inspectionPage?.normalizedArtifact?.textQuality.accepted ?? true,
-        imageBase64: pageInput.base64,
-        mimeType: pageInput.mimeType,
-        config: phaseConfig,
-        pdfFilePath: job.source.filePath,
-        pdfPageNumber: pageInput.pageNumber,
-        allowVisionOcr: !(options.cheapRetry && pageInput.sourceKind === 'raster-image'),
-        visionTranscribe: transcribe,
-      }),
-      phaseTimeoutMs,
-      `Page ${pageInput.pageNumber}: OCR/text recovery timed out after ${Math.round(phaseTimeoutMs / 1000)}s`,
-    );
-    pageTextHint = normalizeTextHint(recovery.textHint);
-    ocrSource = recovery.source;
-    ocrWarnings = recovery.warnings;
+    if (!directVisualPreferred) {
+      textRecoveryAttempted = true;
+      const recovery = await withWorkerPageTimeout(
+        recoverTextHint({
+          existingTextHint: initialPageTextHint,
+          existingTextAccepted: inspectionPage?.normalizedArtifact?.textQuality.accepted ?? true,
+          imageBase64: pageInput.base64,
+          mimeType: pageInput.mimeType,
+          config: phaseConfig,
+          pdfFilePath: job.source.filePath,
+          pdfPageNumber: pageInput.pageNumber,
+          allowLayoutOcr: !(options.cheapRetry && pageInput.sourceKind === 'raster-image'),
+          allowVisionOcr: !(options.cheapRetry && pageInput.sourceKind === 'raster-image'),
+          visionTranscribe: transcribe,
+        }),
+        phaseTimeoutMs,
+        `Page ${pageInput.pageNumber}: OCR/text recovery timed out after ${Math.round(phaseTimeoutMs / 1000)}s`,
+      );
+      pageTextHint = normalizeTextHint(recovery.textHint);
+      ocrSource = recovery.source;
+      ocrWarnings = recovery.warnings;
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     ocrWarnings = [
@@ -1500,6 +1544,7 @@ async function processGeotechDocumentPage(
     pageClassification: inspectionPage?.classification,
     pageTextHint,
     textRecoveryAttempted: !pageTextHint && textRecoveryAttempted,
+    directVisualPreferred,
   };
   const extractionTimeoutMs = resolveWorkerTextExtractionTimeoutMs(phaseTimeoutMs, pageTextHint);
   const extractionConfig: LLMConfig = {
@@ -1583,6 +1628,7 @@ async function processBoreholePage(
       config: phaseConfig,
       pdfFilePath: job.source.filePath,
       pdfPageNumber: pageInput.pageNumber,
+      allowLayoutOcr: !(options.cheapRetry && pageInput.sourceKind === 'raster-image'),
       allowVisionOcr: !(options.cheapRetry && pageInput.sourceKind === 'raster-image'),
       visionTranscribe: transcribe,
     }),

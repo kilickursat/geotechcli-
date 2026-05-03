@@ -1046,6 +1046,90 @@ describe('persisted ingest jobs', () => {
     expect(completed.result?.ingestResult.pageFailures).toEqual([]);
   });
 
+  it('records direct visual source and requires review for hosted-beta async geotech image pages', async () => {
+    const filePath = join(configDir, 'hosted-direct-visual-source.pdf');
+    await writeBlankPdf(filePath, 1);
+
+    const job = createPersistedIngestJob({
+      documentType: 'geotech-document',
+      filePath,
+      inspection: makeInspection(1, () => 'image-only'),
+      config: { ...makeConfig(), provider: 'hosted-beta' },
+    });
+
+    const recoverDocumentTextHint = vi.fn(async () => {
+      throw new Error('OCR recovery should be skipped for hosted-beta direct visual pages.');
+    });
+    const interpretGeotechDocumentPage = vi.fn().mockResolvedValue({
+      documentClass: 'geotechnical-document',
+      title: 'Visual borehole log',
+      summary: 'SPT values were interpreted directly from the rendered page image.',
+      materials: [{ kind: 'soil', description: 'silty sand', uscsSymbol: 'SM', lithology: null }],
+      classifications: [{ system: 'USCS', value: 'SM', context: 'visible borehole log' }],
+      parameters: [{
+        name: 'sptN',
+        valueText: '22',
+        numericValue: 22,
+        unit: null,
+        material: 'silty sand',
+        context: 'direct visual page interpretation',
+      }],
+      risks: [],
+      recommendations: [],
+      pageNumber: 1,
+      totalPages: 1,
+      rawLLMText: 'mock',
+      latencyMs: 20,
+      parseStatus: 'parsed',
+      confidence: 88,
+      warnings: [],
+      canAutoProceed: true,
+    });
+
+    const completed = await runPersistedIngestJobWorker(job.jobId, {
+      buildLLMConfig: () => ({ ...makeConfig(), provider: 'hosted-beta' }),
+      readDocumentPdfPageInputs: async () => [{
+        base64: 'hosted-direct-visual-page',
+        mimeType: 'image/png',
+        fileBytes: 128,
+        filePath,
+        ext: 'png',
+        kind: 'image',
+        pageNumber: 1,
+        totalPages: 1,
+        sourceKind: 'raster-image',
+        normalizedArtifact: {
+          kind: 'image',
+          source: 'full-page-raster',
+          mimeType: 'image/png',
+          fileBytes: 128,
+          textSource: 'none',
+          textQuality: null,
+          warnings: [],
+        },
+      }],
+      recoverDocumentTextHint,
+      interpretGeotechDocumentPage,
+    });
+
+    const persisted = loadPersistedIngestJob(job.jobId);
+
+    expect(recoverDocumentTextHint).not.toHaveBeenCalled();
+    expect(interpretGeotechDocumentPage).toHaveBeenCalledWith(
+      'hosted-direct-visual-page',
+      'image/png',
+      expect.objectContaining({ provider: 'hosted-beta' }),
+      expect.objectContaining({ pageNumber: 1, directVisualPreferred: true }),
+    );
+    expect(persisted?.checkpoints.pages[0]?.ocrSource).toBe('vision-visual');
+    expect(completed.result?.ingestResult.pageAudits[0]?.textHintSource).toBe('vision-visual');
+    expect(completed.result?.ingestResult.reviewFindings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'direct_visual_review_required', pageNumber: 1, severity: 'review' }),
+    ]));
+    expect(completed.result?.ingestResult.reviewRequired).toBe(true);
+    expect(completed.result?.ingestResult.canAutoProceed).toBe(false);
+  });
+
   it('short-circuits obvious low-yield cover pages in async geotech jobs', async () => {
     const filePath = join(configDir, 'cover-low-yield-source.pdf');
     await writeBlankPdf(filePath, 1);

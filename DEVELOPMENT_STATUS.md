@@ -1,16 +1,17 @@
 # geotechCLI Development Status
 
-Last updated: 2026-05-01
+Last updated: 2026-05-03
 
 ## Current Work
 
-We are shipping the v0.4.33 hosted GLM PDF vision fix for the strong-beta AI path.
+We are shipping the v0.4.34 hosted GLM-OCR report synthesis and dossier UX release for the strong-beta AI path.
 
 Current focus:
 
 - Keep the public provider as `hosted-beta` so users do not bring their own key.
 - Route hosted text and agent reasoning to `glm-5.1`.
 - Route hosted vision to `glm-5v-turbo`.
+- Route hosted PDF/table layout extraction to `glm-ocr`.
 - Use the server-side `ZHIPU_API_KEY` secret in GitHub and Cloudflare.
 - Keep the legacy Modal deploy workflow present but disabled by default.
 
@@ -73,8 +74,16 @@ Current focus:
 
 - Forced hosted-beta PDF page inputs through raster image payloads before GLM vision calls.
 - Applied the raster PDF path to `geotech vision log`, CLI ingest, and agent ingest tools.
-- Raised the CLI hosted-beta vision burst window to four requests per minute while keeping daily limits in place.
+- Raised the public CLI hosted-beta vision burst window for one-page image-only PDF workflows.
 - Added regression coverage for forced raster PDF inputs on digital-text PDFs.
+
+### v0.4.34 Hosted GLM-OCR Report Synthesis
+
+- Added hosted GLM-OCR layout parsing with a separate `layout` quota bucket, configurable public limits, and developer key/IP bypass support.
+- Wired geotechnical report ingest to prefer GLM-OCR layout text, use GLM-5V only when visual reasoning is needed, and generate GLM-5.1 report synthesis for the HTML dossier.
+- Raised hosted-beta public CLI daily limits for text, vision, layout, and agent workflows while preserving tighter anonymous caps.
+- Improved the HTML dossier with report takeaways, grouped key parameters, stage badges, extraction overview, confidence meters, and shadcn-style collapsed audit details.
+- Added regression coverage for synchronous ingest, persisted async jobs, direct visual extraction, GLM-OCR fallback, hosted layout limits, and dossier HTML rendering.
 
 ## Left To Do
 

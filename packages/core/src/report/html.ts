@@ -33,25 +33,84 @@ function toneClass(tone: IngestDossierTone | undefined): string {
   }
 }
 
-function renderTable(table: IngestDossierTable): string {
-  if (table.rows.length === 0) {
-    return `
-      <section class="panel section-card" id="${escapeHtml(idFromTitle(table.title))}">
-        <div class="section-head">
-          <h2>${escapeHtml(table.title)}</h2>
-          ${table.description ? `<p>${escapeHtml(table.description)}</p>` : ''}
-        </div>
-        <div class="empty-state">${escapeHtml(table.emptyState ?? 'No data available.')}</div>
-      </section>
-    `;
+function parsePercent(value: string): number | null {
+  const match = value.match(/^(\d+(?:\.\d+)?)%$/);
+  if (!match) {
+    return null;
+  }
+  const numeric = Number(match[1]);
+  return Number.isFinite(numeric) ? Math.max(0, Math.min(100, numeric)) : null;
+}
+
+function isOperationalAuditTable(title: string): boolean {
+  return title === 'Page audit matrix' || title === 'Segment execution';
+}
+
+function renderMetric(metric: IngestDossier['metrics'][number]): string {
+  const percent = parsePercent(metric.value);
+  return `
+    <article class="metric ${toneClass(metric.tone)}">
+      <span class="metric-label">${escapeHtml(metric.label)}</span>
+      <strong class="metric-value">${escapeHtml(metric.value)}</strong>
+      ${percent != null ? `
+        <span class="meter" aria-label="${escapeHtml(metric.label)} ${escapeHtml(metric.value)}">
+          <span style="width: ${escapeHtml(String(percent))}%"></span>
+        </span>
+      ` : ''}
+      ${metric.detail ? `<span class="metric-detail">${escapeHtml(metric.detail)}</span>` : ''}
+    </article>
+  `;
+}
+
+function renderPageOutcomeStrip(dossier: IngestDossier): string {
+  if (dossier.pageCards.length === 0) {
+    return '';
   }
 
+  const counts = dossier.pageCards.reduce(
+    (acc, page) => {
+      if (page.parseStatus === 'parsed') acc.parsed += 1;
+      else if (page.parseStatus === 'partial') acc.partial += 1;
+      else acc.failed += 1;
+      return acc;
+    },
+    { parsed: 0, partial: 0, failed: 0 },
+  );
+
   return `
-    <section class="panel section-card" id="${escapeHtml(idFromTitle(table.title))}">
+    <section class="panel section-card overview" id="extraction-overview">
       <div class="section-head">
-        <h2>${escapeHtml(table.title)}</h2>
-        ${table.description ? `<p>${escapeHtml(table.description)}</p>` : ''}
+        <h2>Extraction overview</h2>
+        <p>Page outcomes at a glance. Each cell links the dossier confidence to the exact page-level status.</p>
       </div>
+      <div class="outcome-strip" aria-label="Page extraction outcomes">
+        ${dossier.pageCards.map((card) => `
+          <span
+            class="outcome-cell ${toneClass(card.tone)}"
+            title="${escapeHtml(`${card.pageLabel}: ${card.parseStatus}, ${card.confidence}% confidence`)}"
+          >${escapeHtml(card.pageLabel.replace(/^Page\s+/i, ''))}</span>
+        `).join('')}
+      </div>
+      <div class="legend-row">
+        <span><strong>${escapeHtml(String(counts.parsed))}</strong> parsed</span>
+        <span><strong>${escapeHtml(String(counts.partial))}</strong> partial</span>
+        <span><strong>${escapeHtml(String(counts.failed))}</strong> failed</span>
+      </div>
+    </section>
+  `;
+}
+
+function renderTable(table: IngestDossierTable): string {
+  const tableId = escapeHtml(idFromTitle(table.title));
+  const tableHeader = `
+    <div class="section-head">
+      <h2>${escapeHtml(table.title)}</h2>
+      ${table.description ? `<p>${escapeHtml(table.description)}</p>` : ''}
+    </div>
+  `;
+  const tableBody = table.rows.length === 0
+    ? `<div class="empty-state">${escapeHtml(table.emptyState ?? 'No data available.')}</div>`
+    : `
       <div class="table-shell">
         <table>
           <thead>
@@ -62,6 +121,32 @@ function renderTable(table: IngestDossierTable): string {
           </tbody>
         </table>
       </div>
+    `;
+  const content = `${tableHeader}${tableBody}`;
+
+  if (isOperationalAuditTable(table.title)) {
+    return `
+      <details class="panel section-card disclosure" id="${tableId}">
+        <summary>
+          ${tableHeader}
+          <span class="disclosure-hint">Show audit table</span>
+        </summary>
+        ${tableBody}
+      </details>
+    `;
+  }
+
+  if (table.rows.length === 0) {
+    return `
+      <section class="panel section-card" id="${tableId}">
+        ${content}
+      </section>
+    `;
+  }
+
+  return `
+    <section class="panel section-card" id="${tableId}">
+      ${content}
     </section>
   `;
 }
@@ -80,15 +165,23 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
   <title>${escapeHtml(dossier.title)}</title>
   <style>
     :root {
-      --bg: #f7f8fa;
-      --panel: #ffffff;
-      --panel-strong: #ffffff;
+      --background: #f8fafc;
+      --foreground: #172033;
+      --card: #ffffff;
+      --card-foreground: #172033;
+      --muted-surface: #f1f5f9;
+      --muted-foreground: #5d6b7c;
+      --primary: #145ca8;
+      --primary-soft: rgba(20, 92, 168, 0.12);
+      --bg: var(--background);
+      --panel: var(--card);
+      --panel-strong: var(--card);
       --border: #d9e1ea;
-      --border-strong: #b8c5d4;
-      --text: #1b2533;
-      --muted: #607287;
-      --accent: #0068d7;
-      --accent-soft: rgba(0, 104, 215, 0.12);
+      --border-strong: #b7c4d2;
+      --text: var(--foreground);
+      --muted: var(--muted-foreground);
+      --accent: var(--primary);
+      --accent-soft: var(--primary-soft);
       --good: #1d8f57;
       --good-soft: rgba(29, 143, 87, 0.12);
       --warning: #b26b00;
@@ -110,6 +203,7 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
       font-family: "Segoe UI Variable", "Segoe UI", "Inter", sans-serif;
       color: var(--text);
       background: var(--bg);
+      font-variant-numeric: tabular-nums;
     }
 
     .shell {
@@ -125,6 +219,7 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
       border: 1px solid var(--border);
       border-radius: var(--radius);
       box-shadow: var(--shadow);
+      color: var(--card-foreground);
     }
 
     .hero {
@@ -147,19 +242,19 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
       gap: 10px;
       padding: 8px 12px;
       border-radius: var(--radius-sm);
-      background: #f8fafc;
+      background: var(--muted-surface);
       border: 1px solid var(--border);
       color: var(--muted);
       font-size: 0.84rem;
-      letter-spacing: 0.02em;
+      letter-spacing: 0;
       text-transform: uppercase;
     }
 
     .hero h1 {
       margin: 0;
-      font-size: clamp(2rem, 4vw, 3rem);
-      line-height: 1.04;
-      max-width: 18ch;
+      font-size: clamp(1.75rem, 3vw, 2.35rem);
+      line-height: 1.1;
+      max-width: 24ch;
     }
 
     .hero p {
@@ -192,15 +287,16 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
       border-radius: var(--radius-sm);
       border: 1px solid var(--border);
       padding: 14px 16px;
-      background: rgba(255, 255, 255, 0.82);
+      background: var(--panel);
       display: grid;
       gap: 6px;
+      min-width: 0;
     }
 
     .badge-label {
       font-size: 0.8rem;
       text-transform: uppercase;
-      letter-spacing: 0.05em;
+      letter-spacing: 0;
       color: var(--muted);
     }
 
@@ -217,15 +313,16 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
       padding: 18px;
       border-radius: var(--radius-sm);
       border: 1px solid var(--border);
-      background: rgba(255, 255, 255, 0.86);
+      background: var(--panel);
       display: grid;
       gap: 8px;
+      min-width: 0;
     }
 
     .metric-label {
       font-size: 0.82rem;
       text-transform: uppercase;
-      letter-spacing: 0.05em;
+      letter-spacing: 0;
       color: var(--muted);
     }
 
@@ -233,6 +330,22 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
       font-size: 1.6rem;
       font-weight: 800;
       line-height: 1;
+    }
+
+    .meter {
+      display: block;
+      height: 8px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(82, 96, 114, 0.16);
+    }
+
+    .meter span {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: currentColor;
+      opacity: 0.72;
     }
 
     .metric-detail {
@@ -273,6 +386,40 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
       grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
     }
 
+    .overview {
+      gap: 16px;
+    }
+
+    .outcome-strip {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(34px, 1fr));
+      gap: 6px;
+    }
+
+    .outcome-cell {
+      min-height: 30px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .legend-row {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .legend-row strong {
+      color: var(--text);
+    }
+
     .finding-card {
       padding: 18px;
       border-radius: var(--radius-sm);
@@ -298,7 +445,7 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
       overflow-x: auto;
       border-radius: var(--radius-sm);
       border: 1px solid var(--border);
-      background: rgba(255, 255, 255, 0.72);
+      background: var(--panel);
     }
 
     table {
@@ -312,16 +459,17 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
       border-bottom: 1px solid rgba(19, 63, 120, 0.08);
       text-align: left;
       vertical-align: top;
-      font-size: 0.95rem;
+      font-size: 0.92rem;
       line-height: 1.45;
+      overflow-wrap: anywhere;
     }
 
     th {
       font-size: 0.78rem;
       text-transform: uppercase;
-      letter-spacing: 0.04em;
+      letter-spacing: 0;
       color: var(--muted);
-      background: rgba(247, 250, 255, 0.96);
+      background: var(--muted-surface);
       position: sticky;
       top: 0;
       z-index: 1;
@@ -330,7 +478,7 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
     .empty-state {
       padding: 18px;
       border-radius: var(--radius-sm);
-      background: rgba(248, 250, 253, 0.92);
+      background: var(--muted-surface);
       color: var(--muted);
       border: 1px dashed var(--border-strong);
     }
@@ -343,7 +491,7 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
       padding: 22px;
       border-radius: var(--radius-sm);
       border: 1px solid var(--border);
-      background: rgba(255, 255, 255, 0.82);
+      background: var(--panel);
       display: grid;
       gap: 12px;
     }
@@ -369,7 +517,8 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
       border: 1px solid var(--border);
       display: grid;
       gap: 12px;
-      background: rgba(255, 255, 255, 0.84);
+      background: var(--panel);
+      min-width: 0;
     }
 
     .page-kicker {
@@ -402,11 +551,19 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
 
     .chip {
       padding: 6px 10px;
-      border-radius: 999px;
+      border-radius: var(--radius-sm);
       border: 1px solid var(--border);
       font-size: 0.78rem;
       color: var(--muted);
-      background: rgba(255, 255, 255, 0.86);
+      background: var(--muted-surface);
+      line-height: 1.1;
+    }
+
+    .stage-chip {
+      border-color: rgba(20, 92, 168, 0.24);
+      color: var(--accent);
+      background: var(--accent-soft);
+      font-weight: 650;
     }
 
     .page-card ul {
@@ -438,6 +595,38 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
       margin-top: 10px;
     }
 
+    .disclosure {
+      background: var(--panel);
+    }
+
+    .disclosure summary {
+      cursor: pointer;
+      display: grid;
+      gap: 10px;
+      list-style: none;
+    }
+
+    .disclosure summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .disclosure-hint {
+      width: fit-content;
+      padding: 6px 10px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--muted-surface);
+      color: var(--muted);
+      font-size: 0.82rem;
+      font-weight: 650;
+    }
+
+    .disclosure[open] .disclosure-hint {
+      color: var(--accent);
+      border-color: rgba(20, 92, 168, 0.28);
+      background: var(--accent-soft);
+    }
+
     .footer-grid {
       grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
     }
@@ -446,7 +635,7 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
       padding: 18px;
       border-radius: var(--radius-sm);
       border: 1px solid var(--border);
-      background: rgba(255, 255, 255, 0.82);
+      background: var(--panel);
       display: grid;
       gap: 8px;
     }
@@ -503,15 +692,11 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
       </div>
 
       <div class="metric-grid">
-        ${dossier.metrics.map((metric) => `
-          <article class="metric ${toneClass(metric.tone)}">
-            <span class="metric-label">${escapeHtml(metric.label)}</span>
-            <strong class="metric-value">${escapeHtml(metric.value)}</strong>
-            ${metric.detail ? `<span class="metric-detail">${escapeHtml(metric.detail)}</span>` : ''}
-          </article>
-        `).join('')}
+        ${dossier.metrics.map(renderMetric).join('')}
       </div>
     </section>
+
+    ${renderPageOutcomeStrip(dossier)}
 
     ${dossier.findings.length > 0 ? `
       <section class="panel section-card" id="review-findings">
@@ -570,6 +755,7 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
                 ${card.sourceHint ? `<span class="chip">${escapeHtml(card.sourceHint)}</span>` : ''}
                 ${card.sectionType ? `<span class="chip">${escapeHtml(card.sectionType)}</span>` : ''}
                 ${card.scope ? `<span class="chip">${escapeHtml(card.scope)}</span>` : ''}
+                ${(card.stageBadges ?? []).map((stage) => `<span class="chip stage-chip">${escapeHtml(stage)}</span>`).join('')}
               </div>
               ${card.highlights.length > 0 ? `<ul>${card.highlights.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : '<div class="empty-state">No strong structured highlights were retained for this page.</div>'}
               ${card.warnings.length > 0 ? `

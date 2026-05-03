@@ -34,7 +34,7 @@ export interface PersistedIngestJobPageCheckpoint {
   error?: string;
   downgraded?: boolean;
   ocrTextHint?: string;
-  ocrSource?: 'native-text' | 'pdfjs-text' | 'local-ocr' | 'vision-ocr' | 'none';
+  ocrSource?: 'native-text' | 'pdfjs-text' | 'local-ocr' | 'vision-ocr' | 'vision-visual' | 'glm-ocr' | 'none';
   ocrWarnings?: string[];
   result?: unknown;
 }

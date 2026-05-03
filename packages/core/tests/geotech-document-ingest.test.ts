@@ -111,6 +111,55 @@ describe('ingestGeotechDocument', () => {
     expect(result.pageAudits[1]?.parameterCount).toBe(2);
   });
 
+  it('adds report synthesis without inflating extraction confidence', async () => {
+    const synthesizeDocument = vi.fn(async () => ({
+      takeaways: ['Stiff CL clay and weathered shale govern the preliminary ground model.'],
+      groundModel: ['Upper stiff clay over weathered shale.'],
+      keyParameters: ['Friction angle 24 deg for stiff clay, page 1.'],
+      interpretation: ['Use extracted parameters as review inputs only until source pages are checked.'],
+      limitations: ['Synthesis did not change workflow confidence.'],
+      sourcePages: [1],
+      latencyMs: 50,
+    }));
+
+    const result = await ingestGeotechDocument({
+      config: { provider: 'hosted-beta' } as any,
+      source: {
+        filePath: 'report.pdf',
+        fileName: 'report.pdf',
+        inputKind: 'pdf',
+      },
+      pages: [{
+        base64: 'page-1',
+        mimeType: 'application/pdf',
+        pageNumber: 1,
+        totalPages: 1,
+      }],
+      interpretPage: async (_imageBase64, _mimeType, _config, context) => makeResult({
+        summary: 'Stiff clay and weathered shale encountered.',
+        materials: [
+          { kind: 'soil', description: 'stiff clay', uscsSymbol: 'CL', lithology: null },
+        ],
+        classifications: [{ system: 'USCS', value: 'CL', context: 'page 1' }],
+        parameters: [
+          { name: 'frictionAngle', valueText: '24', numericValue: 24, unit: 'deg', material: 'stiff clay', context: 'page 1' },
+        ],
+        pageNumber: context.pageNumber ?? null,
+        totalPages: context.totalPages ?? null,
+        rawLLMText: 'mock',
+        latencyMs: 10,
+        confidence: 74,
+      }) as any,
+      synthesizeDocument,
+    });
+
+    expect(synthesizeDocument).toHaveBeenCalledTimes(1);
+    expect(result.synthesis?.takeaways[0]).toMatch(/Stiff CL clay/i);
+    expect(result.summary).toMatch(/Stiff CL clay/i);
+    expect(result.confidence).toBe(74);
+    expect(result.warnings.join(' ')).toMatch(/GLM-5\.1 synthesis/i);
+  });
+
   it('uses OCR-style recovery for raster pages and flags manual review when parameters are missing', async () => {
     const result = await ingestGeotechDocument({
       config: { provider: 'openai-compatible' } as any,
@@ -195,6 +244,128 @@ describe('ingestGeotechDocument', () => {
     expect(result.reviewRequired).toBe(true);
     expect(result.canAutoProceed).toBe(false);
     expect(result.reviewFindings.some((finding) => finding.code === 'parameters_not_detected')).toBe(true);
+  });
+
+  it('sends hosted-beta image-only and text-unreadable raster pages directly to visual interpretation', async () => {
+    const transcribePageImageText = vi.fn(async () => {
+      throw new Error('OCR transcription should be skipped for direct visual hosted-beta pages.');
+    });
+    const extractTextFacts = vi.fn(async () => {
+      throw new Error('Text-only extraction should be skipped for direct visual hosted-beta pages.');
+    });
+    const interpretPage = vi.fn(async (_imageBase64: string, _mimeType: string, _config: any, context: any) => makeResult({
+      documentClass: context.pageNumber === 1 ? 'borehole-log' : 'lab-report',
+      title: context.pageNumber === 1 ? 'Borehole BH-1' : 'Laboratory chart',
+      summary: context.pageNumber === 1
+        ? 'Visible borehole log values were interpreted from the page image.'
+        : 'Visible laboratory chart values were interpreted from the unreadable page image.',
+      materials: [
+        { kind: 'soil', description: 'silty clay', uscsSymbol: 'CL', lithology: null },
+      ],
+      parameters: [
+        {
+          name: context.pageNumber === 1 ? 'sptN' : 'waterContent',
+          valueText: context.pageNumber === 1 ? '18' : '22%',
+          numericValue: context.pageNumber === 1 ? 18 : 22,
+          unit: context.pageNumber === 1 ? null : '%',
+          material: 'silty clay',
+          context: 'direct visual page interpretation',
+        },
+      ],
+      pageNumber: context.pageNumber ?? null,
+      totalPages: context.totalPages ?? null,
+      rawLLMText: 'mock',
+      parseStatus: 'parsed',
+      confidence: 86,
+    }) as any);
+
+    const result = await ingestGeotechDocument({
+      config: { provider: 'hosted-beta', timeout: 60000 } as any,
+      source: {
+        filePath: 'visual-report.pdf',
+        fileName: 'visual-report.pdf',
+        inputKind: 'pdf',
+      },
+      inspection: {
+        totalPages: 2,
+        warnings: [],
+        metadata: { pdfVersion: '1.7', objectCount: 6 },
+        pages: ['image-only', 'text-unreadable'].map((classification, index) => ({
+          pageNumber: index + 1,
+          classification,
+          degradation: { level: 'full', reasons: ['scan'] },
+          capabilities: { nativeTextExtraction: 'unavailable', rasterImageExtraction: 'available' },
+          normalizedText: '',
+          rawText: '',
+          normalizedArtifact: {
+            pageNumber: index + 1,
+            classification,
+            rotation: 0,
+            nativeText: '',
+            textQuality: {
+              accepted: false,
+              score: 0.12,
+              printableRatio: 0.2,
+              replacementRatio: 0.4,
+              symbolNoiseRatio: 0.5,
+              suspiciousTokenRatio: 0.6,
+              dictionaryCoverageRatio: 0.05,
+              averageTokenShapeScore: 0.2,
+              reasons: ['unreadable raster text'],
+            },
+            textSource: 'none',
+            renderedImageAvailable: true,
+            headingHints: [index === 0 ? 'Borehole BH-1 SPT values' : 'Laboratory moisture content chart'],
+            tablesDetected: true,
+            figuresDetected: index === 1,
+            warnings: [],
+            confidence: 18,
+          },
+          metadata: {
+            width: 900,
+            height: 1200,
+            rotation: 0,
+            characterCount: 0,
+            wordCount: 0,
+            lineCount: 0,
+            hasTextOperators: false,
+            hasRasterImages: true,
+            contentStreamCount: 1,
+            decodedContentStreamCount: 1,
+            contentFilters: [],
+            fontNames: [],
+            objectRef: `${index + 1} 0 R`,
+          },
+        })),
+      } as any,
+      pages: [
+        { base64: 'page-1', mimeType: 'image/png', pageNumber: 1, totalPages: 2, sourceKind: 'raster-image' },
+        { base64: 'page-2', mimeType: 'image/png', pageNumber: 2, totalPages: 2, sourceKind: 'raster-image' },
+      ],
+      transcribePageImageText,
+      extractTextFacts,
+      interpretPage,
+    });
+
+    expect(transcribePageImageText).not.toHaveBeenCalled();
+    expect(extractTextFacts).not.toHaveBeenCalled();
+    expect(interpretPage).toHaveBeenCalledTimes(2);
+    expect(interpretPage.mock.calls.map((call) => call[3])).toEqual([
+      expect.objectContaining({ pageNumber: 1, pageClassification: 'image-only', directVisualPreferred: true }),
+      expect.objectContaining({ pageNumber: 2, pageClassification: 'text-unreadable', directVisualPreferred: true }),
+    ]);
+    expect(result.inspectionSummary?.ocrRecoveredPageCount).toBe(0);
+    expect(result.inspectionSummary?.imageHeavyPageCount).toBe(2);
+    expect(result.pageAudits.map((audit) => audit.textHintSource)).toEqual(['vision-visual', 'vision-visual']);
+    expect(result.warnings.join('\n')).toMatch(/Skipped OCR-only transcription and used direct visual extraction/i);
+    expect(result.reviewRequired).toBe(true);
+    expect(result.canAutoProceed).toBe(false);
+    expect(result.reviewFindings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'direct_visual_review_required', pageNumber: 1, severity: 'review' }),
+      expect.objectContaining({ code: 'direct_visual_review_required', pageNumber: 2, severity: 'review' }),
+    ]));
+    expect(result.source.successfulPages).toBe(2);
+    expect(result.pageFailures).toEqual([]);
   });
 
   it('serializes hosted-beta extraction for image-heavy page packets', async () => {

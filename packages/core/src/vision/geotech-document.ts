@@ -1,5 +1,5 @@
 import type { LLMConfig } from '../llm/types.js';
-import { generateText } from '../llm/router.js';
+import { generateDocumentVision, generateText, generateVision } from '../llm/router.js';
 import {
   clampConfidence,
   createParseSafety,
@@ -15,14 +15,20 @@ export type { ParseSafety, ParseStatus } from './parse.js';
 
 function getHostedBetaGeotechDocumentMaxTokens(
   config: LLMConfig,
-  profile: 'structured-text' | 'fallback-text',
+  profile: 'structured-text' | 'fallback-text' | 'structured-vision' | 'fallback-vision',
   requestedMaxTokens: number,
 ): number {
   if (config.provider !== 'hosted-beta') {
     return requestedMaxTokens;
   }
 
-  const cap = profile === 'structured-text' ? 700 : 850;
+  const capByProfile = {
+    'structured-text': 700,
+    'fallback-text': 850,
+    'structured-vision': 850,
+    'fallback-vision': 950,
+  } as const;
+  const cap = capByProfile[profile];
   return Math.min(requestedMaxTokens, cap);
 }
 
@@ -82,6 +88,65 @@ async function textWithRetry(
       systemPrompt: `${systemPrompt} Return best-effort structured information even if some fields are uncertain.`,
       temperature: 0.25,
       jsonMode: false,
+      maxTokens: fallbackMaxTokens,
+    });
+
+    if (second.text && second.text.trim().length > 0) {
+      return {
+        text: second.text,
+        latencyMs: Date.now() - start,
+        usedFallback: true,
+      };
+    }
+  } catch (error) {
+    if (!isRecoverableTextRetryResponse(error)) {
+      throw error;
+    }
+  }
+
+  return {
+    text: '',
+    latencyMs: Date.now() - start,
+    usedFallback: true,
+  };
+}
+
+async function documentVisionWithRetry(
+  imageBase64: string,
+  mimeType: string,
+  config: LLMConfig,
+  strictPrompt: string,
+  softPrompt: string,
+  systemPrompt: string,
+  maxTokens: number,
+): Promise<{ text: string; latencyMs: number; usedFallback: boolean }> {
+  const start = Date.now();
+  const multimodalCall = mimeType === 'application/pdf'
+    ? generateDocumentVision
+    : generateVision;
+  const primaryMaxTokens = getHostedBetaGeotechDocumentMaxTokens(config, 'structured-vision', maxTokens);
+  const fallbackMaxTokens = getHostedBetaGeotechDocumentMaxTokens(config, 'fallback-vision', maxTokens + 250);
+
+  try {
+    const first = await multimodalCall(strictPrompt, imageBase64, mimeType, config, {
+      systemPrompt,
+      temperature: 0.1,
+      maxTokens: primaryMaxTokens,
+    });
+    if (first.text && first.text.trim().length > 10) {
+      return { text: first.text, latencyMs: first.latencyMs, usedFallback: false };
+    }
+  } catch (error) {
+    if (!isRecoverableTextRetryResponse(error)) {
+      throw error;
+    }
+    await waitForRecoverableTextBackoff();
+  }
+
+  try {
+    const second = await multimodalCall(softPrompt, imageBase64, mimeType, config, {
+      systemPrompt: `${systemPrompt} Return best-effort structured information even when some cells or labels are only partly legible.`,
+      temperature: 0.2,
       maxTokens: fallbackMaxTokens,
     });
 
@@ -181,6 +246,7 @@ export interface GeotechDocumentContext {
   pageTextHint?: string;
   pageClassification?: string;
   textRecoveryAttempted?: boolean;
+  directVisualPreferred?: boolean;
 }
 
 export interface GeotechDocumentInsight extends ParseSafety {
@@ -881,6 +947,117 @@ ${normalizedPageText.slice(0, 6000)}`;
   });
 }
 
+async function extractGeotechDocumentFactsFromImage(
+  imageBase64: string,
+  mimeType: string,
+  config: LLMConfig,
+  context: GeotechDocumentContext = {},
+): Promise<GeotechDocumentInsight> {
+  const contextParts = [
+    context.pageNumber != null && context.totalPages != null
+      ? `Page ${context.pageNumber} of ${context.totalPages}`
+      : null,
+    context.pageClassification ? `Page classification: ${context.pageClassification}` : null,
+    context.textRecoveryAttempted ? 'OCR/text recovery was already attempted and did not produce usable text.' : null,
+  ].filter((value): value is string => Boolean(value));
+  const sharedContext = contextParts.join('\n');
+  const strictPrompt = `Extract geotechnical engineering content directly from this document page image. Respond with ONLY a JSON object:
+{
+  "documentClass": "<borehole-log|geology-log|lab-report|rock-mass-document|site-investigation-report|visual-appendix-document|geotechnical-document|unknown>",
+  "title": "<short visible page/report title or null>",
+  "summary": "<brief technical summary of the visible page>",
+  "materials": [
+    {
+      "kind": "<soil|rock|fill|groundwater|mixed|other>",
+      "description": "<visible ground type, soil/rock layer, lithology, or visual observation>",
+      "uscsSymbol": "<USCS symbol if visible or inferable from visible labels, otherwise null>",
+      "lithology": "<lithology if visible or null>"
+    }
+  ],
+  "classifications": [
+    {
+      "system": "<USCS|RMR|RQD|SPT|grain-size|other>",
+      "value": "<visible classification, chart value, or class label>",
+      "context": "<borehole/sample/depth/page context or null>"
+    }
+  ],
+  "parameters": [
+    {
+      "name": "<parameter key such as sptN, depth, clayPercent, siltPercent, sandPercent, gravelPercent, waterTableDepth, ucs, rqd, rmr>",
+      "valueText": "<visible printed or chart-derived value>",
+      "numericValue": <number or null>,
+      "unit": "<unit or null>",
+      "material": "<material/borehole/sample context or null>",
+      "context": "<visible source such as chart/table/borehole log/photo caption or null>"
+    }
+  ],
+  "risks": ["<visible engineering risk or limitation>"],
+  "recommendations": ["<specific review or follow-up recommendation>"],
+  "confidence": <number 0-100>,
+  "warnings": ["<warning>", "<warning>"]
+}
+
+Prioritize borehole IDs, depths, SPT N values, grain-size percentages, Atterberg/strength values, water table, strata descriptions, and foundation design values. For photos or figures with little tabular data, classify as visual-appendix-document and summarize what the image evidences instead of failing.
+
+Context:
+${sharedContext}`;
+
+  const softPrompt = `Read this geotechnical report page visually. Extract any visible borehole log data, chart/table values, strata descriptions, laboratory values, SPT/depth values, or photo evidence. If it is mostly a figure or site photo, summarize the visible geotechnical evidence and mark limitations. Return concise JSON with documentClass, summary, materials, classifications, parameters, risks, recommendations, confidence, and warnings.
+
+Context:
+${sharedContext}`;
+
+  const response = await documentVisionWithRetry(
+    imageBase64,
+    mimeType,
+    config,
+    strictPrompt,
+    softPrompt,
+    'You are an expert geotechnical engineer extracting structured evidence directly from scanned report pages, graphs, tables, borehole logs, and site photographs. Respond with JSON only when possible.',
+    1200,
+  );
+
+  const parsed = parseJsonObject(response.text);
+  const fallback = extractGeotechDocumentFallback(response.text);
+  const mergedValue = {
+    ...(fallback.value ?? {}),
+    ...(parsed.value ?? {}),
+  };
+  const baseStatus = parsed.baseStatus !== 'failed' ? parsed.baseStatus : fallback.baseStatus;
+  const warnings = [...parsed.warnings, ...fallback.warnings];
+  if (response.usedFallback) {
+    warnings.push('Direct visual extraction required a fallback retry before structured parsing succeeded.');
+  }
+
+  if (!parsed.value && !fallback.value) {
+    return {
+      ...createParseSafety('failed', 0, combineWarnings(warnings, ['Direct visual extraction did not recover usable geotechnical content.'])),
+      documentClass: null,
+      title: null,
+      summary: null,
+      materials: [],
+      classifications: [],
+      parameters: [],
+      risks: [],
+      recommendations: [],
+      pageNumber: context.pageNumber ?? null,
+      totalPages: context.totalPages ?? null,
+      rawLLMText: response.text,
+      latencyMs: response.latencyMs,
+    };
+  }
+
+  return buildGeotechDocumentInsightFromValue({
+    mergedValue,
+    baseStatus,
+    warnings,
+    normalizedPageText: response.text,
+    context,
+    rawLLMText: response.text,
+    latencyMs: response.latencyMs,
+  });
+}
+
 export async function interpretGeotechDocumentPage(
   imageBase64: string,
   mimeType: string,
@@ -895,8 +1072,10 @@ export async function interpretGeotechDocumentPage(
   let transcriptionLatencyMs = 0;
 
   if (!text) {
-    if (context.textRecoveryAttempted) {
-      transcriptionWarnings.push('Upstream text recovery already failed to recover usable text; skipped a redundant OCR retry for this page.');
+    if (context.directVisualPreferred) {
+      transcriptionWarnings.push('OCR-only transcription was skipped for this image-only page; direct visual extraction was used to preserve charts, tables, and borehole log context.');
+    } else if (context.textRecoveryAttempted) {
+      transcriptionWarnings.push('Upstream text recovery already failed to recover usable text; using direct visual extraction instead of repeating OCR.');
     } else {
       const transcription = await transcribeDocumentImageText(imageBase64, mimeType, config);
       text = transcription.text.trim();
@@ -908,7 +1087,9 @@ export async function interpretGeotechDocumentPage(
     }
   }
 
-  const extracted = await extractGeotechDocumentFactsFromText(text ?? '', config, context);
+  const extracted = text
+    ? await extractGeotechDocumentFactsFromText(text, config, context)
+    : await extractGeotechDocumentFactsFromImage(imageBase64, mimeType, config, context);
   return {
     ...extracted,
     warnings: combineWarnings(extracted.warnings, transcriptionWarnings),

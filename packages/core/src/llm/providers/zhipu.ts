@@ -99,6 +99,9 @@ export class ZhipuAdapter implements ProviderAdapter {
     if (request.jsonMode) {
       body.response_format = { type: 'json_object' };
     }
+    if (request.thinkingMode) {
+      body.thinking = { type: request.thinkingMode };
+    }
 
     const baseUrl = (config.baseUrl?.trim() || this.baseUrl).replace(/\/+$/, '');
     const url = `${baseUrl}/chat/completions`;

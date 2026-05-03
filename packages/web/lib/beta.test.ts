@@ -10,6 +10,7 @@ import {
 import {
   checkHostedBetaDailyLimit,
   getHostedBetaDeveloperAuthStatus,
+  getHostedBetaDeveloperIpAuthStatus,
   getDailyLimitForClient,
   getHostedBetaRequestLimit,
   inferHostedBetaCallType,
@@ -54,6 +55,9 @@ describe('hosted beta controls', () => {
     expect(getHostedBetaRequestLimit('geotechcli', 'agent')).toBeGreaterThan(
       getHostedBetaRequestLimit('anonymous', 'agent'),
     );
+    expect(getHostedBetaRequestLimit('geotechcli', 'layout')).toBeGreaterThan(
+      getHostedBetaRequestLimit('anonymous', 'layout'),
+    );
     expect(getHostedBetaRequestLimit('geotechcli', 'vision')).toBeLessThan(
       getHostedBetaRequestLimit('geotechcli'),
     );
@@ -66,6 +70,8 @@ describe('hosted beta controls', () => {
     expect(getDailyLimitForClient('agent', 'geotechcli')).toBeGreaterThan(
       getDailyLimitForClient('agent', 'anonymous'),
     );
+    expect(getDailyLimitForClient('layout', 'geotechcli')).toBe(80);
+    expect(getDailyLimitForClient('vision', 'geotechcli')).toBe(120);
   });
 
   it('recognizes a valid developer key before falling back to public client modes', () => {
@@ -80,6 +86,26 @@ describe('hosted beta controls', () => {
       authorized: true,
     });
     expect(resolveHostedBetaClientMode(headers)).toBe('developer');
+  });
+
+  it('recognizes developer IP allowlist entries without replacing invalid key failures', () => {
+    vi.stubEnv('GEOTECHCLI_DEVELOPER_IP_ALLOWLIST', '203.0.113.10,198.51.100.0/24');
+    const exactHeaders = new Headers({
+      'x-forwarded-for': '203.0.113.10',
+      'x-geotech-client': 'geotechcli',
+    });
+    const cidrHeaders = new Headers({
+      'x-forwarded-for': '198.51.100.77',
+      'x-geotech-client': 'geotechcli',
+    });
+
+    expect(getHostedBetaDeveloperIpAuthStatus(exactHeaders)).toMatchObject({
+      configured: true,
+      authorized: true,
+      ip: '203.0.113.10',
+    });
+    expect(resolveHostedBetaClientMode(exactHeaders)).toBe('developer');
+    expect(resolveHostedBetaClientMode(cidrHeaders)).toBe('developer');
   });
 
   it('keys daily limits by ip and call type', async () => {
@@ -98,6 +124,11 @@ describe('hosted beta controls', () => {
     const visionCheck = await checkHostedBetaDailyLimit({ ip, callType: 'vision' });
     expect(visionCheck.used).toBe(0);
     expect(visionCheck.fingerprint).not.toBe(textCheck.fingerprint);
+
+    const layoutCheck = await checkHostedBetaDailyLimit({ ip, callType: 'layout' });
+    expect(layoutCheck.used).toBe(0);
+    expect(layoutCheck.fingerprint).not.toBe(textCheck.fingerprint);
+    expect(layoutCheck.fingerprint).not.toBe(visionCheck.fingerprint);
   });
 
   it('separates daily usage buckets by client mode', async () => {
@@ -338,6 +369,48 @@ describe('hosted beta controls', () => {
     });
     expect(upstreamBody.max_tokens).toBe(800);
     expect(upstreamBody.thinking).toEqual({ type: 'disabled' });
+  });
+
+  it('allows synthesis calls to opt into GLM thinking mode explicitly', async () => {
+    vi.stubEnv('ZHIPU_API_KEY', 'test-zhipu-key');
+
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          model: DEFAULT_LLM_MODEL,
+          choices: [{ message: { content: '{"takeaways":["OK"]}' } }],
+          usage: { total_tokens: 8 },
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
+    global.fetch = fetchMock as typeof fetch;
+
+    const route = await import('../app/api/proxy/route.js');
+    const request = new NextRequest('https://example.com/api/proxy', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-geotech-client': 'geotechcli',
+      },
+      body: JSON.stringify({
+        messages: [{ role: 'user', content: 'Synthesize report evidence.' }],
+        model: DEFAULT_LLM_MODEL,
+        thinkingMode: 'enabled',
+      }),
+    });
+
+    const response = await route.POST(request);
+    expect(response.status).toBe(200);
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const upstreamBody = JSON.parse(String(init.body)) as {
+      thinking?: { type?: string };
+    };
+    expect(upstreamBody.thinking).toEqual({ type: 'enabled' });
   });
 
   it('uses the GLM vision default for image requests without a model override', async () => {
@@ -647,5 +720,143 @@ describe('hosted beta controls', () => {
     expect(lastResponse?.status).toBe(429);
     expect(lastBody.error?.code).toBe('vision_rate_limited');
     expect(fetchMock).toHaveBeenCalledTimes(visionLimit);
+  });
+
+  it('forwards hosted GLM-OCR layout parsing requests through a separate layout quota', async () => {
+    vi.stubEnv('ZHIPU_API_KEY', 'test-zhipu-key');
+
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          model: 'GLM-OCR',
+          md_results: '## Page 1\nSPT N = 12',
+          layout_details: [[
+            {
+              label: 'table',
+              content: '| Depth | SPT |\n| 2m | 12 |',
+              bbox_2d: [0.1, 0.2, 0.8, 0.4],
+            },
+          ]],
+          usage: {
+            prompt_tokens: 100,
+            completion_tokens: 20,
+            total_tokens: 120,
+          },
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
+    global.fetch = fetchMock as typeof fetch;
+
+    const route = await import('../app/api/proxy/layout/route.js');
+    const request = new NextRequest('https://example.com/api/proxy/layout', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-geotech-client': 'geotechcli',
+        'x-forwarded-for': '203.0.113.88',
+      },
+      body: JSON.stringify({
+        file: `data:application/pdf;base64,${Buffer.from('%PDF-1.7 fake').toString('base64')}`,
+        startPageId: 1,
+        endPageId: 1,
+      }),
+    });
+
+    const response = await route.POST(request);
+    const body = (await response.json()) as {
+      md_results?: string;
+      beta?: { callType?: string; remaining_today?: number | null };
+      client?: { mode?: string };
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.md_results).toContain('SPT');
+    expect(body.beta?.callType).toBe('layout');
+    expect(body.client?.mode).toBe('geotechcli');
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const upstreamBody = JSON.parse(String(init.body)) as {
+      model?: string;
+      file?: string;
+      start_page_id?: number;
+      end_page_id?: number;
+    };
+    expect(url).toBe('https://api.z.ai/api/paas/v4/layout_parsing');
+    expect(init.headers).toMatchObject({ Authorization: 'Bearer test-zhipu-key' });
+    expect(upstreamBody.model).toBe('glm-ocr');
+    expect(upstreamBody.file).toMatch(/^data:application\/pdf;base64,/);
+    expect(upstreamBody.start_page_id).toBe(1);
+    expect(upstreamBody.end_page_id).toBe(1);
+  });
+
+  it('rejects arbitrary public URLs for hosted GLM-OCR layout parsing', async () => {
+    vi.stubEnv('ZHIPU_API_KEY', 'test-zhipu-key');
+
+    const route = await import('../app/api/proxy/layout/route.js');
+    const request = new NextRequest('https://example.com/api/proxy/layout', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-geotech-client': 'geotechcli',
+      },
+      body: JSON.stringify({
+        file: 'https://example.com/report.pdf',
+      }),
+    });
+
+    const response = await route.POST(request);
+    const body = (await response.json()) as { error?: { code?: string; detail?: string } };
+
+    expect(response.status).toBe(400);
+    expect(body.error?.code).toBe('invalid_request');
+    expect(body.error?.detail).toMatch(/rejects arbitrary public URLs/i);
+  });
+
+  it('bypasses hosted GLM-OCR public limits for valid developer auth', async () => {
+    vi.stubEnv('ZHIPU_API_KEY', 'test-zhipu-key');
+    vi.stubEnv('GEOTECHCLI_DEVELOPER_API_KEY', 'gtdev_live_key');
+
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          model: 'GLM-OCR',
+          md_results: 'OK',
+          layout_details: [],
+          usage: { total_tokens: 1 },
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
+    global.fetch = fetchMock as typeof fetch;
+
+    const route = await import('../app/api/proxy/layout/route.js');
+    const request = new NextRequest('https://example.com/api/proxy/layout', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: 'Bearer gtdev_live_key',
+        'x-geotech-client': 'geotechcli',
+      },
+      body: JSON.stringify({
+        file: `data:image/png;base64,${Buffer.from('fake-png').toString('base64')}`,
+      }),
+    });
+
+    const response = await route.POST(request);
+    const body = (await response.json()) as {
+      client?: { mode?: string };
+      beta?: { remaining_today?: number | null };
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.client?.mode).toBe('developer');
+    expect(body.beta?.remaining_today).toBeNull();
   });
 });

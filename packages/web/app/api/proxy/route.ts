@@ -86,17 +86,19 @@ function stripReasoningPreamble(content: string): string {
   return trimmed.slice(closingIndex + closingTag.length).trim();
 }
 
-function getUpstreamTimeoutMs(callType: 'text' | 'vision' | 'agent'): number {
+function getUpstreamTimeoutMs(callType: HostedBetaCallType): number {
   if (callType === 'agent') return 240_000;
   if (callType === 'vision') return 150_000;
+  if (callType === 'layout') return 150_000;
   return 75_000;
 }
 
-function getUpstreamAttemptCount(callType: 'text' | 'vision' | 'agent'): number {
+function getUpstreamAttemptCount(callType: HostedBetaCallType): number {
   // Keep heavier requests to a single long-budget attempt so the public beta
   // does not multiply upstream spend after the CLI has already moved on.
   if (callType === 'agent') return 1;
   if (callType === 'vision') return 1;
+  if (callType === 'layout') return 1;
   return 2;
 }
 
@@ -105,12 +107,15 @@ function parsePositiveIntegerEnv(rawValue: string | undefined, fallback: number)
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 }
 
-function getHostedBetaOutputTokenCap(callType: 'text' | 'vision' | 'agent'): number {
+function getHostedBetaOutputTokenCap(callType: HostedBetaCallType): number {
   if (callType === 'agent') {
     return parsePositiveIntegerEnv(process.env.GEOTECHCLI_HOSTED_BETA_MAX_TOKENS_AGENT, 900);
   }
   if (callType === 'vision') {
     return parsePositiveIntegerEnv(process.env.GEOTECHCLI_HOSTED_BETA_MAX_TOKENS_VISION, 900);
+  }
+  if (callType === 'layout') {
+    return parsePositiveIntegerEnv(process.env.GEOTECHCLI_HOSTED_BETA_MAX_TOKENS_LAYOUT, 1200);
   }
   return parsePositiveIntegerEnv(process.env.GEOTECHCLI_HOSTED_BETA_MAX_TOKENS_TEXT, 800);
 }
@@ -158,7 +163,7 @@ function getCallTypeRateLimitIdentity(
 
 async function fetchUpstreamWithRetry(
   body: Record<string, unknown>,
-  callType: 'text' | 'vision' | 'agent',
+  callType: HostedBetaCallType,
 ): Promise<Response> {
   let lastResponse: Response | null = null;
   let lastError: unknown;
@@ -326,6 +331,10 @@ async function parseProxyRequest(request: NextRequest): Promise<ProxyRequestBody
       ? Math.min(Math.max(Math.floor(body.maxTokens), 32), MAX_TOKENS)
       : undefined;
   const jsonMode = body.jsonMode === true;
+  const thinkingMode =
+    body.thinkingMode === 'enabled' || body.thinkingMode === 'disabled'
+      ? body.thinkingMode
+      : undefined;
 
   return {
     messages,
@@ -333,6 +342,7 @@ async function parseProxyRequest(request: NextRequest): Promise<ProxyRequestBody
     temperature,
     maxTokens,
     jsonMode,
+    thinkingMode,
     rawSizeBytes,
   };
 }
@@ -557,7 +567,7 @@ export async function POST(request: NextRequest) {
   };
 
   if (model === DEFAULT_LLM_MODEL || model === DEFAULT_LLM_VISION_MODEL) {
-    upstreamBody.thinking = { type: getHostedBetaThinkingMode() };
+    upstreamBody.thinking = { type: body.thinkingMode ?? getHostedBetaThinkingMode() };
   }
 
   if (body.temperature !== undefined) {

@@ -716,10 +716,16 @@ export async function ingestBoreholeLogDocument(
           pageTextHint = recovery.textHint;
         }
         textHintSource = recovery.source;
-        if (recovery.source === 'local-ocr' || recovery.source === 'vision-ocr') {
+        if (recovery.source === 'local-ocr' || recovery.source === 'vision-ocr' || recovery.source === 'glm-ocr') {
           recoveredOcrPages.add(page.pageNumber);
           documentWarnings.push(
-            `Recovered ${recovery.source === 'local-ocr' ? 'local OCR' : 'OCR-style'} text hint for page ${page.pageNumber}.`,
+            `Recovered ${
+              recovery.source === 'local-ocr'
+                ? 'local OCR'
+                : recovery.source === 'glm-ocr'
+                  ? 'GLM-OCR layout'
+                  : 'OCR-style'
+            } text hint for page ${page.pageNumber}.`,
           );
         } else if (recovery.source === 'pdfjs-text') {
           documentWarnings.push(

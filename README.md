@@ -27,7 +27,7 @@ geotechCLI is a terminal-first geotechnical engineering product that combines de
 
 - Deterministic commands are available now.
 - Hosted GLM beta access is available now with no user API key required.
-- Text/agent reasoning defaults to `glm-5.1`; vision defaults to `glm-5v-turbo` through Z.ai.
+- Text/agent reasoning defaults to `glm-5.1`; vision defaults to `glm-5v-turbo`; PDF/table layout extraction uses hosted `glm-ocr` through Z.ai.
 - Server-side rate limits protect the hosted beta credit pool.
 - Signup, billing, and paid entitlements are intentionally disabled on `strong-beta`.
 
@@ -211,14 +211,16 @@ geotech ingest review demo-project --dataset ingest-review:latest --format html 
 
 The HTML dossier is a self-contained engineering review file with:
 
-- executive summary and confidence metrics
-- extracted materials, classifications, and engineering parameters
+- report takeaways, ground model, interpretation, limitations, and confidence metrics
+- extracted materials, classifications, and grouped engineering parameters
+- extraction overview strip and page audit matrix for fast confidence review
 - review findings grouped by severity
-- page-by-page evidence cards and normalized section map
+- page-by-page evidence cards with native text, GLM-OCR, GLM-5V, and GLM-5.1 synthesis stage badges
+- normalized section map
 - stored-review and approval context when the ingest is project-backed
 
 Hosted-beta reliability note: geotechnical PDFs above the best-result window are now split into linked sequential packets automatically, and the final result plus HTML dossier merge those packets back into one review surface.
-Cost-control note: hosted-beta PDF ingest now serializes more long mixed reports and avoids duplicate OCR/vision retries on slow image-only pages so the public beta does not burn provider credits just to create a deeper queue.
+Cost-control note: hosted-beta PDF ingest now tries GLM-OCR layout parsing before vision OCR, routes image-only pages into GLM-5V visual extraction only when layout/text is insufficient, and marks direct visual pages for human review as `vision-visual`.
 
 ### Bundled Skills
 
@@ -279,6 +281,7 @@ In `strong-beta`, AI commands default to the hosted beta provider, so a user doe
 - Default provider: `hosted-beta`
 - Default text model: `glm-5.1`
 - Default vision model: `glm-5v-turbo`
+- Hosted layout/OCR model: `glm-ocr`
 
 ```bash
 # Confirm the strong-beta defaults

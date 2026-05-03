@@ -91,6 +91,7 @@ export async function generateText(
     maxTokens?: number;
     jsonMode?: boolean;
     model?: string;
+    thinkingMode?: 'enabled' | 'disabled';
   },
 ): Promise<CompletionResponse> {
   const adapter = registry.get(config.provider);
@@ -110,6 +111,7 @@ export async function generateText(
       maxTokens: options?.maxTokens,
       jsonMode: options?.jsonMode,
       model: options?.model,
+      thinkingMode: options?.thinkingMode,
     },
     config,
   );
@@ -126,6 +128,7 @@ export async function generateChat(
     temperature?: number;
     maxTokens?: number;
     model?: string;
+    thinkingMode?: 'enabled' | 'disabled';
   },
 ): Promise<CompletionResponse> {
   const adapter = registry.get(config.provider);
@@ -136,6 +139,7 @@ export async function generateChat(
       temperature: options?.temperature,
       maxTokens: options?.maxTokens,
       model: options?.model,
+      thinkingMode: options?.thinkingMode,
     },
     config,
   );

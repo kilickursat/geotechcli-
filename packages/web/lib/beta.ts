@@ -11,41 +11,130 @@ const ANONYMOUS_HOSTED_BETA_LIMITS = {
   requestsPerMinutePerIp: 10,
   visionRequestsPerMinutePerIp: 1,
   agentRequestsPerMinutePerIp: 1,
-  textPerDay: 25,
-  visionPerDay: 5,
-  agentPerDay: 3,
+  layoutRequestsPerMinutePerIp: 1,
+  textPerDay: 30,
+  visionPerDay: 8,
+  agentPerDay: 4,
+  layoutPerDay: 4,
 } as const;
 
 const GEOTECHCLI_HOSTED_BETA_LIMITS = {
-  requestsPerMinutePerIp: 20,
-  visionRequestsPerMinutePerIp: 4,
-  agentRequestsPerMinutePerIp: 2,
-  textPerDay: 60,
-  visionPerDay: 12,
-  agentPerDay: 8,
+  requestsPerMinutePerIp: 60,
+  visionRequestsPerMinutePerIp: 10,
+  agentRequestsPerMinutePerIp: 6,
+  layoutRequestsPerMinutePerIp: 8,
+  textPerDay: 300,
+  visionPerDay: 120,
+  agentPerDay: 40,
+  layoutPerDay: 80,
 } as const;
 
 const DEVELOPER_HOSTED_BETA_LIMITS = {
   requestsPerMinutePerIp: Number.MAX_SAFE_INTEGER,
   visionRequestsPerMinutePerIp: Number.MAX_SAFE_INTEGER,
   agentRequestsPerMinutePerIp: Number.MAX_SAFE_INTEGER,
+  layoutRequestsPerMinutePerIp: Number.MAX_SAFE_INTEGER,
   textPerDay: Number.MAX_SAFE_INTEGER,
   visionPerDay: Number.MAX_SAFE_INTEGER,
   agentPerDay: Number.MAX_SAFE_INTEGER,
+  layoutPerDay: Number.MAX_SAFE_INTEGER,
 } as const;
+
+interface HostedBetaLimitProfile {
+  requestsPerMinutePerIp: number;
+  visionRequestsPerMinutePerIp: number;
+  agentRequestsPerMinutePerIp: number;
+  layoutRequestsPerMinutePerIp: number;
+  textPerDay: number;
+  visionPerDay: number;
+  agentPerDay: number;
+  layoutPerDay: number;
+}
+type HostedBetaLimitMode = 'anonymous' | 'geotechcli';
+type HostedBetaLimitConfig = Record<HostedBetaLimitMode, HostedBetaLimitProfile>;
+
+function isPositiveFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0;
+}
+
+function mergeLimitProfile(
+  base: HostedBetaLimitProfile,
+  override: unknown,
+): HostedBetaLimitProfile {
+  if (typeof override !== 'object' || override === null || Array.isArray(override)) {
+    return base;
+  }
+
+  const record = override as Record<string, unknown>;
+  return {
+    requestsPerMinutePerIp: isPositiveFiniteNumber(record.requestsPerMinutePerIp)
+      ? Math.floor(record.requestsPerMinutePerIp)
+      : base.requestsPerMinutePerIp,
+    visionRequestsPerMinutePerIp: isPositiveFiniteNumber(record.visionRequestsPerMinutePerIp)
+      ? Math.floor(record.visionRequestsPerMinutePerIp)
+      : base.visionRequestsPerMinutePerIp,
+    agentRequestsPerMinutePerIp: isPositiveFiniteNumber(record.agentRequestsPerMinutePerIp)
+      ? Math.floor(record.agentRequestsPerMinutePerIp)
+      : base.agentRequestsPerMinutePerIp,
+    layoutRequestsPerMinutePerIp: isPositiveFiniteNumber(record.layoutRequestsPerMinutePerIp)
+      ? Math.floor(record.layoutRequestsPerMinutePerIp)
+      : base.layoutRequestsPerMinutePerIp,
+    textPerDay: isPositiveFiniteNumber(record.textPerDay)
+      ? Math.floor(record.textPerDay)
+      : base.textPerDay,
+    visionPerDay: isPositiveFiniteNumber(record.visionPerDay)
+      ? Math.floor(record.visionPerDay)
+      : base.visionPerDay,
+    agentPerDay: isPositiveFiniteNumber(record.agentPerDay)
+      ? Math.floor(record.agentPerDay)
+      : base.agentPerDay,
+    layoutPerDay: isPositiveFiniteNumber(record.layoutPerDay)
+      ? Math.floor(record.layoutPerDay)
+      : base.layoutPerDay,
+  };
+}
+
+function resolveHostedBetaLimitConfig(): HostedBetaLimitConfig {
+  const defaults: HostedBetaLimitConfig = {
+    anonymous: ANONYMOUS_HOSTED_BETA_LIMITS,
+    geotechcli: GEOTECHCLI_HOSTED_BETA_LIMITS,
+  };
+  const raw = process.env.GEOTECHCLI_HOSTED_BETA_LIMITS_JSON?.trim();
+  if (!raw) {
+    return defaults;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      return defaults;
+    }
+    const record = parsed as Record<string, unknown>;
+    return {
+      anonymous: mergeLimitProfile(defaults.anonymous, record.anonymous),
+      geotechcli: mergeLimitProfile(defaults.geotechcli, record.geotechcli),
+    };
+  } catch {
+    return defaults;
+  }
+}
+
+const HOSTED_BETA_LIMIT_CONFIG = resolveHostedBetaLimitConfig();
 
 export const HOSTED_BETA_LIMITS = {
-  requestsPerMinutePerIp: GEOTECHCLI_HOSTED_BETA_LIMITS.requestsPerMinutePerIp,
-  visionRequestsPerMinutePerIp: GEOTECHCLI_HOSTED_BETA_LIMITS.visionRequestsPerMinutePerIp,
-  agentRequestsPerMinutePerIp: GEOTECHCLI_HOSTED_BETA_LIMITS.agentRequestsPerMinutePerIp,
-  textPerDay: GEOTECHCLI_HOSTED_BETA_LIMITS.textPerDay,
-  visionPerDay: GEOTECHCLI_HOSTED_BETA_LIMITS.visionPerDay,
-  agentPerDay: GEOTECHCLI_HOSTED_BETA_LIMITS.agentPerDay,
-  anonymous: ANONYMOUS_HOSTED_BETA_LIMITS,
-  geotechcli: GEOTECHCLI_HOSTED_BETA_LIMITS,
+  requestsPerMinutePerIp: HOSTED_BETA_LIMIT_CONFIG.geotechcli.requestsPerMinutePerIp,
+  visionRequestsPerMinutePerIp: HOSTED_BETA_LIMIT_CONFIG.geotechcli.visionRequestsPerMinutePerIp,
+  agentRequestsPerMinutePerIp: HOSTED_BETA_LIMIT_CONFIG.geotechcli.agentRequestsPerMinutePerIp,
+  layoutRequestsPerMinutePerIp: HOSTED_BETA_LIMIT_CONFIG.geotechcli.layoutRequestsPerMinutePerIp,
+  textPerDay: HOSTED_BETA_LIMIT_CONFIG.geotechcli.textPerDay,
+  visionPerDay: HOSTED_BETA_LIMIT_CONFIG.geotechcli.visionPerDay,
+  agentPerDay: HOSTED_BETA_LIMIT_CONFIG.geotechcli.agentPerDay,
+  layoutPerDay: HOSTED_BETA_LIMIT_CONFIG.geotechcli.layoutPerDay,
+  anonymous: HOSTED_BETA_LIMIT_CONFIG.anonymous,
+  geotechcli: HOSTED_BETA_LIMIT_CONFIG.geotechcli,
 } as const;
 
-export type HostedBetaCallType = 'text' | 'vision' | 'agent';
+export type HostedBetaCallType = 'text' | 'vision' | 'agent' | 'layout';
 export type HostedBetaClientMode = 'anonymous' | 'geotechcli' | 'developer';
 
 export interface ProxyContentPart {
@@ -65,6 +154,7 @@ export interface ProxyRequestBody {
   temperature?: number;
   maxTokens?: number;
   jsonMode?: boolean;
+  thinkingMode?: 'enabled' | 'disabled';
 }
 
 const TEXT_CONTENT_LIMIT = 50_000;
@@ -137,6 +227,17 @@ export function getHostedBetaUpstreamChatCompletionsUrl(): string {
   return `${baseUrl}/chat/completions`;
 }
 
+export function getHostedBetaUpstreamLayoutParsingUrl(): string {
+  const explicitUrl = process.env.ZHIPU_LAYOUT_PARSING_URL?.trim();
+  if (explicitUrl) {
+    return explicitUrl;
+  }
+
+  const baseUrl = (process.env.ZHIPU_API_BASE_URL?.trim() || DEFAULT_ZHIPU_API_BASE_URL)
+    .replace(/\/+$/, '');
+  return `${baseUrl}/layout_parsing`;
+}
+
 export function getHostedBetaConfigIssue(): string | null {
   if (!getHostedBetaUpstreamApiKey()) {
     return 'Hosted beta AI is not configured yet. Set ZHIPU_API_KEY on the server.';
@@ -150,6 +251,9 @@ export function getHostedBetaConfigIssue(): string | null {
 }
 
 export function getHostedBetaDefaultModel(callType: HostedBetaCallType): string {
+  if (callType === 'layout') {
+    return 'glm-ocr';
+  }
   return callType === 'vision' ? DEFAULT_LLM_VISION_MODEL : DEFAULT_LLM_MODEL;
 }
 
@@ -158,6 +262,9 @@ export function isHostedBetaModel(model: string): boolean {
 }
 
 export function getHostedBetaAllowedModelsForCallType(callType: HostedBetaCallType): string[] {
+  if (callType === 'layout') {
+    return ['glm-ocr'];
+  }
   return callType === 'vision'
     ? [DEFAULT_LLM_VISION_MODEL]
     : [DEFAULT_LLM_MODEL];
@@ -210,6 +317,89 @@ function readConfiguredHostedBetaDeveloperKeys(): string[] {
     .filter(Boolean);
 }
 
+function readConfiguredHostedBetaDeveloperIpAllowlist(): string[] {
+  const raw = process.env.GEOTECHCLI_DEVELOPER_IP_ALLOWLIST?.trim();
+  if (!raw) {
+    return [];
+  }
+
+  return raw
+    .split(/[,\r\n]+/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function parseIpv4(value: string): number | null {
+  const parts = value.split('.');
+  if (parts.length !== 4) {
+    return null;
+  }
+
+  let output = 0;
+  for (const part of parts) {
+    if (!/^\d{1,3}$/.test(part)) {
+      return null;
+    }
+    const octet = Number(part);
+    if (!Number.isInteger(octet) || octet < 0 || octet > 255) {
+      return null;
+    }
+    output = (output << 8) + octet;
+  }
+  return output >>> 0;
+}
+
+function ipv4CidrContains(ip: string, cidr: string): boolean {
+  const [rangeIp, prefixRaw] = cidr.split('/');
+  const prefix = Number(prefixRaw);
+  const target = parseIpv4(ip);
+  const range = parseIpv4(rangeIp ?? '');
+  if (
+    target == null
+    || range == null
+    || !Number.isInteger(prefix)
+    || prefix < 0
+    || prefix > 32
+  ) {
+    return false;
+  }
+
+  const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
+  return (target & mask) === (range & mask);
+}
+
+function readDeveloperIpCandidate(headers: Headers): string {
+  if (isHostedBetaProduction()) {
+    return headers.get('cf-connecting-ip')?.trim() ?? '';
+  }
+
+  return extractClientIp(headers);
+}
+
+export function getHostedBetaDeveloperIpAuthStatus(headers: Headers): {
+  configured: boolean;
+  authorized: boolean;
+  ip: string;
+} {
+  const allowlist = readConfiguredHostedBetaDeveloperIpAllowlist();
+  const ip = readDeveloperIpCandidate(headers);
+  if (allowlist.length === 0) {
+    return { configured: false, authorized: false, ip };
+  }
+  if (!ip) {
+    return { configured: true, authorized: false, ip };
+  }
+
+  const authorized = allowlist.some((entry) => {
+    if (entry.includes('/')) {
+      return ipv4CidrContains(ip, entry);
+    }
+    return entry === ip;
+  });
+
+  return { configured: true, authorized, ip };
+}
+
 export function getHostedBetaDeveloperAuthStatus(headers: Headers): {
   provided: boolean;
   authorized: boolean;
@@ -233,6 +423,10 @@ export function getHostedBetaDeveloperAuthStatus(headers: Headers): {
 export function resolveHostedBetaClientMode(headers: Headers): HostedBetaClientMode {
   const developerAuth = getHostedBetaDeveloperAuthStatus(headers);
   if (developerAuth.authorized) {
+    return 'developer';
+  }
+  const developerIpAuth = getHostedBetaDeveloperIpAuthStatus(headers);
+  if (developerIpAuth.authorized) {
     return 'developer';
   }
 
@@ -377,8 +571,8 @@ function getLimitProfile(clientMode: HostedBetaClientMode) {
   }
 
   return clientMode === 'geotechcli'
-    ? GEOTECHCLI_HOSTED_BETA_LIMITS
-    : ANONYMOUS_HOSTED_BETA_LIMITS;
+    ? HOSTED_BETA_LIMIT_CONFIG.geotechcli
+    : HOSTED_BETA_LIMIT_CONFIG.anonymous;
 }
 
 export function getHostedBetaRequestLimit(
@@ -388,6 +582,7 @@ export function getHostedBetaRequestLimit(
   const profile = getLimitProfile(clientMode);
   if (callType === 'vision') return profile.visionRequestsPerMinutePerIp;
   if (callType === 'agent') return profile.agentRequestsPerMinutePerIp;
+  if (callType === 'layout') return profile.layoutRequestsPerMinutePerIp;
   return profile.requestsPerMinutePerIp;
 }
 
@@ -398,6 +593,7 @@ export function getDailyLimitForClient(
   const profile = getLimitProfile(clientMode);
   if (callType === 'vision') return profile.visionPerDay;
   if (callType === 'agent') return profile.agentPerDay;
+  if (callType === 'layout') return profile.layoutPerDay;
   return profile.textPerDay;
 }
 

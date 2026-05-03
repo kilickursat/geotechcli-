@@ -1,10 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const generateTextMock = vi.fn();
+const generateVisionMock = vi.fn();
+const generateDocumentVisionMock = vi.fn();
 const transcribeDocumentImageTextMock = vi.fn();
 
 vi.mock('../src/llm/router.js', () => ({
   generateText: (...args: unknown[]) => generateTextMock(...args),
+  generateVision: (...args: unknown[]) => generateVisionMock(...args),
+  generateDocumentVision: (...args: unknown[]) => generateDocumentVisionMock(...args),
 }));
 
 vi.mock('../src/vision/index.js', () => ({
@@ -16,6 +20,8 @@ import { extractGeotechDocumentFactsFromText, interpretGeotechDocumentPage } fro
 describe('extractGeotechDocumentFactsFromText', () => {
   beforeEach(() => {
     generateTextMock.mockReset();
+    generateVisionMock.mockReset();
+    generateDocumentVisionMock.mockReset();
     transcribeDocumentImageTextMock.mockReset();
   });
 
@@ -163,7 +169,25 @@ describe('extractGeotechDocumentFactsFromText', () => {
     expect(insight.parseStatus).toBe('partial');
   });
 
-  it('skips a redundant OCR retry when upstream text recovery already failed', async () => {
+  it('uses direct visual extraction when upstream text recovery already failed', async () => {
+    generateVisionMock.mockResolvedValue({
+      text: JSON.stringify({
+        documentClass: 'borehole-log',
+        summary: 'Scanned borehole log page with visible SPT and depth values.',
+        materials: [{ kind: 'soil', description: 'silty sand layer', uscsSymbol: 'SM', lithology: null }],
+        classifications: [{ system: 'SPT', value: 'N=52', context: 'visible borehole log' }],
+        parameters: [{ name: 'sptN', valueText: '52', numericValue: 52, unit: null, material: 'silty sand', context: 'visible borehole log' }],
+        risks: [],
+        recommendations: ['Review scanned borehole log values against the source page.'],
+        confidence: 76,
+        warnings: [],
+      }),
+      latencyMs: 14,
+      usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+      model: 'test-vision-model',
+      provider: 'hosted-beta',
+    });
+
     const insight = await interpretGeotechDocumentPage(
       'image-base64',
       'image/png',
@@ -172,7 +196,9 @@ describe('extractGeotechDocumentFactsFromText', () => {
     );
 
     expect(transcribeDocumentImageTextMock).not.toHaveBeenCalled();
-    expect(insight.parseStatus).toBe('failed');
-    expect(insight.warnings.join(' ')).toMatch(/skipped a redundant OCR retry/i);
+    expect(generateVisionMock).toHaveBeenCalledTimes(1);
+    expect(insight.parseStatus).toBe('parsed');
+    expect(insight.parameters.some((parameter) => parameter.name === 'sptN')).toBe(true);
+    expect(insight.warnings.join(' ')).toMatch(/direct visual extraction/i);
   });
 });

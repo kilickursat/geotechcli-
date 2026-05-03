@@ -1,5 +1,7 @@
 import type { LLMConfig } from '../llm/types.js';
+import { generateText } from '../llm/router.js';
 import { resolveProviderCapabilities } from '../llm/index.js';
+import { parseJsonObject } from '../vision/parse.js';
 import {
   extractGeotechDocumentFactsFromText,
   interpretGeotechDocumentPage,
@@ -88,6 +90,7 @@ export interface GeotechDocumentIngestResult {
   parameters: GeotechParameterObservation[];
   risks: string[];
   recommendations: string[];
+  synthesis?: GeotechDocumentSynthesis | null;
   contentChunks?: GeotechDocumentContentChunk[];
   pageAudits: GeotechDocumentPageAudit[];
   pageFailures: string[];
@@ -98,6 +101,17 @@ export interface GeotechDocumentIngestResult {
   confidence: number;
   reviewRequired: boolean;
   canAutoProceed: boolean;
+}
+
+export interface GeotechDocumentSynthesis {
+  takeaways: string[];
+  groundModel: string[];
+  keyParameters: string[];
+  interpretation: string[];
+  limitations: string[];
+  sourcePages: number[];
+  rawLLMText?: string;
+  latencyMs?: number;
 }
 
 export interface GeotechDocumentContentChunk {
@@ -139,12 +153,38 @@ export interface IngestGeotechDocumentOptions {
   interpretPage?: typeof interpretGeotechDocumentPage;
   extractTextFacts?: typeof extractGeotechDocumentFactsFromText;
   transcribePageImageText?: typeof transcribeDocumentImageText;
+  synthesizeDocument?: (input: {
+    config: LLMConfig;
+    result: Omit<GeotechDocumentIngestResult, 'synthesis' | 'contentChunks'> & {
+      contentChunks?: GeotechDocumentContentChunk[];
+    };
+  }) => Promise<GeotechDocumentSynthesis | null>;
   pageConcurrency?: number;
   now?: () => Date;
 }
 
 function uniqueStrings(values: Array<string | null | undefined>): string[] {
   return [...new Set(values.filter((value): value is string => typeof value === 'string' && value.trim().length > 0))];
+}
+
+function normalizeTextItems(value: unknown, limit = 8): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return uniqueStrings(
+    value.map((item) => (typeof item === 'string' ? item.replace(/\s+/g, ' ').trim() : '')),
+  ).slice(0, limit);
+}
+
+function normalizeSourcePages(value: unknown): number[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return [...new Set(
+    value
+      .map((item) => Number(item))
+      .filter((item) => Number.isInteger(item) && item > 0),
+  )].sort((left, right) => left - right);
 }
 
 function createFindingKey(finding: GeotechDocumentFinding): string {
@@ -465,6 +505,32 @@ function resolveTextExtractionTimeoutMs(
   }
 
   return baseTimeoutMs;
+}
+
+function shouldPreferDirectVisualExtraction(input: {
+  config: LLMConfig;
+  page: GeotechDocumentPageInput;
+  inspectionPage?: PdfDocumentInspection['pages'][number];
+  textHint?: string | null;
+}): boolean {
+  if (input.config.provider !== 'hosted-beta') {
+    return false;
+  }
+
+  const hasAcceptedText =
+    typeof input.textHint === 'string'
+    && input.textHint.trim().length >= 24
+    && (input.inspectionPage?.normalizedArtifact?.textQuality.accepted ?? false);
+  if (hasAcceptedText) {
+    return false;
+  }
+
+  return input.page.sourceKind === 'raster-image'
+    && (
+      input.inspectionPage?.classification === 'image-only'
+      || input.inspectionPage?.classification === 'graphics-only'
+      || input.inspectionPage?.classification === 'text-unreadable'
+    );
 }
 
 function normalizeHeadingText(value: string): string {
@@ -899,6 +965,156 @@ function chooseDocumentSummary(chunks: PreparedGeotechDocumentChunk[]): string |
   ).slice(0, 3);
 
   return summaries.length > 0 ? summaries.join(' ') : null;
+}
+
+function compactForPrompt(value: string | null | undefined, maxLength: number): string {
+  if (!value) {
+    return '';
+  }
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 1).trim()}...` : normalized;
+}
+
+function buildSynthesisEvidence(input: {
+  documentClass: string | null;
+  title: string | null;
+  summary: string | null;
+  materials: GeotechMaterialObservation[];
+  classifications: GeotechDocumentClassification[];
+  parameters: GeotechParameterObservation[];
+  risks: string[];
+  recommendations: string[];
+  contentChunks: PreparedGeotechDocumentChunk[];
+}): string {
+  const parameterLines = input.parameters.slice(0, 40).map((parameter) =>
+    [
+      parameter.name,
+      parameter.valueText,
+      parameter.unit,
+      parameter.material ? `material=${parameter.material}` : null,
+      parameter.context ? `context=${parameter.context}` : null,
+    ].filter(Boolean).join(' | '),
+  );
+  const materialLines = input.materials.slice(0, 30).map((material) =>
+    [
+      material.kind,
+      material.description,
+      material.uscsSymbol ? `USCS=${material.uscsSymbol}` : null,
+      material.lithology ? `lithology=${material.lithology}` : null,
+    ].filter(Boolean).join(' | '),
+  );
+  const classificationLines = input.classifications.slice(0, 25).map((classification) =>
+    [
+      classification.system,
+      classification.value,
+      classification.context,
+    ].filter(Boolean).join(' | '),
+  );
+  const chunkLines = [...input.contentChunks]
+    .filter((chunk) => chunk.sectionType !== 'administrative')
+    .sort((left, right) => right.significance - left.significance)
+    .slice(0, 18)
+    .map((chunk) =>
+      `Pages ${chunk.pageRange[0]}-${chunk.pageRange[1]} | ${chunk.sectionType ?? 'general'} | ${compactForPrompt(chunk.headingAncestry[0], 80)} | ${compactForPrompt(chunk.text, 320)}`,
+    );
+
+  return [
+    `Title: ${input.title ?? 'unknown'}`,
+    `Document class: ${input.documentClass ?? 'unknown'}`,
+    `Current summary: ${input.summary ?? 'none'}`,
+    '',
+    'Materials:',
+    materialLines.join('\n') || 'None extracted.',
+    '',
+    'Classifications:',
+    classificationLines.join('\n') || 'None extracted.',
+    '',
+    'Engineering parameters:',
+    parameterLines.join('\n') || 'None extracted.',
+    '',
+    'Risks:',
+    input.risks.slice(0, 12).join('\n') || 'None extracted.',
+    '',
+    'Recommendations:',
+    input.recommendations.slice(0, 12).join('\n') || 'None extracted.',
+    '',
+    'Source page evidence:',
+    chunkLines.join('\n') || 'No source chunks retained.',
+  ].join('\n');
+}
+
+async function synthesizeGeotechDocumentResult(input: {
+  config: LLMConfig;
+  result: Omit<GeotechDocumentIngestResult, 'synthesis' | 'contentChunks'> & {
+    contentChunks?: GeotechDocumentContentChunk[];
+  };
+}): Promise<GeotechDocumentSynthesis | null> {
+  const contentChunks = (input.result.contentChunks ?? []) as PreparedGeotechDocumentChunk[];
+  const hasEngineeringSignal =
+    input.result.materials.length > 0
+    || input.result.classifications.length > 0
+    || input.result.parameters.length > 0
+    || contentChunks.some((chunk) => chunk.sectionType !== 'administrative' && chunk.sectionType !== 'visual-appendix');
+  if (!hasEngineeringSignal) {
+    return null;
+  }
+
+  const prompt = `Create a concise engineering synthesis from the extracted geotechnical report evidence. Respond with ONLY a JSON object:
+{
+  "takeaways": ["<report-level takeaway with source-page wording where possible>"],
+  "groundModel": ["<soil/rock/groundwater model statement>"],
+  "keyParameters": ["<parameter, value, unit, material/context, source page if known>"],
+  "interpretation": ["<engineering interpretation supported by extracted evidence>"],
+  "limitations": ["<uncertainty, missing evidence, OCR/layout/visual limitations>"],
+  "sourcePages": [<page numbers that support the synthesis>]
+}
+
+Do not invent values. Do not increase confidence. Prefer explicit soil and rock mechanics parameters, groundwater observations, classification systems, and foundation/geohazard implications.
+
+Evidence:
+${buildSynthesisEvidence({
+    documentClass: input.result.documentClass,
+    title: input.result.title,
+    summary: input.result.summary,
+    materials: input.result.materials,
+    classifications: input.result.classifications,
+    parameters: input.result.parameters,
+    risks: input.result.risks,
+    recommendations: input.result.recommendations,
+    contentChunks,
+  }).slice(0, 9000)}`;
+
+  const response = await generateText(prompt, input.config, {
+    systemPrompt: 'You are a senior geotechnical engineer synthesizing extracted report evidence into a review brief. Use cautious, evidence-bound language. Respond with JSON only.',
+    temperature: 0.1,
+    jsonMode: true,
+    maxTokens: 1200,
+    thinkingMode: 'enabled',
+  });
+  const parsed = parseJsonObject(response.text);
+  if (!parsed.value) {
+    return {
+      takeaways: [],
+      groundModel: [],
+      keyParameters: [],
+      interpretation: [],
+      limitations: ['GLM-5.1 synthesis did not return valid JSON; use extracted tables and page audits for review.'],
+      sourcePages: [],
+      rawLLMText: response.text,
+      latencyMs: response.latencyMs,
+    };
+  }
+
+  return {
+    takeaways: normalizeTextItems(parsed.value.takeaways, 8),
+    groundModel: normalizeTextItems(parsed.value.groundModel, 10),
+    keyParameters: normalizeTextItems(parsed.value.keyParameters, 16),
+    interpretation: normalizeTextItems(parsed.value.interpretation, 10),
+    limitations: normalizeTextItems(parsed.value.limitations, 10),
+    sourcePages: normalizeSourcePages(parsed.value.sourcePages),
+    rawLLMText: response.text,
+    latencyMs: response.latencyMs,
+  };
 }
 
 function buildPageLeadText(
@@ -1352,6 +1568,34 @@ export async function ingestGeotechDocument(
           ...options.config,
           timeout: pageTimeoutMs,
         };
+        if (shouldPreferDirectVisualExtraction({
+          config: options.config,
+          page,
+          inspectionPage,
+          textHint: pageTextHint,
+        })) {
+          const context: GeotechDocumentContext = {
+            pageNumber: page.pageNumber,
+            totalPages: page.totalPages,
+            pageClassification: inspectionPage?.classification,
+            directVisualPreferred: true,
+          };
+          const result = await withPageTimeout(
+            interpretPage(page.base64, page.mimeType, pagePhaseConfig, context),
+            pageTimeoutMs,
+            `Page ${page.pageNumber}: direct visual page interpretation timed out after ${Math.round(pageTimeoutMs / 1000)}s`,
+          );
+
+          return {
+            ok: true as const,
+            pageNumber: page.pageNumber,
+            inspectionPage,
+            textHintSource: 'vision-visual' as const,
+            recoveryWarnings: ['Skipped OCR-only transcription and used direct visual extraction for an image-heavy hosted-beta page.'],
+            ocrRecovered: false,
+            result,
+          };
+        }
         const recovery = await withPageTimeout(
           recoverDocumentTextHint({
             existingTextHint: pageTextHint,
@@ -1401,7 +1645,7 @@ export async function ingestGeotechDocument(
           inspectionPage,
           textHintSource,
           recoveryWarnings: recovery.warnings,
-          ocrRecovered: recovery.source === 'local-ocr' || recovery.source === 'vision-ocr',
+          ocrRecovered: recovery.source === 'local-ocr' || recovery.source === 'vision-ocr' || recovery.source === 'glm-ocr',
           result,
         };
       } catch (error) {
@@ -1421,7 +1665,13 @@ export async function ingestGeotechDocument(
         if (settled.ocrRecovered) {
           recoveredOcrPages.add(settled.pageNumber);
           documentWarnings.push(
-            `Recovered ${settled.textHintSource === 'local-ocr' ? 'local OCR' : 'OCR-style'} text hint for page ${settled.pageNumber}.`,
+            `Recovered ${
+              settled.textHintSource === 'local-ocr'
+                ? 'local OCR'
+                : settled.textHintSource === 'glm-ocr'
+                  ? 'GLM-OCR layout'
+                  : 'OCR-style'
+            } text hint for page ${settled.pageNumber}.`,
           );
         } else if (settled.textHintSource === 'pdfjs-text') {
           documentWarnings.push(
@@ -1501,8 +1751,17 @@ export async function ingestGeotechDocument(
   const contentChunks = buildContentChunks(pageResults, options.inspection);
   const title = chooseDocumentTitle(contentChunks);
   const documentClass = chooseDocumentClass(contentChunks);
-  const partialAuditCount = pageAudits.filter((audit) => audit.parseStatus === 'partial').length;
-  const failedAuditCount = pageAudits.filter((audit) => audit.parseStatus === 'failed').length;
+  const lowYieldPages = new Set(
+    contentChunks
+      .filter((chunk) => chunk.sectionType === 'administrative' || chunk.sectionType === 'visual-appendix')
+      .flatMap((chunk) => chunk.sourcePages),
+  );
+  const partialAuditCount = pageAudits.filter((audit) =>
+    audit.parseStatus === 'partial' && !lowYieldPages.has(audit.pageNumber)
+  ).length;
+  const failedAuditCount = pageAudits.filter((audit) =>
+    audit.parseStatus === 'failed' && !lowYieldPages.has(audit.pageNumber)
+  ).length;
   const parseStatus = pageFailures.length > 0
     ? 'partial'
     : mergeParseStatus(pageResults.map((result) => result.parseStatus));
@@ -1531,19 +1790,36 @@ export async function ingestGeotechDocument(
     parameters,
     options.inspection,
   );
+  for (const audit of pageAudits) {
+    if (audit.textHintSource !== 'vision-visual') {
+      continue;
+    }
+    reviewFindings.push({
+      code: 'direct_visual_review_required',
+      severity: 'review',
+      scope: 'page',
+      message: `Page ${audit.pageNumber} was interpreted directly from the rendered page image without accepted text or OCR transcription. Verify extracted values against the source page before approval.`,
+      pageNumber: audit.pageNumber,
+    });
+  }
   const reviewRequired = reviewFindings.some(findingRequiresReview);
   const allPagesParsed = pageAudits.length > 0 && pageAudits.every((audit) => audit.parseStatus === 'parsed');
-  const warnings = uniqueStrings([
-    ...documentWarnings,
-    ...parameterSanitization.warnings,
-    ...pageResults.flatMap((result) => result.warnings),
-  ]);
-
-  return {
-    kind: 'geotech-ingest-result',
-    schemaVersion: 1,
-    documentType: 'geotech-document',
-    generatedAt: now().toISOString(),
+  const contentChunksForResult = contentChunks.map((chunk) => ({
+    chunkId: chunk.chunkId,
+    pageRange: chunk.pageRange,
+    headingAncestry: chunk.headingAncestry,
+    scope: chunk.scope,
+    sectionType: chunk.sectionType,
+    significance: chunk.significance,
+    text: chunk.text,
+    sourcePages: chunk.sourcePages,
+  }));
+  const generatedAt = now().toISOString();
+  const baseResult = {
+    kind: 'geotech-ingest-result' as const,
+    schemaVersion: 1 as const,
+    documentType: 'geotech-document' as const,
+    generatedAt,
     source: {
       ...options.source,
       totalPages: options.pages?.length ?? 1,
@@ -1560,19 +1836,10 @@ export async function ingestGeotechDocument(
     parameters,
     risks,
     recommendations,
-    contentChunks: contentChunks.map((chunk) => ({
-      chunkId: chunk.chunkId,
-      pageRange: chunk.pageRange,
-      headingAncestry: chunk.headingAncestry,
-      scope: chunk.scope,
-      sectionType: chunk.sectionType,
-      significance: chunk.significance,
-      text: chunk.text,
-      sourcePages: chunk.sourcePages,
-    })),
+    contentChunks: contentChunksForResult,
     pageAudits,
     pageFailures,
-    warnings,
+    warnings: [],
     reviewFindings,
     reviewReasons: summarizeReviewReasons(reviewFindings),
     parseStatus,
@@ -1584,5 +1851,38 @@ export async function ingestGeotechDocument(
       && allPagesParsed
       && pageFailures.length === 0
       && parameterSanitization.warnings.length === 0,
+  };
+  let synthesis: GeotechDocumentSynthesis | null = null;
+  const synthesisWarnings: string[] = [];
+  const synthesisRunner =
+    options.synthesizeDocument
+    ?? (process.env.NODE_ENV === 'test' ? null : synthesizeGeotechDocumentResult);
+  if (synthesisRunner) {
+    try {
+      synthesis = await synthesisRunner({
+        config: options.config,
+        result: baseResult,
+      });
+      if (synthesis && synthesis.takeaways.length > 0) {
+        synthesisWarnings.push('GLM-5.1 synthesis generated report-level takeaways from extracted page evidence.');
+      }
+    } catch (error) {
+      synthesisWarnings.push(
+        `GLM-5.1 synthesis failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+  const warnings = uniqueStrings([
+    ...documentWarnings,
+    ...parameterSanitization.warnings,
+    ...synthesisWarnings,
+    ...pageResults.flatMap((result) => result.warnings),
+  ]);
+
+  return {
+    ...baseResult,
+    summary: synthesis?.takeaways[0] ?? baseResult.summary,
+    synthesis,
+    warnings,
   };
 }

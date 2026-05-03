@@ -52,6 +52,7 @@ export interface CompletionRequest {
   stream?: boolean;
   jsonMode?: boolean;
   model?: string;
+  thinkingMode?: 'enabled' | 'disabled';
 }
 
 export interface CompletionResponse {
