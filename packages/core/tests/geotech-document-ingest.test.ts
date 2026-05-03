@@ -324,6 +324,134 @@ describe('ingestGeotechDocument', () => {
     }
   });
 
+  it('reuses durable PDF page evidence when generated page payload bytes change', async () => {
+    const previousConfigDir = process.env.GEOTECHCLI_CONFIG_DIR;
+    const configDir = mkdtempSync(join(tmpdir(), 'geotechcli-geotech-pdf-cache-'));
+    process.env.GEOTECHCLI_CONFIG_DIR = configDir;
+
+    try {
+      const extractTextFacts = vi.fn(async (_pageText: string, _config: any, context: any) => makeResult({
+        documentClass: 'site-investigation-report',
+        summary: 'Stable native PDF page evidence was extracted.',
+        materials: [
+          { kind: 'soil', description: 'firm clay', uscsSymbol: 'CL', lithology: null },
+        ],
+        parameters: [
+          { name: 'cohesion', valueText: '22', numericValue: 22, unit: 'kPa', material: 'firm clay', context: 'page 1' },
+        ],
+        pageNumber: context.pageNumber ?? null,
+        totalPages: context.totalPages ?? null,
+        rawLLMText: 'mock',
+        latencyMs: 12,
+        parseStatus: 'parsed',
+        confidence: 86,
+      }) as any);
+      const interpretPage = vi.fn(async () => {
+        throw new Error('Visual interpretation should be skipped for native PDF text pages.');
+      });
+      const baseInput = {
+        config: { provider: 'openai-compatible', timeout: 60000 } as any,
+        source: {
+          filePath: 'unstable-generated-page-payload.pdf',
+          fileName: 'unstable-generated-page-payload.pdf',
+          inputKind: 'pdf' as const,
+        },
+        inspection: {
+          totalPages: 1,
+          warnings: [],
+          metadata: { pdfVersion: '1.7', objectCount: 1 },
+          pages: [{
+            pageNumber: 1,
+            classification: 'digital-text',
+            degradation: { level: 'none', reasons: [] },
+            capabilities: { nativeTextExtraction: 'available', rasterImageExtraction: 'available' },
+            normalizedText: 'Firm clay with cohesion 22 kPa.',
+            rawText: 'Firm clay with cohesion 22 kPa.',
+            normalizedArtifact: {
+              pageNumber: 1,
+              classification: 'digital-text',
+              rotation: 0,
+              nativeText: 'Firm clay with cohesion 22 kPa.',
+              textQuality: {
+                accepted: true,
+                score: 0.95,
+                printableRatio: 1,
+                replacementRatio: 0,
+                symbolNoiseRatio: 0,
+                suspiciousTokenRatio: 0,
+                dictionaryCoverageRatio: 0.8,
+                averageTokenShapeScore: 0.9,
+                reasons: [],
+              },
+              textSource: 'native-text',
+              renderedImageAvailable: true,
+              headingHints: [],
+              tablesDetected: false,
+              figuresDetected: false,
+              warnings: [],
+              confidence: 95,
+            },
+            metadata: {
+              width: 600,
+              height: 800,
+              rotation: 0,
+              characterCount: 31,
+              wordCount: 6,
+              lineCount: 1,
+              hasTextOperators: true,
+              hasRasterImages: false,
+              contentStreamCount: 1,
+              decodedContentStreamCount: 1,
+              contentFilters: [],
+              fontNames: ['Helvetica'],
+              objectRef: '1 0 R',
+            },
+          }],
+        } as any,
+        extractTextFacts,
+        interpretPage,
+        usePageEvidenceCache: true,
+      };
+
+      const first = await ingestGeotechDocument({
+        ...baseInput,
+        pages: [{
+          base64: 'first-generated-pdf-page-payload',
+          mimeType: 'application/pdf',
+          pageNumber: 1,
+          totalPages: 1,
+          sourceKind: 'pdf-page' as const,
+        }],
+      });
+      expect(first.pageAudits[0]?.evidenceCache?.status).toBe('stored');
+      expect(extractTextFacts).toHaveBeenCalledTimes(1);
+
+      extractTextFacts.mockClear();
+
+      const second = await ingestGeotechDocument({
+        ...baseInput,
+        pages: [{
+          base64: 'second-generated-pdf-page-payload',
+          mimeType: 'application/pdf',
+          pageNumber: 1,
+          totalPages: 1,
+          sourceKind: 'pdf-page' as const,
+        }],
+      });
+      expect(second.pageAudits[0]?.evidenceCache?.status).toBe('hit');
+      expect(second.parameters[0]?.name).toBe('cohesion');
+      expect(extractTextFacts).not.toHaveBeenCalled();
+      expect(interpretPage).not.toHaveBeenCalled();
+    } finally {
+      if (previousConfigDir === undefined) {
+        delete process.env.GEOTECHCLI_CONFIG_DIR;
+      } else {
+        process.env.GEOTECHCLI_CONFIG_DIR = previousConfigDir;
+      }
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
   it('sends hosted-beta image-only and text-unreadable raster pages directly to visual interpretation', async () => {
     const transcribePageImageText = vi.fn(async () => {
       throw new Error('OCR transcription should be skipped for direct visual hosted-beta pages.');

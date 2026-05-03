@@ -1012,6 +1012,79 @@ describe('persisted ingest jobs', () => {
     expect(extractOnHit).not.toHaveBeenCalled();
   });
 
+  it('reuses durable PDF page evidence across jobs when generated page bytes change', async () => {
+    const filePath = join(configDir, 'unstable-pdf-page-source.pdf');
+    await writeBlankPdf(filePath, 1);
+    const firstPageInput = {
+      base64: 'first-generated-pdf-page-payload',
+      mimeType: 'application/pdf',
+      fileBytes: 120,
+      filePath,
+      ext: 'pdf',
+      kind: 'pdf',
+      pageNumber: 1,
+      totalPages: 1,
+      sourceKind: 'pdf-page',
+    } as const;
+    const secondPageInput = {
+      ...firstPageInput,
+      base64: 'second-generated-pdf-page-payload',
+    };
+
+    const firstJob = createPersistedIngestJob({
+      documentType: 'geotech-document',
+      filePath,
+      inspection: makeInspection(1),
+      config: makeConfig(),
+    });
+    const recoverDocumentTextHint = vi.fn(async () => ({
+      textHint: 'Native PDF text: firm clay cohesion 22 kPa.',
+      source: 'pdfjs-text' as const,
+      warnings: [],
+      latencyMs: 10,
+      transformed: false,
+    }));
+    const extractGeotechDocumentFactsFromText = vi.fn(async () => makeGeotechInsight(1, 1, 'Stable PDF page evidence.'));
+
+    const firstCompleted = await runPersistedIngestJobWorker(firstJob.jobId, {
+      buildLLMConfig: makeConfig,
+      readDocumentPdfPageInputs: async () => [firstPageInput],
+      recoverDocumentTextHint,
+      extractGeotechDocumentFactsFromText,
+    });
+
+    expect(firstCompleted.status).toBe('completed');
+    expect(firstCompleted.checkpoints.pages[0]?.evidenceCache?.status).toBe('stored');
+    expect(recoverDocumentTextHint).toHaveBeenCalledTimes(1);
+    expect(extractGeotechDocumentFactsFromText).toHaveBeenCalledTimes(1);
+
+    const secondJob = createPersistedIngestJob({
+      documentType: 'geotech-document',
+      filePath,
+      inspection: makeInspection(1),
+      config: makeConfig(),
+    });
+    const recoverOnHit = vi.fn(async () => {
+      throw new Error('OCR should be skipped on stable PDF page evidence cache hit.');
+    });
+    const extractOnHit = vi.fn(async () => {
+      throw new Error('Page extraction should be skipped on stable PDF page evidence cache hit.');
+    });
+
+    const secondCompleted = await runPersistedIngestJobWorker(secondJob.jobId, {
+      buildLLMConfig: makeConfig,
+      readDocumentPdfPageInputs: async () => [secondPageInput],
+      recoverDocumentTextHint: recoverOnHit,
+      extractGeotechDocumentFactsFromText: extractOnHit,
+    });
+
+    expect(secondCompleted.status).toBe('completed');
+    expect(secondCompleted.checkpoints.pages[0]?.evidenceCache?.status).toBe('hit');
+    expect(secondCompleted.result?.ingestResult.pageAudits[0]?.evidenceCache?.status).toBe('hit');
+    expect(recoverOnHit).not.toHaveBeenCalled();
+    expect(extractOnHit).not.toHaveBeenCalled();
+  });
+
   it('marks remaining pages failed and completes the job when the provider hits a fatal quota stop', async () => {
     const filePath = join(configDir, 'quota-stop-source.pdf');
     await writeBlankPdf(filePath, 3);

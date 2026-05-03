@@ -8,6 +8,17 @@ const releases = [
     date: '2026-05-03',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'fix', text: 'Stabilized PDF page evidence cache keys for generated per-page PDF payloads so repeated full-report ingest reuses native PDF page evidence instead of re-extracting regenerated pages' },
+      { type: 'fix', text: 'Added regression coverage for synchronous and persisted async PDF page cache reuse when page payload bytes change between jobs' },
+      { type: 'feat', text: 'Upgraded HTML ingest dossiers with status badges, searchable review filters, a schematic ground-model cross-section, source evidence actions, and a scroll-aware human review workflow bar' },
+      { type: 'fix', text: 'Verified the GeotechnicalInvestigationReport PDF rerun completed with all 34 pages as cache hits and no new cache stores while keeping the review-focused dossier presentation intact' },
+    ],
+  },
+  {
+    version: '0.4.39',
+    date: '2026-05-03',
+    tag: '0.4.39 Release',
+    changes: [
       { type: 'fix', text: 'Disabled automatic page evidence cache reuse under Vitest unless a test opts in explicitly, preventing synthetic page fixtures from reusing stale cached extraction output across tests' },
       { type: 'fix', text: 'Kept production and local CLI cache defaults unchanged, so repeated real PDF ingest still reuses unchanged page evidence' },
       { type: 'fix', text: 'Verified the full core test workspace after the cache-isolation fix' },

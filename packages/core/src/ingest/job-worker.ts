@@ -224,9 +224,13 @@ function buildWorkerPageEvidenceCacheContext(input: {
   config: LLMConfig;
 }): WorkerPageEvidenceCacheContext {
   const pageNumber = resolveWorkerEvidencePageNumber(input.job, input.pageInput.pageNumber);
+  const pageHash = input.job.source.inputKind === 'pdf'
+    && (input.pageInput.sourceKind === 'pdf-page' || input.pageInput.mimeType === 'application/pdf')
+    ? hashString(`pdf-page:${pageNumber}`)
+    : hashString(`${input.pageInput.mimeType}\n${input.pageInput.base64}`);
   const parts: PageEvidenceCacheKeyParts = {
     fileHash: resolveWorkerPageEvidenceFileHash(input.job),
-    pageHash: hashString(`${input.pageInput.mimeType}\n${input.pageInput.base64}`),
+    pageHash,
     pageNumber,
     modelVersion: buildPageEvidenceModelVersion(input.config),
     preprocessingVersion: buildPageEvidencePreprocessingVersion(input.config),

@@ -275,7 +275,10 @@ function buildPageEvidenceCacheContext(input: {
   preprocessingVersion: string;
 }): GeotechDocumentPageEvidenceCacheContext {
   const pageNumber = resolveEvidenceCachePageNumber(input.source, input.page);
-  const pageHash = hashString(`${input.page.mimeType}\n${input.page.base64}`);
+  const pageHash = input.source.inputKind === 'pdf'
+    && (input.page.sourceKind === 'pdf-page' || input.page.mimeType === 'application/pdf')
+    ? hashString(`pdf-page:${pageNumber}`)
+    : hashString(`${input.page.mimeType}\n${input.page.base64}`);
   const parts: PageEvidenceCacheKeyParts = {
     fileHash: input.fileHash,
     pageHash,

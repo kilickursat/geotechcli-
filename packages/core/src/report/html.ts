@@ -83,6 +83,16 @@ function sourceModeLabel(sourceHint?: string): string {
   }
 }
 
+function reviewFilterValue(item: IngestDossier['trustItems'][number]): 'verified' | 'needs_review' | 'missing' {
+  if (/not extracted|missing/i.test(item.value) || /required/i.test(item.review)) {
+    return 'missing';
+  }
+  if (/recommended|verify|manual|visual|review/i.test(item.review) && !/ready/i.test(item.review)) {
+    return 'needs_review';
+  }
+  return 'verified';
+}
+
 function compactSvgText(value: string | null | undefined, maxLength = 28): string {
   const normalized = (value ?? '').replace(/\s+/g, ' ').trim();
   if (normalized.length <= maxLength) {
@@ -104,6 +114,23 @@ function renderMetric(metric: IngestDossier['metrics'][number]): string {
       ` : ''}
       ${metric.detail ? `<small>${escapeHtml(metric.detail)}</small>` : ''}
     </article>
+  `;
+}
+
+function renderStatusBadges(dossier: IngestDossier): string {
+  if (dossier.badges.length === 0) {
+    return '';
+  }
+
+  return `
+    <div class="status-badge-row" aria-label="Document status">
+      ${dossier.badges.map((badge) => `
+        <span class="status-badge ${toneClass(badge.tone)}">
+          <span>${escapeHtml(badge.label)}</span>
+          <strong>${escapeHtml(badge.value)}</strong>
+        </span>
+      `).join('')}
+    </div>
   `;
 }
 
@@ -138,8 +165,18 @@ function renderTable(table: IngestDossierTable, className = 'data-section'): str
 function renderTrustTable(dossier: IngestDossier): string {
   const rows = dossier.trustItems.length === 0
     ? '<tr><td colspan="6">No trust-layer rows were retained.</td></tr>'
-    : dossier.trustItems.map((item) => `
-      <tr>
+    : dossier.trustItems.map((item) => {
+      const reviewFilter = reviewFilterValue(item);
+      const searchText = [
+        item.item,
+        item.value,
+        item.sourcePage,
+        item.confidence,
+        item.review,
+        item.evidence,
+      ].join(' ').toLowerCase();
+      return `
+      <tr data-trust-row data-review="${escapeHtml(reviewFilter)}" data-search="${escapeHtml(searchText)}">
         <td><strong>${escapeHtml(item.item)}</strong></td>
         <td>${escapeHtml(item.value)}</td>
         <td>${escapeHtml(item.sourcePage)}</td>
@@ -147,13 +184,26 @@ function renderTrustTable(dossier: IngestDossier): string {
         <td>${escapeHtml(item.review)}</td>
         <td>${escapeHtml(item.evidence)}</td>
       </tr>
-    `).join('');
+    `;
+    }).join('');
 
   return `
     <section class="data-section" id="parameters">
       <div class="section-heading">
         <h2>Engineering Parameters</h2>
         <p>Evidence-first review table. Every retained or missing item is shown with source, confidence, review posture, and an evidence snippet.</p>
+      </div>
+      <div class="trust-controls" aria-label="Parameter table controls">
+        <label>
+          <span>Search parameters</span>
+          <input id="trust-search" type="search" placeholder="Filter by parameter, value, source, or evidence" />
+        </label>
+        <div class="filter-row" aria-label="Review status filters">
+          <button type="button" class="filter-button active" data-trust-filter="all">All</button>
+          <button type="button" class="filter-button" data-trust-filter="needs_review">Needs review</button>
+          <button type="button" class="filter-button" data-trust-filter="missing">Missing</button>
+          <button type="button" class="filter-button" data-trust-filter="verified">Verified</button>
+        </div>
       </div>
       <div class="table-shell trust-table">
         <table>
@@ -170,6 +220,101 @@ function renderTrustTable(dossier: IngestDossier): string {
           <tbody>${rows}</tbody>
         </table>
       </div>
+    </section>
+  `;
+}
+
+function renderGroundModelCrossSection(profile: IngestDossierBoreholeProfile | undefined): string {
+  if (!profile || profile.columns.length < 2 || profile.maxDepth <= 0) {
+    return `
+      <section class="data-section" id="ground-cross-section">
+        <div class="section-heading">
+          <h2>Ground Model Cross-Section</h2>
+          <p>A schematic cross-section needs at least two boreholes with retained depth evidence.</p>
+        </div>
+        <div class="empty-state">Ground-model bands were not drawn because borehole depth and layer evidence were incomplete.</div>
+      </section>
+    `;
+  }
+
+  const width = 940;
+  const height = 310;
+  const plotTop = 58;
+  const plotHeight = 182;
+  const left = 84;
+  const right = width - 44;
+  const usableWidth = right - left;
+  const referenceLayers = profile.columns
+    .flatMap((column) => column.layers)
+    .sort((leftLayer, rightLayer) => leftLayer.depthFrom - rightLayer.depthFrom)
+    .slice(0, 8);
+  const layers = referenceLayers.length > 0
+    ? referenceLayers
+    : [{
+        depthFrom: 0,
+        depthTo: profile.maxDepth,
+        label: 'Ground profile',
+        description: 'Layer boundaries were not available in structured form.',
+        tone: 'neutral' as const,
+        uncertain: true,
+      }];
+  const yForDepth = (depth: number) => plotTop + (Math.max(0, Math.min(profile.maxDepth, depth)) / profile.maxDepth) * plotHeight;
+  const ticks = Array.from({ length: 6 }, (_value, index) => Number((profile.maxDepth * index / 5).toFixed(2)));
+  const columnX = (index: number) =>
+    profile.columns.length === 1
+      ? left + usableWidth / 2
+      : left + (usableWidth * index / (profile.columns.length - 1));
+
+  return `
+    <section class="data-section" id="ground-cross-section">
+      <div class="section-heading">
+        <h2>Ground Model Cross-Section</h2>
+        <p>Conceptual cross-section connecting retained borehole evidence. Bands are schematic and should be verified against source logs before design use.</p>
+      </div>
+      <div class="profile-shell cross-section-shell">
+        <svg class="ground-cross-section" viewBox="0 0 ${width} ${height}" role="img" aria-label="AI-assisted ground model cross-section">
+          <rect x="0" y="0" width="${width}" height="${height}" rx="18" fill="#ffffff" />
+          ${ticks.map((tick) => {
+            const y = yForDepth(tick);
+            return `
+              <line x1="${left - 34}" y1="${y.toFixed(2)}" x2="${right + 12}" y2="${y.toFixed(2)}" stroke="#d8e0ea" stroke-width="1" />
+              <text x="14" y="${(y + 4).toFixed(2)}" class="profile-axis">${escapeHtml(tick.toFixed(tick % 1 === 0 ? 0 : 1))} ${escapeHtml(profile.depthUnit)}</text>
+            `;
+          }).join('')}
+          ${layers.map((layer) => {
+            const y1 = yForDepth(layer.depthFrom);
+            const y2 = Math.max(y1 + 18, yForDepth(layer.depthTo));
+            return `
+              <g>
+                <title>${escapeHtml(`${layer.label}: ${layer.description}`)}</title>
+                <path d="M ${left} ${y1.toFixed(2)} L ${right} ${y1.toFixed(2)} L ${right} ${y2.toFixed(2)} L ${left} ${y2.toFixed(2)} Z"
+                  fill="${toneColor(layer.tone)}" stroke="#7a8aa0" stroke-width="1.2" ${layer.uncertain ? 'stroke-dasharray="8 6"' : ''} opacity="0.88" />
+                <text x="${left + 18}" y="${(y1 + Math.min(34, (y2 - y1) / 2 + 5)).toFixed(2)}" class="profile-label">${escapeHtml(compactSvgText(layer.label, 32))}</text>
+                <text x="${left + 18}" y="${(y1 + Math.min(52, (y2 - y1) / 2 + 23)).toFixed(2)}" class="profile-small">${escapeHtml(compactSvgText(layer.description, 64))}</text>
+              </g>
+            `;
+          }).join('')}
+          ${profile.columns.map((column, index) => {
+            const x = columnX(index);
+            const depth = column.totalDepth ?? profile.maxDepth;
+            const bottomY = yForDepth(depth);
+            const waterY = column.waterTableDepth != null ? yForDepth(column.waterTableDepth) : null;
+            return `
+              <g>
+                <line x1="${x.toFixed(2)}" y1="${plotTop - 10}" x2="${x.toFixed(2)}" y2="${bottomY.toFixed(2)}" stroke="#0b4f8a" stroke-width="3" />
+                <circle cx="${x.toFixed(2)}" cy="${plotTop - 12}" r="6" fill="#0b4f8a" />
+                <text x="${(x - 24).toFixed(2)}" y="28" class="profile-title">${escapeHtml(column.boreholeId)}</text>
+                <text x="${(x - 36).toFixed(2)}" y="${height - 32}" class="profile-small">TD ${escapeHtml(depth.toFixed(2))} ${escapeHtml(profile.depthUnit)}</text>
+                ${waterY != null ? `
+                  <line x1="${(x - 34).toFixed(2)}" y1="${waterY.toFixed(2)}" x2="${(x + 34).toFixed(2)}" y2="${waterY.toFixed(2)}" stroke="#0891b2" stroke-width="2" />
+                  <text x="${(x - 40).toFixed(2)}" y="${(waterY - 7).toFixed(2)}" class="profile-water">GW</text>
+                ` : ''}
+              </g>
+            `;
+          }).join('')}
+        </svg>
+      </div>
+      <p class="verification-note">AI-assisted ground model. Use source logs and engineering judgment before adopting layer continuity, groundwater, or design parameters.</p>
     </section>
   `;
 }
@@ -304,6 +449,11 @@ function renderSourceEvidence(dossier: IngestDossier): string {
             ].filter(Boolean).join(' | '))}</p>
             ${card.highlights.length > 0 ? `<ul>${card.highlights.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : '<p>No strong structured highlight was retained for this page.</p>'}
             ${card.warnings.length > 0 ? `<small>Human verification recommended: ${escapeHtml(String(card.warnings.length))} retained warning(s).</small>` : ''}
+            <div class="evidence-actions" aria-label="${escapeHtml(`${card.pageLabel} review actions`)}">
+              <a href="#processing-audit">Open source page</a>
+              <button type="button" data-dossier-action="verified">Mark verified</button>
+              <button type="button" data-dossier-action="flagged">Flag issue</button>
+            </div>
           </article>
         `).join('')}
       </div>
@@ -362,6 +512,29 @@ function renderProcessingAudit(dossier: IngestDossier, auditTables: IngestDossie
         </div>
       </section>
     </details>
+  `;
+}
+
+function renderReviewBar(dossier: IngestDossier): string {
+  const missingCount = dossier.trustItems.filter((item) => reviewFilterValue(item) === 'missing').length;
+  const needsReviewCount = dossier.trustItems.filter((item) => reviewFilterValue(item) === 'needs_review').length;
+  const reviewBadgeValue = dossier.badges.find((badge) => /review/i.test(badge.label))?.value ?? 'Yes';
+  const reviewRequired = /^no$/i.test(reviewBadgeValue) ? 'Review ready' : 'Review required';
+  return `
+    <div class="review-bar" role="region" aria-label="Human review workflow">
+      <div>
+        <strong>${escapeHtml(reviewRequired)}</strong>
+        <span>${escapeHtml(`${dossier.pageCards.length} page(s), ${dossier.trustItems.length} review item(s), ${needsReviewCount} need review, ${missingCount} missing`)}</span>
+      </div>
+      <div class="review-actions">
+        <a href="#parameters" class="primary-action">Approve Extraction</a>
+        <a href="#risks">Flag for Review</a>
+        <button type="button" onclick="window.print()">Export Dossier</button>
+        <a href="#ground-cross-section">Generate Ground Model</a>
+        <a href="#source-evidence">Ask Geotech Agent</a>
+        <a href="#processing-audit">Open Audit Trail</a>
+      </div>
+    </div>
   `;
 }
 
@@ -429,6 +602,7 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
       background: var(--bg);
       font-variant-numeric: tabular-nums;
       overflow-x: hidden;
+      padding-bottom: 98px;
     }
 
     .layout {
@@ -569,6 +743,37 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
 
     .hero-meta strong { color: var(--text); }
 
+    .status-badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+      margin-top: 16px;
+    }
+
+    .status-badge {
+      display: inline-grid;
+      gap: 4px;
+      min-width: 126px;
+      padding: 10px 12px;
+      border: 1px solid rgba(102, 112, 133, 0.18);
+      border-radius: 14px;
+      line-height: 1.2;
+    }
+
+    .status-badge span {
+      color: currentColor;
+      opacity: 0.72;
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      font-weight: 900;
+    }
+
+    .status-badge strong {
+      color: var(--text);
+      font-size: 0.86rem;
+      overflow-wrap: anywhere;
+    }
+
     .executive-grid, .metric-grid, .card-grid, .evidence-grid, .audit-page-grid, .footer-grid {
       display: grid;
       gap: 16px;
@@ -671,6 +876,67 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
       color: #ffffff;
     }
 
+    .review-bar {
+      position: fixed;
+      left: 50%;
+      bottom: 0;
+      z-index: 45;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      width: min(1180px, calc(100vw - 36px));
+      margin: 10px auto 0;
+      padding: 13px 14px;
+      border: 1px solid #263244;
+      border-radius: 18px 18px 0 0;
+      background: rgba(11, 18, 32, 0.94);
+      color: #f8fafc;
+      box-shadow: 0 -18px 38px rgba(11, 18, 32, 0.2);
+      backdrop-filter: blur(14px);
+      transform: translate(-50%, 120%);
+      transition: transform 180ms ease;
+    }
+
+    .review-bar.visible {
+      transform: translate(-50%, 0);
+    }
+
+    .review-bar > div:first-child {
+      display: grid;
+      gap: 3px;
+      min-width: 220px;
+    }
+
+    .review-bar strong { font-size: 0.95rem; }
+    .review-bar span { color: #94a3b8; font-size: 0.84rem; line-height: 1.4; }
+
+    .review-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .review-actions a, .review-actions button {
+      border: 1px solid #334155;
+      border-radius: 10px;
+      background: #111827;
+      color: #dbeafe;
+      padding: 8px 10px;
+      font: inherit;
+      font-size: 0.78rem;
+      font-weight: 850;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    .review-actions .primary-action {
+      background: #38bdf8;
+      border-color: #38bdf8;
+      color: #0b1220;
+    }
+
     .data-section {
       display: grid;
       gap: 16px;
@@ -736,6 +1002,27 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
       height: auto;
     }
 
+    .cross-section-shell {
+      background:
+        linear-gradient(180deg, rgba(11, 79, 138, 0.04), rgba(22, 135, 93, 0.04)),
+        var(--surface);
+    }
+
+    .ground-cross-section {
+      display: block;
+      min-width: 840px;
+      width: 100%;
+      height: auto;
+    }
+
+    .verification-note {
+      color: var(--muted);
+      font-weight: 700;
+      line-height: 1.55;
+      padding-left: 14px;
+      border-left: 3px solid var(--warning);
+    }
+
     .profile-title { font: 800 15px Inter, Segoe UI, sans-serif; fill: #101828; }
     .profile-label { font: 800 13px Inter, Segoe UI, sans-serif; fill: #101828; }
     .profile-small { font: 11px Inter, Segoe UI, sans-serif; fill: #475467; }
@@ -788,6 +1075,71 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
       line-height: 1;
     }
 
+    .trust-controls {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+
+    .trust-controls label {
+      display: grid;
+      gap: 7px;
+      flex: 1 1 320px;
+      color: var(--muted);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      font-weight: 900;
+    }
+
+    .trust-controls input {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #ffffff;
+      color: var(--text);
+      padding: 11px 12px;
+      font: inherit;
+      font-size: 0.92rem;
+      outline: none;
+      text-transform: none;
+      font-weight: 600;
+    }
+
+    .trust-controls input:focus {
+      border-color: #93c5fd;
+      box-shadow: 0 0 0 4px rgba(11, 79, 138, 0.08);
+    }
+
+    .filter-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .filter-button {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--surface-soft);
+      color: var(--muted);
+      padding: 9px 12px;
+      font: inherit;
+      font-size: 0.8rem;
+      font-weight: 850;
+      cursor: pointer;
+    }
+
+    .filter-button.active {
+      background: var(--primary);
+      color: #ffffff;
+      border-color: var(--primary);
+    }
+
     .evidence-grid {
       grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
     }
@@ -814,6 +1166,38 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
       color: var(--warning);
       font-weight: 800;
       line-height: 1.45;
+    }
+
+    .evidence-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding-top: 4px;
+    }
+
+    .evidence-actions a, .evidence-actions button {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.62);
+      color: var(--primary);
+      padding: 8px 9px;
+      font: inherit;
+      font-size: 0.78rem;
+      font-weight: 850;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    .evidence-actions button[data-state="verified"] {
+      color: var(--success);
+      border-color: rgba(22, 135, 93, 0.28);
+      background: var(--success-soft);
+    }
+
+    .evidence-actions button[data-state="flagged"] {
+      color: var(--warning);
+      border-color: rgba(183, 121, 31, 0.28);
+      background: var(--warning-soft);
     }
 
     .empty-state {
@@ -929,6 +1313,30 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
       line-height: 1.58;
     }
 
+    tr[hidden] { display: none; }
+
+    .toast-region {
+      position: fixed;
+      top: 18px;
+      right: 18px;
+      z-index: 60;
+      display: grid;
+      gap: 8px;
+      pointer-events: none;
+    }
+
+    .toast {
+      max-width: 320px;
+      padding: 11px 14px;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      background: #0b1220;
+      color: #f8fafc;
+      box-shadow: 0 18px 38px rgba(11, 18, 32, 0.22);
+      font-size: 0.86rem;
+      font-weight: 700;
+    }
+
     @media (max-width: 980px) {
       .layout { grid-template-columns: minmax(0, 1fr); padding: 18px; max-width: 100%; }
       .sidebar { position: static; min-height: auto; }
@@ -937,15 +1345,23 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
     }
 
     @media (max-width: 620px) {
+      body { padding-bottom: 0; }
       .layout { display: block; width: 100%; max-width: 390px; margin: 0; padding: 12px; }
       .sidebar, .content, .hero, .data-section, .audit-drawer, .footer-grid {
         width: 100%;
         max-width: 100%;
       }
+      .sidebar { padding: 16px; min-height: auto; border-radius: 14px; }
+      .brand { gap: 5px; padding-bottom: 12px; margin-bottom: 10px; }
+      .brand span { display: none; }
+      .nav-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+      .nav-list a { padding: 8px 9px; font-size: 0.82rem; }
       .content { margin-top: 18px; }
       .hero { padding: 22px; }
       .executive-grid, .metric-grid, .card-grid, .evidence-grid, .footer-grid { grid-template-columns: 1fr; }
-      .nav-list { grid-template-columns: 1fr; }
+      .review-bar { position: static; transform: none; width: 100%; margin-top: 18px; border-radius: 18px; align-items: stretch; }
+      .review-bar.visible { transform: none; }
+      .review-actions { justify-content: flex-start; }
       h1 { font-size: 1.72rem; max-width: 100%; }
     }
   </style>
@@ -960,6 +1376,7 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
       <nav class="nav-list">
         <a href="#overview">Overview</a>
         <a href="#ground-model">Ground Model</a>
+        <a href="#ground-cross-section">Cross-Section</a>
         <a href="#boreholes">Boreholes</a>
         <a href="#parameters">Engineering Parameters</a>
         <a href="#risks">Risks and Limitations</a>
@@ -976,6 +1393,7 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
             <h1>${escapeHtml(dossier.title)}</h1>
             <p class="hero-subtitle">${escapeHtml(subtitle)}</p>
             <p class="hero-summary">${escapeHtml(dossier.summary)}</p>
+            ${renderStatusBadges(dossier)}
           </div>
           <div class="hero-meta">
             <strong>${escapeHtml(dossier.sourceLabel)}</strong>
@@ -1015,6 +1433,7 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
         </div>
       </section>
 
+      ${renderGroundModelCrossSection(dossier.boreholeProfile)}
       ${renderBoreholeProfile(dossier.boreholeProfile)}
       ${renderTrustTable(dossier)}
       ${mainTables.map((table) => renderTable(table)).join('')}
@@ -1048,6 +1467,67 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
       </section>
     </main>
   </div>
+  ${renderReviewBar(dossier)}
+  <div class="toast-region" aria-live="polite" aria-atomic="true"></div>
+  <script>
+    (() => {
+      const search = document.getElementById('trust-search');
+      const rows = Array.from(document.querySelectorAll('[data-trust-row]'));
+      const buttons = Array.from(document.querySelectorAll('[data-trust-filter]'));
+      const toastRegion = document.querySelector('.toast-region');
+      const reviewBar = document.querySelector('.review-bar');
+      let activeFilter = 'all';
+
+      const showToast = (message) => {
+        if (!toastRegion) return;
+        const toast = document.createElement('div');
+        toast.className = 'toast';
+        toast.textContent = message;
+        toastRegion.appendChild(toast);
+        window.setTimeout(() => toast.remove(), 2600);
+      };
+
+      const applyTrustFilter = () => {
+        const query = String(search?.value ?? '').trim().toLowerCase();
+        rows.forEach((row) => {
+          const text = row.getAttribute('data-search') ?? '';
+          const review = row.getAttribute('data-review') ?? '';
+          const queryMatch = !query || text.includes(query);
+          const filterMatch = activeFilter === 'all' || review === activeFilter;
+          row.hidden = !(queryMatch && filterMatch);
+        });
+      };
+
+      const syncReviewBar = () => {
+        if (!reviewBar) return;
+        reviewBar.classList.toggle('visible', window.innerWidth > 620 && window.scrollY > 420);
+      };
+
+      syncReviewBar();
+      window.addEventListener('scroll', syncReviewBar, { passive: true });
+      window.addEventListener('resize', syncReviewBar);
+
+      search?.addEventListener('input', applyTrustFilter);
+      buttons.forEach((button) => {
+        button.addEventListener('click', () => {
+          activeFilter = button.getAttribute('data-trust-filter') ?? 'all';
+          buttons.forEach((candidate) => candidate.classList.toggle('active', candidate === button));
+          applyTrustFilter();
+        });
+      });
+
+      document.querySelectorAll('[data-dossier-action]').forEach((control) => {
+        control.addEventListener('click', () => {
+          const state = control.getAttribute('data-dossier-action') ?? '';
+          control.setAttribute('data-state', state);
+          control.textContent = state === 'verified' ? 'Verified' : 'Issue flagged';
+          showToast(state === 'verified'
+            ? 'Evidence item marked verified in this local dossier view.'
+            : 'Evidence item flagged for engineering review in this local dossier view.');
+        });
+      });
+    })();
+  </script>
 </body>
 </html>`;
 }
