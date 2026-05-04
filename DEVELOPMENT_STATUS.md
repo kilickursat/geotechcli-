@@ -4,7 +4,7 @@ Last updated: 2026-05-04
 
 ## Current Work
 
-Preparing v0.4.42 on `strong-beta`. The current engineering track is the PDF/page evidence benchmark foundation plus GroundModel calculation readiness so future OCR/vision and BYOK-provider changes can be measured against the same report PDF instead of judged manually.
+Preparing v0.4.43 on `strong-beta`. The current engineering track is the PDF/page evidence benchmark foundation plus GroundModel calculation readiness so future OCR/vision and BYOK-provider changes can be measured against the same report PDF instead of judged manually.
 
 Current focus:
 
@@ -186,3 +186,7 @@ Highest-value next work:
 - Run `npm run smoke:web`.
 - Run `npm run --workspace=@geotechcli/web build:cf` for website/release-surface changes.
 - Confirm package versions, changelog, docs, live API/version, npm packages, branch, and tag after push.
+
+### v0.4.43 CI Raster Ingest Timeout Hotfix
+
+- Increased the raster-page ingest recovery regression timeout for GitHub Actions while keeping the v0.4.42 benchmark and GroundModel readiness behavior unchanged.

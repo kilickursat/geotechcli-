@@ -8,6 +8,15 @@ const releases = [
     date: '2026-05-04',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'fix', text: 'Increased the slow raster-page ingest recovery regression timeout so GitHub Actions can finish the same PDF/OCR-style path that passes locally on Windows' },
+      { type: 'fix', text: 'Kept the benchmark, GroundModel readiness, provider-neutral evidence, and report filename behavior from 0.4.42 unchanged' },
+    ],
+  },
+  {
+    version: '0.4.42',
+    date: '2026-05-04',
+    tag: '0.4.42 Release',
+    changes: [
       { type: 'feat', text: 'Added geotechnical report benchmark output for page cache reuse, estimated hosted calls, source-page traceability, retained signal counts, and GroundModel readiness gates' },
       { type: 'feat', text: 'Added npm run benchmark:geotech-report as a local two-pass benchmark harness for the canonical GeotechnicalInvestigationReport PDF' },
       { type: 'fix', text: 'Stamped retained geotechnical materials, classifications, and parameters with provider-neutral source pages for hosted GLM and future BYOK providers' },

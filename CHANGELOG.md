@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.43] - 2026-05-04
+
+### CI Raster Ingest Timeout Hotfix
+
+- Increased the slow raster-page ingest recovery regression timeout so GitHub Actions can finish the same PDF/OCR-style path that passes locally on Windows.
+- Kept the benchmark, GroundModel readiness, provider-neutral evidence, and report filename behavior from `0.4.42` unchanged.
+
 ## [0.4.42] - 2026-05-04
 
 ### Benchmark and GroundModel Readiness

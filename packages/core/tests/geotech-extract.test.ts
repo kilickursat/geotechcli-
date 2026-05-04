@@ -242,7 +242,7 @@ describe('ingestBoreholeLogDocument', () => {
     expect(result.source.failedPages).toBe(0);
     expect(result.pageFailures).toHaveLength(0);
     expect(transcribePageImageText).toHaveBeenCalledTimes(1);
-  });
+  }, 20_000);
 
   it('captures page failures and downgrades auto-proceed state', async () => {
     const interpretPageWithContext = vi.fn(async (_base64: string, _mimeType: string, _config: unknown, context?: { pageNumber?: number }) => {
