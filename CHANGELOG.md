@@ -1,5 +1,15 @@
 ﻿# Changelog
 
+## [0.4.41] - 2026-05-04
+
+### Ingest Report UI Polish
+
+- Renamed the generated HTML ingest output from a dossier-facing presentation to a Geotechnical Intelligence Report presentation, including CLI summary labels and browser report prompts.
+- Reworked the report shell into a compact dark engineering dashboard with a top navigation bar, cleaner hero hierarchy, dark evidence cards, and contained table/profile sections.
+- Tightened desktop and mobile layout constraints so status badges, source metadata, ground-model SVGs, borehole profiles, and engineering tables avoid overlap and horizontal clipping.
+- Kept Processing Audit and model-stage details available below the engineering review surface while keeping the main report focused on decisions, evidence, confidence, and human verification.
+- Verified the sample `GeotechnicalInvestigationReport (1).pdf` report regenerated with all 34 pages processed, no visible dossier wording, and clean desktop/mobile screenshots.
+
 ## [0.4.40] - 2026-05-03
 
 ### Evidence Cache and Dossier UX

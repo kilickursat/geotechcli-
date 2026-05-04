@@ -5,8 +5,20 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 const releases = [
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-05-03',
+    date: '2026-05-04',
     tag: `${GEOTECHCLI_VERSION} Release`,
+    changes: [
+      { type: 'fix', text: 'Renamed the generated HTML ingest output to a Geotechnical Intelligence Report presentation, including CLI summary labels and browser report prompts' },
+      { type: 'feat', text: 'Reworked the report shell into a compact dark engineering dashboard with top navigation, cleaner hero hierarchy, dark evidence cards, and contained table/profile sections' },
+      { type: 'fix', text: 'Tightened desktop and mobile layout constraints so status badges, source metadata, ground-model SVGs, borehole profiles, and engineering tables avoid overlap and horizontal clipping' },
+      { type: 'fix', text: 'Kept Processing Audit and model-stage details below the engineering review surface while keeping the main report focused on decisions, evidence, confidence, and human verification' },
+      { type: 'fix', text: 'Verified the GeotechnicalInvestigationReport PDF report regenerated with all 34 pages processed, no visible dossier wording, and clean desktop/mobile screenshots' },
+    ],
+  },
+  {
+    version: '0.4.40',
+    date: '2026-05-03',
+    tag: '0.4.40 Release',
     changes: [
       { type: 'fix', text: 'Stabilized PDF page evidence cache keys for generated per-page PDF payloads so repeated full-report ingest reuses native PDF page evidence instead of re-extracting regenerated pages' },
       { type: 'fix', text: 'Added regression coverage for synchronous and persisted async PDF page cache reuse when page payload bytes change between jobs' },
