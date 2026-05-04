@@ -1234,7 +1234,7 @@ function buildFooterNotes(result: IngestDossierSourceResult): string[] {
       ? `Segmented execution used ${result.source.segmentation.segmentCount ?? result.source.segmentation.segments?.length ?? 0} linked packet(s).`
       : null,
     result.pageFailures.length > 0 ? `${result.pageFailures.length} page failure(s) were recorded.` : null,
-    result.warnings.length > 0 ? `${result.warnings.length} warning(s) were retained in the dossier.` : null,
+    result.warnings.length > 0 ? `${result.warnings.length} warning(s) were retained in the report.` : null,
     'Confidence, approval, and normalized tables are workflow aids for review, not engineering sign-off. Verify conclusions against the original source pages.',
   ]);
 }
@@ -1253,7 +1253,7 @@ export function buildIngestDossier(
 
   if (result.documentType === 'geotech-document') {
     const geotechResult = result as GeotechDocumentIngestResult;
-    const title = geotechResult.title ?? 'Geotechnical ingest dossier';
+    const title = geotechResult.title ?? 'Geotechnical ingest report';
     const cleanSummary = cleanNarrativeText(geotechResult.summary, 320);
     const summary =
       cleanSummary
@@ -1262,8 +1262,8 @@ export function buildIngestDossier(
     return {
       title,
       subtitle: geotechResult.documentClass
-        ? `${geotechResult.documentClass} dossier`
-        : 'Geotechnical document dossier',
+        ? `${geotechResult.documentClass} report`
+        : 'Geotechnical document report',
       summary,
       sourceLabel,
       documentType: geotechResult.documentType,
@@ -1288,9 +1288,9 @@ export function buildIngestDossier(
   const firstBorehole = boreholeResult.boreholes[0];
   return {
     title: firstBorehole?.boreholeId
-      ? `Borehole dossier - ${firstBorehole.boreholeId}`
-      : 'Borehole ingest dossier',
-    subtitle: 'Borehole log dossier',
+      ? `Borehole report - ${firstBorehole.boreholeId}`
+      : 'Borehole ingest report',
+    subtitle: 'Borehole log review report',
     summary:
       firstBorehole?.summary
       ?? `Borehole ingest completed with ${boreholeResult.boreholes.length} borehole(s) over ${boreholeResult.source.successfulPages}/${boreholeResult.source.totalPages} page(s).`,

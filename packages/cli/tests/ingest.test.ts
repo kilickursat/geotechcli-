@@ -933,8 +933,8 @@ describe('registerIngestCommand', () => {
       '<!doctype html><html><body>Dossier</body></html>',
     );
     expect(browserMocks.openFileInBrowser).toHaveBeenCalledWith('sample.ingest-dossier.html');
-    expect(uiMocks.success).toHaveBeenCalledWith('HTML ingest dossier opened in your browser: sample.ingest-dossier.html');
-    expect(uiMocks.keyValue).toHaveBeenCalledWith('HTML dossier', 'sample.ingest-dossier.html');
+    expect(uiMocks.success).toHaveBeenCalledWith('HTML ingest report opened in your browser: sample.ingest-dossier.html');
+    expect(uiMocks.keyValue).toHaveBeenCalledWith('HTML report', 'sample.ingest-dossier.html');
     expect(uiMocks.renderTable).not.toHaveBeenCalled();
   });
 
@@ -1026,8 +1026,8 @@ describe('registerIngestCommand', () => {
       '<!doctype html><html><body>Dossier</body></html>',
     );
     expect(browserMocks.openFileInBrowser).not.toHaveBeenCalled();
-    expect(uiMocks.success).toHaveBeenCalledWith('HTML ingest dossier saved to job-result.html');
-    expect(uiMocks.keyValue).toHaveBeenCalledWith('HTML dossier', 'job-result.html');
+    expect(uiMocks.success).toHaveBeenCalledWith('HTML ingest report saved to job-result.html');
+    expect(uiMocks.keyValue).toHaveBeenCalledWith('HTML report', 'job-result.html');
     expect(uiMocks.keyValue).toHaveBeenCalledWith('Opened', 'No');
     expect(uiMocks.renderTable).not.toHaveBeenCalled();
   });
@@ -1137,7 +1137,10 @@ describe('registerIngestCommand', () => {
 
     await program.parseAsync(['ingest', 'sample.pdf', '--json'], { from: 'user' });
 
-    expect(visionMocks.readVisionPdfPageInputs).toHaveBeenCalledWith('sample.pdf', { inspection });
+    expect(visionMocks.readVisionPdfPageInputs).toHaveBeenCalledWith('sample.pdf', {
+      inspection,
+      forceRasterImages: false,
+    });
     expect(coreMocks.ingestBoreholeLogDocument).toHaveBeenCalledWith(expect.objectContaining({
       inspection,
       pages: pageInputs,
@@ -2505,7 +2508,7 @@ describe('registerIngestCommand', () => {
       'site-report.html',
       '<!doctype html><html><body>Dossier</body></html>',
     );
-    expect(uiMocks.success).toHaveBeenCalledWith('HTML ingest dossier saved to site-report.html');
+    expect(uiMocks.success).toHaveBeenCalledWith('HTML ingest report saved to site-report.html');
   });
 
   it('writes an HTML ingest dossier for a persisted review with approval metadata', async () => {
@@ -2594,7 +2597,7 @@ describe('registerIngestCommand', () => {
       'review-dossier.html',
       '<!doctype html><html><body>Dossier</body></html>',
     );
-    expect(uiMocks.success).toHaveBeenCalledWith('HTML ingest dossier saved to review-dossier.html');
+    expect(uiMocks.success).toHaveBeenCalledWith('HTML ingest report saved to review-dossier.html');
   });
 
   it('fails fast for unsupported ingest types before any LLM work starts', async () => {

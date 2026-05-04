@@ -206,7 +206,8 @@ describe('ingest dossier HTML', () => {
     const html = renderIngestDossierAsHtml(dossier);
 
     expect(html).toContain('<!doctype html>');
-    expect(html).toContain('Geotechnical Intelligence Dossier');
+    expect(html).toContain('Geotechnical Intelligence Report');
+    expect(html).not.toContain('Geotechnical Intelligence Dossier');
     expect(html).toContain('AI-assisted extraction, verification, and engineering interpretation from geotechnical reports.');
     expect(html).toContain('Engineering Parameters');
     expect(html).toContain('Key engineering parameters');

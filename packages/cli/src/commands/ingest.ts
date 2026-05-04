@@ -131,8 +131,8 @@ function writeHtmlDossier(
   const opened = options.open === false ? false : openFileInBrowser(outputPath);
   success(
     opened
-      ? `HTML ingest dossier opened in your browser: ${outputPath}`
-      : `HTML ingest dossier saved to ${outputPath}`,
+      ? `HTML ingest report opened in your browser: ${outputPath}`
+      : `HTML ingest report saved to ${outputPath}`,
   );
   return { outputPath, opened };
 }
@@ -1732,7 +1732,7 @@ function renderIngestJobResult(job: NormalizedIngestJobRecord): void {
       sourceLabel: job.result.ingestResult.source.fileName ?? job.result.ingestResult.source.filePath,
       persistedReview,
     });
-    info(`Open browser dossier: geotech ingest result ${job.jobId} --format html`);
+    info(`Open browser report: geotech ingest result ${job.jobId} --format html`);
     return;
   }
 
@@ -1742,7 +1742,7 @@ function renderIngestJobResult(job: NormalizedIngestJobRecord): void {
     persistedReview,
   });
 
-  info(`Open browser dossier: geotech ingest result ${job.jobId} --format html`);
+  info(`Open browser report: geotech ingest result ${job.jobId} --format html`);
 }
 
 function renderCompactIngestResultSummary(
@@ -1775,7 +1775,7 @@ function renderCompactIngestResultSummary(
   }
 
   if (options.htmlDossier) {
-    keyValue('HTML dossier', options.htmlDossier.outputPath);
+    keyValue('HTML report', options.htmlDossier.outputPath);
     keyValue('Opened', options.htmlDossier.opened ? 'Yes' : 'No');
   }
 
@@ -2076,7 +2076,7 @@ export function registerIngestCommand(program: Command): void {
         if (shouldRunAsJob) {
           if (runJobInBackground && wantsHtmlDossier) {
             throw new Error(
-              'HTML ingest dossiers are generated from completed results. Start the job first, then run geotech ingest wait <jobId> --format html --output <file>.',
+              'HTML ingest reports are generated from completed results. Start the job first, then run geotech ingest wait <jobId> --format html --output <file>.',
             );
           }
           spinner = startProgress(flags, 'Creating resumable ingest job...');
@@ -2345,7 +2345,7 @@ export function registerIngestCommand(program: Command): void {
       try {
         if (resolvedOpts.list) {
           if (wantsHtmlDossier) {
-            throw new Error('HTML ingest dossiers are only available for a single persisted review. Remove --list or use plain/json output.');
+            throw new Error('HTML ingest reports are only available for a single persisted review. Remove --list or use plain/json output.');
           }
           const reviews = listPersistedBoreholeIngestReviews(resolvedProjectId);
           if (flags.json) {
