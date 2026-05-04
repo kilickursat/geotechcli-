@@ -1,10 +1,10 @@
 # geotechCLI Development Status
 
-Last updated: 2026-05-03
+Last updated: 2026-05-04
 
 ## Current Work
 
-We are shipping the v0.4.39 CI cache-isolation hotfix for the page evidence cache foundation.
+Preparing v0.4.42 on `strong-beta`. The current engineering track is the PDF/page evidence benchmark foundation plus GroundModel calculation readiness so future OCR/vision and BYOK-provider changes can be measured against the same report PDF instead of judged manually.
 
 Current focus:
 
@@ -13,8 +13,14 @@ Current focus:
 - Route hosted vision to `glm-5v-turbo`.
 - Route hosted PDF/table layout extraction to `glm-ocr`.
 - Retry final report synthesis without thinking when GLM-5.1 returns an empty thinking-mode response.
-- Present HTML ingest results as an evidence-first Geotechnical Intelligence Dossier with a premium review dashboard.
+- Present HTML ingest results as an evidence-first Geotechnical Intelligence Report with a premium review dashboard.
 - Cache compact page evidence by file hash, page hash, preprocessing settings, model version, and schema version so reruns can reuse trusted page extraction work.
+- Add `geotech ingest ... --format benchmark` / `geotech ingest result <jobId> --format benchmark` for page cache, hosted-call, traceability, and GroundModel readiness measurements.
+- Use OCR-optimized margin trimming and normalized raster sizing as the first measurable PDF/image preprocessing pass, then use benchmark output to compare first-run vs cached-rerun behavior.
+- Stamp retained materials, classifications, and parameters with provider-neutral `sourcePages` so direct source-page traceability comes from page evidence instead of model-specific prose.
+- Keep a canonical cached-rerun fixture and `npm run benchmark:geotech-report` local harness for the `GeotechnicalInvestigationReport (1).pdf` acceptance target.
+- Keep the agentic document evidence contract provider-neutral so hosted GLM is only the strong-beta default; future BYOK LLMs should plug into the same page evidence, cache, traceability, and GroundModel readiness space.
+- Extend GroundModel verification with calculation-readiness routing for bearing, settlement, pile, liquefaction, and slope workflows before any deterministic calculation is auto-run.
 - Raise hosted-beta public limits enough for image-heavy PDF development runs, while keeping developer key/IP bypass unlimited.
 - Use the server-side `ZHIPU_API_KEY` secret in GitHub and Cloudflare.
 - Keep the legacy Modal deploy workflow present but disabled by default.
@@ -25,7 +31,7 @@ Current focus:
 
 - Fixed bundled skill trust for global npm installs without weakening arbitrary ZIP import security.
 - Made long PDF ingest visibly active by default with live progress.
-- Made ingest HTML outputs save/open real browser dossiers.
+- Made ingest HTML outputs save/open real browser reports.
 - Added retry/resume hardening for long PDF ingest and transient hosted-beta failures.
 - Cleaned public docs, changelog, agent docs, and release-surface drift.
 
@@ -35,7 +41,7 @@ Current focus:
 - Reduced retry pressure for vision and agent requests.
 - Serialized expensive image-heavy PDF ingest cases.
 - Added cheaper partial-failure behavior for repeated text/vision timeouts.
-- Preserved the user’s limited Modal GPU credit by avoiding unnecessary warm/health calls.
+- Preserved the userâ€™s limited Modal GPU credit by avoiding unnecessary warm/health calls.
 
 ### v0.4.28 Workspace Analyze Foundation
 
@@ -43,7 +49,7 @@ Current focus:
 - Added deterministic local project scanning and `ProjectManifest`.
 - Added file classification for PDF, CSV, XLSX, AGS, JSON, images, GIS, CAD, office, and text files.
 - Added CSV/XLSX schema inference for depth, coordinates, borehole/sample IDs, SPT/CPT, lab, monitoring, and signal columns.
-- Added text, JSON, and HTML workspace dossier outputs.
+- Added text, JSON, and HTML workspace report outputs.
 - Added `geotech agent ... --workspace <dir>` so agents receive a compact manifest summary instead of guessing directly from raw files.
 - Updated README, docs, homepage examples, changelog, package metadata, npm package versions, and live site release surfaces.
 
@@ -84,40 +90,40 @@ Current focus:
 ### v0.4.34 Hosted GLM-OCR Report Synthesis
 
 - Added hosted GLM-OCR layout parsing with a separate `layout` quota bucket, configurable public limits, and developer key/IP bypass support.
-- Wired geotechnical report ingest to prefer GLM-OCR layout text, use GLM-5V only when visual reasoning is needed, and generate GLM-5.1 report synthesis for the HTML dossier.
+- Wired geotechnical report ingest to prefer GLM-OCR layout text, use GLM-5V only when visual reasoning is needed, and generate GLM-5.1 report synthesis for the HTML report.
 - Raised hosted-beta public CLI daily limits for text, vision, layout, and agent workflows while preserving tighter anonymous caps.
-- Improved the HTML dossier with report takeaways, grouped key parameters, stage badges, extraction overview, confidence meters, and shadcn-style collapsed audit details.
-- Added regression coverage for synchronous ingest, persisted async jobs, direct visual extraction, GLM-OCR fallback, hosted layout limits, and dossier HTML rendering.
+- Improved the HTML report with report takeaways, grouped key parameters, stage badges, extraction overview, confidence meters, and shadcn-style collapsed audit details.
+- Added regression coverage for synchronous ingest, persisted async jobs, direct visual extraction, GLM-OCR fallback, hosted layout limits, and report HTML rendering.
 
 ### v0.4.35 GLM-5.1 Synthesis Retry Fix
 
 - Kept GLM thinking enabled for final report synthesis as the first attempt.
 - Added a no-content fallback retry without thinking for hosted GLM-5.1 synthesis responses.
-- Added regression coverage so valid fallback synthesis populates the dossier without a stale synthesis-failed warning.
+- Added regression coverage so valid fallback synthesis populates the report without a stale synthesis-failed warning.
 
-### v0.4.36 Geotechnical Intelligence Dossier UX
+### v0.4.36 Geotechnical Intelligence Report UX
 
-- Redesigned HTML ingest dossiers around a premium dashboard layout with sticky navigation, executive facts, review actions, and source-evidence sections.
+- Redesigned HTML ingest reports around a premium dashboard layout with sticky navigation, executive facts, review actions, and source-evidence sections.
 - Added engineering insight cards for ground conditions, design implications, missing critical data, and verification focus.
 - Added an evidence-first trust table for retained and missing parameters with source page, confidence, review posture, and evidence snippets.
 - Added a lightweight borehole stratigraphy SVG view for retained borehole/layer evidence, with dashed boundaries for uncertain intervals.
 - Moved GLM/model-stage details and raw page audit tables into a collapsed Processing Audit section.
 - Added regression coverage for the premium layout, trust layer, source evidence, processing audit, and borehole visualization.
 
-### v0.4.37 Hosted Development Headroom and Dossier Profile Evidence
+### v0.4.37 Hosted Development Headroom and Report Profile Evidence
 
 - Raised installed-CLI hosted-beta defaults to 2,000 text, 600 vision, 600 layout, and 200 agent requests per day.
 - Raised anonymous hosted-beta defaults moderately while preserving stricter abuse protection than installed CLI traffic.
-- Hardened dossier borehole-profile inference to use retained inspection text and content chunks for borehole IDs, terminating depth, and conceptual layer evidence.
+- Hardened report borehole-profile inference to use retained inspection text and content chunks for borehole IDs, terminating depth, and conceptual layer evidence.
 - Added regression coverage for real report-style borehole schedule and conclusion text when structured depth parameters are missing.
 
 ### v0.4.38 Page Evidence Cache Foundation
 
 - Added a durable page evidence cache keyed by source file hash, page hash, page number, model version, preprocessing version, and schema version.
 - Reused cached geotechnical page evidence on reruns so repeated PDF ingest can skip duplicate OCR, GLM-OCR, GLM-5V, and page extraction work when inputs are unchanged.
-- Persisted cache audit metadata through async ingest checkpoints, segmented child-job merges, final page audits, CLI summaries, and HTML dossier processing audit views.
+- Persisted cache audit metadata through async ingest checkpoints, segmented child-job merges, final page audits, CLI summaries, and HTML report processing audit views.
 - Kept cache I/O best-effort so inaccessible local cache storage does not fail otherwise valid page extraction.
-- Added regression coverage for cache key stability, corrupt cache misses, invalidation, sync ingest reuse, async job reuse, and dossier cache presentation.
+- Added regression coverage for cache key stability, corrupt cache misses, invalidation, sync ingest reuse, async job reuse, and report cache presentation.
 
 ### v0.4.39 CI Cache Isolation Hotfix
 
@@ -125,17 +131,41 @@ Current focus:
 - Kept production and local CLI cache defaults unchanged, so repeated real PDF ingest still reuses unchanged page evidence.
 - Verified the full core test workspace locally after the cache-isolation fix.
 
+### v0.4.40 Evidence Cache and Report UX
+
+- Stabilized PDF page evidence cache keys for generated per-page PDF payloads, so repeated full-report ingest reuses native PDF page evidence instead of re-extracting pages whose regenerated bytes differ.
+- Added regression coverage for synchronous and persisted async PDF page cache reuse when page payload bytes change between jobs.
+- Upgraded the HTML ingest report with status badges, searchable review filters, a schematic ground-model cross-section, source evidence actions, and a scroll-aware human review workflow bar.
+- Verified the `GeotechnicalInvestigationReport (1).pdf` ingest rerun completed with all 34 pages as cache hits, no new cache stores, 52 materials, 34 parameters, and the review-focused presentation intact.
+
+### v0.4.41 Ingest Report UI Polish
+
+- Renamed the generated HTML ingest output from a report-facing presentation to a Geotechnical Intelligence Report presentation, including CLI summary labels and browser report prompts.
+- Reworked the report shell into a compact dark engineering dashboard with a top navigation bar, cleaner hero hierarchy, dark evidence cards, and contained table/profile sections.
+- Tightened desktop and mobile layout constraints so status badges, source metadata, ground-model SVGs, borehole profiles, and engineering tables avoid overlap and horizontal clipping.
+- Kept Processing Audit and model-stage details available below the engineering review surface while keeping the main report focused on decisions, evidence, confidence, and human verification.
+- Verified the sample `GeotechnicalInvestigationReport (1).pdf` report regenerated with all 34 pages processed, no visible report wording, and clean desktop/mobile screenshots.
+
+### v0.4.42 Benchmark and GroundModel Readiness
+
+- Added geotechnical document benchmark output for cache reuse, estimated hosted calls, source-page traceability, retained signal counts, and GroundModel readiness gates.
+- Added provider-neutral `sourcePages` stamping through geotech document materials, classifications, and parameters so direct traceability survives synthesis and report rendering.
+- Added the first canonical cached-rerun fixture for `GeotechnicalInvestigationReport (1).pdf`: 34/34 pages processed, 100% page-evidence cache hits, zero estimated hosted calls on rerun, 37/37 parameters with direct source pages, and GroundModel readiness 61/100.
+- Added `npm run benchmark:geotech-report` as the local two-pass benchmark harness for first-run versus cached-rerun behavior against the same report PDF.
+- Added GroundModel calculation-readiness output for shallow bearing, settlement, pile capacity, liquefaction, and slope stability with status, score, deterministic tool route, missing evidence, assumptions, and evidence IDs.
+- Updated `geotech analyze` text and HTML reports so calculation readiness is visible before agents or users route evidence into deterministic calculations.
+
 ## Left To Do
 
 Highest-value next work:
 
 - Add standards/profile engine integration for `eurocode7`, `aashto`, `is`, `bs`, and `astm` assumptions.
-- Expand verifier from data-quality checks into calculation-readiness checks.
-- Add deterministic calculation routing from GroundModel into bearing, settlement, pile, liquefaction, and slope workflows.
+- Convert calculation-readiness routes into opt-in generated calculation input drafts for bearing, settlement, pile, liquefaction, and slope workflows.
 - Add map visualization from GroundModel coordinates and local CRS assumptions.
-- Expand the lightweight dossier borehole SVG into richer strip logs, SPT-depth plots, lab charts, and monitoring plots.
-- Expand PDF/image preprocessing before vision with deskew, crop tables/log panels, and normalized page-region assets.
-- Add benchmark fixtures that measure first-run vs cached rerun latency, provider call count, confidence, and source-page traceability.
+- Expand the lightweight report borehole SVG into richer strip logs, SPT-depth plots, lab charts, and monitoring plots.
+- Expand PDF/image preprocessing before vision beyond margin trimming with deskew, crop tables/log panels, and normalized page-region assets.
+- Expand the benchmark harness from the current cached-rerun acceptance fixture into broader latency/provider profiles, region-level preprocessing comparisons, and historical trend output.
+- Add provider/BYOK benchmark profiles so OpenAI-compatible, hosted-beta, and future user-selected LLMs are evaluated with the same PDF/image evidence contract instead of model-specific assumptions.
 - Add `geotech signal analyze` for settlement, piezometer, inclinometer, vibration, load-test, and time-series data.
 - Add role-based swarm planning over structured evidence: WorkspaceScout, DataEngineer, GroundModeler, StandardsChecker, DesignEngineer, RiskReviewer, ReportEngineer.
 - Add benchmark evaluation fixtures for boreholes, CPT, lab, reports, monitoring, sensor, pile load, and signal datasets.

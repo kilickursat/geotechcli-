@@ -263,6 +263,21 @@ describe('ingest dossier HTML', () => {
     expect(html.indexOf('GLM-5.1 synthesis')).toBeGreaterThan(html.indexOf('Processing Audit'));
   });
 
+  it('prefers attributed parameter source pages before context regex fallback', () => {
+    const dossier = buildIngestDossier(makeGeotechResult({
+      parameters: [
+        { name: 'unitWeight', valueText: '18', numericValue: 18, unit: 'kN/m3', material: 'silty sand', context: 'lab summary without explicit page', sourcePages: [4, 2, 2] },
+        { name: 'cohesion', valueText: '25', numericValue: 25, unit: 'kPa', material: 'stiff clay', context: 'triaxial test on page 5' },
+      ],
+    }));
+
+    const parameters = dossier.tables.find((table) => table.title === 'Key engineering parameters');
+    expect(parameters?.rows).toContainEqual(['Index/lab', 'unit Weight', '18', 'kN/m3', 'silty sand', '2, 4', '81%', 'lab summary without explicit page']);
+    expect(parameters?.rows).toContainEqual(['Strength', 'cohesion', '25', 'kPa', 'stiff clay', '5', '81%', 'triaxial test on page 5']);
+    expect(dossier.trustItems.find((item) => item.item === 'unit Weight')?.sourcePage).toBe('2, 4');
+    expect(dossier.trustItems.find((item) => item.item === 'cohesion')?.sourcePage).toBe('5');
+  });
+
   it('renders a conceptual borehole stratigraphy profile when borehole IDs and depths are retained', () => {
     const dossier = buildIngestDossier(makeGeotechResult({
       summary: 'BH1, BH2, and BH3 were drilled to 10.00 m with weathered rock at depth.',

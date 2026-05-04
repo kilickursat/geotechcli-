@@ -135,12 +135,12 @@ describe('page evidence cache', () => {
     })).toBeNull();
 
     expect(readPageEvidenceCache({
-      ...parts,
-      preprocessingVersion: buildPageEvidencePreprocessingVersion(
-        llmConfig,
-        'page-evidence-preprocess-v2',
-      ),
-    })).toBeNull();
+        ...parts,
+        preprocessingVersion: buildPageEvidencePreprocessingVersion(
+          llmConfig,
+          'page-evidence-preprocess-v3',
+        ),
+      })).toBeNull();
 
     expect(readPageEvidenceCache({
       ...parts,

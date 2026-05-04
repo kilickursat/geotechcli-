@@ -166,6 +166,45 @@ function renderVerifierSection(manifest: ProjectManifest): string {
   </table>`;
 }
 
+function renderCalculationReadinessSection(manifest: ProjectManifest): string {
+  const readiness = manifest.verifier?.calculationReadiness;
+  if (!readiness) {
+    return '<p class="empty">Calculation readiness was not assessed for this analysis.</p>';
+  }
+
+  return `
+    <div class="metrics">
+      ${renderMetric('Ready', readiness.summary.ready)}
+      ${renderMetric('With Assumptions', readiness.summary.readyWithAssumptions)}
+      ${renderMetric('Blocked', readiness.summary.blocked)}
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Workflow</th>
+          <th>Status</th>
+          <th>Score</th>
+          <th>Route</th>
+          <th>Missing / Assumptions</th>
+          <th>Evidence</th>
+          <th>Recommendation</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${readiness.workflows.map((workflow) => `<tr>
+          <td>${escapeHtml(workflow.label)}</td>
+          <td><span class="badge ${escapeHtml(workflow.status)}">${escapeHtml(workflow.status.replace(/_/g, ' '))}</span></td>
+          <td>${escapeHtml(`${workflow.score}/100`)}</td>
+          <td><code>${escapeHtml(workflow.toolName)}</code><br /><small>${escapeHtml(workflow.commandTemplate)}</small></td>
+          <td>${escapeHtml(workflow.missing.join(', ') || '-')}</td>
+          <td>${escapeHtml(workflow.evidenceIds.join(', ') || '-')}</td>
+          <td>${escapeHtml(workflow.recommendation)}</td>
+        </tr>`).join('\n')}
+      </tbody>
+    </table>
+  `;
+}
+
 function renderEvidenceRows(manifest: ProjectManifest): string {
   const evidence = manifest.groundModel?.evidence ?? [];
   if (evidence.length === 0) {
@@ -199,7 +238,7 @@ function renderEvidenceRows(manifest: ProjectManifest): string {
 }
 
 export function renderWorkspaceManifestAsHtml(manifest: ProjectManifest): string {
-  const title = 'geotechCLI Workspace Dossier';
+  const title = 'geotechCLI Workspace Report';
   const fileRows = renderFileRows(manifest.files);
   const warnings = manifest.warnings.slice(0, 20);
   const verifier = manifest.verifier;
@@ -342,6 +381,9 @@ export function renderWorkspaceManifestAsHtml(manifest: ProjectManifest): string
     .badge.blocking { color: #8c1d18; background: #fff0ee; }
     .badge.review { color: #7b4a00; background: #fff7e8; }
     .badge.info { color: #165766; background: #edf8fa; }
+    .badge.ready { color: #075e45; background: #eaf8f1; }
+    .badge.ready_with_assumptions { color: #7b4a00; background: #fff7e8; min-width: 150px; }
+    .badge.blocked { color: #8c1d18; background: #fff0ee; }
     @media (max-width: 720px) {
       main { padding: 26px 14px 46px; }
       table { display: block; overflow-x: auto; }
@@ -353,7 +395,7 @@ export function renderWorkspaceManifestAsHtml(manifest: ProjectManifest): string
   <main>
     <header>
       <div class="eyebrow">geotechCLI analyze</div>
-      <h1>Workspace Dossier</h1>
+      <h1>Workspace Report</h1>
       <p class="subhead">${escapeHtml(manifest.rootPath)}</p>
     </header>
 
@@ -367,6 +409,7 @@ export function renderWorkspaceManifestAsHtml(manifest: ProjectManifest): string
         ${renderMetric('Branches', manifest.summary.branches.length || '-')}
         ${renderMetric('Skipped', manifest.summary.skippedFiles)}
         ${renderMetric('Verifier', verifier?.status ?? '-')}
+        ${renderMetric('Calc Ready', verifier?.calculationReadiness.summary.ready ?? '-')}
       </div>
     </section>
 
@@ -412,6 +455,11 @@ export function renderWorkspaceManifestAsHtml(manifest: ProjectManifest): string
     <section>
       <h2>Verifier Findings</h2>
       ${renderVerifierSection(manifest)}
+    </section>
+
+    <section>
+      <h2>Calculation Readiness</h2>
+      ${renderCalculationReadinessSection(manifest)}
     </section>
 
     <section>

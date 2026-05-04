@@ -267,6 +267,33 @@ function resolveEvidenceCachePageNumber(
   return page.pageNumber;
 }
 
+function resolveResultSourcePageNumber(
+  source: GeotechDocumentSource,
+  pageNumber: number | null | undefined,
+): number | null {
+  if (pageNumber == null || !Number.isInteger(pageNumber) || pageNumber < 1) {
+    return null;
+  }
+  const pageRange = source.segmentation?.pageRange ?? source.pageRange;
+  if (pageRange && pageNumber < pageRange[0]) {
+    return pageRange[0] + pageNumber - 1;
+  }
+  return pageNumber;
+}
+
+function mergeObservationSourcePages(
+  existing: number[] | undefined,
+  extra: number | number[] | null | undefined,
+): number[] | undefined {
+  const values = [
+    ...(existing ?? []),
+    ...(Array.isArray(extra) ? extra : extra == null ? [] : [extra]),
+  ]
+    .map((value) => Number(value))
+    .filter((value) => Number.isInteger(value) && value > 0);
+  return values.length > 0 ? [...new Set(values)].sort((left, right) => left - right) : undefined;
+}
+
 function buildPageEvidenceCacheContext(input: {
   source: GeotechDocumentSource;
   page: GeotechDocumentPageInput;
@@ -490,11 +517,16 @@ function mergeParseStatus(statuses: ParseStatus[]): ParseStatus {
   return 'failed';
 }
 
-function mergeMaterials(results: GeotechDocumentInsight[]): GeotechMaterialObservation[] {
+function mergeMaterials(
+  results: GeotechDocumentInsight[],
+  source: GeotechDocumentSource,
+): GeotechMaterialObservation[] {
   const seen = new Set<string>();
+  const indexByKey = new Map<string, number>();
   const materials: GeotechMaterialObservation[] = [];
 
   for (const result of results) {
+    const sourcePage = resolveResultSourcePageNumber(source, result.pageNumber);
     for (const material of result.materials) {
       const key = [
         material.kind,
@@ -503,21 +535,37 @@ function mergeMaterials(results: GeotechDocumentInsight[]): GeotechMaterialObser
         material.lithology?.toLowerCase() ?? '',
       ].join('|');
       if (seen.has(key)) {
+        const index = indexByKey.get(key);
+        if (index != null) {
+          materials[index] = {
+            ...materials[index]!,
+            sourcePages: mergeObservationSourcePages(materials[index]!.sourcePages, material.sourcePages ?? sourcePage),
+          };
+        }
         continue;
       }
       seen.add(key);
-      materials.push(material);
+      indexByKey.set(key, materials.length);
+      materials.push({
+        ...material,
+        sourcePages: mergeObservationSourcePages(material.sourcePages, sourcePage),
+      });
     }
   }
 
   return materials;
 }
 
-function mergeClassifications(results: GeotechDocumentInsight[]): GeotechDocumentClassification[] {
+function mergeClassifications(
+  results: GeotechDocumentInsight[],
+  source: GeotechDocumentSource,
+): GeotechDocumentClassification[] {
   const seen = new Set<string>();
+  const indexByKey = new Map<string, number>();
   const classifications: GeotechDocumentClassification[] = [];
 
   for (const result of results) {
+    const sourcePage = resolveResultSourcePageNumber(source, result.pageNumber);
     for (const classification of result.classifications) {
       const key = [
         classification.system.toLowerCase(),
@@ -525,21 +573,37 @@ function mergeClassifications(results: GeotechDocumentInsight[]): GeotechDocumen
         classification.context?.toLowerCase() ?? '',
       ].join('|');
       if (seen.has(key)) {
+        const index = indexByKey.get(key);
+        if (index != null) {
+          classifications[index] = {
+            ...classifications[index]!,
+            sourcePages: mergeObservationSourcePages(classifications[index]!.sourcePages, classification.sourcePages ?? sourcePage),
+          };
+        }
         continue;
       }
       seen.add(key);
-      classifications.push(classification);
+      indexByKey.set(key, classifications.length);
+      classifications.push({
+        ...classification,
+        sourcePages: mergeObservationSourcePages(classification.sourcePages, sourcePage),
+      });
     }
   }
 
   return classifications;
 }
 
-function mergeParameters(results: GeotechDocumentInsight[]): GeotechParameterObservation[] {
+function mergeParameters(
+  results: GeotechDocumentInsight[],
+  source: GeotechDocumentSource,
+): GeotechParameterObservation[] {
   const seen = new Set<string>();
+  const indexByKey = new Map<string, number>();
   const parameters: GeotechParameterObservation[] = [];
 
   for (const result of results) {
+    const sourcePage = resolveResultSourcePageNumber(source, result.pageNumber);
     for (const parameter of result.parameters) {
       const key = [
         parameter.name.toLowerCase(),
@@ -549,10 +613,21 @@ function mergeParameters(results: GeotechDocumentInsight[]): GeotechParameterObs
         parameter.context?.toLowerCase() ?? '',
       ].join('|');
       if (seen.has(key)) {
+        const index = indexByKey.get(key);
+        if (index != null) {
+          parameters[index] = {
+            ...parameters[index]!,
+            sourcePages: mergeObservationSourcePages(parameters[index]!.sourcePages, parameter.sourcePages ?? sourcePage),
+          };
+        }
         continue;
       }
       seen.add(key);
-      parameters.push(parameter);
+      indexByKey.set(key, parameters.length);
+      parameters.push({
+        ...parameter,
+        sourcePages: mergeObservationSourcePages(parameter.sourcePages, sourcePage),
+      });
     }
   }
 
@@ -2044,9 +2119,9 @@ export async function ingestGeotechDocument(
     );
   }
 
-  const materials = mergeMaterials(pageResults);
-  const classifications = mergeClassifications(pageResults);
-  const parameterSanitization = sanitizeImplausibleSptParameters(mergeParameters(pageResults));
+  const materials = mergeMaterials(pageResults, options.source);
+  const classifications = mergeClassifications(pageResults, options.source);
+  const parameterSanitization = sanitizeImplausibleSptParameters(mergeParameters(pageResults, options.source));
   const parameters = parameterSanitization.parameters;
   const risks = uniqueStrings(pageResults.flatMap((result) => result.risks));
   const recommendations = uniqueStrings(pageResults.flatMap((result) => result.recommendations));

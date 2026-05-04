@@ -212,6 +212,18 @@ function normalizeTextList(value: unknown): string[] {
   )];
 }
 
+function normalizeSourcePages(value: unknown): number[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return [...new Set(
+    value
+      .map((item) => Number(item))
+      .filter((item) => Number.isInteger(item) && item > 0),
+  )].sort((left, right) => left - right);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -223,12 +235,14 @@ export interface GeotechMaterialObservation {
   description: string;
   uscsSymbol: string | null;
   lithology: string | null;
+  sourcePages?: number[];
 }
 
 export interface GeotechDocumentClassification {
   system: string;
   value: string;
   context: string | null;
+  sourcePages?: number[];
 }
 
 export interface GeotechParameterObservation {
@@ -238,6 +252,7 @@ export interface GeotechParameterObservation {
   unit: string | null;
   material: string | null;
   context: string | null;
+  sourcePages?: number[];
 }
 
 export interface GeotechDocumentContext {
@@ -305,6 +320,10 @@ function normalizeMaterials(value: unknown): GeotechMaterialObservation[] {
         ? item.lithology.trim()
         : null,
     };
+    const sourcePages = normalizeSourcePages(item.sourcePages);
+    if (sourcePages.length > 0) {
+      normalized.sourcePages = sourcePages;
+    }
 
     const key = [
       normalized.kind,
@@ -351,11 +370,17 @@ function normalizeClassifications(value: unknown): GeotechDocumentClassification
     }
 
     seen.add(key);
-    classifications.push({
+    const normalized: GeotechDocumentClassification = {
       system,
       value: classificationValue,
       context,
-    });
+    };
+    const sourcePages = normalizeSourcePages(item.sourcePages);
+    if (sourcePages.length > 0) {
+      normalized.sourcePages = sourcePages;
+    }
+
+    classifications.push(normalized);
   }
 
   return classifications;
@@ -398,6 +423,10 @@ function normalizeParameters(value: unknown): GeotechParameterObservation[] {
       material,
       context,
     };
+    const sourcePages = normalizeSourcePages(item.sourcePages);
+    if (sourcePages.length > 0) {
+      normalized.sourcePages = sourcePages;
+    }
 
     const key = [
       normalized.name.toLowerCase(),

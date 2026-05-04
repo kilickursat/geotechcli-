@@ -36,7 +36,7 @@ describe('analyze command', () => {
     expect(payload.verifier.schemaVersion).toBe('ground-model-verifier.v1');
   });
 
-  it('writes a browser dossier without opening when --no-open is supplied', async () => {
+  it('writes a browser report without opening when --no-open is supplied', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'geotech-cli-analyze-html-'));
     tempDirs.push(dir);
     const htmlPath = join(dir, 'workspace.html');
@@ -53,10 +53,11 @@ describe('analyze command', () => {
     await program.parseAsync(['analyze', dir, '--format', 'html', '--no-open', '--output', htmlPath], { from: 'user' });
 
     const html = await readFile(htmlPath, 'utf-8');
-    expect(html).toContain('Workspace Dossier');
+    expect(html).toContain('Workspace Report');
     expect(html).toContain('GroundModel');
     expect(html).toContain('Verifier Findings');
+    expect(html).toContain('Calculation Readiness');
     expect(html).toContain('locations.csv');
-    expect(logSpy.mock.calls.map((call) => String(call[0])).join('\n')).toContain('Workspace dossier saved');
+    expect(logSpy.mock.calls.map((call) => String(call[0])).join('\n')).toContain('Workspace report saved');
   });
 });

@@ -1,0 +1,56 @@
+{
+  "kind": "geotech-document-benchmark",
+  "schemaVersion": 1,
+  "fixtureSource": "GeotechnicalInvestigationReport (1).pdf cached rerun, 2026-05-04",
+  "source": {
+    "fileName": "GeotechnicalInvestigationReport (1).pdf",
+    "inputKind": "pdf",
+    "totalPages": 34,
+    "successfulPages": 34,
+    "failedPages": 0
+  },
+  "document": {
+    "class": "geotechnical-document",
+    "title": "Geotechnical Investigation Report",
+    "parseStatus": "partial",
+    "confidence": 55,
+    "reviewRequired": true,
+    "canAutoProceed": false
+  },
+  "hostedCallEstimate": {
+    "pageExtraction": 0,
+    "layoutOcr": 0,
+    "vision": 0
+  },
+  "evidenceCache": {
+    "totalAudited": 34,
+    "hit": 34,
+    "miss": 0,
+    "stored": 0,
+    "hitRate": 1
+  },
+  "retainedSignals": {
+    "materials": 49,
+    "classifications": 13,
+    "parameters": 37,
+    "contentChunks": 34,
+    "synthesisGroundModelItems": 5
+  },
+  "traceability": {
+    "parametersWithSourcePage": 37,
+    "parametersWithoutSourcePage": 0,
+    "directParameterTraceabilityRate": 1,
+    "auditBackedParameterTraceabilityRate": 1,
+    "traceabilityRate": 1,
+    "sourcePages": [5, 11, 16, 17, 18, 19, 20, 21, 23, 26, 27, 28, 29, 30, 33, 34]
+  },
+  "groundModelReadiness": {
+    "status": "needs_engineering_review",
+    "score": 61,
+    "boreholeIds": ["BH1", "BH2", "BH3"],
+    "maxDepthMeters": 10,
+    "hasGroundModelSynthesis": true,
+    "missingCriticalData": ["SPT N-values"],
+    "gates": ["missing-spt-n-values", "partial-pages-remain", "low-confidence"]
+  }
+}

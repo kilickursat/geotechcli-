@@ -40,7 +40,7 @@ function defaultHtmlPath(workspacePath: string): string {
   const outputDir = join(resolve(workspacePath), '.geotech');
   mkdirSync(outputDir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  return join(outputDir, `workspace-dossier-${stamp}.html`);
+  return join(outputDir, `workspace-report-${stamp}.html`);
 }
 
 function focusedFiles(manifest: ProjectManifest): WorkspaceFileEntry[] {
@@ -67,6 +67,10 @@ function renderTextManifest(manifest: ProjectManifest): void {
   }
   if (manifest.verifier) {
     keyValue('Verifier status', `${manifest.verifier.status} (${manifest.verifier.summary.blocking} blocking, ${manifest.verifier.summary.review} review)`);
+    keyValue(
+      'Calculation readiness',
+      `${manifest.verifier.calculationReadiness.summary.ready} ready, ${manifest.verifier.calculationReadiness.summary.readyWithAssumptions} with assumptions, ${manifest.verifier.calculationReadiness.summary.blocked} blocked`,
+    );
   }
 
   const rows = focusedFiles(manifest)
@@ -135,6 +139,17 @@ function renderTextManifest(manifest: ProjectManifest): void {
     if (manifest.verifier.findings.length > findingRows.length) {
       warn(`${manifest.verifier.findings.length - findingRows.length} additional verifier findings. Use --json or --format html for full details.`);
     }
+  }
+
+  if (manifest.verifier && manifest.verifier.calculationReadiness.workflows.length > 0) {
+    const readinessRows = manifest.verifier.calculationReadiness.workflows.map((workflow) => [
+      workflow.workflow,
+      workflow.status,
+      `${workflow.score}/100`,
+      workflow.toolName,
+      workflow.missing.slice(0, 3).join(', ') || '-',
+    ]);
+    renderTable(['Workflow', 'Readiness', 'Score', 'Route', 'Missing / assumptions'], readinessRows);
   }
 
   if (manifest.summary.recommendations.length > 0) {
@@ -208,7 +223,7 @@ export function registerAnalyzeCommand(program: Command): void {
       });
 
       if (!flags.quiet) {
-        success(opened ? `Workspace dossier opened in your browser: ${htmlPath}` : `Workspace dossier saved to ${htmlPath}`);
+        success(opened ? `Workspace report opened in your browser: ${htmlPath}` : `Workspace report saved to ${htmlPath}`);
         info(`Files: ${manifest.summary.totalFiles}, tabular: ${manifest.summary.tabularFiles}, PDFs: ${manifest.summary.pdfFiles}, verifier: ${manifest.verifier?.status ?? 'not-run'}`);
       }
       return;
@@ -222,7 +237,7 @@ export function registerAnalyzeCommand(program: Command): void {
     if (!flags.quiet) {
       renderTextManifest(manifest);
       console.log('');
-      info('Open browser dossier: geotech analyze . --format html');
+      info('Open browser report: geotech analyze . --format html');
     }
   });
 

@@ -4,6 +4,7 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import {
   approvePersistedBoreholeIngestReview,
+  buildGeotechDocumentBenchmark,
   buildPersistedIngestJobSegments,
   buildIngestDossier,
   buildLLMConfig,
@@ -33,6 +34,8 @@ import {
   slicePdfInspectionToRange,
   waitForPersistedIngestJob,
   writePdfPageSubset,
+  type GeotechDocumentBenchmarkJobContext,
+  type GeotechDocumentIngestResult,
   type IngestSegmentationSummary,
   type PdfPageRange,
 } from '@geotechcli/core';
@@ -55,7 +58,7 @@ function formatMaybe(value: string | number | null | undefined, suffix = ''): st
   return `${value}${suffix}`;
 }
 
-type IngestPresentationFormat = 'plain' | 'html';
+type IngestPresentationFormat = 'plain' | 'html' | 'benchmark';
 
 function resolveIngestPresentationFormat(value: unknown): IngestPresentationFormat {
   const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -65,15 +68,18 @@ function resolveIngestPresentationFormat(value: unknown): IngestPresentationForm
   if (normalized === 'html') {
     return 'html';
   }
-  throw new Error(`Unsupported ingest format "${String(value)}". Supported formats: plain, html.`);
+  if (normalized === 'benchmark') {
+    return 'benchmark';
+  }
+  throw new Error(`Unsupported ingest format "${String(value)}". Supported formats: plain, html, benchmark.`);
 }
 
 function assertIngestPresentationMode(
   flags: { json?: boolean },
   format: IngestPresentationFormat,
 ): void {
-  if (flags.json && format === 'html') {
-    throw new Error('Use either --json or --format html, not both.');
+  if (flags.json && format !== 'plain') {
+    throw new Error('Use either --json or --format html/benchmark, not both.');
   }
 }
 
@@ -82,6 +88,10 @@ function shouldRenderHtmlDossier(
   outputPath?: string,
 ): boolean {
   return format === 'html' || (typeof outputPath === 'string' && /\.html?$/i.test(outputPath));
+}
+
+function shouldRenderBenchmark(format: IngestPresentationFormat): boolean {
+  return format === 'benchmark';
 }
 
 function slugifyOutputStem(value: string): string {
@@ -94,7 +104,7 @@ function slugifyOutputStem(value: string): string {
 }
 
 function defaultDossierOutputPath(sourceLabel: string): string {
-  return `${slugifyOutputStem(sourceLabel)}.ingest-dossier.html`;
+  return `${slugifyOutputStem(sourceLabel)}.ingest-report.html`;
 }
 
 function writeHtmlDossier(
@@ -135,6 +145,83 @@ function writeHtmlDossier(
       : `HTML ingest report saved to ${outputPath}`,
   );
   return { outputPath, opened };
+}
+
+function isGeotechDocumentIngestOutput(result: ProjectBackedIngestResult): result is GeotechDocumentIngestResult {
+  return result.documentType === 'geotech-document';
+}
+
+function buildBenchmarkJobContext(record: {
+  jobId?: string;
+  createdAt?: string;
+  startedAt?: string;
+  completedAt?: string;
+  execution?: { runCount?: number };
+} | null | undefined): GeotechDocumentBenchmarkJobContext | undefined {
+  if (!record) {
+    return undefined;
+  }
+  const startedAt = record.startedAt ?? record.createdAt;
+  const completedAt = record.completedAt;
+  const durationMs = startedAt && completedAt
+    ? Date.parse(completedAt) - Date.parse(startedAt)
+    : undefined;
+  return {
+    jobId: record.jobId,
+    createdAt: record.createdAt,
+    startedAt: record.startedAt,
+    completedAt,
+    durationMs: Number.isFinite(durationMs) ? durationMs : undefined,
+    runCount: record.execution?.runCount,
+  };
+}
+
+function writeGeotechBenchmark(
+  result: ProjectBackedIngestResult,
+  options: {
+    outputPath?: string;
+    sourceLabel: string;
+    job?: GeotechDocumentBenchmarkJobContext;
+    durationMs?: number;
+  },
+): void {
+  if (!isGeotechDocumentIngestOutput(result)) {
+    throw new Error('Benchmark output is currently available for --type geotech-document results only.');
+  }
+
+  const benchmark = buildGeotechDocumentBenchmark(result, {
+    label: options.sourceLabel,
+    job: options.job ?? (options.durationMs != null ? { durationMs: options.durationMs } : undefined),
+  });
+
+  if (options.outputPath) {
+    writeFileSync(options.outputPath, JSON.stringify(benchmark, null, 2));
+    success(`Benchmark saved to ${options.outputPath}`);
+    renderGeotechBenchmarkSummary(benchmark);
+    return;
+  }
+
+  renderJSON(benchmark);
+}
+
+function renderGeotechBenchmarkSummary(benchmark: ReturnType<typeof buildGeotechDocumentBenchmark>): void {
+  heading('Geotechnical Ingest Benchmark');
+  keyValue('Source', benchmark.source.fileName ?? benchmark.source.filePath ?? benchmark.label ?? 'Unknown');
+  keyValue('Pages processed', `${benchmark.source.successfulPages}/${benchmark.source.totalPages}`);
+  keyValue('Confidence', `${benchmark.document.confidence}%`);
+  keyValue('Cache hit rate', `${Math.round(benchmark.evidenceCache.hitRate * 100)}%`);
+  keyValue(
+    'Estimated hosted calls',
+    String(
+      benchmark.hostedCallEstimate.pageExtraction
+      + benchmark.hostedCallEstimate.layoutOcr
+      + benchmark.hostedCallEstimate.vision,
+    ),
+  );
+  keyValue('Ground-model readiness', `${benchmark.groundModelReadiness.status} (${benchmark.groundModelReadiness.score}/100)`);
+  if (benchmark.groundModelReadiness.missingCriticalData.length > 0) {
+    keyValue('Missing critical data', benchmark.groundModelReadiness.missingCriticalData.join(', '));
+  }
 }
 
 function shouldOpenHtmlDossier(flags: { openInteractivePlot?: boolean }): boolean {
@@ -1849,7 +1936,7 @@ export function registerIngestCommand(program: Command): void {
     .enablePositionalOptions()
     .argument('<file>', 'Path to a geotechnical image or PDF document')
     .option('--type <type>', 'Document type to ingest', 'borehole-log')
-    .option('--format <format>', 'Result presentation format: plain or html', 'plain')
+    .option('--format <format>', 'Result presentation format: plain, html, or benchmark', 'plain')
     .option('--page-range <start:end>', 'Restrict PDF ingest to a contiguous page range, for example 61:102')
     .option('--borehole-id <id>', 'Override borehole ID for a single continuous borehole log')
     .option('--project <id>', 'Persist the ingest review into a stored project')
@@ -1859,12 +1946,19 @@ export function registerIngestCommand(program: Command): void {
       const outputFormat = resolveIngestPresentationFormat((opts as { format?: unknown }).format);
       assertIngestPresentationMode(flags, outputFormat);
       const wantsHtmlDossier = shouldRenderHtmlDossier(outputFormat, flags.output);
+      const wantsBenchmark = shouldRenderBenchmark(outputFormat);
       const runJobInBackground = Boolean((opts as { background?: unknown }).background) || flags.json || flags.quiet;
       const documentType = String(opts.type ?? 'borehole-log').toLowerCase();
       const supportedTypes = new Set(['borehole-log', 'geotech-document']);
 
       if (!supportedTypes.has(documentType)) {
         throw new Error(`Unsupported ingest type "${documentType}". This MVP currently supports --type borehole-log and --type geotech-document.`);
+      }
+      if (wantsBenchmark && documentType !== 'geotech-document') {
+        throw new Error('Benchmark output is currently available with --type geotech-document.');
+      }
+      if (Boolean((opts as { background?: unknown }).background) && wantsBenchmark) {
+        throw new Error('Benchmark output requires a completed result. Run without --background or use geotech ingest result <jobId> --format benchmark.');
       }
 
       let spinner: ReturnType<typeof startProgress> | null = null;
@@ -2144,7 +2238,13 @@ export function registerIngestCommand(program: Command): void {
               }
             : null;
 
-          if (wantsHtmlDossier) {
+          if (wantsBenchmark) {
+            writeGeotechBenchmark(completedResult, {
+              outputPath: flags.output,
+              sourceLabel: completedResult.source.fileName ?? completedResult.source.filePath ?? completedJob.jobId,
+              job: buildBenchmarkJobContext(completedJob),
+            });
+          } else if (wantsHtmlDossier) {
             const htmlDossier = writeHtmlDossier(completedResult, {
               outputPath: flags.output,
               open: shouldOpenHtmlDossier(flags),
@@ -2176,6 +2276,7 @@ export function registerIngestCommand(program: Command): void {
           maxTokens: 1500,
         };
 
+        const ingestStartedAt = Date.now();
         const result =
           file.kind === 'pdf'
             ? await (async () => {
@@ -2248,6 +2349,7 @@ export function registerIngestCommand(program: Command): void {
                       image: file,
                     });
               })();
+        const ingestDurationMs = Date.now() - ingestStartedAt;
         const boreholeResult =
           documentType === 'borehole-log'
             ? result as Awaited<ReturnType<typeof ingestBoreholeLogDocument>>
@@ -2279,7 +2381,14 @@ export function registerIngestCommand(program: Command): void {
             }
           : null;
 
-        if (boreholeResult) {
+        if (wantsBenchmark) {
+          writeGeotechBenchmark(result, {
+            outputPath: flags.output,
+            sourceLabel: result.source.fileName ?? result.source.filePath ?? filePath,
+            durationMs: ingestDurationMs,
+          });
+          return;
+        } else if (boreholeResult) {
           renderIngestResultReport(boreholeResult, {
             sourceLabel: boreholeResult.source.fileName ?? boreholeResult.source.filePath ?? filePath,
             persistedReview: persistedReviewDetails,
@@ -2311,7 +2420,7 @@ export function registerIngestCommand(program: Command): void {
   const reviewCmd = new Command('review')
     .description('Inspect a persisted geotechnical ingest review from a stored project')
     .argument('<projectId>', 'Stored project id containing persisted ingest reviews')
-    .option('--format <format>', 'Result presentation format: plain or html', 'plain')
+    .option('--format <format>', 'Result presentation format: plain, html, or benchmark', 'plain')
     .option(
       '--dataset <name>',
       'Specific persisted ingest review dataset name; defaults to the latest saved review in the project',
@@ -2324,6 +2433,7 @@ export function registerIngestCommand(program: Command): void {
       const outputFormat = resolveIngestPresentationFormat(resolvedOpts.format);
       assertIngestPresentationMode(flags, outputFormat);
       const wantsHtmlDossier = shouldRenderHtmlDossier(outputFormat, flags.output);
+      const wantsBenchmark = shouldRenderBenchmark(outputFormat);
       const resolvedProjectId = String(projectId);
       const datasetName = asOptionalTrimmedString(resolvedOpts.dataset);
 
@@ -2346,6 +2456,9 @@ export function registerIngestCommand(program: Command): void {
         if (resolvedOpts.list) {
           if (wantsHtmlDossier) {
             throw new Error('HTML ingest reports are only available for a single persisted review. Remove --list or use plain/json output.');
+          }
+          if (wantsBenchmark) {
+            throw new Error('Benchmark output is only available for a single persisted review. Remove --list or use plain/json output.');
           }
           const reviews = listPersistedBoreholeIngestReviews(resolvedProjectId);
           if (flags.json) {
@@ -2391,7 +2504,14 @@ export function registerIngestCommand(program: Command): void {
           return;
         }
 
-        renderPersistedReviewRecord(record, resolvedProjectId);
+        if (wantsBenchmark) {
+          writeGeotechBenchmark(record.result, {
+            outputPath: flags.output,
+            sourceLabel: record.result.source.fileName ?? record.result.source.filePath ?? record.title,
+          });
+        } else {
+          renderPersistedReviewRecord(record, resolvedProjectId);
+        }
 
         if (wantsHtmlDossier) {
           const dossierDetails = buildPersistedReviewDossierDetails(record, resolvedProjectId);
@@ -2667,7 +2787,7 @@ export function registerIngestCommand(program: Command): void {
   const waitCmd = new Command('wait')
     .description('Wait for a persisted geotechnical ingest job to finish')
     .argument('<jobId>', 'Persisted ingest job id')
-    .option('--format <format>', 'Result presentation format: plain or html', 'plain')
+    .option('--format <format>', 'Result presentation format: plain, html, or benchmark', 'plain')
     .action(async (...args: unknown[]) => {
       const [jobId, opts, command] = args as [string, unknown, unknown];
       const resolvedOpts = resolveCommandOptions(opts, command, ['format']);
@@ -2675,6 +2795,7 @@ export function registerIngestCommand(program: Command): void {
       const outputFormat = resolveIngestPresentationFormat(resolvedOpts.format);
       assertIngestPresentationMode(flags, outputFormat);
       const wantsHtmlDossier = shouldRenderHtmlDossier(outputFormat, flags.output);
+      const wantsBenchmark = shouldRenderBenchmark(outputFormat);
       const record = await waitForPersistedIngestJobWithLiveProgress(String(jobId), flags);
       const normalized = normalizeIngestJobRecord(record);
       if (!normalized) {
@@ -2706,7 +2827,13 @@ export function registerIngestCommand(program: Command): void {
           }
         : null;
 
-      if (wantsHtmlDossier) {
+      if (wantsBenchmark) {
+        writeGeotechBenchmark(completedResult, {
+          outputPath: flags.output,
+          sourceLabel: completedResult.source.fileName ?? completedResult.source.filePath ?? normalized.jobId,
+          job: buildBenchmarkJobContext(normalized),
+        });
+      } else if (wantsHtmlDossier) {
         const htmlDossier = writeHtmlDossier(completedResult, {
           outputPath: flags.output,
           open: shouldOpenHtmlDossier(flags),
@@ -2756,7 +2883,7 @@ export function registerIngestCommand(program: Command): void {
   const resultCmd = new Command('result')
     .description('Load the completed result for a persisted geotechnical ingest job')
     .argument('<jobId>', 'Persisted ingest job id')
-    .option('--format <format>', 'Result presentation format: plain or html', 'plain')
+    .option('--format <format>', 'Result presentation format: plain, html, or benchmark', 'plain')
     .action(async (...args: unknown[]) => {
       const [jobId, opts, command] = args as [string, unknown, unknown];
       const resolvedOpts = resolveCommandOptions(opts, command, ['format']);
@@ -2764,6 +2891,7 @@ export function registerIngestCommand(program: Command): void {
       const outputFormat = resolveIngestPresentationFormat(resolvedOpts.format);
       assertIngestPresentationMode(flags, outputFormat);
       const wantsHtmlDossier = shouldRenderHtmlDossier(outputFormat, flags.output);
+      const wantsBenchmark = shouldRenderBenchmark(outputFormat);
       const record = loadPersistedIngestJob(String(jobId));
       const result = loadPersistedIngestJobResult(String(jobId));
       if (!record || !result) {
@@ -2792,7 +2920,13 @@ export function registerIngestCommand(program: Command): void {
           }
         : null;
 
-      if (wantsHtmlDossier) {
+      if (wantsBenchmark) {
+        writeGeotechBenchmark(completedResult, {
+          outputPath: flags.output,
+          sourceLabel: completedResult.source.fileName ?? completedResult.source.filePath ?? normalized.jobId,
+          job: buildBenchmarkJobContext(normalized),
+        });
+      } else if (wantsHtmlDossier) {
         const htmlDossier = writeHtmlDossier(completedResult, {
           outputPath: flags.output,
           open: shouldOpenHtmlDossier(flags),

@@ -112,6 +112,53 @@ describe('ingestGeotechDocument', () => {
     expect(result.canAutoProceed).toBe(true);
     expect(result.pageAudits[0]?.materialCount).toBe(2);
     expect(result.pageAudits[1]?.parameterCount).toBe(2);
+    expect(result.materials.find((material) => material.description === 'stiff clay')?.sourcePages).toEqual([1, 2]);
+    expect(result.classifications.find((classification) => classification.system === 'USCS')?.sourcePages).toEqual([1]);
+    expect(result.parameters.find((parameter) => parameter.name === 'frictionAngle')?.sourcePages).toEqual([1]);
+    expect(result.parameters.find((parameter) => parameter.name === 'cohesion')?.sourcePages).toEqual([2]);
+  });
+
+  it('stamps retained parameter source pages using the original PDF page range', async () => {
+    const result = await ingestGeotechDocument({
+      config: { provider: 'openai-compatible' } as any,
+      source: {
+        filePath: 'range.pdf',
+        fileName: 'range.pdf',
+        inputKind: 'pdf',
+        pageRange: [10, 11],
+      },
+      pages: [
+        {
+          base64: 'page-1',
+          mimeType: 'application/pdf',
+          pageNumber: 1,
+          totalPages: 2,
+        },
+        {
+          base64: 'page-2',
+          mimeType: 'application/pdf',
+          pageNumber: 2,
+          totalPages: 2,
+        },
+      ],
+      interpretPage: async (_imageBase64, _mimeType, _config, context) => makeResult({
+        materials: [
+          { kind: 'soil', description: 'silty sand', uscsSymbol: 'SM', lithology: null },
+        ],
+        classifications: [
+          { system: 'USCS', value: 'SM', context: 'silty sand' },
+        ],
+        parameters: [
+          { name: 'unitWeight', valueText: '18', numericValue: 18, unit: 'kN/m3', material: 'silty sand', context: 'lab summary' },
+        ],
+        pageNumber: context.pageNumber ?? null,
+        totalPages: context.totalPages ?? null,
+      }),
+    });
+
+    expect(result.materials[0]?.sourcePages).toEqual([10, 11]);
+    expect(result.classifications[0]?.sourcePages).toEqual([10, 11]);
+    expect(result.parameters[0]?.sourcePages).toEqual([10, 11]);
   });
 
   it('adds report synthesis without inflating extraction confidence', async () => {

@@ -139,13 +139,18 @@ export async function preprocessVisionImageBuffer(
 
   try {
     const output = await sharp(Buffer.from(buffer), { pages: 1 })
+      .rotate()
+      .flatten({ background: '#ffffff' })
+      .trim({
+        background: '#ffffff',
+        threshold: 10,
+      })
       .resize({
-        width: 1600,
-        height: 1600,
+        width: 1800,
+        height: 1800,
         fit: 'inside',
         withoutEnlargement: true,
       })
-      .rotate()
       .grayscale()
       .normalize()
       .sharpen()

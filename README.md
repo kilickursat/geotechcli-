@@ -67,8 +67,8 @@ geotech classify rmr --ucs 85 --rqd 72 --spacing 0.4 --condition fair --gw dry
 # AI: classify RMR from a tunnel face photo
 geotech vision rmr tunnel-face.jpg
 
-# AI: ingest a geotechnical report and open an HTML dossier
-geotech ingest Geotechnical-Report.pdf --type geotech-document --format html --output geotechnical-dossier.html
+# AI: ingest a geotechnical report and open an HTML report
+geotech ingest Geotechnical-Report.pdf --type geotech-document --format html --output geotechnical-report.html
 
 # Bundled strong-beta skills
 geotech skill list
@@ -92,7 +92,7 @@ geotech export dxf --input boreholes.json --output profile.dxf
 
 ## Workspace Analysis
 
-`geotech analyze` is the deterministic local project analyst surface. It scans a project folder, classifies geotechnical files, samples CSV/XLSX schemas, detects likely branches such as foundation, mapping, monitoring, and signal processing, and builds an evidence-bound `GroundModel` with verifier findings without spending hosted-beta GPU time.
+`geotech analyze` is the deterministic local project analyst surface. It scans a project folder, classifies geotechnical files, samples CSV/XLSX schemas, detects likely branches such as foundation, mapping, monitoring, and signal processing, and builds an evidence-bound `GroundModel` with verifier findings and calculation-readiness routing without spending hosted-beta GPU time.
 
 ```bash
 geotech analyze .
@@ -102,7 +102,7 @@ geotech analyze . --branch foundation
 geotech analyze . --standard eurocode7
 ```
 
-Current strong-beta scope: workspace awareness, CSV/XLSX schema inference, AGS/PDF/image/GIS/CAD classification, evidence references, canonical GroundModel construction, deterministic verifier findings, recommendations, and a self-contained HTML dossier. It does not yet auto-run branch-specific design calculations from the folder.
+Current strong-beta scope: workspace awareness, CSV/XLSX schema inference, AGS/PDF/image/GIS/CAD classification, evidence references, canonical GroundModel construction, deterministic verifier findings, calculation readiness for bearing, settlement, pile, liquefaction, and slope workflows, recommendations, and a self-contained HTML report. It does not yet auto-run branch-specific design calculations from the folder; it tells you which calculation route is ready, blocked, or needs explicit assumptions.
 
 ## Interactive Visualization
 
@@ -157,7 +157,7 @@ These commands are the public strong-beta foundation and are available now.
 | `geotech slope` | Slope stability using Bishop Simplified |
 | `geotech pile` | Pile capacity using alpha, beta, and SPT methods |
 | `geotech retaining` | Lateral earth pressure using Rankine and Coulomb |
-| `geotech analyze` | Local project manifest, CSV/XLSX schema inference, evidence-bound GroundModel, verifier, and HTML dossier |
+| `geotech analyze` | Local project manifest, CSV/XLSX schema inference, evidence-bound GroundModel, verifier, and HTML report |
 | `geotech viz` | Interactive browser visualization for saved JSON, CSV, and Excel data |
 
 ### AI-Assisted
@@ -170,7 +170,7 @@ These commands now use the hosted beta GLM path by default.
 | `geotech vision rmr` | Vision-assisted RMR workflow |
 | `geotech vision sensor` | Sensor and chart image interpretation |
 | `geotech vision log` | Borehole log extraction from images or multi-page PDFs |
-| `geotech ingest` | Geotechnical PDF/image ingest for borehole logs and broader report intelligence, with live PDF progress and optional browser HTML dossier output |
+| `geotech ingest` | Geotechnical PDF/image ingest for borehole logs and broader report intelligence, with live PDF progress and optional browser HTML report or benchmark output |
 | `geotech ai-classify` | Natural language soil description to USCS and properties |
 | `geotech gbr chat` | GBR document question answering |
 | `geotech agent` | Terzaghi single-agent reasoning by default; optional evidence-bound `--workspace`, `--swarm` orchestration, and project memory |
@@ -193,24 +193,31 @@ geotech ingest borehole-log.pdf --type borehole-log
 # Long PDFs show live progress by default; use --background to detach.
 geotech ingest Geotechnical-Report.pdf --type geotech-document
 
-# Export and open the self-contained HTML dossier for review and sharing.
+# Export and open the self-contained HTML report for review and sharing.
 # Add --no-open to save the file without launching a browser.
-geotech ingest Geotechnical-Report.pdf --type geotech-document --format html --output geotechnical-dossier.html
+geotech ingest Geotechnical-Report.pdf --type geotech-document --format html --output geotechnical-report.html
 
 # Large hosted-beta reports automatically switch to segmented resumable async ingest jobs
 geotech ingest Geotechnical-Report.pdf --type geotech-document
-geotech ingest wait <jobId> --format html --output geotechnical-dossier.html
-geotech ingest result <jobId> --format html --output geotechnical-dossier.html
+geotech ingest wait <jobId> --format html --output geotechnical-report.html
+geotech ingest result <jobId> --format html --output geotechnical-report.html
+
+# Write a benchmark JSON for first-run vs cached-rerun comparisons
+geotech ingest result <jobId> --format benchmark --output geotechnical-report.benchmark.json
+
+# Optional local two-pass benchmark against the canonical development PDF
+# Set GEOTECHCLI_BENCHMARK_PDF when the report lives outside the default path.
+npm run benchmark:geotech-report
 
 # Review a focused range without processing the whole report
 geotech ingest Geotechnical-Report.pdf --type geotech-document --page-range 61:102
 
 # Persist a project-backed ingest, then reopen the latest stored review later
 geotech ingest Geotechnical-Report.pdf --type geotech-document --project demo-project
-geotech ingest review demo-project --dataset ingest-review:latest --format html --output review-dossier.html
+geotech ingest review demo-project --dataset ingest-review:latest --format html --output review-report.html
 ```
 
-The HTML dossier is a self-contained Geotechnical Intelligence Dossier with:
+The HTML report is a self-contained Geotechnical Intelligence Report with:
 
 - executive facts, confidence metrics, review actions, and sticky navigation
 - engineering insight cards for ground conditions, design implications, missing critical data, and verification focus
@@ -221,7 +228,8 @@ The HTML dossier is a self-contained Geotechnical Intelligence Dossier with:
 - collapsed Processing Audit details for page audit matrices, local evidence cache status, operational warnings, and native text, GLM-OCR, GLM-5V, and GLM-5.1 synthesis stage badges
 - stored-review and approval context when the ingest is project-backed
 
-Hosted-beta reliability note: geotechnical PDFs above the best-result window are now split into linked sequential packets automatically, and the final result plus HTML dossier merge those packets back into one review surface.
+Hosted-beta reliability note: geotechnical PDFs above the best-result window are now split into linked sequential packets automatically, and the final result plus HTML report merge those packets back into one review surface.
+Benchmark note: `--format benchmark` emits a compact JSON harness for geotechnical reports with cache hit rate, estimated hosted calls, direct and audit-backed source-page traceability, retained signal counts, and ground-model readiness gates so OCR/vision changes can be compared against the same PDF instead of judged manually. `npm run benchmark:geotech-report` runs the local two-pass harness against `GeotechnicalInvestigationReport (1).pdf` when that file is available, writes first-run/cached-rerun benchmark JSON, and fails if cache reuse, source-page traceability, or GroundModel readiness falls below the current acceptance floor. The evidence model is provider-neutral: hosted GLM is the strong-beta default, but BYOK providers should be judged against the same PDF/page evidence, cache, traceability, and readiness contract.
 Cost-control note: hosted-beta PDF ingest now tries GLM-OCR layout parsing before vision OCR, routes image-only pages into GLM-5V visual extraction only when layout/text is insufficient, caches compact page evidence locally by file/page/model/preprocessing/schema hash, and marks direct visual pages for human review as `vision-visual`.
 
 ### Bundled Skills

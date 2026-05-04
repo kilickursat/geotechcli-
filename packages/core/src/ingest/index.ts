@@ -65,6 +65,15 @@ export {
   type IngestGeotechDocumentOptions,
 } from './geotech-document.js';
 export {
+  buildGeotechDocumentBenchmark,
+  compareGeotechDocumentBenchmarks,
+  type GeotechDocumentBenchmark,
+  type GeotechDocumentBenchmarkComparison,
+  type GeotechDocumentBenchmarkJobContext,
+  type GeotechDocumentBenchmarkOptions,
+  type GeotechDocumentBenchmarkPage,
+} from './geotech-document-benchmark.js';
+export {
   approvePersistedBoreholeIngestReview,
   approvePersistedBoreholeIngestReview as approvePersistedIngestReview,
   listPersistedBoreholeIngestReviewApprovals,

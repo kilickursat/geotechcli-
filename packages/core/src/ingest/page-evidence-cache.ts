@@ -6,7 +6,7 @@ import type { LLMConfig } from '../llm/types.js';
 import type { DocumentTextHintSource } from '../vision/ocr.js';
 
 export const PAGE_EVIDENCE_CACHE_SCHEMA_VERSION = 1;
-export const PAGE_EVIDENCE_PREPROCESSING_VERSION = 'page-evidence-preprocess-v1';
+export const PAGE_EVIDENCE_PREPROCESSING_VERSION = 'page-evidence-preprocess-v2';
 
 const CACHE_DIR_NAME = 'page-evidence-cache';
 

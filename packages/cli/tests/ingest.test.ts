@@ -243,9 +243,9 @@ describe('registerIngestCommand', () => {
       visionModelId: 'glm-5v-turbo',
     });
     coreMocks.buildIngestDossier.mockReturnValue({
-      title: 'Dossier',
-      subtitle: 'Test dossier',
-      summary: 'Generated dossier',
+      title: 'Report',
+      subtitle: 'Test report',
+      summary: 'Generated report',
       sourceLabel: 'sample.pdf',
       documentType: 'borehole-log',
       generatedAt: '2026-04-22T00:00:00.000Z',
@@ -257,7 +257,7 @@ describe('registerIngestCommand', () => {
       sections: [],
       footerNotes: [],
     });
-    coreMocks.renderIngestDossierAsHtml.mockReturnValue('<!doctype html><html><body>Dossier</body></html>');
+    coreMocks.renderIngestDossierAsHtml.mockReturnValue('<!doctype html><html><body>Report</body></html>');
     coreMocks.buildPersistedIngestJobSegments.mockReturnValue([]);
     coreMocks.resolvePersistedIngestJobExtractionConcurrency.mockReturnValue(2);
     coreMocks.shouldSegmentHostedBetaLongPdf.mockReturnValue(false);
@@ -890,7 +890,7 @@ describe('registerIngestCommand', () => {
     expect(uiMocks.heading).toHaveBeenCalledWith('Geotechnical Ingest Result');
   });
 
-  it('writes and opens a compact HTML dossier when waiting for a completed ingest job', async () => {
+  it('writes and opens a compact HTML report when waiting for a completed ingest job', async () => {
     const registerIngestCommand = await loadRegisterIngestCommand();
     const program = new Command();
     const completedResult = {
@@ -929,12 +929,12 @@ describe('registerIngestCommand', () => {
     await program.parseAsync(['ingest', 'wait', jobRecord.jobId, '--format', 'html'], { from: 'user' });
 
     expect(fsMocks.writeFileSync).toHaveBeenCalledWith(
-      'sample.ingest-dossier.html',
-      '<!doctype html><html><body>Dossier</body></html>',
+      'sample.ingest-report.html',
+      '<!doctype html><html><body>Report</body></html>',
     );
-    expect(browserMocks.openFileInBrowser).toHaveBeenCalledWith('sample.ingest-dossier.html');
-    expect(uiMocks.success).toHaveBeenCalledWith('HTML ingest report opened in your browser: sample.ingest-dossier.html');
-    expect(uiMocks.keyValue).toHaveBeenCalledWith('HTML report', 'sample.ingest-dossier.html');
+    expect(browserMocks.openFileInBrowser).toHaveBeenCalledWith('sample.ingest-report.html');
+    expect(uiMocks.success).toHaveBeenCalledWith('HTML ingest report opened in your browser: sample.ingest-report.html');
+    expect(uiMocks.keyValue).toHaveBeenCalledWith('HTML report', 'sample.ingest-report.html');
     expect(uiMocks.renderTable).not.toHaveBeenCalled();
   });
 
@@ -985,7 +985,7 @@ describe('registerIngestCommand', () => {
     expect(uiMocks.renderJSON).toHaveBeenCalledWith(completedResult);
   });
 
-  it('writes a compact HTML dossier for persisted job results and honors --no-open', async () => {
+  it('writes a compact HTML report for persisted job results and honors --no-open', async () => {
     const registerIngestCommand = await loadRegisterIngestCommand();
     const program = new Command();
     const completedResult = {
@@ -1023,7 +1023,7 @@ describe('registerIngestCommand', () => {
 
     expect(fsMocks.writeFileSync).toHaveBeenCalledWith(
       'job-result.html',
-      '<!doctype html><html><body>Dossier</body></html>',
+      '<!doctype html><html><body>Report</body></html>',
     );
     expect(browserMocks.openFileInBrowser).not.toHaveBeenCalled();
     expect(uiMocks.success).toHaveBeenCalledWith('HTML ingest report saved to job-result.html');
@@ -2435,7 +2435,7 @@ describe('registerIngestCommand', () => {
     );
   });
 
-  it('writes an HTML ingest dossier for a completed sync ingest result', async () => {
+  it('writes an HTML ingest report for a completed sync ingest result', async () => {
     const registerIngestCommand = await loadRegisterIngestCommand();
     const program = new Command();
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -2506,12 +2506,12 @@ describe('registerIngestCommand', () => {
     expect(coreMocks.renderIngestDossierAsHtml).toHaveBeenCalledTimes(1);
     expect(fsMocks.writeFileSync).toHaveBeenCalledWith(
       'site-report.html',
-      '<!doctype html><html><body>Dossier</body></html>',
+      '<!doctype html><html><body>Report</body></html>',
     );
     expect(uiMocks.success).toHaveBeenCalledWith('HTML ingest report saved to site-report.html');
   });
 
-  it('writes an HTML ingest dossier for a persisted review with approval metadata', async () => {
+  it('writes an HTML ingest report for a persisted review with approval metadata', async () => {
     const registerIngestCommand = await loadRegisterIngestCommand();
     const program = new Command();
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -2574,7 +2574,7 @@ describe('registerIngestCommand', () => {
       '--format',
       'html',
       '--output',
-      'review-dossier.html',
+      'review-report.html',
     ], { from: 'user' });
 
     collectConsoleOutput(logSpy);
@@ -2594,10 +2594,10 @@ describe('registerIngestCommand', () => {
       },
     });
     expect(fsMocks.writeFileSync).toHaveBeenCalledWith(
-      'review-dossier.html',
-      '<!doctype html><html><body>Dossier</body></html>',
+      'review-report.html',
+      '<!doctype html><html><body>Report</body></html>',
     );
-    expect(uiMocks.success).toHaveBeenCalledWith('HTML ingest report saved to review-dossier.html');
+    expect(uiMocks.success).toHaveBeenCalledWith('HTML ingest report saved to review-report.html');
   });
 
   it('fails fast for unsupported ingest types before any LLM work starts', async () => {

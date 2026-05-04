@@ -8,11 +8,24 @@ const releases = [
     date: '2026-05-04',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added geotechnical report benchmark output for page cache reuse, estimated hosted calls, source-page traceability, retained signal counts, and GroundModel readiness gates' },
+      { type: 'feat', text: 'Added npm run benchmark:geotech-report as a local two-pass benchmark harness for the canonical GeotechnicalInvestigationReport PDF' },
+      { type: 'fix', text: 'Stamped retained geotechnical materials, classifications, and parameters with provider-neutral source pages for hosted GLM and future BYOK providers' },
+      { type: 'feat', text: 'Added GroundModel calculation-readiness routing for bearing capacity, settlement, pile capacity, liquefaction, and slope stability' },
+      { type: 'fix', text: 'Updated geotech analyze terminal and HTML report output to show deterministic workflow readiness before agents or users route evidence into calculations' },
+      { type: 'fix', text: 'Renamed default generated ingest and workspace HTML filenames from legacy review wording to report wording while preserving internal compatibility APIs' },
+    ],
+  },
+  {
+    version: '0.4.41',
+    date: '2026-05-04',
+    tag: '0.4.41 Release',
+    changes: [
       { type: 'fix', text: 'Renamed the generated HTML ingest output to a Geotechnical Intelligence Report presentation, including CLI summary labels and browser report prompts' },
       { type: 'feat', text: 'Reworked the report shell into a compact dark engineering dashboard with top navigation, cleaner hero hierarchy, dark evidence cards, and contained table/profile sections' },
       { type: 'fix', text: 'Tightened desktop and mobile layout constraints so status badges, source metadata, ground-model SVGs, borehole profiles, and engineering tables avoid overlap and horizontal clipping' },
       { type: 'fix', text: 'Kept Processing Audit and model-stage details below the engineering review surface while keeping the main report focused on decisions, evidence, confidence, and human verification' },
-      { type: 'fix', text: 'Verified the GeotechnicalInvestigationReport PDF report regenerated with all 34 pages processed, no visible dossier wording, and clean desktop/mobile screenshots' },
+      { type: 'fix', text: 'Verified the GeotechnicalInvestigationReport PDF report regenerated with all 34 pages processed and clean desktop/mobile screenshots' },
     ],
   },
   {
@@ -22,8 +35,8 @@ const releases = [
     changes: [
       { type: 'fix', text: 'Stabilized PDF page evidence cache keys for generated per-page PDF payloads so repeated full-report ingest reuses native PDF page evidence instead of re-extracting regenerated pages' },
       { type: 'fix', text: 'Added regression coverage for synchronous and persisted async PDF page cache reuse when page payload bytes change between jobs' },
-      { type: 'feat', text: 'Upgraded HTML ingest dossiers with status badges, searchable review filters, a schematic ground-model cross-section, source evidence actions, and a scroll-aware human review workflow bar' },
-      { type: 'fix', text: 'Verified the GeotechnicalInvestigationReport PDF rerun completed with all 34 pages as cache hits and no new cache stores while keeping the review-focused dossier presentation intact' },
+      { type: 'feat', text: 'Upgraded HTML ingest reports with status badges, searchable review filters, a schematic ground-model cross-section, source evidence actions, and a scroll-aware human review workflow bar' },
+      { type: 'fix', text: 'Verified the GeotechnicalInvestigationReport PDF rerun completed with all 34 pages as cache hits and no new cache stores while keeping the review-focused report presentation intact' },
     ],
   },
   {
@@ -43,9 +56,9 @@ const releases = [
     changes: [
       { type: 'feat', text: 'Added a durable page evidence cache keyed by source file hash, page hash, page number, model version, preprocessing version, and schema version' },
       { type: 'fix', text: 'Reused cached geotechnical page evidence on reruns so repeated PDF ingest can skip duplicate OCR, GLM-OCR, GLM-5V, and page extraction work when inputs are unchanged' },
-      { type: 'fix', text: 'Persisted cache audit metadata through async ingest checkpoints, segmented child-job merges, final page audits, CLI summaries, and HTML dossier processing audit views' },
+      { type: 'fix', text: 'Persisted cache audit metadata through async ingest checkpoints, segmented child-job merges, final page audits, CLI summaries, and HTML report processing audit views' },
       { type: 'fix', text: 'Kept cache I/O best-effort so inaccessible local cache storage never turns a valid page extraction into a failed page' },
-      { type: 'fix', text: 'Added regression coverage for cache key stability, corrupt cache misses, invalidation, sync ingest reuse, async job reuse, and dossier cache presentation' },
+      { type: 'fix', text: 'Added regression coverage for cache key stability, corrupt cache misses, invalidation, sync ingest reuse, async job reuse, and report cache presentation' },
     ],
   },
   {
@@ -55,7 +68,7 @@ const releases = [
     changes: [
       { type: 'fix', text: 'Raised installed-CLI hosted beta defaults to 2,000 text, 600 vision, 600 layout, and 200 agent requests per day for image-heavy PDF development runs' },
       { type: 'fix', text: 'Raised anonymous hosted beta defaults moderately while keeping stricter abuse protection than installed CLI traffic' },
-      { type: 'fix', text: 'Hardened Geotechnical Intelligence Dossier borehole-profile inference to use retained inspection text and content chunks when structured parameter rows omit depth data' },
+      { type: 'fix', text: 'Hardened Geotechnical Intelligence Report borehole-profile inference to use retained inspection text and content chunks when structured parameter rows omit depth data' },
       { type: 'fix', text: 'Added regression coverage for profile generation from real report-style borehole schedule and conclusion text' },
     ],
   },
@@ -64,11 +77,11 @@ const releases = [
     date: '2026-05-03',
     tag: '0.4.36 Release',
     changes: [
-      { type: 'feat', text: 'Redesigned HTML ingest dossiers as a premium Geotechnical Intelligence Dossier with a sticky sidebar, executive facts, review actions, engineering insight cards, and source-evidence navigation' },
+      { type: 'feat', text: 'Redesigned HTML ingest reports as a premium Geotechnical Intelligence Report with a sticky sidebar, executive facts, review actions, engineering insight cards, and source-evidence navigation' },
       { type: 'feat', text: 'Added an evidence-first trust table for extracted and missing engineering parameters with source page, confidence, review posture, and evidence snippets' },
       { type: 'feat', text: 'Added a lightweight borehole stratigraphy SVG view for retained borehole and layer evidence, with dashed boundaries for uncertain or missing intervals' },
       { type: 'fix', text: 'Moved model-stage and raw page audit details into a collapsed Processing Audit section so the main report stays engineering-decision-first' },
-      { type: 'fix', text: 'Added regression coverage for the premium dossier layout, trust layer, source evidence, processing audit, and borehole visualization' },
+      { type: 'fix', text: 'Added regression coverage for the premium report layout, trust layer, source evidence, processing audit, and borehole visualization' },
     ],
   },
   {
@@ -78,7 +91,7 @@ const releases = [
     changes: [
       { type: 'fix', text: 'Kept GLM thinking enabled for final report synthesis as the first attempt, then retried once without thinking when Z.ai returns an empty/no-content assistant response' },
       { type: 'fix', text: 'Prevented successful visual ingest runs from showing a GLM-5.1 synthesis failed warning when the fallback synthesis response is valid' },
-      { type: 'fix', text: 'Added regression coverage for the hosted-beta synthesis fallback path so the dossier brief remains populated after an empty thinking-mode completion' },
+      { type: 'fix', text: 'Added regression coverage for the hosted-beta synthesis fallback path so the report brief remains populated after an empty thinking-mode completion' },
     ],
   },
   {
@@ -91,10 +104,10 @@ const releases = [
       { type: 'fix', text: 'Raised public hosted-beta CLI defaults to 300 text, 120 vision, 80 layout, and 40 agent requests per day while preserving tighter anonymous caps' },
       { type: 'fix', text: 'Routed hosted-beta image-only, graphics-only, and text-unreadable report pages directly into structured GLM visual extraction when no accepted text exists, avoiding duplicate OCR-only vision calls before interpretation' },
       { type: 'fix', text: 'Marked direct visual page extraction as vision-visual in page audits and forced manual review before approval so high-confidence image-only results do not silently auto-proceed' },
-      { type: 'feat', text: 'Improved the HTML ingest dossier with report takeaways, grouped parameter tables, stage badges, an extraction overview strip, confidence meters, cleaner engineering brief text, and shortened table/page-card fragments for human review' },
-      { type: 'feat', text: 'Applied a shadcn-style static dossier presentation pass so key engineering tables come before operational audit details, with raw page audit tables collapsed by default' },
-      { type: 'fix', text: 'Preserved engineering units such as kN/m3, t/m2, kg/cm2, and m/s in dossier presentation while still cleaning OCR-like spacing' },
-      { type: 'fix', text: 'Added regression coverage for synchronous ingest, persisted async jobs, direct visual extraction, and dossier HTML rendering' },
+      { type: 'feat', text: 'Improved the HTML ingest report with report takeaways, grouped parameter tables, stage badges, an extraction overview strip, confidence meters, cleaner engineering brief text, and shortened table/page-card fragments for human review' },
+      { type: 'feat', text: 'Applied a shadcn-style static report presentation pass so key engineering tables come before operational audit details, with raw page audit tables collapsed by default' },
+      { type: 'fix', text: 'Preserved engineering units such as kN/m3, t/m2, kg/cm2, and m/s in report presentation while still cleaning OCR-like spacing' },
+      { type: 'fix', text: 'Added regression coverage for synchronous ingest, persisted async jobs, direct visual extraction, and report HTML rendering' },
     ],
   },
   {
@@ -146,7 +159,7 @@ const releases = [
     tag: '0.4.29 Release',
     changes: [
       { type: 'feat', text: 'Added the canonical GroundModel v1 contract for workspace analysis, binding boreholes, SPT tests, groundwater, lab parameters, monitoring series, and rejected observations into one engineering model' },
-      { type: 'feat', text: 'Added evidence-bound extraction for sampled CSV/XLSX data so analyze JSON and dossiers show source file, sheet, row, column, confidence, raw value, and normalized value' },
+      { type: 'feat', text: 'Added evidence-bound extraction for sampled CSV/XLSX data so analyze JSON and reports show source file, sheet, row, column, confidence, raw value, and normalized value' },
       { type: 'feat', text: 'Added a deterministic GroundModel verifier for rejected SPT values, missing groundwater, missing coordinates, undeclared local CRS, unknown standard profiles, and duplicate SPT depths' },
       { type: 'feat', text: 'Upgraded geotech analyze --format html with GroundModel, verifier findings, and evidence table sections while keeping terminal output compact' },
       { type: 'fix', text: 'Upgraded geotech agent --workspace so hosted-beta tasks receive a GroundModel/verifier summary without adding any Modal GPU calls to local analysis' },
@@ -157,7 +170,7 @@ const releases = [
     date: '2026-04-24',
     tag: '0.4.28 Release',
     changes: [
-      { type: 'feat', text: 'Added geotech analyze [workspace] for deterministic local project manifests with compact terminal output, JSON, and self-contained HTML dossiers' },
+      { type: 'feat', text: 'Added geotech analyze [workspace] for deterministic local project manifests with compact terminal output, JSON, and self-contained HTML reports' },
       { type: 'feat', text: 'Added core workspace intelligence for file discovery, geotechnical classification, branch detection, recommendations, and ProjectManifest generation without hosted-beta GPU spend' },
       { type: 'feat', text: 'Added lightweight CSV/XLSX schema inference for depth, coordinates, borehole/sample IDs, SPT/CPT, lab, monitoring, and signal-style columns' },
       { type: 'feat', text: 'Added geotech agent ... --workspace <dir> so agent tasks can receive a compact local manifest summary instead of guessing directly from raw files' },
@@ -173,7 +186,7 @@ const releases = [
       { type: 'fix', text: 'Lowered hosted-beta proxy retry pressure with single-attempt vision and agent calls, fewer text retries, and separate per-minute limits for heavier vision and agent requests' },
       { type: 'fix', text: 'Serialized more long mixed PDF ingest jobs on hosted beta so image-only report appendix and tail pages do not flood one GPU queue' },
       { type: 'fix', text: 'Added cheaper PDF retry behavior with deterministic partial extraction for text timeouts, skipped duplicate vision OCR on retry, and manual-review downgrades for repeated slow visual tail pages' },
-      { type: 'feat', text: 'Printed the exact browser-dossier command after plain persisted ingest results so users can immediately open the HTML review without rerunning the PDF' },
+      { type: 'feat', text: 'Printed the exact browser-report command after plain persisted ingest results so users can immediately open the HTML review without rerunning the PDF' },
     ],
   },
   {
@@ -183,7 +196,7 @@ const releases = [
     changes: [
       { type: 'fix', text: 'Fixed bundled strong-beta skills in global npm installs by trusting only first-party bundled-skill archives while keeping arbitrary outside ZIP imports blocked' },
       { type: 'feat', text: 'Changed long PDF ingest to live-wait by default with visible page progress, elapsed time, heartbeat/status, and failure counts, plus --background for detached jobs' },
-      { type: 'feat', text: 'Made ingest HTML format save and open a browser dossier by default for run, wait, and result flows while --no-open keeps save-only automation clean' },
+      { type: 'feat', text: 'Made ingest HTML format save and open a browser report by default for run, wait, and result flows while --no-open keeps save-only automation clean' },
       { type: 'fix', text: 'Hardened PDF ingest with page-count fallbacks, zero-page job rejection, retryable 524/upstream-timeout checkpoints, image-heavy concurrency control, and completed-partial resume retry behavior' },
       { type: 'fix', text: 'Improved report extraction by preserving user-declared report intent, limiting borehole appendix dominance, and rejecting impossible SPT values from standards references while retaining warnings as evidence' },
       { type: 'fix', text: 'Cleaned strong-beta drift across agent docs, handoff notes, changelog encoding, swarm final synthesis fallback, and effective config display for provider defaults' },
@@ -196,7 +209,7 @@ const releases = [
     changes: [
       { type: 'feat', text: 'Added hosted-beta long-PDF segmentation for geotechnical report ingest, using a 60 effective-page best-result window with linked sequential packets and one merged final result' },
       { type: 'feat', text: 'Added --page-range <start:end> to geotech ingest so targeted report subsets can be reviewed, rerun, and exported without processing the whole PDF' },
-      { type: 'feat', text: 'Extended the HTML ingest dossier to show segment execution, selected page-range context, and merged packet outcomes inside one premium review surface' },
+      { type: 'feat', text: 'Extended the HTML ingest report to show segment execution, selected page-range context, and merged packet outcomes inside one premium review surface' },
       { type: 'fix', text: 'Kept the shipped hosted-beta path on the non-quantized default Qwen model while forcing segmented long-report execution onto extraction concurrency 1 for better queue stability on L4' },
       { type: 'fix', text: 'Hardened parent and child persisted ingest jobs so segmented report packets checkpoint independently and merge back into the parent result with original page numbering preserved' },
     ],
@@ -220,8 +233,8 @@ const releases = [
       { type: 'fix', text: 'Unified the live single-agent and swarm tool bootstrap so both runtimes register the same filesystem, shell, data, deliverable, and skill tools instead of drifting when a tool depends on side-effect imports' },
       { type: 'fix', text: 'Aligned swarm with the same deterministic intake screen and first-turn hosted-beta fallback used by the main agent, so under-specified requests and provider warmup/outage cases now resolve more consistently across both execution paths' },
       { type: 'fix', text: 'Updated the strong-beta release surfaces together for this versioned reliability pass, including package metadata, README, website docs, website changelog, homepage bundled-skill copy, and release-consistency checks' },
-      { type: 'feat', text: 'Added a self-contained HTML ingest dossier for geotech ingest so borehole packets and broader geotechnical reports can be reviewed as a polished engineering brief instead of raw JSON alone' },
-      { type: 'feat', text: 'Added public strong-beta docs and README examples for report ingest, resumable long-PDF jobs, and HTML dossier export using real geotechnical report workflows' },
+      { type: 'feat', text: 'Added a self-contained HTML ingest report for geotech ingest so borehole packets and broader geotechnical reports can be reviewed as a polished engineering brief instead of raw JSON alone' },
+      { type: 'feat', text: 'Added public strong-beta docs and README examples for report ingest, resumable long-PDF jobs, and HTML report export using real geotechnical report workflows' },
       { type: 'fix', text: 'Continued hardening the long-PDF ingest path around normalized page routing, async job orchestration, and broader geotechnical report extraction so mixed engineering PDFs behave like a first-class workflow' },
     ],
   },

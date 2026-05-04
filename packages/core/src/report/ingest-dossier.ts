@@ -271,7 +271,14 @@ function parameterCategory(name: string): string {
   return 'Other';
 }
 
-function sourcePageText(value: string | null | undefined): string {
+function sourcePageText(value: string | null | undefined, sourcePages?: number[] | null): string {
+  if (Array.isArray(sourcePages) && sourcePages.length > 0) {
+    return [...new Set(
+      sourcePages
+        .map((page) => Number(page))
+        .filter((page) => Number.isInteger(page) && page > 0),
+    )].sort((left, right) => left - right).join(', ');
+  }
   const matches = [...(value ?? '').matchAll(/\bpage\s+(\d+)\b/gi)]
     .map((match) => match[1])
     .filter((entry): entry is string => Boolean(entry));
@@ -646,7 +653,7 @@ function buildGeotechTables(result: GeotechDocumentIngestResult): IngestDossierT
         displayTableText(parameter.valueText, 90),
         displayTableText(parameter.unit, 32),
         displayTableText(parameter.material, 110),
-        sourcePageText(parameter.context),
+        sourcePageText(parameter.context, parameter.sourcePages),
         `${result.confidence}%`,
         displayTableText(parameter.context, 180),
       ]),
@@ -997,7 +1004,7 @@ function buildBoreholeInsightCards(result: BoreholeDocumentIngestResult): Ingest
 function buildGeotechTrustItems(result: GeotechDocumentIngestResult): IngestDossierTrustItem[] {
   const visualExtractionUsed = result.pageAudits.some((audit) => audit.textHintSource === 'vision-visual' || audit.textHintSource === 'vision-ocr');
   const rows = result.parameters.slice(0, 16).map<IngestDossierTrustItem>((parameter) => {
-    const sourcePage = sourcePageText(parameter.context);
+    const sourcePage = sourcePageText(parameter.context, parameter.sourcePages);
     const reviewNeeded = result.reviewRequired || sourcePage === '-' || visualExtractionUsed;
     const valueText = displayTableText(parameter.valueText, 80);
     const unitText = displayTableText(parameter.unit, 28);

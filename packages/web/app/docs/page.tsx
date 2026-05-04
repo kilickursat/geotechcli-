@@ -220,7 +220,7 @@ geotech vision log Appendix-2A-Geotechnical-Report-Part-6.pdf
   {
     id: 'analyze',
     title: 'geotech analyze',
-    content: `Local project-folder intelligence. This deterministic command scans a workspace, builds a project manifest, classifies geotechnical files, samples CSV/XLSX schemas, builds an evidence-bound GroundModel, and records requested branch or standard context without spending hosted-beta GPU time.
+    content: `Local project-folder intelligence. This deterministic command scans a workspace, builds a project manifest, classifies geotechnical files, samples CSV/XLSX schemas, builds an evidence-bound GroundModel, records requested branch or standard context, and reports calculation-readiness routing without spending hosted-beta GPU time.
 
 \`\`\`bash
 # Compact terminal analysis
@@ -229,7 +229,7 @@ geotech analyze .
 # Automation-friendly manifest plus GroundModel/verifier
 geotech analyze . --json
 
-# Self-contained browser dossier
+# Self-contained browser report
 geotech analyze . --format html
 
 # Branch and standards context for downstream workflows
@@ -237,7 +237,7 @@ geotech analyze . --branch foundation
 geotech analyze . --standard eurocode7
 \`\`\`
 
-Current strong-beta scope: file discovery, AGS/PDF/image/GIS/CAD classification, CSV/XLSX schema inference, evidence references, canonical GroundModel construction, verifier findings, detected branches, warnings, and recommended next steps. Evidence-bound calculations, map visualization, and the role-based workspace agent planner are the next roadmap layers, so analyze does not yet auto-run design calculations from the folder.`,
+Current strong-beta scope: file discovery, AGS/PDF/image/GIS/CAD classification, CSV/XLSX schema inference, evidence references, canonical GroundModel construction, verifier findings, detected branches, calculation readiness for bearing, settlement, pile, liquefaction, and slope workflows, warnings, and recommended next steps. Analyze does not yet auto-run design calculations from the folder; it reports which deterministic workflow is ready, blocked, or needs explicit assumptions before routing. Map visualization and the role-based workspace agent planner remain roadmap layers.`,
   },
   {
     id: 'ingest',
@@ -252,26 +252,32 @@ geotech ingest borehole-log.pdf --type borehole-log
 # Long PDFs show live progress by default; add --background to detach.
 geotech ingest Geotechnical-Report.pdf --type geotech-document
 
-# Export and open the self-contained HTML dossier for design review or sharing.
+# Export and open the self-contained HTML report for design review or sharing.
 # Add --no-open to save the file without launching a browser.
-geotech ingest Geotechnical-Report.pdf --type geotech-document --format html --output geotechnical-dossier.html
+geotech ingest Geotechnical-Report.pdf --type geotech-document --format html --output geotechnical-report.html
 
 # Large hosted-beta reports automatically switch to segmented resumable async jobs
 geotech ingest Geotechnical-Report.pdf --type geotech-document
-geotech ingest wait <jobId> --format html --output geotechnical-dossier.html
-geotech ingest result <jobId> --format html --output geotechnical-dossier.html
+geotech ingest wait <jobId> --format html --output geotechnical-report.html
+geotech ingest result <jobId> --format html --output geotechnical-report.html
+
+# Write a benchmark JSON for first-run vs cached-rerun comparisons
+geotech ingest result <jobId> --format benchmark --output geotechnical-report.benchmark.json
+
+# Optional local two-pass benchmark against the canonical development PDF
+npm run benchmark:geotech-report
 
 # Review a focused range without processing the whole report
 geotech ingest Geotechnical-Report.pdf --type geotech-document --page-range 61:102
 
 # Persist a project-backed ingest, then reopen the latest stored review later
 geotech ingest Geotechnical-Report.pdf --type geotech-document --project demo-project
-geotech ingest review demo-project --dataset ingest-review:latest --format html --output review-dossier.html
+geotech ingest review demo-project --dataset ingest-review:latest --format html --output review-report.html
 \`\`\`
 
-The HTML dossier is a self-contained Geotechnical Intelligence Dossier with sticky navigation, executive facts, review actions, engineering insight cards, an evidence-first trust table, source evidence, lightweight borehole stratigraphy visualization when layer evidence is available, and stored-review plus approval context when the ingest is project-backed. Technical model-stage details, page audit matrices, local evidence cache status, and operational warnings live in a collapsed Processing Audit section. Interactive terminals open the dossier in the browser by default; use --no-open for save-only workflows.
+The HTML report is a self-contained Geotechnical Intelligence Report with sticky navigation, executive facts, review actions, engineering insight cards, an evidence-first trust table, source evidence, lightweight borehole stratigraphy visualization when layer evidence is available, and stored-review plus approval context when the ingest is project-backed. Technical model-stage details, page audit matrices, local evidence cache status, and operational warnings live in a collapsed Processing Audit section. Interactive terminals open the report in the browser by default; use --no-open for save-only workflows.
 
-Hosted-beta reliability note: geotechnical PDFs above the best-result window are split into resumable page jobs with live progress, retryable transient failures, and merged final results plus HTML dossier output. The hosted-beta path runs GLM-OCR layout extraction before vision OCR, uses GLM-5V visual interpretation only where layout/text is insufficient, caches compact page evidence locally by file/page/model/preprocessing/schema hash for repeatable reruns, and feeds compact evidence into GLM-5.1 synthesis for human-readable report interpretation.`,
+Hosted-beta reliability note: geotechnical PDFs above the best-result window are split into resumable page jobs with live progress, retryable transient failures, and merged final results plus HTML report output. The hosted-beta path runs GLM-OCR layout extraction before vision OCR, uses GLM-5V visual interpretation only where layout/text is insufficient, caches compact page evidence locally by file/page/model/preprocessing/schema hash for repeatable reruns, and feeds compact evidence into GLM-5.1 synthesis for human-readable report interpretation. Use --format benchmark on completed geotechnical report jobs to compare cache reuse, estimated hosted calls, direct and audit-backed source-page traceability, and ground-model readiness across OCR/vision changes. The optional npm run benchmark:geotech-report script runs the same contract as a local two-pass report benchmark when the canonical PDF is available. The benchmark contract is provider-neutral so future BYOK models can be evaluated against the same page evidence and readiness metrics.`,
   },
   {
     id: 'agent',
