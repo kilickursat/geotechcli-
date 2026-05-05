@@ -4,7 +4,7 @@ Last updated: 2026-05-05
 
 ## Current Work
 
-Preparing v0.4.44 on `strong-beta`. The current engineering track is whole-report geotechnical synthesis, compact borehole/ground-model visual QA, and the PDF/page evidence benchmark foundation so future OCR/vision and BYOK-provider changes can be measured against the same report PDF instead of judged manually.
+Preparing v0.4.45 on `strong-beta`. The current engineering track is provider-neutral document evidence context for agents, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, and the PDF/page evidence benchmark foundation so future OCR/vision and BYOK-provider changes can be measured against the same report PDF instead of judged manually.
 
 Current focus:
 
@@ -20,6 +20,8 @@ Current focus:
 - Add `geotech ingest ... --format benchmark` / `geotech ingest result <jobId> --format benchmark` for page cache, hosted-call, traceability, and GroundModel readiness measurements.
 - Use OCR-optimized margin trimming and normalized raster sizing as the first measurable PDF/image preprocessing pass, then use benchmark output to compare first-run vs cached-rerun behavior.
 - Stamp retained materials, classifications, and parameters with provider-neutral `sourcePages` so direct source-page traceability comes from page evidence instead of model-specific prose.
+- Normalize geotechnical PDF/report outputs into a provider-neutral `DocumentEvidencePacket` so hosted GLM and future BYOK providers target the same page, observation, traceability, confidence, and review-gate contract.
+- Feed compact `DocumentEvidencePacket` summaries into agent tool results so agent reasoning sees source pages, extraction methods, missing values, review gates, borehole IDs, and max depth before raw result JSON is truncated.
 - Keep a canonical cached-rerun fixture and `npm run benchmark:geotech-report` local harness for the `GeotechnicalInvestigationReport (1).pdf` acceptance target.
 - Keep the agentic document evidence contract provider-neutral so hosted GLM is only the strong-beta default; future BYOK LLMs should plug into the same page evidence, cache, traceability, and GroundModel readiness space.
 - Extend GroundModel verification with calculation-readiness routing for bearing, settlement, pile, liquefaction, and slope workflows before any deterministic calculation is auto-run.
@@ -36,6 +38,15 @@ Current focus:
 - Rebuilt borehole stratigraphy and ground-model cross-section views with compact lithology-colored SVGs, source-page legend rows, inferred-contact styling, and overflow-safe layout.
 - Curated noisy OCR/table fragments out of the main material-observation table while retaining source evidence and Processing Audit traceability.
 - Verified the cached PDF report with core tests, full build, consistency check, Playwright screenshot, and DOM/layout assertions.
+
+### v0.4.45 Provider-Neutral Agent Evidence Context
+
+- Added a schema-validated `DocumentEvidencePacket` for geotechnical document ingest results, normalizing pages, methods, observations, source pages, content chunks, synthesis, warnings, review findings, and traceability into one provider-neutral contract.
+- Attached the packet to geotechnical document ingest results and async job-adjusted results so downstream report, benchmark, agent, and future BYOK provider paths can read the same evidence shape.
+- Added benchmark summary fields for evidence-contract coverage, observation counts, method counts, source pages, and review gates.
+- Added compact agent evidence summaries for geotechnical ingest, job-result, and persisted-review tools so source pages, extraction methods, missing values, review gates, borehole IDs, and max depth survive prompt truncation.
+- Updated single-agent and swarm tool-result serialization to prefer compact evidence summaries before raw JSON.
+- Added regression coverage for packet schema validation, benchmark evidence-contract metrics, agent ingest summaries, and prompt serialization.
 
 ### v0.4.26 Reliability Fixes
 

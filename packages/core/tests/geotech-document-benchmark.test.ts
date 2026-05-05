@@ -197,6 +197,24 @@ describe('geotech document benchmark', () => {
       'friction angle',
     ]);
     expect(benchmark.groundModelReadiness.gates).toContain('partial-pages-remain');
+    expect(benchmark.evidenceContract).toMatchObject({
+      schemaVersion: 1,
+      providerNeutral: true,
+      pages: 3,
+      observations: {
+        materials: 2,
+        classifications: 1,
+        parameters: 3,
+        total: 6,
+      },
+      methodCounts: {
+        'native-pdf-text': 1,
+        'layout-ocr': 1,
+        'visual-reasoning': 1,
+      },
+      sourcePages: [2, 3],
+      reviewGateCount: 4,
+    });
   });
 
   it('compares cached reruns against a baseline benchmark', () => {

@@ -27,6 +27,7 @@ import {
   type GeotechDocumentPageEvidenceCacheAudit,
   type GeotechDocumentPageInput,
 } from './geotech-document.js';
+import { attachDocumentEvidencePacket } from './document-evidence-packet.js';
 import {
   extractGeotechDocumentDeterministicFactsFromText,
   extractGeotechDocumentFactsFromText,
@@ -1250,6 +1251,7 @@ function applyCheckpointOcrRecoveredSummary<T extends PersistedIngestResult>(
         }),
       } as GeotechDocumentIngestResult;
     }
+    nextResult = attachDocumentEvidencePacket(nextResult);
   }
 
   return nextResult as T;
@@ -1583,13 +1585,13 @@ function applyGeotechFailureDowngrades(
   const nextReviewFindings = dedupeReviewFindings(reviewFindings);
   const reviewReasons = summarizeReviewReasons(nextReviewFindings);
 
-  return {
+  return attachDocumentEvidencePacket({
     ...result,
     reviewFindings: nextReviewFindings,
     reviewReasons,
     reviewRequired: reviewReasons.length > 0,
     canAutoProceed: false,
-  };
+  });
 }
 
 function buildJobConfig(

@@ -95,6 +95,112 @@ function createGeotechDocumentResult(overrides?: Record<string, unknown>) {
   };
 }
 
+function createGeotechDocumentEvidenceResult(overrides?: Record<string, unknown>) {
+  return createGeotechDocumentResult({
+    title: 'Ground investigation report',
+    summary: 'BH1 terminated at 10.00 m after weathered rock was encountered.',
+    materials: [{
+      kind: 'soil',
+      description: 'stiff clayey silt over weathered rock',
+      uscsSymbol: 'CL',
+      lithology: null,
+      sourcePages: [2],
+    }],
+    classifications: [{
+      system: 'USCS',
+      value: 'CL',
+      context: 'BH1 clayey silt on page 2',
+      sourcePages: [2],
+    }],
+    parameters: [
+      {
+        name: 'Borehole depth',
+        valueText: '10.00 m',
+        numericValue: 10,
+        unit: 'm',
+        material: 'BH1',
+        context: 'BH1 termination on page 2',
+        sourcePages: [2],
+      },
+      {
+        name: 'Groundwater level',
+        valueText: 'not reported',
+        numericValue: null,
+        unit: 'm bgl',
+        material: 'BH1',
+        context: null,
+      },
+    ],
+    contentChunks: [{
+      chunkId: 'chunk-2',
+      pageRange: [2, 2],
+      headingAncestry: ['Borehole logs'],
+      scope: 'section',
+      sectionType: 'ground-model',
+      significance: 0.9,
+      text: 'B.H. No. 1 terminated at 10.00 m. Stiff clayey silt over weathered rock.',
+      sourcePages: [2],
+    }],
+    synthesis: {
+      takeaways: ['BH1 reached 10.00 m and encountered weathered rock.'],
+      groundModel: ['Stiff clayey silt over weathered rock, page 2.'],
+      keyParameters: ['BH1 termination 10.00 m, page 2.'],
+      interpretation: ['Use as review evidence only.'],
+      limitations: ['Groundwater was not reported.'],
+      sourcePages: [2],
+    },
+    pageAudits: [
+      {
+        pageNumber: 1,
+        classification: 'digital-text',
+        textHintSource: 'native-text',
+        parseStatus: 'parsed',
+        confidence: 94,
+        materialCount: 0,
+        classificationCount: 0,
+        parameterCount: 0,
+        warnings: [],
+      },
+      {
+        pageNumber: 2,
+        classification: 'image-only',
+        textHintSource: 'glm-ocr',
+        parseStatus: 'parsed',
+        confidence: 88,
+        materialCount: 1,
+        classificationCount: 1,
+        parameterCount: 1,
+        warnings: [],
+      },
+      {
+        pageNumber: 3,
+        classification: 'image-only',
+        textHintSource: 'vision-visual',
+        parseStatus: 'partial',
+        confidence: 63,
+        materialCount: 0,
+        classificationCount: 0,
+        parameterCount: 1,
+        warnings: ['Depth column partially obscured.'],
+      },
+    ],
+    warnings: ['Manual review required for missing groundwater.'],
+    reviewFindings: [{
+      code: 'direct_visual_review_required',
+      severity: 'review',
+      scope: 'page',
+      message: 'Page 3 used direct visual extraction.',
+      pageNumber: 3,
+    }],
+    reviewReasons: ['Page 3 used direct visual extraction.'],
+    parseStatus: 'partial',
+    confidence: 82,
+    reviewRequired: true,
+    canAutoProceed: false,
+    ...overrides,
+  });
+}
+
 function createBoreholeIngestResult(overrides?: Record<string, unknown>) {
   return {
     kind: 'geotech-ingest-result',
@@ -425,6 +531,102 @@ describe('agent ingest tools', () => {
       { title: 'Desk study packet' },
     );
     expect((result.data as any).persistedReview.datasetName).toBe('ingest-review:rev-doc-1');
+  });
+
+  it('exposes compact document evidence summaries for geotech-document agent tools', async () => {
+    const evidenceResult = createGeotechDocumentEvidenceResult();
+    ingestMocks.ingestGeotechDocument.mockResolvedValue(evidenceResult);
+    ingestMocks.waitGeotechIngestJob.mockResolvedValue(createJobRecord({
+      status: 'completed',
+      completedAt: '2026-04-22T01:00:00.000Z',
+      sourceStamps: {
+        sourceFingerprint: 'job-source-fingerprint-1',
+        parserVersion: 'geotech-document@1|result-schema@1|pdf-parser:lightweight-page-inspector',
+        normalizedResultHash: 'normalized-result-hash-1',
+      },
+      result: {
+        ingestResult: evidenceResult,
+      },
+      resultSummary: {
+        confidence: 82,
+        blockingFindings: 0,
+        reviewFindings: 1,
+        advisoryFindings: 0,
+        canAutoProceed: false,
+      },
+    }));
+    ingestMocks.loadGeotechIngestJobResult.mockReturnValue({
+      jobId: 'job-1',
+      datasetName: 'ingest-job:job-1',
+      projectId: 'project-123',
+      documentType: 'geotech-document',
+      completedAt: '2026-04-22T01:00:00.000Z',
+      sourceStamps: {
+        sourceFingerprint: 'job-source-fingerprint-1',
+        parserVersion: 'geotech-document@1|result-schema@1|pdf-parser:lightweight-page-inspector',
+        normalizedResultHash: 'normalized-result-hash-1',
+      },
+      result: evidenceResult,
+      resultSummary: {
+        reviewRequired: true,
+        canAutoProceed: false,
+        confidence: 82,
+        totalPages: 3,
+        successfulPages: 3,
+        failedPages: 0,
+        boreholeCount: 1,
+        boreholeIds: ['BH1'],
+        blockingFindings: 0,
+        reviewFindings: 1,
+        advisoryFindings: 0,
+      },
+    });
+    ingestMocks.loadLatestPersistedBoreholeIngestReview.mockReturnValue(createPersistedReviewRecord({
+      result: evidenceResult,
+      summary: {
+        reviewRequired: true,
+        canAutoProceed: false,
+        confidence: 82,
+        totalPages: 3,
+        successfulPages: 3,
+        failedPages: 0,
+        boreholeCount: 1,
+        boreholeIds: ['BH1'],
+        blockingFindings: 0,
+        reviewFindings: 1,
+        advisoryFindings: 0,
+      },
+    }));
+
+    const { toolRegistry } = await import('../src/agents/tools.js');
+    await import('../src/agents/data-tools.js');
+
+    const ingestResult = await toolRegistry.execute('ingest_geotech_document', {
+      path: pdfPath,
+      type: 'geotech-document',
+    });
+    const waitResult = await toolRegistry.execute('wait_geotech_ingest_job', {
+      projectId: 'project-123',
+      datasetName: 'ingest-job:job-1',
+    });
+    const loadJobResult = await toolRegistry.execute('load_geotech_ingest_job_result', {
+      projectId: 'project-123',
+      datasetName: 'ingest-job:job-1',
+    });
+    const loadReviewResult = await toolRegistry.execute('load_persisted_ingest_review', {
+      projectId: 'project-123',
+    });
+
+    for (const toolResult of [ingestResult, waitResult, loadJobResult, loadReviewResult]) {
+      expect(toolResult.success).toBe(true);
+      const summary = (toolResult.data as any).agentEvidenceSummary;
+      expect(summary).toContain('DocumentEvidencePacket v1 provider-neutral agent context');
+      expect(summary).toContain('source pages 2');
+      expect(summary).toContain('layout/OCR pages 2');
+      expect(summary).toContain('direct visual pages 3');
+      expect(summary).toContain('Missing parameters: Groundwater level');
+      expect(summary).toContain('Boreholes: BH1; max depth 10 m');
+    }
   });
 
   it('defers large PDF ingest to an async job instead of calling the sync ingest path', async () => {

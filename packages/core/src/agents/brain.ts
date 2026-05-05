@@ -2,7 +2,7 @@ import type { LLMConfig, CompletionResponse } from '../llm/types.js';
 import { generateChat } from '../llm/router.js';
 import { toolRegistry, type ToolResult } from './tools.js';
 import { validateToolArgs, formatViolations } from './guardrails.js';
-import { extractToolSafetyIssue, serializeContextForPrompt } from './safety.js';
+import { extractToolSafetyIssue, serializeContextForPrompt, serializeToolDataForPrompt } from './safety.js';
 import { normalizeToolArgs } from './tool-normalization.js';
 import { runWithToolRuntimeContext } from './tool-runtime.js';
 import {
@@ -480,9 +480,7 @@ export async function runAgent(
       continue;
     }
 
-    const compactData = JSON.stringify(result.data);
-    const dataStr =
-      compactData.length > 3000 ? `${compactData.slice(0, 3000)}...(truncated)` : compactData;
+    const dataStr = serializeToolDataForPrompt(result.data, 3000);
 
     messages.push({
       role: 'user',

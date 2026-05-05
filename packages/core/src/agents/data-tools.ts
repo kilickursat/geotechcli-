@@ -24,6 +24,11 @@ import {
   summarizePersistedBoreholeIngestReviewApproval,
   waitGeotechIngestJob,
 } from '../ingest/index.js';
+import {
+  summarizeGeotechDocumentResultForAgent,
+  type DocumentEvidencePacket,
+} from '../ingest/document-evidence-packet.js';
+import type { GeotechDocumentIngestResult } from '../ingest/geotech-document.js';
 import { queryStandards, listStandards } from '../standards/index.js';
 import { buildLLMConfig } from '../config/index.js';
 import {
@@ -217,6 +222,52 @@ function getSelectedPersistedReviewApproval(
   }
 
   return null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isGeotechDocumentResult(value: unknown): value is GeotechDocumentIngestResult {
+  return isRecord(value)
+    && value.kind === 'geotech-ingest-result'
+    && value.documentType === 'geotech-document'
+    && isRecord(value.source)
+    && Array.isArray(value.materials)
+    && Array.isArray(value.classifications)
+    && Array.isArray(value.parameters)
+    && Array.isArray(value.pageAudits)
+    && Array.isArray(value.warnings)
+    && typeof value.confidence === 'number';
+}
+
+function buildAgentEvidenceSummary(value: unknown): string | undefined {
+  if (!isGeotechDocumentResult(value)) {
+    return undefined;
+  }
+
+  try {
+    return summarizeGeotechDocumentResultForAgent(value, { maxContentChars: 2200 });
+  } catch {
+    return undefined;
+  }
+}
+
+function withAgentEvidenceSummary<T extends Record<string, unknown>>(
+  value: T,
+  result: unknown,
+): T & { agentEvidenceSummary?: string; evidencePacket?: DocumentEvidencePacket } {
+  const agentEvidenceSummary = buildAgentEvidenceSummary(result);
+  if (!agentEvidenceSummary) {
+    return value;
+  }
+
+  const packet = isGeotechDocumentResult(result) ? result.evidencePacket : undefined;
+  return {
+    agentEvidenceSummary,
+    ...(packet ? { evidencePacket: packet } : {}),
+    ...value,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -500,7 +551,7 @@ toolRegistry.register(
 
       return {
         success: true,
-        data: {
+        data: withAgentEvidenceSummary({
           ...result,
           persistedReview: persistedReview
             ? {
@@ -510,7 +561,7 @@ toolRegistry.register(
                 summary: persistedReview.summary,
               }
             : undefined,
-        },
+        }, result),
         summary: persistedReview
           ? `Geotech document ingest found ${result.materials.length} materials, ${result.classifications.length} classifications, and ${result.parameters.length} parameters at ${result.confidence}% confidence and saved review ${persistedReview.datasetName}.`
           : `Geotech document ingest found ${result.materials.length} materials, ${result.classifications.length} classifications, and ${result.parameters.length} parameters at ${result.confidence}% confidence.`,
@@ -676,7 +727,10 @@ toolRegistry.register(
 
       return {
         success: true,
-        data: summarizeIngestJobRecord(job),
+        data: withAgentEvidenceSummary(
+          summarizeIngestJobRecord(job),
+          isRecord(job.result) ? job.result.ingestResult : undefined,
+        ),
         summary: job.persistedReview
           ? `Completed ${job.documentType} ingest job ${job.datasetName} and saved review ${job.persistedReview.datasetName}.`
           : `Completed ${job.documentType} ingest job ${job.datasetName}.`,
@@ -714,7 +768,7 @@ toolRegistry.register(
 
       return {
         success: true,
-        data: loaded,
+        data: withAgentEvidenceSummary({ ...loaded }, loaded.result),
         summary: loaded.persistedReview
           ? `Loaded completed ${loaded.documentType} ingest result from ${loaded.datasetName} with persisted review ${loaded.persistedReview.datasetName}.`
           : `Loaded completed ${loaded.documentType} ingest result from ${loaded.datasetName}.`,
@@ -835,7 +889,7 @@ toolRegistry.register(
 
       return {
         success: true,
-        data: record,
+        data: withAgentEvidenceSummary({ ...record }, record.result),
         summary: `Loaded persisted ingest review ${record.datasetName} from ${reviewSourceLabel(record)} (${record.summary.confidence}% confidence, ${record.summary.blockingFindings} blocking, ${record.summary.reviewFindings} review, auto-proceed ${record.summary.canAutoProceed ? 'yes' : 'no'}).`,
       };
     } catch (err) {

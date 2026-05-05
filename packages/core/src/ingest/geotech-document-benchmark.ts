@@ -5,6 +5,10 @@ import type {
   GeotechDocumentPageEvidenceCacheStatus,
 } from './geotech-document.js';
 import type { DocumentTextHintSource } from '../vision/ocr.js';
+import {
+  buildDocumentEvidencePacket,
+  type DocumentEvidenceMethod,
+} from './document-evidence-packet.js';
 
 export interface GeotechDocumentBenchmarkJobContext {
   jobId?: string;
@@ -104,6 +108,20 @@ export interface GeotechDocumentBenchmark {
     missingCriticalData: string[];
     gates: string[];
   };
+  evidenceContract: {
+    schemaVersion: number;
+    providerNeutral: true;
+    pages: number;
+    observations: {
+      materials: number;
+      classifications: number;
+      parameters: number;
+      total: number;
+    };
+    methodCounts: Record<DocumentEvidenceMethod, number>;
+    sourcePages: number[];
+    reviewGateCount: number;
+  };
   pages: GeotechDocumentBenchmarkPage[];
 }
 
@@ -152,6 +170,7 @@ export function buildGeotechDocumentBenchmark(
   const extractionSources = countSources(result.pageAudits);
   const hostedCallEstimate = estimateHostedCalls(pages);
   const traceability = summarizeTraceability(result);
+  const evidencePacket = result.evidencePacket ?? buildDocumentEvidencePacket(result);
 
   return {
     kind: 'geotech-document-benchmark',
@@ -192,6 +211,23 @@ export function buildGeotechDocumentBenchmark(
     },
     traceability,
     groundModelReadiness: assessGroundModelReadiness(result, traceability, pageOutcomes),
+    evidenceContract: {
+      schemaVersion: evidencePacket.schemaVersion,
+      providerNeutral: evidencePacket.providerContract.providerNeutral,
+      pages: evidencePacket.pages.length,
+      observations: {
+        materials: evidencePacket.observations.materials.length,
+        classifications: evidencePacket.observations.classifications.length,
+        parameters: evidencePacket.observations.parameters.length,
+        total:
+          evidencePacket.observations.materials.length
+          + evidencePacket.observations.classifications.length
+          + evidencePacket.observations.parameters.length,
+      },
+      methodCounts: evidencePacket.traceability.methodCounts as Record<DocumentEvidenceMethod, number>,
+      sourcePages: evidencePacket.traceability.sourcePages,
+      reviewGateCount: evidencePacket.providerContract.reviewGates.length,
+    },
     pages,
   };
 }

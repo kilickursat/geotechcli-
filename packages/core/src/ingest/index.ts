@@ -65,6 +65,21 @@ export {
   type IngestGeotechDocumentOptions,
 } from './geotech-document.js';
 export {
+  DOCUMENT_EVIDENCE_PACKET_SCHEMA_VERSION,
+  DocumentEvidenceMethodSchema,
+  DocumentEvidenceObservationTypeSchema,
+  DocumentEvidencePacketSchema,
+  DocumentEvidenceReviewStatusSchema,
+  attachDocumentEvidencePacket,
+  buildDocumentEvidencePacket,
+  summarizeDocumentEvidencePacketForAgent,
+  summarizeGeotechDocumentResultForAgent,
+  type DocumentEvidenceMethod,
+  type DocumentEvidencePacket,
+  type DocumentEvidenceReviewStatus,
+  type SummarizeDocumentEvidencePacketForAgentOptions,
+} from './document-evidence-packet.js';
+export {
   buildGeotechDocumentBenchmark,
   compareGeotechDocumentBenchmarks,
   type GeotechDocumentBenchmark,

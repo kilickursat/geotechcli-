@@ -52,3 +52,35 @@ export function serializeContextForPrompt(
   if (serialized.length <= maxChars) return serialized;
   return `${serialized.slice(0, maxChars)}...(truncated)`;
 }
+
+export function serializeToolDataForPrompt(data: unknown, maxChars = 3000): string {
+  const serialized = JSON.stringify(data);
+  const agentEvidenceSummary = extractAgentEvidenceSummary(data);
+  if (!agentEvidenceSummary) {
+    return serialized.length > maxChars ? `${serialized.slice(0, maxChars)}...(truncated)` : serialized;
+  }
+
+  const prefix = `Agent evidence summary:\n${agentEvidenceSummary}\n\nCompact tool data JSON:\n`;
+  const remaining = Math.max(220, maxChars - prefix.length);
+  const compactData = serialized.length > remaining
+    ? `${serialized.slice(0, remaining)}...(truncated)`
+    : serialized;
+  return `${prefix}${compactData}`;
+}
+
+function extractAgentEvidenceSummary(data: unknown): string | null {
+  if (!isRecord(data)) {
+    return null;
+  }
+
+  if (typeof data.agentEvidenceSummary === 'string' && data.agentEvidenceSummary.trim()) {
+    return data.agentEvidenceSummary.trim();
+  }
+
+  const result = data.result;
+  if (isRecord(result) && typeof result.agentEvidenceSummary === 'string' && result.agentEvidenceSummary.trim()) {
+    return result.agentEvidenceSummary.trim();
+  }
+
+  return null;
+}

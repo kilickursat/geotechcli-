@@ -8,6 +8,18 @@ const releases = [
     date: '2026-05-05',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added a schema-validated DocumentEvidencePacket for geotechnical document ingest results, normalizing page methods, source pages, observations, content chunks, synthesis, review gates, and traceability into a provider-neutral contract' },
+      { type: 'fix', text: 'Attached evidence packets to geotechnical document ingest and async job-adjusted results so reports, benchmarks, and agents share the same evidence shape' },
+      { type: 'feat', text: 'Added compact agent evidence summaries for geotechnical ingest, job-result, and persisted-review tools so source pages, methods, missing values, review gates, borehole IDs, and max depth survive prompt truncation' },
+      { type: 'fix', text: 'Updated single-agent and swarm tool-result serialization to prefer compact evidence summaries before raw JSON' },
+      { type: 'fix', text: 'Added regression coverage for packet schema validation, benchmark evidence-contract metrics, agent ingest summaries, and prompt serialization' },
+    ],
+  },
+  {
+    version: '0.4.44',
+    date: '2026-05-05',
+    tag: '0.4.44 Release',
+    changes: [
       { type: 'fix', text: 'Made geotechnical document synthesis read an ordered whole-report outline before high-signal extraction rows so takeaways, risks, recommendations, and borehole evidence stay report-level first' },
       { type: 'fix', text: 'Prevented figure, table, and borehole-log titles from replacing the report title in generated Geotechnical Intelligence Reports, including cached result rendering' },
       { type: 'feat', text: 'Rebuilt borehole and ground-model report visuals with compact lithology-colored profiles, source-page legend rows, inferred-contact styling, and overflow-safe SVG layout' },

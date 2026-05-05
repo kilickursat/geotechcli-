@@ -30,6 +30,10 @@ import {
   type PageEvidenceCacheKeyParts,
   type WritePageEvidenceCacheInput,
 } from './page-evidence-cache.js';
+import {
+  attachDocumentEvidencePacket,
+  type DocumentEvidencePacket,
+} from './document-evidence-packet.js';
 
 export interface GeotechDocumentVisionInput {
   base64: string;
@@ -123,6 +127,7 @@ export interface GeotechDocumentIngestResult {
   recommendations: string[];
   synthesis?: GeotechDocumentSynthesis | null;
   contentChunks?: GeotechDocumentContentChunk[];
+  evidencePacket?: DocumentEvidencePacket;
   pageAudits: GeotechDocumentPageAudit[];
   pageFailures: string[];
   warnings: string[];
@@ -2325,10 +2330,11 @@ export async function ingestGeotechDocument(
     ...pageResults.flatMap((result) => result.warnings),
   ]);
 
-  return {
+  const finalResult: GeotechDocumentIngestResult = {
     ...baseResult,
     summary: synthesis?.takeaways[0] ?? baseResult.summary,
     synthesis,
     warnings,
   };
+  return attachDocumentEvidencePacket(finalResult);
 }

@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.45] - 2026-05-05
+
+### Provider-Neutral Agent Evidence Context
+
+- Added a schema-validated `DocumentEvidencePacket` for geotechnical document ingest results, normalizing page methods, source pages, observations, content chunks, synthesis, review gates, and traceability into a provider-neutral contract for hosted GLM and future BYOK models.
+- Attached evidence packets to geotechnical document ingest and async job-adjusted results so reports, benchmarks, and agents share the same evidence shape.
+- Added compact agent evidence summaries for geotechnical ingest, job-result, and persisted-review tools so source pages, methods, missing values, review gates, borehole IDs, and max depth survive agent prompt truncation.
+- Updated single-agent and swarm tool-result serialization to prefer compact evidence summaries before raw JSON.
+- Added regression coverage for packet schema validation, benchmark evidence-contract metrics, agent ingest summaries, and prompt serialization.
+
 ## [0.4.44] - 2026-05-05
 
 ### Report Synthesis and Ground Model Visual QA

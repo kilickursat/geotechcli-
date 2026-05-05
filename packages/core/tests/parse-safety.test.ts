@@ -8,6 +8,7 @@ import {
 import {
   extractToolSafetyIssue,
   serializeContextForPrompt,
+  serializeToolDataForPrompt,
 } from '../src/agents/safety.js';
 
 describe('Parse safety helpers', () => {
@@ -65,5 +66,28 @@ describe('Agent safety helpers', () => {
 
     expect(text).toContain('truncated');
     expect(text!.length).toBeGreaterThan(80);
+  });
+
+  it('keeps agent evidence summaries ahead of truncated tool data', () => {
+    const text = serializeToolDataForPrompt({
+      agentEvidenceSummary: [
+        'DocumentEvidencePacket v1 provider-neutral agent context.',
+        'source pages 2',
+        'Review gates: direct-visual-verification-required',
+        'Missing parameters: Groundwater level',
+        'Boreholes: BH1; max depth 10 m',
+      ].join('\n'),
+      pageAudits: Array.from({ length: 50 }, (_value, index) => ({
+        pageNumber: index + 1,
+        raw: 'x'.repeat(80),
+      })),
+    }, 700);
+
+    expect(text).toContain('Agent evidence summary');
+    expect(text).toContain('source pages 2');
+    expect(text).toContain('Missing parameters: Groundwater level');
+    expect(text).toContain('Boreholes: BH1; max depth 10 m');
+    expect(text.indexOf('Agent evidence summary')).toBeLessThan(text.indexOf('Compact tool data JSON'));
+    expect(text).toContain('truncated');
   });
 });
