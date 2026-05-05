@@ -198,7 +198,7 @@ describe('geotech document benchmark', () => {
     ]);
     expect(benchmark.groundModelReadiness.gates).toContain('partial-pages-remain');
     expect(benchmark.evidenceContract).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       providerNeutral: true,
       pages: 3,
       observations: {

@@ -16,6 +16,7 @@ import {
   getHostedFallbackMode,
   isHostedBetaUnavailable,
 } from './runtime-fallbacks.js';
+import { buildProviderOperatingPrompt } from './provider-operating-contract.js';
 
 // Side-effect imports: these files register tools into the shared registry
 import './runtime-bootstrap.js';
@@ -76,7 +77,8 @@ function hasActionableSoilData(query: string): boolean {
 // System prompt
 // ---------------------------------------------------------------------------
 
-function buildCompactSystemPrompt(skillsEnabled = false): string {
+function buildCompactSystemPrompt(config?: LLMConfig): string {
+  const skillsEnabled = config?.skillsEnabled === true;
   const tools = toolRegistry
     .list()
     .filter((tool) => skillsEnabled || !isAgentSkillToolName(tool.name))
@@ -96,6 +98,7 @@ Tool call format:
 
 Rules:
 ${proprietaryRules}
+${config ? buildProviderOperatingPrompt(config, { task: 'single-agent', compact: true }) : ''}
 - Use tools for calculations instead of inventing numbers.
 - Keep assumptions brief and explicit when inputs are incomplete.
 - Interpret tool outputs in engineering terms with units.
@@ -106,7 +109,7 @@ ${proprietaryRules}
 
 function buildSystemPrompt(config?: LLMConfig): string {
   if (config?.provider === 'hosted-beta') {
-    return buildCompactSystemPrompt(config.skillsEnabled === true);
+    return buildCompactSystemPrompt(config);
   }
 
   const skillsEnabled = config?.skillsEnabled === true;
@@ -133,6 +136,8 @@ function buildSystemPrompt(config?: LLMConfig): string {
 You have access to the following deterministic computation engines. These produce REAL engineering results with validated formulas:
 
 ${toolDescriptions}
+
+${config ? buildProviderOperatingPrompt(config, { task: 'single-agent' }) : ''}
 
 ## HOW TO USE TOOLS
 To call a tool, output EXACTLY this JSON block (no other text before or after it on that line):

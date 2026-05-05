@@ -17,6 +17,7 @@ import {
   type HostedFallbackMode,
 } from './runtime-fallbacks.js';
 import { runWithToolRuntimeContext } from './tool-runtime.js';
+import { buildProviderOperatingPrompt } from './provider-operating-contract.js';
 
 // Ensure all tools are registered
 import './runtime-bootstrap.js';
@@ -150,7 +151,8 @@ function getToolDescriptionsFor(toolNames: readonly string[], skillsEnabled = fa
     .join('\n\n');
 }
 
-function interpretationPrompt(skillsEnabled = false): string {
+function interpretationPrompt(config: LLMConfig): string {
+  const skillsEnabled = config.skillsEnabled === true;
   const proprietaryRules = getProprietaryInternalsPromptRules();
   return `You are the INTERPRETATION AGENT in geotechCLI's multi-agent system.
 
@@ -167,6 +169,8 @@ YOU HANDLE:
 
 YOUR TOOLS:
 ${getToolDescriptionsFor(ROLE_TOOL_ALLOWLIST.interpretation, skillsEnabled)}
+
+${buildProviderOperatingPrompt(config, { task: 'swarm-interpretation' })}
 
 RULES:
 ${proprietaryRules}
@@ -186,7 +190,8 @@ To call a tool:
 \`\`\``;
 }
 
-function simulationPrompt(skillsEnabled = false): string {
+function simulationPrompt(config: LLMConfig): string {
+  const skillsEnabled = config.skillsEnabled === true;
   const proprietaryRules = getProprietaryInternalsPromptRules();
   return `You are the SIMULATION AGENT in geotechCLI's multi-agent system.
 
@@ -205,6 +210,8 @@ YOU RECEIVE: Structured data from the Interpretation Agent (soil profiles, class
 
 YOUR TOOLS:
 ${getToolDescriptionsFor(ROLE_TOOL_ALLOWLIST.simulation, skillsEnabled)}
+
+${buildProviderOperatingPrompt(config, { task: 'swarm-simulation' })}
 
 RULES:
 ${proprietaryRules}
@@ -225,7 +232,8 @@ To call a tool:
 \`\`\``;
 }
 
-function reviewerPrompt(skillsEnabled = false): string {
+function reviewerPrompt(config: LLMConfig): string {
+  const skillsEnabled = config.skillsEnabled === true;
   const proprietaryRules = getProprietaryInternalsPromptRules();
   return `You are the REVIEWER AGENT in geotechCLI's multi-agent system.
 
@@ -243,6 +251,8 @@ YOU CHECK:
 
 YOUR TOOLS:
 ${getToolDescriptionsFor(ROLE_TOOL_ALLOWLIST.reviewer, skillsEnabled)}
+
+${buildProviderOperatingPrompt(config, { task: 'swarm-review' })}
 
 RULES:
 ${proprietaryRules}
@@ -265,7 +275,7 @@ To call a tool:
 \`\`\``;
 }
 
-function orchestratorPrompt(): string {
+function orchestratorPrompt(config: LLMConfig): string {
   const proprietaryRules = getProprietaryInternalsPromptRules();
   return `You are the SWARM ORCHESTRATOR for geotechCLI.
 
@@ -280,6 +290,8 @@ If the Reviewer rejected results, incorporate the corrections and note the issue
 
 Rules:
 ${proprietaryRules}
+
+${buildProviderOperatingPrompt(config, { task: 'swarm-orchestrator' })}
 
 Produce a comprehensive, professional engineering report with:
 - Data summary
@@ -545,7 +557,7 @@ export async function runSwarm(
   const interpResult = await runAgentLoop(
     `${contextBlock}Task: ${task}\n\nRead, classify, and structure all relevant data for this task.`,
     config,
-    interpretationPrompt(config.skillsEnabled === true),
+    interpretationPrompt(config),
     'interpretation',
     trackStep,
     {
@@ -603,7 +615,7 @@ export async function runSwarm(
     const simResult = await runAgentLoop(
       `${contextBlock}Data from Interpretation Agent:\n${interpData}\n\nOriginal task: ${task}${correctionNote}\n\nRun all necessary calculations.`,
     config,
-    simulationPrompt(config.skillsEnabled === true),
+    simulationPrompt(config),
       'simulation',
       trackStep,
     );
@@ -637,7 +649,7 @@ export async function runSwarm(
     const reviewResult = await runAgentLoop(
       `${contextBlock}Original task: ${task}\n\nInterpretation summary:\n${interpData}\n\nSimulation results:\n${simData}\n\nReview these results for safety, sanity, standards compliance, and parse safety.`,
       config,
-      reviewerPrompt(config.skillsEnabled === true),
+      reviewerPrompt(config),
       'reviewer',
       trackStep,
     );
@@ -704,7 +716,7 @@ export async function runSwarm(
     const finalResult = await generateText(
       `${contextBlock}Task: ${task}\n\nInterpretation output:\n${interpData}\n\nSimulation output:\n${simOutput}\n\nReview status: ${session.reviewPassed ? 'APPROVED' : 'APPROVED WITH NOTES'}\nCorrections applied: ${session.corrections.length > 0 ? session.corrections.join('; ') : 'None'}\n\nSynthesize the final engineering report.`,
       config,
-      { systemPrompt: orchestratorPrompt(), temperature: 0.2, maxTokens: getHostedSwarmMaxTokens(config, 'final') },
+      { systemPrompt: orchestratorPrompt(config), temperature: 0.2, maxTokens: getHostedSwarmMaxTokens(config, 'final') },
     );
 
     session.totalTokens += finalResult.usage.totalTokens;

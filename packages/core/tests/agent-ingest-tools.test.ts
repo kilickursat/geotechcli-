@@ -620,7 +620,7 @@ describe('agent ingest tools', () => {
     for (const toolResult of [ingestResult, waitResult, loadJobResult, loadReviewResult]) {
       expect(toolResult.success).toBe(true);
       const summary = (toolResult.data as any).agentEvidenceSummary;
-      expect(summary).toContain('DocumentEvidencePacket v1 provider-neutral agent context');
+      expect(summary).toContain('DocumentEvidencePacket v2 provider-neutral agent context');
       expect(summary).toContain('source pages 2');
       expect(summary).toContain('layout/OCR pages 2');
       expect(summary).toContain('direct visual pages 3');

@@ -319,7 +319,30 @@ geotech config set llm.api_key sk-ant-...
 geotech config set llm.provider openai-compatible
 geotech config set llm.base_url http://localhost:11434/v1
 geotech config set llm.model local-model-id
+
+# Optional advanced override: OpenRouter through the OpenAI-compatible adapter
+geotech config set llm.provider openai-compatible
+geotech config set llm.base_url https://openrouter.ai/api/v1
+geotech config set llm.model provider/model-id
 ```
+
+BYOK smoke testing is available for local release checks without changing the strong-beta default:
+
+```bash
+# Runs only providers with matching environment keys configured.
+npm run smoke:byok
+
+# Narrow to one provider and fail when no matching key is configured.
+npm run smoke:byok -- --provider=openai --strict
+
+# OpenRouter is tested through the OpenAI-compatible adapter shortcut.
+# Set OPENROUTER_API_KEY and optional OPENROUTER_MODEL in your shell first.
+npm run smoke:byok -- --provider=openrouter --strict
+```
+
+Supported smoke environment variables are `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `ZHIPU_API_KEY`/`ZAI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `HF_TOKEN`/`HUGGINGFACE_API_KEY`, or `OPENAI_COMPATIBLE_API_KEY` with `OPENAI_COMPATIBLE_BASE_URL` and `OPENAI_COMPATIBLE_MODEL`. These checks validate that BYOK text synthesis can answer the same compact evidence-contract prompt path; PDF, OCR, and vision confidence still depends on the provider capability advertised for the selected model.
+
+Provider-agnostic agent behavior: hosted GLM is the strong-beta default, but GeotechCLI now injects the same operating contract into single-agent, swarm, and specialist-agent prompts for BYOK providers. That contract tells each model what capabilities it has, when to use `DocumentEvidencePacket`, `GroundModel`, standards snippets, deterministic tools, source pages, confidence, and review gates, and how to fall back when a free/open route lacks image, native-PDF, strict JSON, or stable capacity.
 
 ## Pricing
 

@@ -32,6 +32,8 @@ import {
 } from './page-evidence-cache.js';
 import {
   attachDocumentEvidencePacket,
+  buildDocumentEvidencePacket,
+  compileDocumentEvidenceSynthesisPrompt,
   type DocumentEvidencePacket,
 } from './document-evidence-packet.js';
 
@@ -1277,105 +1279,6 @@ function chooseDocumentSummary(chunks: PreparedGeotechDocumentChunk[]): string |
   return summaries.length > 0 ? summaries.join(' ') : null;
 }
 
-function compactForPrompt(value: string | null | undefined, maxLength: number): string {
-  if (!value) {
-    return '';
-  }
-  const normalized = value.replace(/\s+/g, ' ').trim();
-  return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 1).trim()}...` : normalized;
-}
-
-function buildSynthesisEvidence(input: {
-  documentClass: string | null;
-  title: string | null;
-  summary: string | null;
-  materials: GeotechMaterialObservation[];
-  classifications: GeotechDocumentClassification[];
-  parameters: GeotechParameterObservation[];
-  risks: string[];
-  recommendations: string[];
-  contentChunks: PreparedGeotechDocumentChunk[];
-}): string {
-  const pageList = (sourcePages: number[] | null | undefined): string | null => {
-    if (!Array.isArray(sourcePages) || sourcePages.length === 0) {
-      return null;
-    }
-    const pages = [...new Set(
-      sourcePages
-        .map((page) => Number(page))
-        .filter((page) => Number.isInteger(page) && page > 0),
-    )].sort((left, right) => left - right);
-    return pages.length > 0 ? `pages=${pages.join(',')}` : null;
-  };
-  const orderedOutline = [...input.contentChunks]
-    .filter((chunk) => chunk.sectionType !== 'administrative' && chunk.text.trim().length > 0)
-    .sort((left, right) => left.pageRange[0] - right.pageRange[0])
-    .map((chunk) =>
-      `Pages ${chunk.pageRange[0]}-${chunk.pageRange[1]} | ${chunk.sectionType ?? 'general'} | ${compactForPrompt(chunk.headingAncestry[0], 80)} | ${compactForPrompt(chunk.text, 220)}`,
-    );
-  const parameterLines = input.parameters.slice(0, 40).map((parameter) =>
-    [
-      parameter.name,
-      parameter.valueText,
-      parameter.unit,
-      parameter.material ? `material=${parameter.material}` : null,
-      parameter.context ? `context=${parameter.context}` : null,
-      pageList(parameter.sourcePages),
-    ].filter(Boolean).join(' | '),
-  );
-  const materialLines = input.materials.slice(0, 30).map((material) =>
-    [
-      material.kind,
-      material.description,
-      material.uscsSymbol ? `USCS=${material.uscsSymbol}` : null,
-      material.lithology ? `lithology=${material.lithology}` : null,
-      pageList(material.sourcePages),
-    ].filter(Boolean).join(' | '),
-  );
-  const classificationLines = input.classifications.slice(0, 25).map((classification) =>
-    [
-      classification.system,
-      classification.value,
-      classification.context,
-      pageList(classification.sourcePages),
-    ].filter(Boolean).join(' | '),
-  );
-  const chunkLines = [...input.contentChunks]
-    .filter((chunk) => chunk.sectionType !== 'administrative')
-    .sort((left, right) => right.significance - left.significance)
-    .slice(0, 18)
-    .map((chunk) =>
-      `Pages ${chunk.pageRange[0]}-${chunk.pageRange[1]} | ${chunk.sectionType ?? 'general'} | ${compactForPrompt(chunk.headingAncestry[0], 80)} | ${compactForPrompt(chunk.text, 320)}`,
-    );
-
-  return [
-    `Title: ${input.title ?? 'unknown'}`,
-    `Document class: ${input.documentClass ?? 'unknown'}`,
-    `Current summary: ${input.summary ?? 'none'}`,
-    '',
-    'Ordered report outline:',
-    orderedOutline.join('\n') || 'No ordered report outline retained.',
-    '',
-    'Materials:',
-    materialLines.join('\n') || 'None extracted.',
-    '',
-    'Classifications:',
-    classificationLines.join('\n') || 'None extracted.',
-    '',
-    'Engineering parameters:',
-    parameterLines.join('\n') || 'None extracted.',
-    '',
-    'Risks:',
-    input.risks.slice(0, 12).join('\n') || 'None extracted.',
-    '',
-    'Recommendations:',
-    input.recommendations.slice(0, 12).join('\n') || 'None extracted.',
-    '',
-    'Source page evidence:',
-    chunkLines.join('\n') || 'No source chunks retained.',
-  ].join('\n');
-}
-
 function isEmptySynthesisResponseError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return /no content|empty.*content|assistant text|did not contain assistant text/i.test(message);
@@ -1387,44 +1290,19 @@ async function synthesizeGeotechDocumentResult(input: {
     contentChunks?: GeotechDocumentContentChunk[];
   };
 }): Promise<GeotechDocumentSynthesis | null> {
-  const contentChunks = (input.result.contentChunks ?? []) as PreparedGeotechDocumentChunk[];
-  const hasEngineeringSignal =
-    input.result.materials.length > 0
-    || input.result.classifications.length > 0
-    || input.result.parameters.length > 0
-    || contentChunks.some((chunk) => chunk.sectionType !== 'administrative' && chunk.sectionType !== 'visual-appendix');
-  if (!hasEngineeringSignal) {
+  const evidencePacket = buildDocumentEvidencePacket({
+    ...input.result,
+    synthesis: null,
+    contentChunks: input.result.contentChunks ?? [],
+  } as GeotechDocumentIngestResult);
+  const compiledPrompt = compileDocumentEvidenceSynthesisPrompt(evidencePacket);
+  if (!compiledPrompt.hasEngineeringSignal) {
     return null;
   }
 
-  const prompt = `Create a concise engineering synthesis from the extracted geotechnical report evidence. Respond with ONLY a JSON object:
-{
-  "takeaways": ["<report-level engineering takeaway with source-page wording where possible>"],
-  "groundModel": ["<depth-bounded soil/rock/groundwater model statement with source pages if known>"],
-  "keyParameters": ["<parameter, value, unit, material/context, source page if known>"],
-  "interpretation": ["<construction/design interpretation supported by extracted evidence>"],
-  "limitations": ["<uncertainty, missing evidence, OCR/layout/visual limitations>"],
-  "sourcePages": [<page numbers that support the synthesis>]
-}
-
-Read the ordered report outline first to understand the whole report before summarizing individual extraction rows. Preserve borehole-log continuity when a borehole spans multiple pages: group depth intervals, lithology, SPT/RQD/recovery, groundwater, and source pages by borehole where evidence supports it. Do not invent values. Do not increase confidence. Prefer explicit soil and rock mechanics parameters, groundwater observations, classification systems, and foundation/geohazard/construction implications.
-
-Evidence:
-${buildSynthesisEvidence({
-    documentClass: input.result.documentClass,
-    title: input.result.title,
-    summary: input.result.summary,
-    materials: input.result.materials,
-    classifications: input.result.classifications,
-    parameters: input.result.parameters,
-    risks: input.result.risks,
-    recommendations: input.result.recommendations,
-    contentChunks,
-  }).slice(0, 9000)}`;
-
   const requestSynthesis = async (thinkingMode: 'enabled' | 'disabled'): Promise<CompletionResponse> =>
-    generateText(prompt, input.config, {
-      systemPrompt: 'You are a senior geotechnical engineer synthesizing extracted report evidence into a review brief. Use cautious, evidence-bound language. Respond with JSON only.',
+    generateText(compiledPrompt.prompt, input.config, {
+      systemPrompt: compiledPrompt.systemPrompt,
       temperature: 0.1,
       jsonMode: true,
       maxTokens: 1200,

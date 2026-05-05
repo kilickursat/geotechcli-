@@ -78,6 +78,11 @@ geotech config set llm.provider openai-compatible
 geotech config set llm.base_url http://your-vps:8000/v1
 geotech config set llm.model local-model-id
 
+# Optional local BYOK smoke checks for configured environment keys
+npm run smoke:byok
+npm run smoke:byok -- --provider=openai-compatible --strict
+npm run smoke:byok -- --provider=openrouter --strict
+
 # Reset to defaults
 geotech config reset
 \`\`\`
@@ -86,7 +91,24 @@ Strong-beta behavior: deterministic commands work immediately after install. AI,
 
 Installed skills are also bundled in strong beta. Direct geotech skill commands are ready immediately, while geotech agent and geotech chat can opt into skill tools per session with the --skills flag.
 
-Hugging Face setup: get a token at huggingface.co/settings/tokens with "Make calls to Inference Providers" permission. Browse models at huggingface.co/models. Append :fastest or :cheapest to auto-route, or :provider to force a specific backend (cerebras, together, groq, etc.).`,
+Hugging Face setup: get a token at huggingface.co/settings/tokens with "Make calls to Inference Providers" permission. Browse models at huggingface.co/models. Append :fastest or :cheapest to auto-route, or :provider to force a specific backend (cerebras, together, groq, etc.).
+
+BYOK smoke setup: npm run smoke:byok uses OPENROUTER_API_KEY, OPENROUTER_MODEL, ZHIPU_API_KEY/ZAI_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, HF_TOKEN/HUGGINGFACE_API_KEY, or OPENAI_COMPATIBLE_API_KEY + OPENAI_COMPATIBLE_BASE_URL + OPENAI_COMPATIBLE_MODEL when present. The smoke checks validate text synthesis against the provider-neutral document evidence prompt path; PDF/OCR/vision quality still depends on the selected model capability.`,
+  },
+  {
+    id: 'provider-contract',
+    title: 'Provider-agnostic agent contract',
+    content: `Hosted GLM is the default strong-beta provider, but GeotechCLI agent prompts are built around a provider-agnostic operating contract. The contract tells hosted GLM, paid BYOK models, free OpenRouter routes, Hugging Face, and local OpenAI-compatible servers how to behave inside the same geotechnical workflow.
+
+The operating contract includes:
+
+- provider capability profile: text, JSON, image, native-PDF, and context strategy
+- evidence-first rules for DocumentEvidencePacket, GroundModel, EvidenceRef, source pages, standards snippets, and tool outputs
+- deterministic calculation boundaries so models use GeotechCLI tools instead of inventing numbers
+- confidence and review gates for missing, low-confidence, direct-visual-only, or canAutoProceed=false evidence
+- free/open-route adaptation for compact evidence, smaller steps, unsupported image/PDF routes, null content, and rate limits
+
+This keeps BYOK model quality dependent on model capability, while keeping GeotechCLI behavior consistent and defensible across providers.`,
   },
   {
     id: 'skills',

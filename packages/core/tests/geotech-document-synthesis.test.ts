@@ -116,6 +116,14 @@ describe('geotech document synthesis', () => {
     expect(generateTextMock).toHaveBeenCalledTimes(2);
     expect(generateTextMock.mock.calls[0]?.[2]).toMatchObject({ thinkingMode: 'enabled' });
     expect(generateTextMock.mock.calls[1]?.[2]).toMatchObject({ thinkingMode: 'disabled' });
+    expect(generateTextMock.mock.calls[0]?.[0]).toContain('Provider-neutral DocumentEvidencePacket synthesis evidence contract');
+    expect(generateTextMock.mock.calls[0]?.[0]).toContain('Ordered whole-report outline by source page');
+    expect(generateTextMock.mock.calls[0]?.[0]).toContain('Borehole continuity evidence');
+    expect(generateTextMock.mock.calls[0]?.[0]).toContain('Risks extracted from page evidence');
+    expect(generateTextMock.mock.calls[0]?.[0]).toContain('Weathered fractured rock varies by depth');
+    expect(generateTextMock.mock.calls[0]?.[2]).toMatchObject({
+      systemPrompt: expect.stringContaining('provider-neutral document evidence'),
+    });
     expect(result.synthesis?.takeaways[0]).toMatch(/Silty sand/i);
     expect(result.summary).toMatch(/Silty sand/i);
     expect(result.warnings.join(' ')).not.toMatch(/synthesis failed/i);

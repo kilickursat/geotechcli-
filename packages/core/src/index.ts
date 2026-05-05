@@ -51,6 +51,13 @@ export {
   type SwarmCallback,
 } from './agents/swarm.js';
 export {
+  buildProviderOperatingContract,
+  buildProviderOperatingPrompt,
+  type AgentOperatingTask,
+  type BuildProviderOperatingContractOptions,
+  type ProviderOperatingContract,
+} from './agents/provider-operating-contract.js';
+export {
   AGENT_STAGES,
   SCENARIO_ARTIFACT_TYPES,
   type AgentStage,

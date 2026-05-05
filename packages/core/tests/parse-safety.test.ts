@@ -71,7 +71,7 @@ describe('Agent safety helpers', () => {
   it('keeps agent evidence summaries ahead of truncated tool data', () => {
     const text = serializeToolDataForPrompt({
       agentEvidenceSummary: [
-        'DocumentEvidencePacket v1 provider-neutral agent context.',
+        'DocumentEvidencePacket v2 provider-neutral agent context.',
         'source pages 2',
         'Review gates: direct-visual-verification-required',
         'Missing parameters: Groundwater level',

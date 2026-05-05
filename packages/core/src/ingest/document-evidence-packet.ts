@@ -7,7 +7,7 @@ import type {
   GeotechDocumentPageAudit,
 } from './geotech-document.js';
 
-export const DOCUMENT_EVIDENCE_PACKET_SCHEMA_VERSION = 1;
+export const DOCUMENT_EVIDENCE_PACKET_SCHEMA_VERSION = 2;
 
 export const DocumentEvidenceMethodSchema = z.enum([
   'native-pdf-text',
@@ -113,6 +113,11 @@ const SynthesisSchema = z.object({
   latencyMs: z.number().nonnegative().optional(),
 }).nullable();
 
+const EngineeringSignalsSchema = z.object({
+  risks: z.array(z.string()),
+  recommendations: z.array(z.string()),
+});
+
 export const DocumentEvidencePacketSchema = z.object({
   kind: z.literal('document-evidence-packet'),
   schemaVersion: z.literal(DOCUMENT_EVIDENCE_PACKET_SCHEMA_VERSION),
@@ -132,6 +137,7 @@ export const DocumentEvidencePacketSchema = z.object({
     parameters: z.array(ObservationSchema),
   }),
   contentChunks: z.array(ContentChunkSchema),
+  engineeringSignals: EngineeringSignalsSchema,
   synthesis: SynthesisSchema,
   review: z.object({
     warnings: z.array(z.string()),
@@ -161,6 +167,25 @@ export interface SummarizeDocumentEvidencePacketForAgentOptions {
   maxObservationsPerGroup?: number;
   maxReviewGates?: number;
   maxContentChars?: number;
+}
+
+export interface CompileDocumentEvidenceSynthesisPromptOptions {
+  maxEvidenceChars?: number;
+  maxOutlineChunks?: number;
+  maxHighSignalChunks?: number;
+  maxParameters?: number;
+  maxMaterials?: number;
+  maxClassifications?: number;
+}
+
+export interface CompiledDocumentEvidenceSynthesisPrompt {
+  systemPrompt: string;
+  prompt: string;
+  evidence: string;
+  hasEngineeringSignal: boolean;
+  sourcePages: number[];
+  reviewGates: string[];
+  schemaVersion: number;
 }
 
 export function buildDocumentEvidencePacket(result: GeotechDocumentIngestResult): DocumentEvidencePacket {
@@ -251,6 +276,10 @@ export function buildDocumentEvidencePacket(result: GeotechDocumentIngestResult)
       }),
     },
     contentChunks: (result.contentChunks ?? []).map(compactContentChunk),
+    engineeringSignals: {
+      risks: uniqueNonEmpty(result.risks).slice(0, 24),
+      recommendations: uniqueNonEmpty(result.recommendations).slice(0, 24),
+    },
     synthesis: result.synthesis
       ? {
           takeaways: result.synthesis.takeaways,
@@ -279,6 +308,141 @@ export function attachDocumentEvidencePacket<T extends GeotechDocumentIngestResu
   return {
     ...result,
     evidencePacket: buildDocumentEvidencePacket(result),
+  };
+}
+
+export function documentEvidencePacketHasEngineeringSignal(packet: DocumentEvidencePacket): boolean {
+  return packet.observations.materials.length > 0
+    || packet.observations.classifications.length > 0
+    || packet.observations.parameters.length > 0
+    || packet.engineeringSignals.risks.length > 0
+    || packet.engineeringSignals.recommendations.length > 0
+    || packet.contentChunks.some((chunk) =>
+      chunk.text.trim().length > 0
+      && chunk.sectionType !== 'administrative'
+      && chunk.sectionType !== 'visual-appendix',
+    );
+}
+
+export function compileDocumentEvidenceSynthesisPrompt(
+  packet: DocumentEvidencePacket,
+  options: CompileDocumentEvidenceSynthesisPromptOptions = {},
+): CompiledDocumentEvidenceSynthesisPrompt {
+  const maxEvidenceChars = options.maxEvidenceChars ?? 9000;
+  const outlineChunks = [...packet.contentChunks]
+    .filter((chunk) => chunk.text.trim().length > 0 && chunk.sectionType !== 'administrative')
+    .sort((left, right) =>
+      left.pageRange[0] - right.pageRange[0]
+      || left.pageRange[1] - right.pageRange[1],
+    )
+    .slice(0, options.maxOutlineChunks ?? 28)
+    .map((chunk) => formatContentChunkForSynthesis(chunk, 240));
+  const highSignalChunks = [...packet.contentChunks]
+    .filter((chunk) => chunk.text.trim().length > 0 && chunk.sectionType !== 'administrative')
+    .sort((left, right) => (right.significance ?? 0) - (left.significance ?? 0))
+    .slice(0, options.maxHighSignalChunks ?? 18)
+    .map((chunk) => formatContentChunkForSynthesis(chunk, 360));
+  const parameters = packet.observations.parameters
+    .slice(0, options.maxParameters ?? 48)
+    .map((observation) => formatObservationForSynthesis(observation));
+  const materials = packet.observations.materials
+    .slice(0, options.maxMaterials ?? 36)
+    .map((observation) => formatObservationForSynthesis(observation));
+  const classifications = packet.observations.classifications
+    .slice(0, options.maxClassifications ?? 28)
+    .map((observation) => formatObservationForSynthesis(observation));
+  const boreholeLines = buildBoreholeContinuityLines(packet);
+  const pageLines = packet.pages
+    .slice()
+    .sort((left, right) => left.pageNumber - right.pageNumber)
+    .map((page) =>
+      `Page ${page.pageNumber}: ${page.parseStatus}; method=${page.method}; source=${page.rawSource}; class=${page.classification ?? 'unknown'}; confidence=${page.confidence}%; counts m/c/p=${page.counts.materials}/${page.counts.classifications}/${page.counts.parameters}${page.warnings.length > 0 ? `; warnings=${page.warnings.slice(0, 3).join(' | ')}` : ''}`,
+    );
+  const missingParameters = packet.observations.parameters
+    .filter((observation) => observation.reviewStatus === 'missing')
+    .map((observation) => formatObservationForSynthesis(observation));
+  const reviewParameters = packet.observations.parameters
+    .filter((observation) => observation.reviewStatus === 'needs_review' || observation.reviewStatus === 'uncertain')
+    .map((observation) => formatObservationForSynthesis(observation));
+
+  const evidence = compactText([
+    'Provider-neutral DocumentEvidencePacket synthesis evidence contract.',
+    `Packet schema: v${packet.schemaVersion}; providerNeutral=${packet.providerContract.providerNeutral}; purpose=${packet.providerContract.purpose}.`,
+    `Source: ${packet.source.fileName ?? packet.source.filePath ?? packet.source.inputKind}; pages ${packet.source.successfulPages}/${packet.source.totalPages}; evidence pages ${pageList(packet.traceability.pagesWithEvidence)}.`,
+    `Document: ${packet.document.title ?? 'untitled'}; class=${packet.document.documentClass ?? 'unknown'}; status=${packet.document.parseStatus}; confidence=${packet.document.confidence}%; reviewRequired=${packet.document.reviewRequired ? 'yes' : 'no'}; canAutoProceed=${packet.document.canAutoProceed ? 'yes' : 'no'}.`,
+    `Traceability: source pages ${pageList(packet.traceability.sourcePages)}; native=${pageList(packet.traceability.nativeTextPages)}; layout/OCR=${pageList(packet.traceability.layoutOcrPages)}; visual=${pageList(packet.traceability.directVisualPages)}; parameter source-page rate=${Math.round(packet.traceability.parameterTraceabilityRate * 100)}%.`,
+    `Review gates: ${packet.providerContract.reviewGates.join('; ') || 'none'}.`,
+    `Borehole summary: ${packet.traceability.boreholeIds.join(', ') || 'not detected'}; max depth=${packet.traceability.maxDepthMeters != null ? `${packet.traceability.maxDepthMeters} m` : 'not extracted'}.`,
+    '',
+    'Ordered whole-report outline by source page:',
+    outlineChunks.join('\n') || 'No ordered outline retained.',
+    '',
+    'Borehole continuity evidence:',
+    boreholeLines.join('\n') || 'No borehole-specific continuity evidence detected.',
+    '',
+    'Engineering parameters:',
+    parameters.join('\n') || 'None extracted.',
+    '',
+    'Material observations:',
+    materials.join('\n') || 'None extracted.',
+    '',
+    'Classifications:',
+    classifications.join('\n') || 'None extracted.',
+    '',
+    'Risks extracted from page evidence:',
+    packet.engineeringSignals.risks.slice(0, 16).map((risk) => `- ${compactText(risk, 220)}`).join('\n') || 'None extracted.',
+    '',
+    'Recommendations extracted from page evidence:',
+    packet.engineeringSignals.recommendations.slice(0, 16).map((recommendation) => `- ${compactText(recommendation, 220)}`).join('\n') || 'None extracted.',
+    '',
+    'Missing or review-gated parameters:',
+    [...missingParameters.slice(0, 16), ...reviewParameters.slice(0, 16)].join('\n') || 'None flagged.',
+    '',
+    'High-signal source chunks:',
+    highSignalChunks.join('\n') || 'No high-signal chunks retained.',
+    '',
+    'Page-level method and audit summary:',
+    pageLines.join('\n') || 'No page audit retained.',
+    '',
+    'Warnings and review findings:',
+    [
+      ...packet.review.warnings.slice(0, 12).map((warning) => `Warning: ${compactText(warning, 220)}`),
+      ...packet.review.findings.slice(0, 12).map((finding) =>
+        `${finding.severity.toUpperCase()} ${finding.code}${finding.pageNumber ? ` page ${finding.pageNumber}` : ''}: ${compactText(finding.message, 220)}`,
+      ),
+    ].join('\n') || 'None.',
+  ].join('\n'), maxEvidenceChars);
+
+  const prompt = `Create a concise engineering synthesis from the provider-neutral geotechnical document evidence packet below. Respond with ONLY a JSON object:
+{
+  "takeaways": ["<report-level engineering takeaway with source-page wording where possible>"],
+  "groundModel": ["<depth-bounded soil/rock/groundwater model statement with source pages if known>"],
+  "keyParameters": ["<parameter, value, unit, material/context, source page if known>"],
+  "interpretation": ["<construction/design interpretation supported by extracted evidence>"],
+  "limitations": ["<uncertainty, missing evidence, OCR/layout/visual limitations>"],
+  "sourcePages": [<page numbers that support the synthesis>]
+}
+
+Instructions:
+- Read the ordered whole-report outline first before summarizing individual extraction rows.
+- Preserve borehole-log continuity when a borehole spans multiple pages; group depth intervals, lithology, SPT/RQD/recovery, groundwater, and source pages by borehole where evidence supports it.
+- Cite source pages from the packet in every specific engineering claim where possible.
+- Do not invent values, strata boundaries, groundwater, SPT, RQD, strength, density, or design parameters.
+- Do not let synthesis raise extraction confidence. Confidence comes only from source evidence coverage and corroboration.
+- Treat direct-visual-only, missing, needs-review, and uncertain values as review-gated evidence.
+- Prefer explicit soil and rock mechanics parameters, groundwater observations, classification systems, and foundation/geohazard/construction implications.
+
+Evidence:
+${evidence}`;
+
+  return {
+    systemPrompt: 'You are a senior geotechnical engineer synthesizing provider-neutral document evidence into a review brief. Use cautious, evidence-bound language, cite source pages, preserve missing-data limitations, and respond with JSON only.',
+    prompt,
+    evidence,
+    hasEngineeringSignal: documentEvidencePacketHasEngineeringSignal(packet),
+    sourcePages: packet.traceability.sourcePages,
+    reviewGates: packet.providerContract.reviewGates,
+    schemaVersion: packet.schemaVersion,
   };
 }
 
@@ -321,7 +485,7 @@ export function summarizeDocumentEvidencePacketForAgent(
   ];
 
   return compactText([
-    'DocumentEvidencePacket v1 provider-neutral agent context.',
+    `DocumentEvidencePacket v${packet.schemaVersion} provider-neutral agent context.`,
     `Source: ${packet.source.fileName ?? packet.source.filePath ?? packet.source.inputKind}; pages ${packet.source.successfulPages}/${packet.source.totalPages}; evidence pages ${pageList(packet.traceability.pagesWithEvidence)}.`,
     `Document: ${packet.document.title ?? 'untitled'}; class ${packet.document.documentClass ?? 'unknown'}; status ${packet.document.parseStatus}; confidence ${packet.document.confidence}%; reviewRequired ${packet.document.reviewRequired ? 'yes' : 'no'}; canAutoProceed ${packet.document.canAutoProceed ? 'yes' : 'no'}.`,
     `Methods: ${methods}; native pages ${pageList(packet.traceability.nativeTextPages)}; layout/OCR pages ${pageList(packet.traceability.layoutOcrPages)}; direct visual pages ${pageList(packet.traceability.directVisualPages)}.`,
@@ -335,6 +499,8 @@ export function summarizeDocumentEvidencePacketForAgent(
     materials.length > 0 ? `Materials: ${materials.join('; ')}.` : '',
     classifications.length > 0 ? `Classifications: ${classifications.join('; ')}.` : '',
     synthesis.length > 0 ? `Synthesis evidence: ${synthesis.map((item) => compactText(item, 180)).join(' | ')}.` : '',
+    packet.engineeringSignals.risks.length > 0 ? `Risks: ${packet.engineeringSignals.risks.slice(0, 5).map((item) => compactText(item, 140)).join('; ')}.` : '',
+    packet.engineeringSignals.recommendations.length > 0 ? `Recommendations: ${packet.engineeringSignals.recommendations.slice(0, 5).map((item) => compactText(item, 140)).join('; ')}.` : '',
     packet.review.warnings.length > 0 ? `Warnings: ${packet.review.warnings.slice(0, 6).join('; ')}.` : '',
     'Agent rule: cite source pages from this packet; do not run deterministic calculations from missing, direct-visual-only, or needs-review evidence without explicit review/approval.',
   ].filter(Boolean).join('\n'), maxContentChars);
@@ -392,6 +558,66 @@ function formatObservationForAgent(
   const pageSuffix = observation.sourcePages.length > 0 ? ` p${observation.sourcePages.join(',')}` : ' no-source-page';
   const confidenceSuffix = observation.confidence > 0 ? ` ${observation.confidence}%` : '';
   return `${observation.label}=${value}${observation.material ? ` ${observation.material}` : ''}${pageSuffix}${confidenceSuffix}`;
+}
+
+function formatObservationForSynthesis(
+  observation: DocumentEvidencePacket['observations']['parameters'][number],
+): string {
+  const value = observation.unit && String(observation.value).trim() && String(observation.value).trim() !== observation.unit
+    ? `${String(observation.value)} ${observation.unit}`
+    : String(observation.value);
+  return [
+    observation.label,
+    `value=${value}`,
+    observation.material ? `material=${observation.material}` : null,
+    observation.context ? `context=${compactText(observation.context, 180)}` : null,
+    `pages=${pageList(observation.sourcePages)}`,
+    `method=${observation.method}`,
+    `confidence=${observation.confidence}%`,
+    `review=${observation.reviewStatus}`,
+    observation.warnings.length > 0 ? `warnings=${observation.warnings.slice(0, 3).join(' | ')}` : null,
+  ].filter(Boolean).join(' | ');
+}
+
+function formatContentChunkForSynthesis(
+  chunk: DocumentEvidencePacket['contentChunks'][number],
+  maxTextLength: number,
+): string {
+  return [
+    `Pages ${chunk.pageRange[0]}-${chunk.pageRange[1]}`,
+    chunk.sectionType ?? 'general',
+    chunk.scope,
+    chunk.headingAncestry.length > 0 ? compactText(chunk.headingAncestry.join(' > '), 110) : 'untitled',
+    `sources=${pageList(chunk.sourcePages)}`,
+    compactText(chunk.text, maxTextLength),
+  ].join(' | ');
+}
+
+function buildBoreholeContinuityLines(packet: DocumentEvidencePacket): string[] {
+  const observations = [
+    ...packet.observations.parameters,
+    ...packet.observations.materials,
+    ...packet.observations.classifications,
+  ];
+  return packet.traceability.boreholeIds.slice(0, 20).map((id) => {
+    const pattern = new RegExp(`\\b${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/^BH/i, 'B\\.?H\\.?\\s*')}(?:\\b|\\s|[-#:])`, 'i');
+    const matchingObservations = observations
+      .filter((observation) =>
+        pattern.test([
+          observation.label,
+          String(observation.value),
+          observation.material,
+          observation.context,
+        ].filter(Boolean).join(' ')),
+      )
+      .slice(0, 12)
+      .map((observation) => `${observation.label}=${String(observation.value)} pages=${pageList(observation.sourcePages)} review=${observation.reviewStatus}`);
+    const matchingChunks = packet.contentChunks
+      .filter((chunk) => pattern.test(`${chunk.headingAncestry.join(' ')} ${chunk.text}`))
+      .slice(0, 4)
+      .map((chunk) => `pages ${chunk.pageRange[0]}-${chunk.pageRange[1]}: ${compactText(chunk.text, 180)}`);
+    return `${id}: ${[...matchingObservations, ...matchingChunks].join('; ') || 'borehole identifier detected, but no compact interval evidence retained.'}`;
+  });
 }
 
 function buildTraceability(
@@ -578,6 +804,14 @@ function normalizeConfidence(value: number): number {
 
 function roundRatio(value: number): number {
   return Math.round(Math.max(0, Math.min(1, value)) * 1000) / 1000;
+}
+
+function uniqueNonEmpty(values: Array<string | null | undefined>): string[] {
+  return [...new Set(
+    values
+      .map((value) => compactText(value, 500))
+      .filter((value) => value.length > 0),
+  )];
 }
 
 function observationId(type: string, index: number, label: string): string {

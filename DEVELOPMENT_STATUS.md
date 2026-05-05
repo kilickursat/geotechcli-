@@ -4,7 +4,7 @@ Last updated: 2026-05-05
 
 ## Current Work
 
-Preparing v0.4.45 on `strong-beta`. The current engineering track is provider-neutral document evidence context for agents, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, and the PDF/page evidence benchmark foundation so future OCR/vision and BYOK-provider changes can be measured against the same report PDF instead of judged manually.
+Preparing v0.4.46 on `strong-beta`. The current engineering track is evidence-first BYOK synthesis, provider-neutral document evidence context for agents, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, and the PDF/page evidence benchmark foundation so future OCR/vision and BYOK-provider changes can be measured against the same report PDF instead of judged manually.
 
 Current focus:
 
@@ -22,6 +22,8 @@ Current focus:
 - Stamp retained materials, classifications, and parameters with provider-neutral `sourcePages` so direct source-page traceability comes from page evidence instead of model-specific prose.
 - Normalize geotechnical PDF/report outputs into a provider-neutral `DocumentEvidencePacket` so hosted GLM and future BYOK providers target the same page, observation, traceability, confidence, and review-gate contract.
 - Feed compact `DocumentEvidencePacket` summaries into agent tool results so agent reasoning sees source pages, extraction methods, missing values, review gates, borehole IDs, and max depth before raw result JSON is truncated.
+- Inject a provider-agnostic operating contract into single-agent, swarm, and specialist prompts so any BYOK model receives the same GeotechCLI evidence, tool, capability, confidence, and review-gate rules as hosted GLM.
+- Keep BYOK capability gates honest for OpenAI-compatible/free routes so text-only models are guided through OCR/page evidence instead of being treated as native image readers.
 - Keep a canonical cached-rerun fixture and `npm run benchmark:geotech-report` local harness for the `GeotechnicalInvestigationReport (1).pdf` acceptance target.
 - Keep the agentic document evidence contract provider-neutral so hosted GLM is only the strong-beta default; future BYOK LLMs should plug into the same page evidence, cache, traceability, and GroundModel readiness space.
 - Extend GroundModel verification with calculation-readiness routing for bearing, settlement, pile, liquefaction, and slope workflows before any deterministic calculation is auto-run.
@@ -31,13 +33,16 @@ Current focus:
 
 ## Done So Far
 
-### v0.4.44 Report Synthesis and Ground Model Visual QA
+### v0.4.46 Evidence-First BYOK Synthesis Contract
 
-- Made geotechnical document synthesis read an ordered report outline before high-signal extraction rows so engineering takeaways are report-level first.
-- Prevented figure, table, and borehole-log titles from replacing true report titles in generated Geotechnical Intelligence Reports and cached-result rendering.
-- Rebuilt borehole stratigraphy and ground-model cross-section views with compact lithology-colored SVGs, source-page legend rows, inferred-contact styling, and overflow-safe layout.
-- Curated noisy OCR/table fragments out of the main material-observation table while retaining source evidence and Processing Audit traceability.
-- Verified the cached PDF report with core tests, full build, consistency check, Playwright screenshot, and DOM/layout assertions.
+- Added a `DocumentEvidencePacket` synthesis prompt compiler so final report synthesis reads the same provider-neutral page evidence, observations, source pages, review gates, and traceability contract as agents and benchmarks.
+- Routed geotechnical report synthesis through the packet compiler instead of raw extraction arrays, preserving ordered whole-report outline context, borehole continuity, missing-data gates, direct-visual review gates, and source-page citation instructions.
+- Advanced the evidence packet schema to v2 with extracted risks and recommendations so future BYOK providers can synthesize from the packet without losing engineering interpretation context.
+- Added a provider-agnostic agent operating contract for single-agent, swarm, and legacy specialist prompts so hosted GLM, paid BYOK, free OpenRouter routes, Hugging Face, and local OpenAI-compatible models receive the same GeotechCLI evidence/tool/review rules.
+- Added free/open-route adaptation instructions for compact context, smaller steps, unsupported image/native-PDF paths, null content, and rate-limit/provider-failure reporting.
+- Tightened OpenAI-compatible capability profiling so known text-only free routes receive image-understanding review gates while multimodal omni/VL/vision routes remain image-capable.
+- Added `npm run smoke:byok` for optional local BYOK text-synthesis smoke checks across Z.ai, OpenAI, Anthropic, Hugging Face, and OpenAI-compatible endpoints when environment keys are configured.
+- Documented BYOK smoke environment variables and added regression coverage for packet-first synthesis prompt compilation and provider operating contract injection into agents and swarm prompts.
 
 ### v0.4.45 Provider-Neutral Agent Evidence Context
 
@@ -47,6 +52,14 @@ Current focus:
 - Added compact agent evidence summaries for geotechnical ingest, job-result, and persisted-review tools so source pages, extraction methods, missing values, review gates, borehole IDs, and max depth survive prompt truncation.
 - Updated single-agent and swarm tool-result serialization to prefer compact evidence summaries before raw JSON.
 - Added regression coverage for packet schema validation, benchmark evidence-contract metrics, agent ingest summaries, and prompt serialization.
+
+### v0.4.44 Report Synthesis and Ground Model Visual QA
+
+- Made geotechnical document synthesis read an ordered report outline before high-signal extraction rows so engineering takeaways are report-level first.
+- Prevented figure, table, and borehole-log titles from replacing true report titles in generated Geotechnical Intelligence Reports and cached-result rendering.
+- Rebuilt borehole stratigraphy and ground-model cross-section views with compact lithology-colored SVGs, source-page legend rows, inferred-contact styling, and overflow-safe layout.
+- Curated noisy OCR/table fragments out of the main material-observation table while retaining source evidence and Processing Audit traceability.
+- Verified the cached PDF report with core tests, full build, consistency check, Playwright screenshot, and DOM/layout assertions.
 
 ### v0.4.26 Reliability Fixes
 

@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.46] - 2026-05-05
+
+### Evidence-First BYOK Synthesis Contract
+
+- Added a provider-neutral `DocumentEvidencePacket` synthesis prompt compiler so report synthesis reads the same page, observation, source-page, review-gate, and traceability contract used by agents and benchmarks.
+- Routed geotechnical document synthesis through the evidence-packet compiler instead of raw extraction arrays, preserving whole-report outline order, borehole continuity, missing-data gates, direct-visual review gates, and source-page citation rules across hosted GLM and future BYOK providers.
+- Advanced the document evidence packet schema to v2 with extracted risk and recommendation signals so synthesis can stay packet-first without losing engineering interpretation context.
+- Added a provider-agnostic agent operating contract for single-agent, swarm, and legacy specialist prompts so BYOK models receive the same GeotechCLI evidence, tool, capability, confidence, and review-gate instructions as hosted GLM.
+- Added free/open-route model adaptation rules for compact evidence, smaller steps, provider capability failures, and native-PDF/image fallbacks so free OpenRouter-style models fail clearly instead of drifting silently.
+- Tightened OpenAI-compatible capability profiling so known text-only free routes are review-gated for image understanding while multimodal omni/VL/vision routes remain image-capable.
+- Added `npm run smoke:byok` for local provider-key smoke tests across Z.ai, OpenAI, Anthropic, Hugging Face, and OpenAI-compatible endpoints when matching environment keys are present.
+- Documented BYOK smoke environment variables and added regression coverage for packet-first synthesis prompt compilation and provider-agnostic agent prompt injection.
+
 ## [0.4.45] - 2026-05-05
 
 ### Provider-Neutral Agent Evidence Context

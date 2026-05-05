@@ -41,4 +41,27 @@ describe('provider multimodal capabilities', () => {
       visionModelId: '',
     })).toBe(false);
   });
+
+  it('does not over-advertise image understanding for known text-only free open routes', () => {
+    const capabilities = resolveProviderCapabilities({
+      provider: 'openai-compatible',
+      modelId: 'poolside/laguna-m.1:free',
+      visionModelId: '',
+    });
+
+    expect(capabilities.text).toBe(true);
+    expect(capabilities.visionImages).toBe(false);
+    expect(capabilities.nativePdfDocuments).toBe(false);
+  });
+
+  it('keeps known multimodal open routes image-capable while still requiring page preprocessing for PDFs', () => {
+    const capabilities = resolveProviderCapabilities({
+      provider: 'openai-compatible',
+      modelId: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
+      visionModelId: '',
+    });
+
+    expect(capabilities.visionImages).toBe(true);
+    expect(capabilities.nativePdfDocuments).toBe(false);
+  });
 });

@@ -5,6 +5,7 @@ import {
   getProprietaryInternalsPromptRules,
   isProprietaryInternalsRequest,
 } from './proprietary-internals.js';
+import { buildProviderOperatingPrompt } from './provider-operating-contract.js';
 
 export interface AgentLog {
   agent: string;
@@ -16,53 +17,63 @@ export interface AgentLog {
 interface AgentDefinition {
   name: string;
   tag: string;
-  systemPrompt: string;
+  baseSystemPrompt: string;
 }
 
-function withProprietaryRules(basePrompt: string): string {
-  return `${basePrompt}\n\nSecurity rules:\n${getProprietaryInternalsPromptRules()}`;
+function withOperatingRules(basePrompt: string, config: LLMConfig, task: 'legacy-orchestrator' | 'specialist-agent'): string {
+  return [
+    basePrompt,
+    '',
+    'Security rules:',
+    getProprietaryInternalsPromptRules(),
+    '',
+    buildProviderOperatingPrompt(config, { task }),
+  ].join('\n');
 }
 
 const AGENTS: AgentDefinition[] = [
   {
     name: 'Geo Agent',
     tag: '@geo-agent',
-    systemPrompt: withProprietaryRules(`You are a specialist geotechnical engineer. You analyze soil mechanics, rock mechanics, bearing capacity, settlement, classification (USCS, AASHTO), and site investigation data. Provide precise numerical answers with standard references (Terzaghi, Meyerhof, Lambe & Whitman). Always state assumptions and applicable standards.`),
+    baseSystemPrompt: `You are a specialist geotechnical engineer. You analyze soil mechanics, rock mechanics, bearing capacity, settlement, classification (USCS, AASHTO), and site investigation data. Provide precise numerical answers with standard references (Terzaghi, Meyerhof, Lambe & Whitman). Always state assumptions and applicable standards.`,
   },
   {
     name: 'Tunnel Agent',
     tag: '@tunnel-agent',
-    systemPrompt: withProprietaryRules(`You are a specialist tunnel engineer. You advise on NATM/conventional tunneling, TBM selection and performance, support design (shotcrete, rockbolts, steel sets), convergence-confinement method, lining design, and underground space planning. Reference Bieniawski, Barton, Hoek-Brown, and AFTES/ITA guidelines.`),
+    baseSystemPrompt: `You are a specialist tunnel engineer. You advise on NATM/conventional tunneling, TBM selection and performance, support design (shotcrete, rockbolts, steel sets), convergence-confinement method, lining design, and underground space planning. Reference Bieniawski, Barton, Hoek-Brown, and AFTES/ITA guidelines.`,
   },
   {
     name: 'Hydro Agent',
     tag: '@hydro-agent',
-    systemPrompt: withProprietaryRules(`You are a specialist hydrogeologist. You analyze groundwater flow, seepage, dewatering design, pore pressure prediction, permeability testing interpretation (Lugeon, slug tests), and contamination transport. Reference Darcy's law, flow net theory, and Theis/Cooper-Jacob solutions.`),
+    baseSystemPrompt: `You are a specialist hydrogeologist. You analyze groundwater flow, seepage, dewatering design, pore pressure prediction, permeability testing interpretation (Lugeon, slug tests), and contamination transport. Reference Darcy's law, flow net theory, and Theis/Cooper-Jacob solutions.`,
   },
   {
     name: 'Seismic Agent',
     tag: '@seismic-agent',
-    systemPrompt: withProprietaryRules(`You are a specialist seismic/earthquake engineer. You analyze liquefaction triggering (Boulanger & Idriss, Seed & Idriss), seismic site response, ground motion parameters, dynamic soil properties, and earthquake-induced settlement and lateral spreading. Reference NCEER, Eurocode 8, and ASCE 7.`),
+    baseSystemPrompt: `You are a specialist seismic/earthquake engineer. You analyze liquefaction triggering (Boulanger & Idriss, Seed & Idriss), seismic site response, ground motion parameters, dynamic soil properties, and earthquake-induced settlement and lateral spreading. Reference NCEER, Eurocode 8, and ASCE 7.`,
   },
   {
     name: 'Slope Agent',
     tag: '@slope-agent',
-    systemPrompt: withProprietaryRules(`You are a specialist slope stability engineer. You perform limit equilibrium analysis (Bishop, Spencer, Morgenstern-Price), evaluate landslide risk, design retaining structures, and analyze reinforced slopes and soil nails. Reference Duncan & Wright, FHWA guidelines.`),
+    baseSystemPrompt: `You are a specialist slope stability engineer. You perform limit equilibrium analysis (Bishop, Spencer, Morgenstern-Price), evaluate landslide risk, design retaining structures, and analyze reinforced slopes and soil nails. Reference Duncan & Wright, FHWA guidelines.`,
   },
   {
     name: 'Foundation Agent',
     tag: '@foundation-agent',
-    systemPrompt: withProprietaryRules(`You are a specialist foundation engineer. You design shallow and deep foundations, analyze pile capacity (static and dynamic), evaluate group effects, design pile caps, and perform serviceability checks. Reference API RP 2GEO, FHWA, and relevant building codes.`),
+    baseSystemPrompt: `You are a specialist foundation engineer. You design shallow and deep foundations, analyze pile capacity (static and dynamic), evaluate group effects, design pile caps, and perform serviceability checks. Reference API RP 2GEO, FHWA, and relevant building codes.`,
   },
 ];
 
-const ORCHESTRATOR_SYSTEM = `You are the geotechCLI Orchestrator. You decompose complex geotechnical engineering tasks into sub-tasks for specialized agents.
+function buildOrchestratorSystemPrompt(config: LLMConfig): string {
+  return `You are the geotechCLI Orchestrator. You decompose complex geotechnical engineering tasks into sub-tasks for specialized agents.
 
 Available agents:
 ${AGENTS.map((a) => `- ${a.tag}: ${a.name}`).join('\n')}
 
 Instructions:
 ${getProprietaryInternalsPromptRules()}
+${buildProviderOperatingPrompt(config, { task: 'legacy-orchestrator' })}
+
 1. Analyze the user's task and determine which agent(s) to call.
 2. To call an agent, output EXACTLY this JSON block:
 \`\`\`json
@@ -71,6 +82,7 @@ ${getProprietaryInternalsPromptRules()}
 3. Call one agent at a time. Wait for results before proceeding.
 4. After gathering all needed information, write a final comprehensive engineering report in markdown. Do NOT include any JSON block in the final report.
 5. Always include numerical results, applicable standards, and recommendations.`;
+}
 
 export async function runMultiAgentTask(
   task: string,
@@ -97,12 +109,13 @@ export async function runMultiAgentTask(
 
   let conversationHistory = `Task: ${task}\n\n`;
   let finalReport = '';
+  const orchestratorSystemPrompt = buildOrchestratorSystemPrompt(config);
 
   for (let i = 0; i < maxIterations; i++) {
     let response: CompletionResponse;
     try {
       response = await generateText(conversationHistory, config, {
-        systemPrompt: ORCHESTRATOR_SYSTEM,
+        systemPrompt: orchestratorSystemPrompt,
         temperature: 0.3,
         maxTokens: 2048,
       });
@@ -140,7 +153,7 @@ export async function runMultiAgentTask(
           });
 
           const agentResponse = await generateText(action.query, config, {
-            systemPrompt: agentDef.systemPrompt,
+            systemPrompt: withOperatingRules(agentDef.baseSystemPrompt, config, 'specialist-agent'),
             temperature: 0.2,
             maxTokens: 2048,
           });
@@ -183,7 +196,7 @@ export async function runMultiAgentTask(
     const fallback = await generateText(
       conversationHistory + '\n\nProvide the final report now based on all gathered information.',
       config,
-      { systemPrompt: ORCHESTRATOR_SYSTEM, maxTokens: 3000 },
+      { systemPrompt: orchestratorSystemPrompt, maxTokens: 3000 },
     );
     finalReport = fallback.text;
   }

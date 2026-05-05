@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   DocumentEvidencePacketSchema,
   buildDocumentEvidencePacket,
+  compileDocumentEvidenceSynthesisPrompt,
+  documentEvidencePacketHasEngineeringSignal,
   ingestGeotechDocument,
   summarizeDocumentEvidencePacketForAgent,
   type GeotechDocumentIngestResult,
@@ -148,9 +150,14 @@ describe('document evidence packet', () => {
 
     expect(DocumentEvidencePacketSchema.parse(packet)).toEqual(packet);
     expect(packet.kind).toBe('document-evidence-packet');
+    expect(packet.schemaVersion).toBe(2);
     expect(packet.providerContract).toMatchObject({
       providerNeutral: true,
       purpose: 'byok-document-understanding',
+    });
+    expect(packet.engineeringSignals).toMatchObject({
+      risks: ['Weathered rock should be verified before foundation design.'],
+      recommendations: ['Verify groundwater before construction.'],
     });
     expect(packet.pages.map((page) => page.method)).toEqual([
       'native-pdf-text',
@@ -187,7 +194,7 @@ describe('document evidence packet', () => {
     const packet = buildDocumentEvidencePacket(makeResult());
     const summary = summarizeDocumentEvidencePacketForAgent(packet, { maxContentChars: 1800 });
 
-    expect(summary).toContain('DocumentEvidencePacket v1 provider-neutral agent context');
+    expect(summary).toContain('DocumentEvidencePacket v2 provider-neutral agent context');
     expect(summary).toContain('source pages 2');
     expect(summary).toContain('layout/OCR pages 2');
     expect(summary).toContain('direct visual pages 3');
@@ -195,7 +202,28 @@ describe('document evidence packet', () => {
     expect(summary).toContain('direct-visual-verification-required');
     expect(summary).toContain('Missing parameters: Groundwater level');
     expect(summary).toContain('Boreholes: BH1; max depth 10 m');
+    expect(summary).toContain('Risks: Weathered rock should be verified');
+    expect(summary).toContain('Recommendations: Verify groundwater');
     expect(summary).not.toContain('"pageAudits"');
+  });
+
+  it('compiles a packet-first synthesis prompt for provider-neutral BYOK reasoning', () => {
+    const packet = buildDocumentEvidencePacket(makeResult());
+    const compiled = compileDocumentEvidenceSynthesisPrompt(packet, { maxEvidenceChars: 4000 });
+
+    expect(documentEvidencePacketHasEngineeringSignal(packet)).toBe(true);
+    expect(compiled.hasEngineeringSignal).toBe(true);
+    expect(compiled.schemaVersion).toBe(2);
+    expect(compiled.sourcePages).toEqual([2]);
+    expect(compiled.reviewGates).toContain('direct-visual-verification-required');
+    expect(compiled.prompt).toContain('Provider-neutral DocumentEvidencePacket synthesis evidence contract');
+    expect(compiled.prompt).toContain('Ordered whole-report outline by source page');
+    expect(compiled.prompt).toContain('Borehole continuity evidence');
+    expect(compiled.prompt).toContain('BH1');
+    expect(compiled.prompt).toContain('Groundwater level');
+    expect(compiled.prompt).toContain('review=missing');
+    expect(compiled.prompt).toContain('Do not invent values');
+    expect(compiled.prompt).not.toContain('"pageAudits"');
   });
 
   it('attaches the evidence packet to geotechnical document ingest results', async () => {
@@ -238,7 +266,7 @@ describe('document evidence packet', () => {
       }),
     });
 
-    expect(result.evidencePacket?.schemaVersion).toBe(1);
+    expect(result.evidencePacket?.schemaVersion).toBe(2);
     expect(result.evidencePacket?.observations.parameters[0]?.sourcePages).toEqual([1]);
     expect(result.evidencePacket?.providerContract.providerNeutral).toBe(true);
   });

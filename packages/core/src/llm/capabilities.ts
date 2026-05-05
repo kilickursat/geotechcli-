@@ -7,12 +7,51 @@ const PDF_NATIVE_MODEL_PATTERNS = [
   /\bqvq\b/i,
 ];
 
+const VISION_MODEL_PATTERNS = [
+  /vision/i,
+  /\bvlm?\b/i,
+  /image/i,
+  /omni/i,
+  /multimodal/i,
+  /gpt-4o/i,
+  /claude/i,
+  /gemini/i,
+  /pixtral/i,
+  /llava/i,
+  /internvl/i,
+  /qwen.*(?:vl|vision)/i,
+  /glm[-_.]?\d*v/i,
+  /glm[-_.]?5v/i,
+];
+
+const KNOWN_TEXT_ONLY_OPEN_ROUTE_PATTERNS = [
+  /poolside\/laguna/i,
+  /liquid\/lfm/i,
+  /minimax\/minimax-m/i,
+];
+
 function modelLooksPdfNative(model: string | undefined): boolean {
   if (!model) {
     return false;
   }
 
   return PDF_NATIVE_MODEL_PATTERNS.some((pattern) => pattern.test(model));
+}
+
+function modelLooksVisionCapable(model: string | undefined): boolean {
+  if (!model) {
+    return false;
+  }
+
+  return VISION_MODEL_PATTERNS.some((pattern) => pattern.test(model));
+}
+
+function openRouteLooksTextOnly(model: string | undefined): boolean {
+  if (!model) {
+    return false;
+  }
+
+  return KNOWN_TEXT_ONLY_OPEN_ROUTE_PATTERNS.some((pattern) => pattern.test(model));
 }
 
 function baseCapabilitiesForProvider(provider: LLMProvider): ProviderCapabilities {
@@ -67,6 +106,18 @@ export function resolveProviderCapabilities(
     || config.visionModelId?.trim()
     || config.modelId?.trim()
     || undefined;
+
+  if (
+    (config.provider === 'openai-compatible' || config.provider === 'huggingface')
+    && openRouteLooksTextOnly(resolvedModel)
+    && !modelLooksVisionCapable(resolvedModel)
+  ) {
+    return {
+      ...base,
+      visionImages: false,
+      nativePdfDocuments: false,
+    };
+  }
 
   if (
     !base.nativePdfDocuments
