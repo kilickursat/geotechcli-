@@ -1,10 +1,10 @@
 # geotechCLI Development Status
 
-Last updated: 2026-05-04
+Last updated: 2026-05-05
 
 ## Current Work
 
-Preparing v0.4.43 on `strong-beta`. The current engineering track is the PDF/page evidence benchmark foundation plus GroundModel calculation readiness so future OCR/vision and BYOK-provider changes can be measured against the same report PDF instead of judged manually.
+Preparing v0.4.44 on `strong-beta`. The current engineering track is whole-report geotechnical synthesis, compact borehole/ground-model visual QA, and the PDF/page evidence benchmark foundation so future OCR/vision and BYOK-provider changes can be measured against the same report PDF instead of judged manually.
 
 Current focus:
 
@@ -14,6 +14,8 @@ Current focus:
 - Route hosted PDF/table layout extraction to `glm-ocr`.
 - Retry final report synthesis without thinking when GLM-5.1 returns an empty thinking-mode response.
 - Present HTML ingest results as an evidence-first Geotechnical Intelligence Report with a premium review dashboard.
+- Make geotechnical report synthesis whole-report-first before high-signal page-row extraction, so takeaways, risks, recommendations, and borehole interpretation are not dominated by figures or appendices.
+- Render borehole and ground-model report visuals as compact lithology/source-page views with Playwright layout QA.
 - Cache compact page evidence by file hash, page hash, preprocessing settings, model version, and schema version so reruns can reuse trusted page extraction work.
 - Add `geotech ingest ... --format benchmark` / `geotech ingest result <jobId> --format benchmark` for page cache, hosted-call, traceability, and GroundModel readiness measurements.
 - Use OCR-optimized margin trimming and normalized raster sizing as the first measurable PDF/image preprocessing pass, then use benchmark output to compare first-run vs cached-rerun behavior.
@@ -26,6 +28,14 @@ Current focus:
 - Keep the legacy Modal deploy workflow present but disabled by default.
 
 ## Done So Far
+
+### v0.4.44 Report Synthesis and Ground Model Visual QA
+
+- Made geotechnical document synthesis read an ordered report outline before high-signal extraction rows so engineering takeaways are report-level first.
+- Prevented figure, table, and borehole-log titles from replacing true report titles in generated Geotechnical Intelligence Reports and cached-result rendering.
+- Rebuilt borehole stratigraphy and ground-model cross-section views with compact lithology-colored SVGs, source-page legend rows, inferred-contact styling, and overflow-safe layout.
+- Curated noisy OCR/table fragments out of the main material-observation table while retaining source evidence and Processing Audit traceability.
+- Verified the cached PDF report with core tests, full build, consistency check, Playwright screenshot, and DOM/layout assertions.
 
 ### v0.4.26 Reliability Fixes
 

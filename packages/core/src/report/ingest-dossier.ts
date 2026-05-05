@@ -92,6 +92,8 @@ export interface IngestDossierBoreholeProfileLayer {
   label: string;
   description: string;
   uscsSymbol?: string | null;
+  materialKey?: string | null;
+  sourcePages?: number[];
   tone: IngestDossierTone;
   uncertain?: boolean;
 }
@@ -356,6 +358,58 @@ function materialTone(description: string | null | undefined, uscsSymbol?: strin
   return 'good';
 }
 
+function isNonReportDisplayTitle(value: string | null | undefined): boolean {
+  if (!value?.trim()) {
+    return true;
+  }
+  const normalized = value.replace(/\s+/g, ' ').trim().toLowerCase();
+  return /\b(?:fig(?:ure)?\.?\s*\d*|graph|curve|chart|grain size distribution|photograph|photo|annexure|appendix|drill log|bore\s*\/?\s*drill log|n['’]?\s*vs\.?\s*depth)\b/.test(normalized);
+}
+
+function deriveGeotechDisplayTitle(result: GeotechDocumentIngestResult): string {
+  if (result.title && !isNonReportDisplayTitle(result.title)) {
+    return result.title;
+  }
+  const corpus = [
+    result.summary,
+    ...(result.contentChunks ?? []).flatMap((chunk) => [
+      ...chunk.headingAncestry,
+      chunk.text,
+    ]),
+    ...(result.inspection?.pages ?? []).flatMap((page) => [
+      page.normalizedText,
+      page.extractedText,
+      page.normalizedArtifact?.nativeText,
+    ]),
+  ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0).join('\n');
+  const reportTitle = corpus.match(/\b(?:geotechnical|geo-technical|ground|site|subsoil|subsurface)\s+(?:investigation|assessment|study|report)(?:\s+report)?\b/i)?.[0]
+    ?? corpus.match(/\b(?:site|ground|subsoil|subsurface)\s+investigation\s+report\b/i)?.[0];
+  return reportTitle
+    ? reportTitle.replace(/\s+/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
+    : 'Geotechnical Intelligence Report';
+}
+
+function materialKey(description: string | null | undefined, uscsSymbol?: string | null): string {
+  const text = `${description ?? ''} ${uscsSymbol ?? ''}`.toLowerCase();
+  if (/peat|organic|top\s*soil|topsoil/.test(text)) return 'organic';
+  if (/bedrock|fresh\s+rock|moderately\s+strong|strong\s+(?:shale|sandstone|siltstone|gneiss|rock)/.test(text)) return 'bedrock';
+  if (/weathered|fractured|residual\s+rock|rocky\s+shale|shale|sandstone|gneiss|rock/.test(text)) return 'weathered-rock';
+  if (/gravel|\bgm\b|\bgp\b|\bgw\b/.test(text)) return 'gravel';
+  if (/sand|\bsm\b|\bsp\b|\bsw\b|\bsc\b/.test(text)) return 'sand';
+  if (/clay|clayey|\bci\b|\bcl\b|\bch\b/.test(text)) return 'clay';
+  if (/silt|silty|\bml\b|\bmh\b/.test(text)) return 'silt';
+  if (/fill|made\s+ground|debris/.test(text)) return 'fill';
+  return 'mixed';
+}
+
+function uniqueSortedPages(values: Array<number | null | undefined>): number[] {
+  return [...new Set(
+    values
+      .map((value) => Number(value))
+      .filter((value) => Number.isInteger(value) && value > 0),
+  )].sort((left, right) => left - right);
+}
+
 function humanDocumentType(value: string | null | undefined): string {
   if (!value) {
     return 'Geotechnical document';
@@ -599,6 +653,18 @@ function buildFindingGroups(
 function buildGeotechTables(result: GeotechDocumentIngestResult): IngestDossierTable[] {
   const tables: IngestDossierTable[] = [];
   const auditTables: IngestDossierTable[] = [];
+  const materialRows = result.materials
+    .filter((material) => {
+      const description = material.description.replace(/\s+/g, ' ').trim();
+      const digitRatio = (description.match(/\d/g) ?? []).length / Math.max(1, description.length);
+      return description.length >= 12
+        && description.length <= 220
+        && digitRatio < 0.16
+        && !looksLikeNoisyOcr(description)
+        && !/[{}"]|%\s*\)|\b(?:run\s+tcr|depth\s*\(?m\)?|conducting\s+spt|0\s*-\s*15\s*cm|15\s*-\s*30\s*cm|30\s*-\s*45\s*cm|lab\s*test\s*result|json|materials\s*:|values\s+average|foundation\s+analysis|gondwana|sylhet\s+trap|intruded\s+by|idri?s?s|earthquake|structure\s+location|sieve|hydrometer|liquefiable|liquefaction|liquid\s+limit|plastic\s+limit|bowles|relative\s+density|criteria\s+is\s+satisfied)\b/i.test(description)
+        && /\b(?:stratum|layer|hard|stiff|loose|medium\s*dense|dense|clayey|silty|sand|silt|clay|gravel|rock|shale|gneiss|groundwater|water\s+table|fill)\b/i.test(description);
+    })
+    .slice(0, 30);
 
   if (result.source.segmentation?.mode === 'segmented-parent' && result.source.segmentation.segments?.length) {
     auditTables.push({
@@ -662,12 +728,14 @@ function buildGeotechTables(result: GeotechDocumentIngestResult): IngestDossierT
 
   tables.push({
     title: 'Material observations',
-    columns: ['Kind', 'Description', 'USCS', 'Lithology'],
-    rows: result.materials.map((material) => [
+    description: 'Curated soil and rock observations. Noisy OCR/table fragments remain traceable in the processing audit and source evidence.',
+    columns: ['Kind', 'Description', 'USCS', 'Lithology', 'Source pages'],
+    rows: materialRows.map((material) => [
       displayTableText(material.kind, 48),
       displayTableText(material.description, 180),
       displayTableText(material.uscsSymbol, 24),
       displayTableText(material.lithology, 90),
+      sourcePageText(material.description, material.sourcePages),
     ]),
     emptyState: 'No material observations were extracted.',
   });
@@ -909,8 +977,9 @@ function buildBoreholeBadges(result: BoreholeDocumentIngestResult): IngestDossie
 function buildGeotechExecutiveItems(result: GeotechDocumentIngestResult, sourceLabel: string): IngestDossierExecutiveItem[] {
   const boreholeIds = inferGeotechBoreholeIds(result);
   const maxDepth = inferGeotechMaxDepth(result);
+  const displayTitle = deriveGeotechDisplayTitle(result);
   return [
-    { label: 'Project/report', value: result.title ?? sourceLabel, detail: sourceLabel, tone: 'accent' },
+    { label: 'Project/report', value: displayTitle, detail: sourceLabel, tone: 'accent' },
     { label: 'Document type', value: humanDocumentType(result.documentClass ?? result.documentType), tone: 'accent' },
     {
       label: 'Processing status',
@@ -1124,6 +1193,190 @@ function extractConceptualLayerDescriptions(result: GeotechDocumentIngestResult)
   return [...new Set([...canonicalUnique, ...candidates])].slice(0, 5);
 }
 
+function inferUscsSymbolFromText(value: string): string | null {
+  const uscsMatch = value.match(/\bUSCS\s*[:=]?\s*([A-Z]{1,2}(?:\s*\/\s*[A-Z]{1,2})?)\b/i)
+    ?? value.match(/\(([A-Z]{1,2}(?:\s*\/\s*[A-Z]{1,2})?)\)/);
+  return uscsMatch?.[1]?.replace(/\s+/g, '').toUpperCase() ?? null;
+}
+
+function clampLayerDepth(value: number, maxDepth: number): number {
+  return Number(Math.max(0, Math.min(maxDepth, value)).toFixed(2));
+}
+
+function extractMaterialPhrase(value: string): string {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  const materialMatch = normalized.match(/\b((?:hard|stiff|loose|medium\s*dense|dense(?:\s*to\s*very\s*dense)?|very\s*dense|completely|highly|light\s+brown|brownish|reddish|yellowish)[^.;]{0,180}?(?:clayey|silty|sand|silt|clay|gravel|rock|shale|gneiss)[^.;]{0,120})/i);
+  return materialMatch?.[1]?.trim() ?? normalized;
+}
+
+function makeIntervalLayer(input: {
+  depthFrom: number;
+  depthTo: number;
+  label?: string | null;
+  description: string;
+  maxDepth: number;
+  sourcePages?: number[];
+  uncertain?: boolean;
+}): IngestDossierBoreholeProfileLayer | null {
+  const depthFrom = clampLayerDepth(input.depthFrom, input.maxDepth);
+  const depthTo = clampLayerDepth(input.depthTo, input.maxDepth);
+  if (!Number.isFinite(depthFrom) || !Number.isFinite(depthTo) || depthTo <= depthFrom) {
+    return null;
+  }
+  const description = cleanLayerDescriptionText(extractMaterialPhrase(input.description));
+  if (
+    !description
+    || description.length < 4
+    || /^(depth|from|to|note|sample)$/i.test(description)
+    || looksLikeNoisyOcr(description)
+    || /\b(?:from\s+to|run\s+tcr|depth\s*\(?m\)?|conducting\s+spt|n['’]?\s*value|0\s*-\s*15\s*cm|15\s*-\s*30\s*cm|30\s*-\s*45\s*cm)\b/i.test(description)
+  ) {
+    return null;
+  }
+  const uscsSymbol = inferUscsSymbolFromText(`${input.label ?? ''} ${description}`);
+  const fallbackLabel = input.label?.replace(/\s+/g, ' ').trim()
+    || inferLayerLabel(description, 'Layer');
+  return {
+    depthFrom,
+    depthTo,
+    label: inferLayerLabel(`${fallbackLabel} ${description}`, fallbackLabel),
+    description,
+    uscsSymbol,
+    materialKey: materialKey(description, uscsSymbol),
+    sourcePages: uniqueSortedPages(input.sourcePages ?? []),
+    tone: materialTone(description, uscsSymbol),
+    uncertain: input.uncertain ?? false,
+  };
+}
+
+function mergeIntervalLayers(layers: IngestDossierBoreholeProfileLayer[]): IngestDossierBoreholeProfileLayer[] {
+  const byKey = new Map<string, IngestDossierBoreholeProfileLayer>();
+  for (const layer of layers) {
+    const key = [
+      layer.depthFrom.toFixed(2),
+      layer.depthTo.toFixed(2),
+      layer.label.toLowerCase(),
+      materialKey(layer.description, layer.uscsSymbol),
+    ].join('|');
+    const previous = byKey.get(key);
+    if (!previous) {
+      byKey.set(key, { ...layer, sourcePages: uniqueSortedPages(layer.sourcePages ?? []) });
+      continue;
+    }
+    previous.description = previous.description.length >= layer.description.length
+      ? previous.description
+      : layer.description;
+    previous.sourcePages = uniqueSortedPages([...(previous.sourcePages ?? []), ...(layer.sourcePages ?? [])]);
+    previous.uncertain = Boolean(previous.uncertain || layer.uncertain);
+  }
+  return [...byKey.values()]
+    .sort((left, right) => left.depthFrom - right.depthFrom || left.depthTo - right.depthTo)
+    .slice(0, 10);
+}
+
+function extractDepthIntervalLayersFromText(
+  text: string | null | undefined,
+  maxDepth: number,
+  sourcePages?: number[],
+): IngestDossierBoreholeProfileLayer[] {
+  if (!text?.trim()) {
+    return [];
+  }
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  const layers: IngestDossierBoreholeProfileLayer[] = [];
+  const parentheticalPattern = /\b((?:stratum|layer)\s*[-–]?\s*(?:[ivx]+|\d+))?[^().:\n]{0,90}\(\s*[>~<]?\s*(\d{1,2}(?:\.\d+)?)\s*m\s*(?:to|-|–)\s*[>~<]?\s*(\d{1,2}(?:\.\d+)?)\s*m\+?\s*\)\s*:?\s*([^.\n]{8,260})/gi;
+  for (const match of normalized.matchAll(parentheticalPattern)) {
+    const layer = makeIntervalLayer({
+      depthFrom: Number(match[2]),
+      depthTo: Number(match[3]),
+      label: match[1],
+      description: match[4] ?? '',
+      maxDepth,
+      sourcePages,
+      uncertain: /[~+<>]|approximately|approx\.?/i.test(match[0]),
+    });
+    if (layer) {
+      layers.push(layer);
+    }
+  }
+
+  const descriptionBeforeRangePattern = /([^.\n]{12,180}?(?:clayey|silty|sand|silt|clay|gravel|rock|shale|gneiss)[^.\n]{0,120})\.\s*(\d{1,2}(?:\.\d+)?)\s+(\d{1,2}(?:\.\d+)?)(?=\s|$)/gi;
+  for (const match of normalized.matchAll(descriptionBeforeRangePattern)) {
+    const layer = makeIntervalLayer({
+      depthFrom: Number(match[2]),
+      depthTo: Number(match[3]),
+      description: match[1] ?? '',
+      maxDepth,
+      sourcePages,
+      uncertain: true,
+    });
+    if (layer) {
+      layers.push(layer);
+    }
+  }
+
+  const transition = normalized.match(/upper\s+stratum\s+consists\s+of\s+([^.\n]+?)\s*,?\s*transitioning\s+at\s+approximately\s+(\d{1,2}(?:\.\d+)?)\s*m\s+to\s+([^.\n]+)/i);
+  if (transition) {
+    const boundary = Number(transition[2]);
+    const upper = makeIntervalLayer({
+      depthFrom: 0,
+      depthTo: boundary,
+      description: transition[1] ?? '',
+      maxDepth,
+      sourcePages,
+      uncertain: true,
+    });
+    const lower = makeIntervalLayer({
+      depthFrom: boundary,
+      depthTo: maxDepth,
+      description: transition[3] ?? '',
+      maxDepth,
+      sourcePages,
+      uncertain: true,
+    });
+    if (upper) layers.push(upper);
+    if (lower) layers.push(lower);
+  }
+
+  return mergeIntervalLayers(layers);
+}
+
+function buildGlobalIntervalGeotechLayers(
+  result: GeotechDocumentIngestResult,
+  maxDepth: number,
+): IngestDossierBoreholeProfileLayer[] {
+  const layers: IngestDossierBoreholeProfileLayer[] = [];
+  for (const statement of result.synthesis?.groundModel ?? []) {
+    layers.push(...extractDepthIntervalLayersFromText(statement, maxDepth, result.synthesis?.sourcePages));
+  }
+  for (const chunk of result.contentChunks ?? []) {
+    if (chunk.sectionType === 'ground-model' || chunk.sectionType === 'summary' || chunk.sectionType === 'visual-appendix') {
+      layers.push(...extractDepthIntervalLayersFromText(chunk.text, maxDepth, chunk.sourcePages));
+    }
+  }
+  return mergeIntervalLayers(layers);
+}
+
+function buildBoreholeIntervalLayers(
+  result: GeotechDocumentIngestResult,
+  maxDepth: number,
+): Map<string, IngestDossierBoreholeProfileLayer[]> {
+  const byBorehole = new Map<string, IngestDossierBoreholeProfileLayer[]>();
+  for (const chunk of result.contentChunks ?? []) {
+    const boreholeIds = inferBoreholeIdsFromText(chunk.headingAncestry.join(' '), chunk.text);
+    if (boreholeIds.length !== 1) {
+      continue;
+    }
+    const layers = extractDepthIntervalLayersFromText(chunk.text, maxDepth, chunk.sourcePages);
+    if (layers.length === 0) {
+      continue;
+    }
+    const boreholeId = boreholeIds[0]!;
+    byBorehole.set(boreholeId, mergeIntervalLayers([...(byBorehole.get(boreholeId) ?? []), ...layers]));
+  }
+  return byBorehole;
+}
+
 function buildConceptualGeotechLayers(
   result: GeotechDocumentIngestResult,
   maxDepth: number,
@@ -1140,6 +1393,8 @@ function buildConceptualGeotechLayers(
     label: inferLayerLabel(description, `L${index + 1}`),
     description,
     uscsSymbol: inferLayerLabel(description, `L${index + 1}`),
+    materialKey: materialKey(description, inferLayerLabel(description, '')),
+    sourcePages: [],
     tone: materialTone(description, inferLayerLabel(description, '')),
     uncertain: true,
   }));
@@ -1152,36 +1407,53 @@ function buildGeotechBoreholeProfile(result: GeotechDocumentIngestResult): Inges
     return undefined;
   }
 
+  const globalIntervalLayers = buildGlobalIntervalGeotechLayers(result, maxDepth);
+  const boreholeIntervalLayers = buildBoreholeIntervalLayers(result, maxDepth);
   const conceptualLayers = buildConceptualGeotechLayers(result, maxDepth);
-  if (conceptualLayers.length === 0) {
+  if (globalIntervalLayers.length === 0 && conceptualLayers.length === 0 && boreholeIntervalLayers.size === 0) {
     return undefined;
   }
 
   const depthsByBorehole = new Map<string, number>();
+  const waterByBorehole = new Map<string, number>();
   for (const parameter of result.parameters) {
-    if (!/depth/i.test(parameter.name)) {
-      continue;
-    }
     const id = inferBoreholeIdsFromText(parameter.material, parameter.context)[0];
-    const depth = readDepthMeters(parameter.numericValue ?? parameter.valueText);
-    if (id && depth != null) {
-      depthsByBorehole.set(id, Math.max(depthsByBorehole.get(id) ?? 0, depth));
+    if (/depth/i.test(parameter.name)) {
+      const depth = readDepthMeters(parameter.numericValue ?? parameter.valueText);
+      if (id && depth != null) {
+        depthsByBorehole.set(id, Math.max(depthsByBorehole.get(id) ?? 0, depth));
+      }
+    }
+    if (/water\s*table|ground\s*water/i.test(parameter.name)) {
+      const depth = readDepthMeters(parameter.numericValue ?? parameter.valueText);
+      if (id && depth != null) {
+        waterByBorehole.set(id, depth);
+      }
     }
   }
 
+  const fallbackLayers = globalIntervalLayers.length > 0 ? globalIntervalLayers : conceptualLayers;
+  const usesOnlyConceptualLayers = globalIntervalLayers.length === 0 && boreholeIntervalLayers.size === 0;
+
   return {
-    title: 'Borehole Stratigraphy Visualization',
+    title: 'Borehole Stratigraphy Review',
     maxDepth,
     depthUnit: 'm',
-    columns: boreholeIds.map((boreholeId) => ({
-      boreholeId,
-      totalDepth: depthsByBorehole.get(boreholeId) ?? maxDepth,
-      waterTableDepth: null,
-      layers: conceptualLayers,
-    })),
+    columns: boreholeIds.map((boreholeId) => {
+      const specificLayers = boreholeIntervalLayers.get(boreholeId);
+      const layers = specificLayers && specificLayers.length > 0 ? specificLayers : fallbackLayers;
+      return {
+        boreholeId,
+        totalDepth: depthsByBorehole.get(boreholeId) ?? maxDepth,
+        waterTableDepth: waterByBorehole.get(boreholeId) ?? null,
+        layers,
+      };
+    }),
     notes: [
-      'Conceptual visualization from retained material observations.',
-      'Dashed layer boundaries indicate missing or unverified stratum intervals.',
+      usesOnlyConceptualLayers
+        ? 'Conceptual visualization from retained material observations; exact stratum intervals were not recovered.'
+        : 'Depth-bounded strata were recovered where page evidence exposed intervals; unmatched boreholes reuse the report-level ground model.',
+      'Dashed layer boundaries indicate missing or unverified stratum intervals. Inferred contacts remain approximate.',
       'Use source logs before treating the profile as design-grade stratigraphy.',
     ],
   };
@@ -1223,6 +1495,8 @@ function buildBoreholeProfile(result: BoreholeDocumentIngestResult): IngestDossi
             label: layer.uscsSymbol ?? layer.notes ?? `Layer ${index + 1}`,
             description: displayTableText(layer.description, 140),
             uscsSymbol: layer.uscsSymbol ?? null,
+            materialKey: materialKey(layer.description, layer.uscsSymbol),
+            sourcePages: borehole.pageNumber != null ? [borehole.pageNumber] : [],
             tone: materialTone(layer.description, layer.uscsSymbol),
             uncertain: layer.depthFrom == null || layer.depthTo == null,
           };
@@ -1260,7 +1534,7 @@ export function buildIngestDossier(
 
   if (result.documentType === 'geotech-document') {
     const geotechResult = result as GeotechDocumentIngestResult;
-    const title = geotechResult.title ?? 'Geotechnical ingest report';
+    const title = deriveGeotechDisplayTitle(geotechResult);
     const cleanSummary = cleanNarrativeText(geotechResult.summary, 320);
     const summary =
       cleanSummary

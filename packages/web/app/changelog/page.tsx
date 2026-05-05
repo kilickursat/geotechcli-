@@ -5,8 +5,20 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 const releases = [
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-05-04',
+    date: '2026-05-05',
     tag: `${GEOTECHCLI_VERSION} Release`,
+    changes: [
+      { type: 'fix', text: 'Made geotechnical document synthesis read an ordered whole-report outline before high-signal extraction rows so takeaways, risks, recommendations, and borehole evidence stay report-level first' },
+      { type: 'fix', text: 'Prevented figure, table, and borehole-log titles from replacing the report title in generated Geotechnical Intelligence Reports, including cached result rendering' },
+      { type: 'feat', text: 'Rebuilt borehole and ground-model report visuals with compact lithology-colored profiles, source-page legend rows, inferred-contact styling, and overflow-safe SVG layout' },
+      { type: 'fix', text: 'Curated noisy OCR material fragments out of the main material table while keeping page-level traceability in source evidence and Processing Audit' },
+      { type: 'fix', text: 'Verified the cached GeotechnicalInvestigationReport PDF output with Playwright screenshot and layout assertions for horizontal overflow and SVG text overflow' },
+    ],
+  },
+  {
+    version: '0.4.43',
+    date: '2026-05-04',
+    tag: '0.4.43 Release',
     changes: [
       { type: 'fix', text: 'Increased the slow raster-page ingest recovery regression timeout so GitHub Actions can finish the same PDF/OCR-style path that passes locally on Windows' },
       { type: 'fix', text: 'Kept the benchmark, GroundModel readiness, provider-neutral evidence, and report filename behavior from 0.4.42 unchanged' },

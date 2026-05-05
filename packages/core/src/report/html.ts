@@ -101,6 +101,107 @@ function compactSvgText(value: string | null | undefined, maxLength = 28): strin
   return `${normalized.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
 }
 
+function layerMaterialKey(layer: IngestDossierBoreholeProfileLayer): string {
+  const explicit = layer.materialKey?.trim();
+  if (explicit) {
+    return explicit;
+  }
+  const text = `${layer.label} ${layer.description} ${layer.uscsSymbol ?? ''}`.toLowerCase();
+  if (/peat|organic|top\s*soil|topsoil/.test(text)) return 'organic';
+  if (/bedrock|fresh\s+rock|strong\s+(?:shale|sandstone|siltstone|gneiss|rock)/.test(text)) return 'bedrock';
+  if (/weathered|fractured|rock|shale|sandstone|gneiss/.test(text)) return 'weathered-rock';
+  if (/gravel|\bgm\b|\bgp\b|\bgw\b/.test(text)) return 'gravel';
+  if (/sand|\bsm\b|\bsp\b|\bsw\b|\bsc\b/.test(text)) return 'sand';
+  if (/clay|\bci\b|\bcl\b|\bch\b/.test(text)) return 'clay';
+  if (/silt|\bml\b|\bmh\b/.test(text)) return 'silt';
+  if (/fill|made\s+ground|debris/.test(text)) return 'fill';
+  return 'mixed';
+}
+
+function lithologyColor(key: string): string {
+  switch (key) {
+    case 'fill':
+      return '#8f7a52';
+    case 'organic':
+      return '#4d3b2e';
+    case 'clay':
+      return '#a45f3f';
+    case 'silt':
+      return '#b08f57';
+    case 'sand':
+      return '#d8b85d';
+    case 'gravel':
+      return '#8d99a6';
+    case 'weathered-rock':
+      return '#667085';
+    case 'bedrock':
+      return '#384250';
+    default:
+      return '#64748b';
+  }
+}
+
+function lithologyPatternId(key: string): string {
+  return `pattern-${key.replace(/[^a-z0-9-]/gi, '-')}`;
+}
+
+function renderLithologyDefs(keys: string[]): string {
+  const uniqueKeys = [...new Set(keys)];
+  return `
+    <defs>
+      ${uniqueKeys.map((key) => {
+        const color = lithologyColor(key);
+        if (key === 'sand') {
+          return `<pattern id="${lithologyPatternId(key)}" width="8" height="8" patternUnits="userSpaceOnUse"><rect width="8" height="8" fill="${color}"/><circle cx="2" cy="2" r="0.8" fill="#fff7d6" opacity="0.45"/><circle cx="6" cy="5" r="0.8" fill="#fff7d6" opacity="0.35"/></pattern>`;
+        }
+        if (key === 'gravel') {
+          return `<pattern id="${lithologyPatternId(key)}" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="${color}"/><path d="M1 8 L4 2 L8 7 Z" fill="#d7dee8" opacity="0.32"/></pattern>`;
+        }
+        if (key === 'weathered-rock' || key === 'bedrock') {
+          return `<pattern id="${lithologyPatternId(key)}" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="${color}"/><path d="M-2 10 L10 -2 M2 12 L12 2" stroke="#d7dee8" stroke-width="1" opacity="0.22"/></pattern>`;
+        }
+        if (key === 'clay' || key === 'silt') {
+          return `<pattern id="${lithologyPatternId(key)}" width="8" height="8" patternUnits="userSpaceOnUse"><rect width="8" height="8" fill="${color}"/><path d="M0 4 H8" stroke="#fff7d6" stroke-width="0.8" opacity="0.24"/></pattern>`;
+        }
+        return `<pattern id="${lithologyPatternId(key)}" width="8" height="8" patternUnits="userSpaceOnUse"><rect width="8" height="8" fill="${color}"/></pattern>`;
+      }).join('')}
+    </defs>
+  `;
+}
+
+function layerSourceLabel(layer: IngestDossierBoreholeProfileLayer): string {
+  const pages = [...new Set((layer.sourcePages ?? []).filter((page) => Number.isInteger(page) && page > 0))]
+    .sort((left, right) => left - right);
+  return pages.length > 0 ? `p${pages.join(', ')}` : 'source review';
+}
+
+function renderProfileLegend(profile: IngestDossierBoreholeProfile): string {
+  const layers = [...profile.columns.flatMap((column) => column.layers)];
+  const uniqueRows = new Map<string, IngestDossierBoreholeProfileLayer>();
+  for (const layer of layers) {
+    const key = `${layer.depthFrom.toFixed(2)}-${layer.depthTo.toFixed(2)}-${layer.label}-${layer.description}`;
+    if (!uniqueRows.has(key)) {
+      uniqueRows.set(key, layer);
+    }
+  }
+  return `
+    <div class="profile-legend" aria-label="Layer evidence summary">
+      ${[...uniqueRows.values()].slice(0, 8).map((layer) => {
+        const key = layerMaterialKey(layer);
+        return `
+          <div class="profile-legend-row">
+            <span class="legend-swatch" style="background: ${lithologyColor(key)}"></span>
+            <strong>${escapeHtml(layer.label)}</strong>
+            <span>${escapeHtml(layer.depthFrom.toFixed(2))}-${escapeHtml(layer.depthTo.toFixed(2))} ${escapeHtml(profile.depthUnit)}</span>
+            <span>${escapeHtml(compactSvgText(layer.description, 92))}</span>
+            <em>${escapeHtml(layerSourceLabel(layer))}${layer.uncertain ? ' · inferred' : ''}</em>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
 function renderMetric(metric: IngestDossier['metrics'][number]): string {
   const percent = parsePercent(metric.value);
   return `
@@ -237,43 +338,63 @@ function renderGroundModelCrossSection(profile: IngestDossierBoreholeProfile | u
     `;
   }
 
-  const width = 940;
-  const height = 280;
-  const plotTop = 52;
-  const plotHeight = 158;
-  const left = 84;
-  const right = width - 44;
+  const width = 860;
+  const height = 360;
+  const plotTop = 58;
+  const plotHeight = 214;
+  const left = 78;
+  const right = width - 52;
   const usableWidth = right - left;
-  const referenceLayers = profile.columns
-    .flatMap((column) => column.layers)
-    .sort((leftLayer, rightLayer) => leftLayer.depthFrom - rightLayer.depthFrom)
-    .slice(0, 8);
-  const layers = referenceLayers.length > 0
-    ? referenceLayers
-    : [{
-        depthFrom: 0,
-        depthTo: profile.maxDepth,
-        label: 'Ground profile',
-        description: 'Layer boundaries were not available in structured form.',
-        tone: 'neutral' as const,
-        uncertain: true,
-      }];
+  const maxLayerCount = Math.max(1, ...profile.columns.map((column) => column.layers.length));
   const yForDepth = (depth: number) => plotTop + (Math.max(0, Math.min(profile.maxDepth, depth)) / profile.maxDepth) * plotHeight;
   const ticks = Array.from({ length: 6 }, (_value, index) => Number((profile.maxDepth * index / 5).toFixed(2)));
   const columnX = (index: number) =>
     profile.columns.length === 1
       ? left + usableWidth / 2
       : left + (usableWidth * index / (profile.columns.length - 1));
+  const layerKeys = profile.columns.flatMap((column) => column.layers.map((layer) => layerMaterialKey(layer)));
+  const layerBand = (layerIndex: number): string => {
+    const pointsTop: string[] = [];
+    const pointsBottom: string[] = [];
+    const representative = profile.columns.map((column) => column.layers[layerIndex]).find(Boolean)
+      ?? profile.columns[0]?.layers[0]
+      ?? {
+        depthFrom: 0,
+        depthTo: profile.maxDepth,
+        label: 'Ground profile',
+        description: 'Layer boundaries were not available in structured form.',
+        tone: 'neutral' as const,
+        uncertain: true,
+      };
+    profile.columns.forEach((column, index) => {
+      const layer = column.layers[layerIndex] ?? representative;
+      const x = columnX(index);
+      pointsTop.push(`${x.toFixed(2)},${yForDepth(layer.depthFrom).toFixed(2)}`);
+      pointsBottom.unshift(`${x.toFixed(2)},${yForDepth(layer.depthTo).toFixed(2)}`);
+    });
+    const key = layerMaterialKey(representative);
+    const labelY = yForDepth((representative.depthFrom + representative.depthTo) / 2);
+    return `
+      <g>
+        <title>${escapeHtml(`${representative.label}: ${representative.description}`)}</title>
+        <polygon points="${[...pointsTop, ...pointsBottom].join(' ')}"
+          fill="url(#${lithologyPatternId(key)})" stroke="${representative.uncertain ? '#f59e0b' : '#64748b'}"
+          stroke-width="${representative.uncertain ? '1.6' : '1'}" ${representative.uncertain ? 'stroke-dasharray="7 5"' : ''} opacity="0.88" />
+        ${layerIndex < 6 ? `<text x="${left + 18}" y="${(labelY + 4).toFixed(2)}" class="profile-label">${escapeHtml(compactSvgText(representative.label, 20))}</text>` : ''}
+      </g>
+    `;
+  };
 
   return `
     <section class="data-section" id="ground-cross-section">
       <div class="section-heading">
         <h2>Ground Model Cross-Section</h2>
-        <p>Conceptual cross-section connecting retained borehole evidence. Bands are schematic and should be verified against source logs before design use.</p>
+        <p>Evidence-backed schematic connecting retained borehole intervals. Boundaries remain approximate until checked against the source logs.</p>
       </div>
       <div class="profile-shell cross-section-shell">
         <svg class="ground-cross-section" viewBox="0 0 ${width} ${height}" role="img" aria-label="AI-assisted ground model cross-section">
           <rect x="0" y="0" width="${width}" height="${height}" rx="18" fill="#0f172a" />
+          ${renderLithologyDefs(layerKeys)}
           ${ticks.map((tick) => {
             const y = yForDepth(tick);
             return `
@@ -281,19 +402,7 @@ function renderGroundModelCrossSection(profile: IngestDossierBoreholeProfile | u
               <text x="14" y="${(y + 4).toFixed(2)}" class="profile-axis">${escapeHtml(tick.toFixed(tick % 1 === 0 ? 0 : 1))} ${escapeHtml(profile.depthUnit)}</text>
             `;
           }).join('')}
-          ${layers.map((layer) => {
-            const y1 = yForDepth(layer.depthFrom);
-            const y2 = Math.max(y1 + 18, yForDepth(layer.depthTo));
-            return `
-              <g>
-                <title>${escapeHtml(`${layer.label}: ${layer.description}`)}</title>
-                <path d="M ${left} ${y1.toFixed(2)} L ${right} ${y1.toFixed(2)} L ${right} ${y2.toFixed(2)} L ${left} ${y2.toFixed(2)} Z"
-                  fill="${toneColor(layer.tone)}" stroke="#64748b" stroke-width="1.2" ${layer.uncertain ? 'stroke-dasharray="8 6"' : ''} opacity="0.92" />
-                <text x="${left + 18}" y="${(y1 + Math.min(34, (y2 - y1) / 2 + 5)).toFixed(2)}" class="profile-label">${escapeHtml(compactSvgText(layer.label, 32))}</text>
-                <text x="${left + 18}" y="${(y1 + Math.min(52, (y2 - y1) / 2 + 23)).toFixed(2)}" class="profile-small">${escapeHtml(compactSvgText(layer.description, 64))}</text>
-              </g>
-            `;
-          }).join('')}
+          ${Array.from({ length: Math.min(maxLayerCount, 8) }, (_value, index) => layerBand(index)).join('')}
           ${profile.columns.map((column, index) => {
             const x = columnX(index);
             const depth = column.totalDepth ?? profile.maxDepth;
@@ -301,10 +410,10 @@ function renderGroundModelCrossSection(profile: IngestDossierBoreholeProfile | u
             const waterY = column.waterTableDepth != null ? yForDepth(column.waterTableDepth) : null;
             return `
               <g>
-                <line x1="${x.toFixed(2)}" y1="${plotTop - 10}" x2="${x.toFixed(2)}" y2="${bottomY.toFixed(2)}" stroke="#06b6d4" stroke-width="3" />
-                <circle cx="${x.toFixed(2)}" cy="${plotTop - 12}" r="6" fill="#06b6d4" />
-                <text x="${(x - 24).toFixed(2)}" y="28" class="profile-title">${escapeHtml(column.boreholeId)}</text>
-                <text x="${(x - 36).toFixed(2)}" y="${height - 32}" class="profile-small">TD ${escapeHtml(depth.toFixed(2))} ${escapeHtml(profile.depthUnit)}</text>
+                <line x1="${x.toFixed(2)}" y1="${plotTop - 12}" x2="${x.toFixed(2)}" y2="${bottomY.toFixed(2)}" stroke="#e2e8f0" stroke-width="2.2" stroke-dasharray="5 4" />
+                <circle cx="${x.toFixed(2)}" cy="${plotTop - 12}" r="6" fill="#22d3ee" stroke="#0f172a" stroke-width="2" />
+                <text x="${x.toFixed(2)}" y="30" text-anchor="middle" class="profile-title">${escapeHtml(column.boreholeId)}</text>
+                <text x="${x.toFixed(2)}" y="${height - 46}" text-anchor="middle" class="profile-small">TD ${escapeHtml(depth.toFixed(2))} ${escapeHtml(profile.depthUnit)}</text>
                 ${waterY != null ? `
                   <line x1="${(x - 34).toFixed(2)}" y1="${waterY.toFixed(2)}" x2="${(x + 34).toFixed(2)}" y2="${waterY.toFixed(2)}" stroke="#0891b2" stroke-width="2" />
                   <text x="${(x - 40).toFixed(2)}" y="${(waterY - 7).toFixed(2)}" class="profile-water">GW</text>
@@ -312,8 +421,10 @@ function renderGroundModelCrossSection(profile: IngestDossierBoreholeProfile | u
               </g>
             `;
           }).join('')}
+          <text x="${left}" y="${height - 16}" class="profile-axis">Dashed outlines mark inferred or approximate contacts.</text>
         </svg>
       </div>
+      ${renderProfileLegend(profile)}
       <p class="verification-note">AI-assisted ground model. Use source logs and engineering judgment before adopting layer continuity, groundwater, or design parameters.</p>
     </section>
   `;
@@ -332,26 +443,30 @@ function renderBoreholeProfile(profile: IngestDossierBoreholeProfile | undefined
     `;
   }
 
-  const plotTop = 44;
-  const plotHeight = 330;
-  const columnWidth = 110;
-  const gap = 32;
-  const axisWidth = 78;
-  const width = axisWidth + profile.columns.length * columnWidth + Math.max(0, profile.columns.length - 1) * gap + 42;
-  const height = plotTop + plotHeight + 74;
+  const plotTop = 46;
+  const plotHeight = 320;
+  const columnWidth = 82;
+  const gap = 54;
+  const axisWidth = 76;
+  const width = Math.max(520, axisWidth + profile.columns.length * columnWidth + Math.max(0, profile.columns.length - 1) * gap + 46);
+  const height = plotTop + plotHeight + 72;
   const ticks = Array.from({ length: 6 }, (_value, index) => Number((profile.maxDepth * index / 5).toFixed(2)));
+  const layerKeys = profile.columns.flatMap((column) => column.layers.map((layer) => layerMaterialKey(layer)));
   const layerRect = (layer: IngestDossierBoreholeProfileLayer, columnIndex: number): string => {
     const x = axisWidth + columnIndex * (columnWidth + gap);
     const y = plotTop + (Math.max(0, layer.depthFrom) / profile.maxDepth) * plotHeight;
-    const rectHeight = Math.max(18, ((Math.min(profile.maxDepth, layer.depthTo) - Math.max(0, layer.depthFrom)) / profile.maxDepth) * plotHeight);
+    const rectHeight = Math.max(10, ((Math.min(profile.maxDepth, layer.depthTo) - Math.max(0, layer.depthFrom)) / profile.maxDepth) * plotHeight);
     const midY = y + rectHeight / 2;
+    const key = layerMaterialKey(layer);
+    const showText = rectHeight >= 24;
+    const showSource = rectHeight >= 42;
     return `
       <g>
         <title>${escapeHtml(`${layer.depthFrom.toFixed(2)}-${layer.depthTo.toFixed(2)} ${profile.depthUnit}: ${layer.description}`)}</title>
-        <rect x="${x}" y="${y.toFixed(2)}" width="${columnWidth}" height="${rectHeight.toFixed(2)}" rx="8"
-          fill="${toneColor(layer.tone)}" stroke="#7a8aa0" stroke-width="1.2" ${layer.uncertain ? 'stroke-dasharray="6 5"' : ''} />
-        <text x="${x + 10}" y="${midY.toFixed(2)}" class="profile-label">${escapeHtml(layer.label)}</text>
-        <text x="${x + 10}" y="${(midY + 16).toFixed(2)}" class="profile-small">${escapeHtml(compactSvgText(layer.description))}</text>
+        <rect x="${x}" y="${y.toFixed(2)}" width="${columnWidth}" height="${rectHeight.toFixed(2)}" rx="4"
+          fill="url(#${lithologyPatternId(key)})" stroke="${layer.uncertain ? '#f59e0b' : '#7a8aa0'}" stroke-width="${layer.uncertain ? '1.6' : '1'}" ${layer.uncertain ? 'stroke-dasharray="6 5"' : ''} />
+        ${showText ? `<text x="${x + columnWidth / 2}" y="${(midY - (showSource ? 3 : -4)).toFixed(2)}" text-anchor="middle" class="profile-label">${escapeHtml(compactSvgText(layer.uscsSymbol ?? layer.label, 10))}</text>` : ''}
+        ${showSource ? `<text x="${x + columnWidth / 2}" y="${(midY + 13).toFixed(2)}" text-anchor="middle" class="profile-small">${escapeHtml(layerSourceLabel(layer))}</text>` : ''}
       </g>
     `;
   };
@@ -360,11 +475,12 @@ function renderBoreholeProfile(profile: IngestDossierBoreholeProfile | undefined
     <section class="data-section" id="boreholes">
       <div class="section-heading">
         <h2>${escapeHtml(profile.title)}</h2>
-        <p>Depth-scaled borehole columns with colored stratigraphy blocks. Dashed boundaries indicate missing or uncertain intervals that need source-page verification.</p>
+        <p>Depth-scaled borehole columns with lithology colors and source-page cues. Detailed descriptions are kept in the evidence legend to prevent label overlap.</p>
       </div>
       <div class="profile-shell">
         <svg class="borehole-profile" viewBox="0 0 ${width} ${height}" role="img" aria-label="Borehole stratigraphy profile">
           <rect x="0" y="0" width="${width}" height="${height}" rx="18" fill="#0f172a" />
+          ${renderLithologyDefs(layerKeys)}
           ${ticks.map((tick) => {
             const y = plotTop + (tick / profile.maxDepth) * plotHeight;
             return `
@@ -378,17 +494,18 @@ function renderBoreholeProfile(profile: IngestDossierBoreholeProfile | undefined
               ? plotTop + (column.waterTableDepth / profile.maxDepth) * plotHeight
               : null;
             return `
-              <text x="${x}" y="24" class="profile-title">${escapeHtml(column.boreholeId)}</text>
+              <text x="${x + columnWidth / 2}" y="24" text-anchor="middle" class="profile-title">${escapeHtml(column.boreholeId)}</text>
               ${column.layers.map((layer) => layerRect(layer, columnIndex)).join('')}
               ${waterY != null ? `
                 <line x1="${x - 8}" y1="${waterY.toFixed(2)}" x2="${x + columnWidth + 8}" y2="${waterY.toFixed(2)}" stroke="#06b6d4" stroke-width="2" />
                 <text x="${x + 8}" y="${(waterY - 6).toFixed(2)}" class="profile-water">Groundwater</text>
               ` : ''}
-              <text x="${x}" y="${height - 24}" class="profile-small">TD ${escapeHtml(column.totalDepth != null ? `${column.totalDepth.toFixed(2)} m` : 'unavailable')}</text>
+              <text x="${x + columnWidth / 2}" y="${height - 24}" text-anchor="middle" class="profile-small">TD ${escapeHtml(column.totalDepth != null ? `${column.totalDepth.toFixed(2)} m` : 'unavailable')}</text>
             `;
           }).join('')}
         </svg>
       </div>
+      ${renderProfileLegend(profile)}
       ${profile.notes.length > 0 ? `<ul class="profile-notes">${profile.notes.map((note) => `<li>${escapeHtml(note)}</li>`).join('')}</ul>` : ''}
     </section>
   `;
@@ -1028,28 +1145,81 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
       background: var(--surface);
       min-width: 0;
       max-width: 100%;
+    }
+
+    .table-shell {
       max-height: 560px;
+    }
+
+    .profile-shell {
+      overflow-x: auto;
+      overflow-y: visible;
+      max-height: none;
     }
 
     .borehole-profile {
       display: block;
-      min-width: 680px;
-      width: 100%;
+      min-width: 520px;
+      width: min(100%, 900px);
       height: auto;
+      margin: 0 auto;
+      max-height: 460px;
+    }
+
+    .profile-legend {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .profile-legend-row {
+      display: grid;
+      grid-template-columns: 18px minmax(64px, 0.7fr) minmax(96px, 0.8fr) minmax(160px, 2fr) minmax(94px, 0.8fr);
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--surface-soft);
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.35;
+    }
+
+    .profile-legend-row strong {
+      color: var(--text);
+      font-size: 0.84rem;
+    }
+
+    .profile-legend-row em {
+      color: var(--warning);
+      font-style: normal;
+      font-weight: 800;
+      font-size: 0.78rem;
+      text-align: right;
+    }
+
+    .legend-swatch {
+      width: 18px;
+      height: 18px;
+      border-radius: 5px;
+      border: 1px solid rgba(255, 255, 255, 0.24);
+      box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.18);
     }
 
     .cross-section-shell {
       background:
         linear-gradient(180deg, rgba(6, 182, 212, 0.06), rgba(16, 185, 129, 0.04)),
         var(--surface);
-      max-height: 360px;
     }
 
     .ground-cross-section {
       display: block;
-      min-width: 760px;
-      width: 100%;
+      min-width: 620px;
+      width: min(100%, 920px);
       height: auto;
+      margin: 0 auto;
+      max-height: 430px;
     }
 
     .verification-note {
@@ -1438,6 +1608,24 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
         min-width: 0;
         overflow-wrap: anywhere;
         word-break: break-word;
+      }
+      .profile-shell {
+        width: 100%;
+        border-radius: 14px;
+      }
+      .borehole-profile, .ground-cross-section {
+        min-width: 520px;
+        max-height: none;
+      }
+      .profile-legend-row {
+        grid-template-columns: 16px minmax(54px, 0.7fr) minmax(78px, 0.8fr);
+        gap: 8px;
+        font-size: 0.75rem;
+      }
+      .profile-legend-row span:nth-of-type(2),
+      .profile-legend-row em {
+        grid-column: 2 / -1;
+        text-align: left;
       }
       table { min-width: 760px; }
     }

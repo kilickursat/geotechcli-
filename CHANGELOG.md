@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.44] - 2026-05-05
+
+### Report Synthesis and Ground Model Visual QA
+
+- Made geotechnical document synthesis read an ordered whole-report outline before high-signal extraction rows so report-level takeaways, risks, recommendations, and borehole evidence are less likely to be dominated by figures or appendices.
+- Prevented figure, table, and borehole-log titles from replacing the report title in generated Geotechnical Intelligence Reports, including cached result rendering.
+- Rebuilt borehole and ground-model HTML visuals with compact lithology-colored profiles, source-page legend rows, inferred-contact styling, and overflow-safe SVG layout.
+- Curated noisy OCR material fragments out of the main material table while keeping page-level traceability in source evidence and Processing Audit.
+- Verified the cached `GeotechnicalInvestigationReport (1).pdf` output with Playwright screenshot and layout assertions showing no horizontal overflow or SVG text overflow.
+
 ## [0.4.43] - 2026-05-04
 
 ### CI Raster Ingest Timeout Hotfix

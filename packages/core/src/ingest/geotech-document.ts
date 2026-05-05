@@ -1102,6 +1102,23 @@ function isGenericDocumentTitle(value: string | null | undefined): boolean {
   return /\b(cover sheet|cover page|table of contents|contents|appendix|drawing register|revision history|project information)\b/i.test(value);
 }
 
+function isFigureOrAppendixTitle(value: string | null | undefined): boolean {
+  if (!value?.trim()) {
+    return false;
+  }
+  const normalized = value.replace(/\s+/g, ' ').trim().toLowerCase();
+  return /^(?:fig(?:ure)?\.?\s*\d*|plate\s*\d*|table\s*\d*|annexure|appendix)\b/.test(normalized)
+    || /\b(?:graph|curve|chart|photograph|photo|grain size distribution|n['’]?\s*vs\.?\s*depth|drill log|bore\s*\/?\s*drill log)\b/.test(normalized);
+}
+
+function isReportLevelTitle(value: string | null | undefined): boolean {
+  if (!value?.trim()) {
+    return false;
+  }
+  return /\b(?:geotechnical|geo-technical|geotech|ground|soil|subsurface|sub-soil|site)\b.{0,80}\b(?:investigation|assessment|report|study)\b/i.test(value)
+    || /\b(?:site investigation report|ground investigation report|subsoil investigation report|geotechnical investigation report)\b/i.test(value);
+}
+
 function isReportDocumentClass(value: string | null | undefined): boolean {
   const normalized = value?.trim().toLowerCase();
   return normalized === 'site-investigation-report'
@@ -1207,10 +1224,38 @@ function chooseDocumentClass(chunks: PreparedGeotechDocumentChunk[]): string | n
 }
 
 function chooseDocumentTitle(chunks: PreparedGeotechDocumentChunk[]): string | null {
-  return [...chunks]
+  const usable = chunks
+    .filter((chunk) =>
+      typeof chunk.title === 'string'
+      && chunk.title.trim().length > 0
+      && !isGenericDocumentTitle(chunk.title)
+      && !isFigureOrAppendixTitle(chunk.title),
+    );
+  const earlyReportTitle = usable
+    .filter((chunk) =>
+      chunk.pageRange[0] <= 5
+      && (isReportLevelTitle(chunk.title) || hasDocumentLevelReportCue(chunk)),
+    )
+    .sort((left, right) =>
+      left.pageRange[0] - right.pageRange[0]
+      || right.significance - left.significance,
+    )[0]?.title?.trim();
+  if (earlyReportTitle) {
+    return earlyReportTitle;
+  }
+
+  const reportCueTitle = usable
+    .filter((chunk) => isReportLevelTitle(chunk.title) || hasDocumentLevelReportCue(chunk))
+    .sort((left, right) => right.significance - left.significance)[0]?.title?.trim();
+  if (reportCueTitle) {
+    return reportCueTitle;
+  }
+
+  return usable
+    .filter((chunk) => chunk.sectionType !== 'visual-appendix')
     .sort((left, right) => right.significance - left.significance)
-    .map((chunk) => chunk.title)
-    .find((value) => typeof value === 'string' && value.trim().length > 0 && !isGenericDocumentTitle(value))
+    .map((chunk) => chunk.title?.trim())
+    .find((value): value is string => typeof value === 'string' && value.length > 0)
     ?? null;
 }
 
@@ -1246,6 +1291,23 @@ function buildSynthesisEvidence(input: {
   recommendations: string[];
   contentChunks: PreparedGeotechDocumentChunk[];
 }): string {
+  const pageList = (sourcePages: number[] | null | undefined): string | null => {
+    if (!Array.isArray(sourcePages) || sourcePages.length === 0) {
+      return null;
+    }
+    const pages = [...new Set(
+      sourcePages
+        .map((page) => Number(page))
+        .filter((page) => Number.isInteger(page) && page > 0),
+    )].sort((left, right) => left - right);
+    return pages.length > 0 ? `pages=${pages.join(',')}` : null;
+  };
+  const orderedOutline = [...input.contentChunks]
+    .filter((chunk) => chunk.sectionType !== 'administrative' && chunk.text.trim().length > 0)
+    .sort((left, right) => left.pageRange[0] - right.pageRange[0])
+    .map((chunk) =>
+      `Pages ${chunk.pageRange[0]}-${chunk.pageRange[1]} | ${chunk.sectionType ?? 'general'} | ${compactForPrompt(chunk.headingAncestry[0], 80)} | ${compactForPrompt(chunk.text, 220)}`,
+    );
   const parameterLines = input.parameters.slice(0, 40).map((parameter) =>
     [
       parameter.name,
@@ -1253,6 +1315,7 @@ function buildSynthesisEvidence(input: {
       parameter.unit,
       parameter.material ? `material=${parameter.material}` : null,
       parameter.context ? `context=${parameter.context}` : null,
+      pageList(parameter.sourcePages),
     ].filter(Boolean).join(' | '),
   );
   const materialLines = input.materials.slice(0, 30).map((material) =>
@@ -1261,6 +1324,7 @@ function buildSynthesisEvidence(input: {
       material.description,
       material.uscsSymbol ? `USCS=${material.uscsSymbol}` : null,
       material.lithology ? `lithology=${material.lithology}` : null,
+      pageList(material.sourcePages),
     ].filter(Boolean).join(' | '),
   );
   const classificationLines = input.classifications.slice(0, 25).map((classification) =>
@@ -1268,6 +1332,7 @@ function buildSynthesisEvidence(input: {
       classification.system,
       classification.value,
       classification.context,
+      pageList(classification.sourcePages),
     ].filter(Boolean).join(' | '),
   );
   const chunkLines = [...input.contentChunks]
@@ -1282,6 +1347,9 @@ function buildSynthesisEvidence(input: {
     `Title: ${input.title ?? 'unknown'}`,
     `Document class: ${input.documentClass ?? 'unknown'}`,
     `Current summary: ${input.summary ?? 'none'}`,
+    '',
+    'Ordered report outline:',
+    orderedOutline.join('\n') || 'No ordered report outline retained.',
     '',
     'Materials:',
     materialLines.join('\n') || 'None extracted.',
@@ -1326,15 +1394,15 @@ async function synthesizeGeotechDocumentResult(input: {
 
   const prompt = `Create a concise engineering synthesis from the extracted geotechnical report evidence. Respond with ONLY a JSON object:
 {
-  "takeaways": ["<report-level takeaway with source-page wording where possible>"],
-  "groundModel": ["<soil/rock/groundwater model statement>"],
+  "takeaways": ["<report-level engineering takeaway with source-page wording where possible>"],
+  "groundModel": ["<depth-bounded soil/rock/groundwater model statement with source pages if known>"],
   "keyParameters": ["<parameter, value, unit, material/context, source page if known>"],
-  "interpretation": ["<engineering interpretation supported by extracted evidence>"],
+  "interpretation": ["<construction/design interpretation supported by extracted evidence>"],
   "limitations": ["<uncertainty, missing evidence, OCR/layout/visual limitations>"],
   "sourcePages": [<page numbers that support the synthesis>]
 }
 
-Do not invent values. Do not increase confidence. Prefer explicit soil and rock mechanics parameters, groundwater observations, classification systems, and foundation/geohazard implications.
+Read the ordered report outline first to understand the whole report before summarizing individual extraction rows. Preserve borehole-log continuity when a borehole spans multiple pages: group depth intervals, lithology, SPT/RQD/recovery, groundwater, and source pages by borehole where evidence supports it. Do not invent values. Do not increase confidence. Prefer explicit soil and rock mechanics parameters, groundwater observations, classification systems, and foundation/geohazard/construction implications.
 
 Evidence:
 ${buildSynthesisEvidence({
