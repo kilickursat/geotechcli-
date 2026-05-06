@@ -15,6 +15,99 @@ export interface StandardProvision {
   topic: string;
 }
 
+export type StandardProfileId = 'eurocode7' | 'aashto' | 'is' | 'bs' | 'astm';
+
+export interface StandardProfileAssumptions {
+  id: StandardProfileId;
+  label: string;
+  basis: string;
+  designFormat: 'partial-factor' | 'lrfd' | 'working-stress' | 'testing-classification';
+  defaultFactorOfSafety: number;
+  bearingMethod: 'terzaghi' | 'meyerhof' | 'hansen' | 'vesic';
+  pileMethod: 'alpha' | 'beta' | 'spt-meyerhof' | 'auto';
+  slopeMethod: 'bishop' | 'ordinary';
+  liquefactionMethod: 'boulanger-idriss-2014';
+  notes: string[];
+}
+
+const STANDARD_PROFILES: Record<StandardProfileId, StandardProfileAssumptions> = {
+  eurocode7: {
+    id: 'eurocode7',
+    label: 'Eurocode 7',
+    basis: 'EN 1997-1 style profile. Current deterministic engines remain global-FS calculations; profile notes identify EC7 partial-factor checks still requiring engineer confirmation.',
+    designFormat: 'partial-factor',
+    defaultFactorOfSafety: 3.0,
+    bearingMethod: 'meyerhof',
+    pileMethod: 'auto',
+    slopeMethod: 'bishop',
+    liquefactionMethod: 'boulanger-idriss-2014',
+    notes: [
+      'Select design approach and partial factors before claiming Eurocode 7 compliance.',
+      'Use generated inputs as draft characteristic-value checks, not final design values.',
+    ],
+  },
+  aashto: {
+    id: 'aashto',
+    label: 'AASHTO LRFD',
+    basis: 'AASHTO-style transportation profile for draft input preparation. Resistance-factor design is not yet applied by the deterministic engines.',
+    designFormat: 'lrfd',
+    defaultFactorOfSafety: 2.5,
+    bearingMethod: 'meyerhof',
+    pileMethod: 'spt-meyerhof',
+    slopeMethod: 'bishop',
+    liquefactionMethod: 'boulanger-idriss-2014',
+    notes: [
+      'Resistance factors, load combinations, and service/strength limit states must be selected before design use.',
+      'SPT-based pile and liquefaction drafts require corrected N-values where available.',
+    ],
+  },
+  is: {
+    id: 'is',
+    label: 'Indian Standards',
+    basis: 'IS-code style working-stress profile for draft input preparation using common geotechnical global safety-factor workflows.',
+    designFormat: 'working-stress',
+    defaultFactorOfSafety: 3.0,
+    bearingMethod: 'terzaghi',
+    pileMethod: 'auto',
+    slopeMethod: 'bishop',
+    liquefactionMethod: 'boulanger-idriss-2014',
+    notes: [
+      'Confirm applicable IS code, load combination, and water-level assumptions before calculation.',
+      'Treat SPT references to IS methods as standards text unless plausible blow counts are evidence-bound.',
+    ],
+  },
+  bs: {
+    id: 'bs',
+    label: 'British Standards',
+    basis: 'BS-style working-stress profile for preliminary checks where legacy BS methods or UK practice are requested.',
+    designFormat: 'working-stress',
+    defaultFactorOfSafety: 3.0,
+    bearingMethod: 'meyerhof',
+    pileMethod: 'auto',
+    slopeMethod: 'bishop',
+    liquefactionMethod: 'boulanger-idriss-2014',
+    notes: [
+      'Confirm whether the project requires legacy BS, Eurocode 7 UK NA, or project-specific specifications.',
+      'Generated drafts are preliminary and do not apply national-annex factors.',
+    ],
+  },
+  astm: {
+    id: 'astm',
+    label: 'ASTM testing/classification',
+    basis: 'ASTM-heavy profile for classification and test-method traceability. ASTM does not define a complete global design-code factor set.',
+    designFormat: 'testing-classification',
+    defaultFactorOfSafety: 3.0,
+    bearingMethod: 'meyerhof',
+    pileMethod: 'spt-meyerhof',
+    slopeMethod: 'bishop',
+    liquefactionMethod: 'boulanger-idriss-2014',
+    notes: [
+      'Use ASTM references for test/classification provenance, then select a design standard for final factors.',
+      'Generated drafts preserve ASTM SPT/USCS traceability but are not ASTM design compliance outputs.',
+    ],
+  },
+};
+
 const STANDARDS_DB: StandardProvision[] = [
   // --- Eurocode 7 (EN 1997) ---
   { id: 'EC7-2.4.7', standard: 'EN 1997-1:2004', section: '2.4.7', title: 'Partial factors – ULS', content: 'Design approach 1 (DA1): Combination 1: A1+M1+R1, Combination 2: A2+M2+R1. Partial factors on actions γG=1.35(unfav)/1.0(fav), γQ=1.5(unfav)/0. Partial factors on soil: γφ=1.0(C1)/1.25(C2), γc=1.0(C1)/1.25(C2), γcu=1.0(C1)/1.4(C2).', keywords: ['partial factor', 'uls', 'design approach', 'eurocode', 'safety factor', 'limit state'], topic: 'design' },
@@ -124,4 +217,49 @@ export function listStandards(): Array<{ id: string; standard: string; title: st
 
 export function getStandardById(id: string): StandardProvision | null {
   return STANDARDS_DB.find((s) => s.id === id) ?? null;
+}
+
+export function normalizeStandardProfileId(value: string | null | undefined): StandardProfileId | undefined {
+  const normalized = value?.trim().toLowerCase().replace(/[\s_-]+/g, '');
+  if (!normalized) {
+    return undefined;
+  }
+
+  const aliases: Record<string, StandardProfileId> = {
+    ec7: 'eurocode7',
+    eurocode: 'eurocode7',
+    eurocode7: 'eurocode7',
+    en1997: 'eurocode7',
+    aashto: 'aashto',
+    aashtolrfd: 'aashto',
+    is: 'is',
+    indianstandard: 'is',
+    indianstandards: 'is',
+    bs: 'bs',
+    britishstandard: 'bs',
+    britishstandards: 'bs',
+    astm: 'astm',
+  };
+
+  return aliases[normalized];
+}
+
+export function listStandardProfiles(): StandardProfileAssumptions[] {
+  return Object.values(STANDARD_PROFILES).map((profile) => ({
+    ...profile,
+    notes: [...profile.notes],
+  }));
+}
+
+export function getStandardProfile(id: string | null | undefined): StandardProfileAssumptions | null {
+  const normalized = normalizeStandardProfileId(id);
+  if (!normalized) {
+    return null;
+  }
+
+  const profile = STANDARD_PROFILES[normalized];
+  return {
+    ...profile,
+    notes: [...profile.notes],
+  };
 }

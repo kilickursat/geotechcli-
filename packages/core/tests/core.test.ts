@@ -7,7 +7,14 @@ import { calculateLiquefaction } from '../src/geo/liquefaction.js';
 import { classifyUSCS, classifyRMR89, classifyQSystem } from '../src/geo/classification.js';
 import { predictTBMPerformance, selectTBMType, predictCutterWear } from '../src/geo/tunnel/tbm.js';
 import { validateToolArgs } from '../src/agents/guardrails.js';
-import { queryStandards, listStandards, getStandardById } from '../src/standards/index.js';
+import {
+  queryStandards,
+  listStandards,
+  getStandardById,
+  listStandardProfiles,
+  getStandardProfile,
+  normalizeStandardProfileId,
+} from '../src/standards/index.js';
 import { exportGeoJSON, exportDXF, exportCSV, exportJSON } from '../src/export/index.js';
 import { toolRegistry } from '../src/agents/tools.js';
 
@@ -261,6 +268,13 @@ describe('Standards', () => {
   it('Lists all', () => { expect(listStandards().length).toBeGreaterThanOrEqual(12); });
   it('Gets by ID', () => { expect(getStandardById('EC7-6.5')?.standard).toBe('EN 1997-1:2004'); });
   it('Empty for nonsense', () => { expect(queryStandards('xyzzyplugh').matches.length).toBe(0); });
+  it('Lists supported standards profiles for calculation draft assumptions', () => {
+    expect(listStandardProfiles().map((profile) => profile.id).sort()).toEqual(['aashto', 'astm', 'bs', 'eurocode7', 'is']);
+    expect(getStandardProfile('ec7')?.id).toBe('eurocode7');
+    expect(getStandardProfile('AASHTO LRFD')?.designFormat).toBe('lrfd');
+    expect(normalizeStandardProfileId('EN 1997')).toBe('eurocode7');
+    expect(normalizeStandardProfileId('unknown')).toBeUndefined();
+  });
 });
 
 // =========================================================================

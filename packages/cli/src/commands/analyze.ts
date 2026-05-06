@@ -148,8 +148,9 @@ function renderTextManifest(manifest: ProjectManifest): void {
       `${workflow.score}/100`,
       workflow.toolName,
       workflow.missing.slice(0, 3).join(', ') || '-',
+      workflow.inputDraft ? workflow.inputDraft.missingUserInputs.join(', ') || 'ready' : '-',
     ]);
-    renderTable(['Workflow', 'Readiness', 'Score', 'Route', 'Missing / assumptions'], readinessRows);
+    renderTable(['Workflow', 'Readiness', 'Score', 'Route', 'Missing / assumptions', 'Draft user inputs'], readinessRows);
   }
 
   if (manifest.summary.recommendations.length > 0) {
@@ -176,6 +177,7 @@ export function registerAnalyzeCommand(program: Command): void {
     .option('--format <format>', 'Output format: text | json | html', 'text')
     .option('--branch <branch>', 'Focus recommendations on a geotechnical branch such as foundation, monitoring, or mapping')
     .option('--standard <profile>', 'Record intended standards profile such as eurocode7, aashto, is, bs, or astm')
+    .option('--draft-inputs', 'Include opt-in deterministic calculation input drafts in the verifier output')
     .option('--max-depth <n>', 'Maximum directory depth to scan', parseIntegerOption)
     .option('--max-files <n>', 'Maximum number of files to inspect', parseIntegerOption)
     .option('--max-rows <n>', 'Maximum rows to sample from each CSV/XLSX sheet', parseIntegerOption)
@@ -199,6 +201,7 @@ export function registerAnalyzeCommand(program: Command): void {
       maxDepth: typeof opts.maxDepth === 'number' ? opts.maxDepth : undefined,
       maxFiles: typeof opts.maxFiles === 'number' ? opts.maxFiles : undefined,
       maxRows: typeof opts.maxRows === 'number' ? opts.maxRows : undefined,
+      includeCalculationInputDrafts: opts.draftInputs === true,
     };
 
     const manifest = await analyzeWorkspace(workspace, analyzeOptions);

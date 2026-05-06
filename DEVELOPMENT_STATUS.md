@@ -1,10 +1,10 @@
 # geotechCLI Development Status
 
-Last updated: 2026-05-05
+Last updated: 2026-05-06
 
 ## Current Work
 
-Preparing v0.4.46 on `strong-beta`. The current engineering track is evidence-first BYOK synthesis, provider-neutral document evidence context for agents, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, and the PDF/page evidence benchmark foundation so future OCR/vision and BYOK-provider changes can be measured against the same report PDF instead of judged manually.
+Preparing v0.4.47 on `strong-beta`. The current engineering track is provider-neutral evidence, standards-aware GroundModel readiness, skill-enabled agents, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, and the PDF/page evidence benchmark foundation so future OCR/vision and BYOK-provider changes can be measured against the same report PDF instead of judged manually.
 
 Current focus:
 
@@ -27,11 +27,21 @@ Current focus:
 - Keep a canonical cached-rerun fixture and `npm run benchmark:geotech-report` local harness for the `GeotechnicalInvestigationReport (1).pdf` acceptance target.
 - Keep the agentic document evidence contract provider-neutral so hosted GLM is only the strong-beta default; future BYOK LLMs should plug into the same page evidence, cache, traceability, and GroundModel readiness space.
 - Extend GroundModel verification with calculation-readiness routing for bearing, settlement, pile, liquefaction, and slope workflows before any deterministic calculation is auto-run.
+- Attach standards-profile assumptions and opt-in non-executing calculation input drafts to GroundModel readiness so downstream calculations are prepared but still review-gated.
+- Keep the bundled strong-beta skill catalog repairable on first use so direct skill commands and `--skills` agent sessions can see the complete approved catalog after partial installs.
 - Raise hosted-beta public limits enough for image-heavy PDF development runs, while keeping developer key/IP bypass unlimited.
 - Use the server-side `ZHIPU_API_KEY` secret in GitHub and Cloudflare.
 - Keep the legacy Modal deploy workflow present but disabled by default.
 
 ## Done So Far
+
+### v0.4.47 Standards Drafts and Skill Catalog Repair
+
+- Added standards-profile assumptions for Eurocode 7, AASHTO, IS, BS, and ASTM workspace analysis so GroundModel readiness carries an explicit design-profile basis.
+- Added opt-in, non-executing calculation input drafts for bearing, settlement, pile, liquefaction, and slope workflows through `geotech analyze --draft-inputs`.
+- Repaired bundled skill bootstrap so partial installs no longer stop after the first few skill manifests; first use repairs the complete approved strong-beta catalog for direct skill commands and `--skills` agent sessions.
+- Removed the stale public docs example that referenced an internal bundled ZIP filename and replaced it with installed-skill validation plus user-owned input-directory examples.
+- Added regression coverage for standards profile exports, calculation input drafts, workspace propagation, HTML readiness rendering, and partial skill-catalog repair.
 
 ### v0.4.46 Evidence-First BYOK Synthesis Contract
 
@@ -193,8 +203,6 @@ Current focus:
 
 Highest-value next work:
 
-- Add standards/profile engine integration for `eurocode7`, `aashto`, `is`, `bs`, and `astm` assumptions.
-- Convert calculation-readiness routes into opt-in generated calculation input drafts for bearing, settlement, pile, liquefaction, and slope workflows.
 - Add map visualization from GroundModel coordinates and local CRS assumptions.
 - Expand the lightweight report borehole SVG into richer strip logs, SPT-depth plots, lab charts, and monitoring plots.
 - Expand PDF/image preprocessing before vision beyond margin trimming with deskew, crop tables/log panels, and normalized page-region assets.

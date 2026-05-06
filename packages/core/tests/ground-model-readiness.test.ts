@@ -140,6 +140,29 @@ describe('GroundModel calculation readiness', () => {
     expect(workflows['pile-capacity']?.status).toBe('ready');
     expect(workflows['liquefaction']?.present).toContain('SPT N-values');
     expect(workflows['slope-stability']?.evidenceIds).toContain('ev-phi-1');
+    expect(workflows['bearing-capacity']?.standardProfile).toBe('eurocode7');
+    expect(workflows['bearing-capacity']?.inputDraft).toBeUndefined();
+  });
+
+  it('adds opt-in non-executing calculation input drafts with missing user inputs', () => {
+    const verification = verifyGroundModel(makeGroundModel(), { includeCalculationInputDrafts: true });
+    const workflows = Object.fromEntries(
+      verification.calculationReadiness.workflows.map((workflow) => [workflow.workflow, workflow]),
+    );
+
+    expect(verification.calculationReadiness.workflows.every((workflow) => workflow.inputDraft)).toBe(true);
+    expect(workflows['bearing-capacity']?.inputDraft?.missingUserInputs).toEqual(['foundation width', 'embedment depth']);
+    expect(workflows['settlement']?.inputDraft?.missingUserInputs).toEqual(['applied stress', 'foundation width']);
+    expect(workflows['pile-capacity']?.inputDraft?.missingUserInputs).toEqual(['pile diameter', 'pile length']);
+    expect(workflows['liquefaction']?.inputDraft?.missingUserInputs).toEqual(['PGA', 'earthquake magnitude']);
+    expect(workflows['slope-stability']?.inputDraft?.missingUserInputs).toEqual(['slope height', 'slope angle']);
+    expect(workflows['bearing-capacity']?.inputDraft?.readyToRun).toBe(false);
+    expect(workflows['bearing-capacity']?.inputDraft?.input).toMatchObject({
+      unitWeight: 18.5,
+      cohesion: 8,
+      frictionAngle: 32,
+      method: 'meyerhof',
+    });
   });
 
   it('blocks calculations that lack core evidence and separates review assumptions', () => {

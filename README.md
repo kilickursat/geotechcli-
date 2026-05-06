@@ -100,9 +100,10 @@ geotech analyze . --json
 geotech analyze . --format html
 geotech analyze . --branch foundation
 geotech analyze . --standard eurocode7
+geotech analyze . --standard eurocode7 --draft-inputs --json
 ```
 
-Current strong-beta scope: workspace awareness, CSV/XLSX schema inference, AGS/PDF/image/GIS/CAD classification, evidence references, canonical GroundModel construction, deterministic verifier findings, calculation readiness for bearing, settlement, pile, liquefaction, and slope workflows, recommendations, and a self-contained HTML report. It does not yet auto-run branch-specific design calculations from the folder; it tells you which calculation route is ready, blocked, or needs explicit assumptions.
+Current strong-beta scope: workspace awareness, CSV/XLSX schema inference, AGS/PDF/image/GIS/CAD classification, evidence references, canonical GroundModel construction, standards-profile assumptions, deterministic verifier findings, calculation readiness for bearing, settlement, pile, liquefaction, and slope workflows, optional non-executing calculation input drafts, recommendations, and a self-contained HTML report. It does not yet auto-run branch-specific design calculations from the folder; it tells you which calculation route is ready, blocked, or needs explicit assumptions.
 
 ## Interactive Visualization
 

@@ -19,6 +19,7 @@ import { loadConfig } from '../config/index.js';
 import { ensureWorkspace } from '../agents/sandbox.js';
 import { validateReadPath, validateWritePath, getWorkspaceDir } from '../agents/sandbox.js';
 import { addArtifact, addNote, saveNamedDataset } from '../storage/index.js';
+import { STRONG_BETA_SKILL_APPROVALS } from './approval.js';
 export {
   getStrongBetaSkillApproval,
   isStrongBetaSkillApproved,
@@ -530,14 +531,6 @@ function ensureDirectory(dirPath: string): string {
   return dirPath;
 }
 
-function countInstalledSkillManifests(skillsDir: string): number {
-  return readdirSync(skillsDir, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => join(skillsDir, entry.name))
-    .filter((dirPath) => isFile(manifestPathFor(dirPath)))
-    .length;
-}
-
 function getBundledSkillArchivePaths(): string[] {
   const bundledDir = getBundledSkillsDir();
   if (!isDirectory(bundledDir)) {
@@ -776,10 +769,14 @@ export function areAgentSkillToolsEnabled(): boolean {
 
 export function ensureBundledSkillsInstalled(): InstalledSkill[] {
   const skillsDir = getSkillsDirectory();
-  const installedSkillCount = countInstalledSkillManifests(skillsDir);
-  if (installedSkillCount > 0) {
+  const installedSkills = listInstalledSkills();
+  const requiredBundledSkills = Object.keys(STRONG_BETA_SKILL_APPROVALS);
+  const installedNames = new Set(installedSkills.map((skill) => skill.name));
+  const hasCompleteBundledCatalog = requiredBundledSkills.every((name) => installedNames.has(name));
+
+  if (hasCompleteBundledCatalog) {
     bundledSkillsBootstrapAttemptedForDir = skillsDir;
-    return listInstalledSkills();
+    return installedSkills;
   }
 
   if (bundledSkillsBootstrapAttemptedForDir === skillsDir || bundledSkillsBootstrapActiveForDir === skillsDir) {

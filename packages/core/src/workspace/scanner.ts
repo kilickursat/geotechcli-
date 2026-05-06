@@ -295,7 +295,9 @@ export async function analyzeWorkspace(
 
   if (options.includeGroundModel !== false) {
     const groundModel = await buildGroundModelFromManifest(manifest, { maxRows: resolvedOptions.maxRows });
-    const verifier = verifyGroundModel(groundModel);
+    const verifier = verifyGroundModel(groundModel, {
+      includeCalculationInputDrafts: options.includeCalculationInputDrafts === true,
+    });
     manifest.groundModel = groundModel;
     manifest.verifier = verifier;
   }

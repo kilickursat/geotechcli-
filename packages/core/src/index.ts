@@ -22,7 +22,18 @@ export * from './ground-model/index.js';
 export * from './verifier/index.js';
 
 // Standards database
-export { queryStandards, listStandards, getStandardById, type StandardProvision, type StandardsQueryResult } from './standards/index.js';
+export {
+  queryStandards,
+  listStandards,
+  getStandardById,
+  listStandardProfiles,
+  getStandardProfile,
+  normalizeStandardProfileId,
+  type StandardProfileAssumptions,
+  type StandardProfileId,
+  type StandardProvision,
+  type StandardsQueryResult,
+} from './standards/index.js';
 
 // Persistent project storage
 export {

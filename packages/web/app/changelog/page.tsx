@@ -5,8 +5,20 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 const releases = [
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-05-05',
+    date: '2026-05-06',
     tag: `${GEOTECHCLI_VERSION} Release`,
+    changes: [
+      { type: 'feat', text: 'Added standards-profile assumptions for Eurocode 7, AASHTO, IS, BS, and ASTM workspace analysis so GroundModel readiness carries an explicit design-profile basis' },
+      { type: 'feat', text: 'Added opt-in, non-executing calculation input drafts for bearing, settlement, pile, liquefaction, and slope workflows through geotech analyze --draft-inputs' },
+      { type: 'fix', text: 'Repaired bundled skill bootstrap so partial installs no longer stop after the first few skill manifests and first use repairs the complete approved catalog' },
+      { type: 'fix', text: 'Removed the stale public docs example that referenced an internal bundled ZIP filename' },
+      { type: 'fix', text: 'Added regression coverage for standards profile exports, calculation input drafts, workspace propagation, HTML readiness rendering, and partial skill-catalog repair' },
+    ],
+  },
+  {
+    version: '0.4.46',
+    date: '2026-05-05',
+    tag: '0.4.46 Release',
     changes: [
       { type: 'feat', text: 'Added a provider-neutral DocumentEvidencePacket synthesis prompt compiler so report synthesis reads the same page, observation, source-page, review-gate, and traceability contract used by agents and benchmarks' },
       { type: 'fix', text: 'Routed geotechnical document synthesis through the evidence-packet compiler instead of raw extraction arrays, preserving whole-report outline order, borehole continuity, missing-data gates, and source-page citation rules across hosted GLM and future BYOK providers' },

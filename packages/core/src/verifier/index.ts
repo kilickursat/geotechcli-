@@ -1,5 +1,6 @@
 export {
   verifyGroundModel,
+  type GroundModelCalculationInputDraft,
   type GroundModelCalculationReadiness,
   type GroundModelCalculationReadinessStatus,
   type GroundModelCalculationReadinessSummary,
@@ -7,4 +8,5 @@ export {
   type GroundModelFinding,
   type GroundModelFindingSeverity,
   type GroundModelVerification,
+  type VerifyGroundModelOptions,
 } from './findings.js';

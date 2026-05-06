@@ -75,6 +75,39 @@ describe('workspace analysis', () => {
     expect(sptFile?.schemas?.[0].detected.depthColumns).toContain('depth_m');
   });
 
+  it('propagates opt-in calculation input drafts through workspace analysis', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-workspace-drafts-'));
+    tempDirs.push(dir);
+
+    await writeFile(
+      join(dir, 'spt-profile.csv'),
+      [
+        'borehole_id,description,depth_m,sptN,friction_angle,unit_weight',
+        'BH-01,"medium dense silty sand",1.5,12,31,18',
+        'BH-01,"medium dense silty sand",3.0,18,32,18.5',
+      ].join('\n'),
+      'utf-8',
+    );
+    await writeFile(
+      join(dir, 'groundwater.csv'),
+      [
+        'borehole_id,groundwater_depth_m',
+        'BH-01,1.2',
+      ].join('\n'),
+      'utf-8',
+    );
+
+    const manifest = await analyzeWorkspace(dir, {
+      standard: 'aashto',
+      includeCalculationInputDrafts: true,
+    });
+
+    const bearing = manifest.verifier?.calculationReadiness.workflows.find((workflow) => workflow.workflow === 'bearing-capacity');
+    expect(bearing?.standardProfile).toBe('aashto');
+    expect(bearing?.inputDraft?.toolName).toBe('calculate_bearing_capacity');
+    expect(bearing?.inputDraft?.missingUserInputs).toContain('foundation width');
+  });
+
   it('binds lab parameters to evidence and rejects standards-reference SPT values', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'geotech-ground-model-'));
     tempDirs.push(dir);

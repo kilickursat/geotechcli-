@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.47] - 2026-05-06
+
+### Standards Drafts and Skill Catalog Repair
+
+- Added standards-profile assumptions for Eurocode 7, AASHTO, IS, BS, and ASTM workspace analysis so GroundModel calculation readiness carries an explicit design-profile basis.
+- Added opt-in, non-executing calculation input drafts for bearing, settlement, pile, liquefaction, and slope workflows through `geotech analyze --draft-inputs`, including missing user inputs and evidence references.
+- Repaired bundled skill bootstrap so partial installs no longer stop after the first few skill manifests; first use now repairs the complete approved strong-beta catalog for direct skill commands and `--skills` agent sessions.
+- Removed the stale public docs example that referenced an internal bundled ZIP filename and replaced it with installed-skill validation plus user-owned input-directory examples.
+- Added regression coverage for standards profile exports, calculation input drafts, workspace propagation, HTML readiness rendering, and partial skill-catalog repair.
+
 ## [0.4.46] - 2026-05-05
 
 ### Evidence-First BYOK Synthesis Contract

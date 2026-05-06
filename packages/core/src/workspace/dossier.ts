@@ -198,7 +198,7 @@ function renderCalculationReadinessSection(manifest: ProjectManifest): string {
           <td><code>${escapeHtml(workflow.toolName)}</code><br /><small>${escapeHtml(workflow.commandTemplate)}</small></td>
           <td>${escapeHtml(workflow.missing.join(', ') || '-')}</td>
           <td>${escapeHtml(workflow.evidenceIds.join(', ') || '-')}</td>
-          <td>${escapeHtml(workflow.recommendation)}</td>
+          <td>${escapeHtml(workflow.recommendation)}${workflow.inputDraft ? `<details><summary>Draft input</summary><pre>${escapeHtml(JSON.stringify(workflow.inputDraft, null, 2))}</pre></details>` : ''}</td>
         </tr>`).join('\n')}
       </tbody>
     </table>

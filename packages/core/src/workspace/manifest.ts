@@ -86,6 +86,7 @@ export interface AnalyzeWorkspaceOptions {
   branch?: string;
   standard?: string;
   includeGroundModel?: boolean;
+  includeCalculationInputDrafts?: boolean;
 }
 
 export const DEFAULT_ANALYZE_WORKSPACE_OPTIONS = {

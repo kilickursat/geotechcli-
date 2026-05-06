@@ -92,6 +92,18 @@ describe('Skills runtime', () => {
     }
   }, 60_000);
 
+  it('repairs a partial bundled skill install instead of stopping after the first manifest', () => {
+    importSkillsFromSource(join(fixtureDir, 'skill_archive (1).zip'));
+    expect(listInstalledSkills()).toHaveLength(1);
+
+    const installed = ensureBundledSkillsInstalled();
+
+    expect(installed.length).toBeGreaterThan(40);
+    expect(installed.map((skill) => skill.name)).toContain('shallow-foundation-option-screening');
+    expect(installed.map((skill) => skill.name)).toContain('standards-and-safety-factor-audit');
+    expect(installed.map((skill) => skill.name)).toContain('tunnel-engineering-reviewer');
+  }, 60_000);
+
   it('validates and imports a wave-2 container archive with nested skill zips', () => {
     const archivePath = join(fixtureDir, 'geotechcli-geotech-skills-wave-2.zip');
     const validation = validateSkillSource(archivePath);

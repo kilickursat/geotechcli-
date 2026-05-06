@@ -113,21 +113,20 @@ This keeps BYOK model quality dependent on model capability, while keeping Geote
   {
     id: 'skills',
     title: 'geotech skill',
-    content: `Bundled strong-beta skills ship with the CLI and bootstrap on first use. Use direct skill commands when you want a repeatable local workflow, and use the --skills flag when you want geotech agent or geotech chat to see the approved skill catalog for that one session.
+    content: `Bundled strong-beta skills ship with the CLI and bootstrap on first use. Use direct skill commands when you want a repeatable local workflow. Use the --skills flag when you want geotech agent or geotech chat to discover and call approved installed skills for that one session.
 
 \`\`\`bash
 # See the bundled catalog
 geotech skill list
 
-# Inspect one installed workflow
+# Inspect one installed workflow and its approval state
 geotech skill show shallow-foundation-option-screening
 
-# Validate an installed skill or a local bundle before import
+# Validate an installed bundled skill
 geotech skill validate shallow-foundation-option-screening
-geotech skill validate geotechcli-geotech-skills-wave-3.zip
 
-# Run one approved deterministic skill against a prepared input directory
-geotech skill run shallow-foundation-option-screening --input-dir assets/example-inputs
+# Run one approved deterministic skill against your prepared input directory
+geotech skill run shallow-foundation-option-screening --input-dir ./foundation-inputs
 
 # Let agent or chat use approved skills for one session
 geotech agent "screen shallow foundation options for this site" --skills
@@ -257,9 +256,10 @@ geotech analyze . --format html
 # Branch and standards context for downstream workflows
 geotech analyze . --branch foundation
 geotech analyze . --standard eurocode7
+geotech analyze . --standard eurocode7 --draft-inputs --json
 \`\`\`
 
-Current strong-beta scope: file discovery, AGS/PDF/image/GIS/CAD classification, CSV/XLSX schema inference, evidence references, canonical GroundModel construction, verifier findings, detected branches, calculation readiness for bearing, settlement, pile, liquefaction, and slope workflows, warnings, and recommended next steps. Analyze does not yet auto-run design calculations from the folder; it reports which deterministic workflow is ready, blocked, or needs explicit assumptions before routing. Map visualization and the role-based workspace agent planner remain roadmap layers.`,
+Current strong-beta scope: file discovery, AGS/PDF/image/GIS/CAD classification, CSV/XLSX schema inference, evidence references, canonical GroundModel construction, standards-profile assumptions, verifier findings, detected branches, calculation readiness for bearing, settlement, pile, liquefaction, and slope workflows, optional non-executing calculation input drafts, warnings, and recommended next steps. Analyze does not yet auto-run design calculations from the folder; it reports which deterministic workflow is ready, blocked, or needs explicit assumptions before routing. Map visualization and the role-based workspace agent planner remain roadmap layers.`,
   },
   {
     id: 'ingest',
