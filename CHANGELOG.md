@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.48] - 2026-05-06
+
+### Role-Based Swarm Planner
+
+- Added a deterministic role-based swarm execution plan for `geotech agent --swarm`, with WorkspaceScout, DataEngineer, GroundModeler, StandardsChecker, DesignEngineer, RiskReviewer, and ReportEngineer ownership.
+- Threaded workspace evidence, standards profile, calculation readiness, missing inputs, and approved executable skills into the swarm prompts before specialist execution starts.
+- Made `geotech agent --workspace ... --swarm` request non-executing calculation input drafts during workspace analysis so the swarm can route ready, blocked, and assumption-bound workflows without inventing missing inputs.
+- Excluded prompt-only and unapproved skills from swarm execution while still surfacing them as audit warnings.
+- Added JSON/session output for the generated swarm plan plus regression coverage for prompt injection, role ownership, skill selection, and workspace readiness formatting.
+
 ## [0.4.47] - 2026-05-06
 
 ### Standards Drafts and Skill Catalog Repair

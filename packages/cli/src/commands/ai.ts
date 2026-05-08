@@ -93,6 +93,35 @@ function summarizeWorkspaceManifestForAgent(manifest: ProjectManifest): string {
   ].filter(Boolean).join('\n\n');
 }
 
+function buildAgentRuntimeContext(
+  projectContext: Record<string, unknown> | undefined,
+  workspaceManifest?: ProjectManifest,
+): Record<string, unknown> | undefined {
+  if (!projectContext && !workspaceManifest) {
+    return undefined;
+  }
+
+  return {
+    ...(projectContext ?? {}),
+    ...(workspaceManifest
+      ? {
+          workspace: {
+            rootPath: workspaceManifest.rootPath,
+            requestedBranch: workspaceManifest.requestedBranch,
+            requestedStandard: workspaceManifest.requestedStandard,
+            summary: workspaceManifest.summary,
+            groundModel: workspaceManifest.groundModel ? {
+              stats: workspaceManifest.groundModel.stats,
+              coordinateSystem: workspaceManifest.groundModel.coordinateSystem,
+            } : undefined,
+            verifier: workspaceManifest.verifier,
+            warnings: workspaceManifest.warnings,
+          },
+        }
+      : {}),
+  };
+}
+
 async function checkQuota(_callType: 'llmCalls' | 'visionCalls' | 'agentCalls'): Promise<boolean> {
   // Strong-beta hosted limits are enforced server-side by the beta proxy.
   // Keep the CLI permissive here so successful completions, retries, and
@@ -1281,7 +1310,7 @@ export function registerAgentCommand(program: Command): void {
   const cmd = new Command('agent')
     .description('Agentic AI - reasons about your problem and executes real calculations')
     .argument('<task...>', 'Engineering task in natural language')
-    .option('--swarm', 'Use multi-agent swarm (Bieniawski -> Terzaghi -> Hoek)')
+    .option('--swarm', 'Use the role-based multi-agent swarm planner and specialist review loop')
     .option('--skills', 'Enable installed skill tools for this session')
     .option('--project <id>', 'Load and persist context to a stored project')
     .option('--workspace <dir>', 'Scan a local workspace and attach its manifest summary to the agent task')
@@ -1296,14 +1325,16 @@ export function registerAgentCommand(program: Command): void {
 
       let workspaceManifest: ProjectManifest | undefined;
       if (typeof opts.workspace === 'string' && opts.workspace.trim()) {
-        workspaceManifest = await analyzeWorkspace(opts.workspace, {});
+        workspaceManifest = await analyzeWorkspace(opts.workspace, {
+          includeCalculationInputDrafts: useSwarm || opts.skills === true,
+        });
         agentTask = `${task}\n\n${summarizeWorkspaceManifestForAgent(workspaceManifest)}`;
       }
 
       if (!flags.json) {
         console.log('');
       if (useSwarm) {
-        console.log(chalk.gray('  Swarm activated - Bieniawski, Terzaghi, and Hoek coordinated by Mohr'));
+        console.log(chalk.gray('  Swarm activated - role-based planner with specialist execution and review'));
       } else {
         console.log(chalk.gray('  Agent activated - Terzaghi is planning and executing'));
       }
@@ -1335,6 +1366,7 @@ export function registerAgentCommand(program: Command): void {
           enabled: showLiveStatus,
           provider: config.provider,
         });
+        const runtimeContext = buildAgentRuntimeContext(projectState?.context, workspaceManifest);
 
         if (useSwarm) {
           // Multi-agent swarm mode
@@ -1343,7 +1375,7 @@ export function registerAgentCommand(program: Command): void {
             if (flags.verbose) {
               renderSwarmStepPlain(step, flags.json, flags.quiet);
             }
-          }, projectState?.context);
+          }, runtimeContext);
 
           const answer = session.steps.find((s) => s.type === 'answer');
           if (projectState) {
@@ -1363,6 +1395,7 @@ export function registerAgentCommand(program: Command): void {
                 verifier: workspaceManifest.verifier,
               } : undefined,
               mode: 'swarm',
+              plan: session.plan,
               answer: answer?.content ?? '',
               reviewPassed: session.reviewPassed,
               corrections: session.corrections,
@@ -1390,6 +1423,10 @@ export function registerAgentCommand(program: Command): void {
             const toolCalls = session.steps.filter((s) => s.type === 'tool_call').length;
             const agents = [...new Set(session.steps.map((s) => s.agent))];
             console.log(chalk.gray(`  (${agents.length} agents, ${toolCalls} tools executed, review: ${session.reviewPassed ? 'PASSED' : 'ISSUES NOTED'}, ${session.totalTokens} tokens)`));
+            if (session.plan) {
+              const activeRoles = session.plan.roles.filter((role) => role.status === 'active').length;
+              console.log(chalk.gray(`  (${activeRoles} active planning roles, ${session.plan.skillCatalog.executableApproved} approved executable skills available)`));
+            }
             console.log(chalk.cyan('\n  Continue interactively with: ') + chalk.white(`geotech chat${opts.project ? ` --project ${opts.project}` : ''}${opts.skills ? ' --skills' : ''}`));
           } else {
             liveStatus?.stop();
@@ -1426,7 +1463,7 @@ export function registerAgentCommand(program: Command): void {
             if (flags.verbose) {
               renderAgentStepPlain(step, flags.json, flags.quiet);
             }
-          }, projectState?.context);
+          }, runtimeContext);
 
           const answer = session.steps.find((s) => s.type === 'answer');
           if (projectState) {

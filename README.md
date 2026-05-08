@@ -80,8 +80,8 @@ geotech agent "evaluate foundation options for a 12-story building on soft clay"
 # AI: attach a local GroundModel summary to the agent task
 geotech agent "analyze this folder and prepare a foundation screening report" --workspace .
 
-# AI: Bieniawski/Terzaghi/Hoek swarm mode for evidence-backed tasks
-geotech agent "review bearing, settlement, and slope risks for this site" --swarm
+# AI: role-based swarm planning over workspace evidence and review gates
+geotech agent "review bearing, settlement, and slope risks for this site" --workspace . --skills --swarm
 
 # AI: explicitly enable installed skills for this session
 geotech agent "screen shallow foundation options for this site" --skills
@@ -174,13 +174,13 @@ These commands now use the hosted beta GLM path by default.
 | `geotech ingest` | Geotechnical PDF/image ingest for borehole logs and broader report intelligence, with live PDF progress and optional browser HTML report or benchmark output |
 | `geotech ai-classify` | Natural language soil description to USCS and properties |
 | `geotech gbr chat` | GBR document question answering |
-| `geotech agent` | Terzaghi single-agent reasoning by default; optional evidence-bound `--workspace`, `--swarm` orchestration, and project memory |
+| `geotech agent` | Terzaghi single-agent reasoning by default; optional evidence-bound `--workspace`, role-based `--swarm` orchestration, skill-enabled sessions, and project memory |
 | `geotech chat` | Interactive AI session with optional project memory |
 | `geotech report` | AI-generated geotechnical report drafting |
 
 Installed strong-beta skills are available directly through `geotech skill ...`. Agent and chat sessions can opt into skill tools explicitly with `--skills` while the default strong-beta agent path stays unchanged.
 
-Strong-beta reliability note: Terzaghi single-agent mode and optional swarm mode share the same under-specified hosted-beta intake screen, the same first-turn hosted-beta fallback behavior, and the same case-file deliverable tool bootstrap for report and export follow-on workflows.
+Strong-beta reliability note: Terzaghi single-agent mode and optional role-based swarm mode share the same under-specified hosted-beta intake screen, the same first-turn hosted-beta fallback behavior, and the same case-file deliverable tool bootstrap for report and export follow-on workflows. Swarm mode now prepares a deterministic WorkspaceScout, DataEngineer, GroundModeler, StandardsChecker, DesignEngineer, RiskReviewer, and ReportEngineer plan over workspace evidence, standards readiness, calculation input drafts, approved executable skills, and blocked review gates before specialist prompts run.
 
 ## Geotechnical Document Ingest
 
@@ -343,7 +343,7 @@ npm run smoke:byok -- --provider=openrouter --strict
 
 Supported smoke environment variables are `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `ZHIPU_API_KEY`/`ZAI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `HF_TOKEN`/`HUGGINGFACE_API_KEY`, or `OPENAI_COMPATIBLE_API_KEY` with `OPENAI_COMPATIBLE_BASE_URL` and `OPENAI_COMPATIBLE_MODEL`. These checks validate that BYOK text synthesis can answer the same compact evidence-contract prompt path; PDF, OCR, and vision confidence still depends on the provider capability advertised for the selected model.
 
-Provider-agnostic agent behavior: hosted GLM is the strong-beta default, but GeotechCLI now injects the same operating contract into single-agent, swarm, and specialist-agent prompts for BYOK providers. That contract tells each model what capabilities it has, when to use `DocumentEvidencePacket`, `GroundModel`, standards snippets, deterministic tools, source pages, confidence, and review gates, and how to fall back when a free/open route lacks image, native-PDF, strict JSON, or stable capacity.
+Provider-agnostic agent behavior: hosted GLM is the strong-beta default, but GeotechCLI now injects the same operating contract into single-agent, role-based swarm, and specialist-agent prompts for BYOK providers. That contract tells each model what capabilities it has, when to use `DocumentEvidencePacket`, `GroundModel`, standards snippets, deterministic tools, source pages, confidence, and review gates, and how to fall back when a free/open route lacks image, native-PDF, strict JSON, or stable capacity.
 
 ## Pricing
 

@@ -121,4 +121,53 @@ describe('Swarm tool policy', () => {
     expect(finalStep?.content).toContain('hosted synthesis timed out');
     expect(finalStep?.content).toContain('Simulation output');
   });
+
+  it('threads the role-based execution plan into swarm prompts and session output', async () => {
+    mockedGenerateChat
+      .mockResolvedValueOnce(
+        response('```handoff\n{"to":"simulation","data":{"soil":"sand"},"summary":"parsed"}\n```'),
+      )
+      .mockResolvedValueOnce(
+        response('```handoff\n{"to":"reviewer","results":{"fos":1.6},"summary":"calculated"}\n```'),
+      )
+      .mockResolvedValueOnce(
+        response('```review\n{"verdict":"APPROVED","notes":["policy check"],"confidence":96}\n```'),
+      );
+    mockedGenerateText.mockResolvedValue(response('final report'));
+
+    const session = await runSwarm(
+      'review bearing and settlement readiness',
+      {} as any,
+      () => {},
+      {
+        workspace: {
+          summary: {
+            branches: ['foundation'],
+            datasetTypes: { 'borehole-table': 1 },
+          },
+          verifier: {
+            status: 'needs-review',
+            calculationReadiness: {
+              workflows: [
+                {
+                  workflow: 'bearing-capacity',
+                  status: 'ready-with-assumptions',
+                  standardProfile: 'eurocode7',
+                  missing: ['foundation width'],
+                },
+              ],
+            },
+          },
+        },
+      },
+    );
+
+    const messages = mockedGenerateChat.mock.calls[0]?.[0] as Array<{ role: string; content: string }>;
+    expect(session.plan?.roles.map((role) => role.role)).toContain('WorkspaceScout');
+    expect(session.plan?.workspace.standardProfile).toBe('eurocode7');
+    expect(session.steps[0]?.content).toContain('Role-based swarm plan prepared');
+    expect(messages[1]?.content).toContain('ROLE-BASED SWARM EXECUTION PLAN');
+    expect(messages[1]?.content).toContain('DesignEngineer');
+    expect(messages[1]?.content).toContain('readyWorkflows=bearing-capacity');
+  });
 });

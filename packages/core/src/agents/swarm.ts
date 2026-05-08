@@ -18,6 +18,11 @@ import {
 } from './runtime-fallbacks.js';
 import { runWithToolRuntimeContext } from './tool-runtime.js';
 import { buildProviderOperatingPrompt } from './provider-operating-contract.js';
+import {
+  buildSkillAwareSwarmPlan,
+  formatSwarmPlanForPrompt,
+  type SwarmExecutionPlan,
+} from './swarm-planner.js';
 
 // Ensure all tools are registered
 import './runtime-bootstrap.js';
@@ -36,6 +41,7 @@ export interface SwarmStep {
 export interface SwarmSession {
   steps: SwarmStep[];
   context: Record<string, unknown>;
+  plan?: SwarmExecutionPlan;
   totalTokens: number;
   totalLatencyMs: number;
   reviewPassed: boolean;
@@ -549,13 +555,34 @@ export async function runSwarm(
     return session;
   }
 
+  const swarmPlan = buildSkillAwareSwarmPlan(task, session.context, {
+    skillsEnabled: config.skillsEnabled === true,
+  });
+  const swarmPlanPrompt = formatSwarmPlanForPrompt(swarmPlan);
+  session.plan = swarmPlan;
+  session.context = { ...session.context, swarmPlan };
+  trackStep({
+    agent: 'orchestrator',
+    type: 'thought',
+    content: [
+      'Role-based swarm plan prepared.',
+      `Roles: ${swarmPlan.roles.map((role) => `${role.role}:${role.status}`).join(', ')}.`,
+      `Approved executable skills available: ${swarmPlan.skillCatalog.executableApproved}.`,
+    ].join(' '),
+    timestamp: Date.now(),
+  });
+
   const serializedContext = serializeContextForPrompt(sessionContext, 5000);
-  const contextBlock = serializedContext ? `Project/session context:\n${serializedContext}\n\n` : '';
+  const contextBlock = [
+    swarmPlanPrompt,
+    serializedContext ? `Project/session context:\n${serializedContext}` : '',
+  ].filter(Boolean).join('\n\n');
+  const promptContextBlock = contextBlock ? `${contextBlock}\n\n` : '';
 
   trackStep({ agent: 'orchestrator', type: 'handoff', content: 'Routing to Interpretation Agent', timestamp: Date.now() });
 
   const interpResult = await runAgentLoop(
-    `${contextBlock}Task: ${task}\n\nRead, classify, and structure all relevant data for this task.`,
+    `${promptContextBlock}Task: ${task}\n\nRead, classify, and structure all relevant data for this task. Follow the role-based swarm execution plan and do not execute prompt-only or unapproved skills.`,
     config,
     interpretationPrompt(config),
     'interpretation',
@@ -613,9 +640,9 @@ export async function runSwarm(
       : '';
 
     const simResult = await runAgentLoop(
-      `${contextBlock}Data from Interpretation Agent:\n${interpData}\n\nOriginal task: ${task}${correctionNote}\n\nRun all necessary calculations.`,
-    config,
-    simulationPrompt(config),
+      `${promptContextBlock}Data from Interpretation Agent:\n${interpData}\n\nOriginal task: ${task}${correctionNote}\n\nRun all necessary calculations that are ready. Use calculation input drafts as preparation only; request missing user inputs instead of inventing them.`,
+      config,
+      simulationPrompt(config),
       'simulation',
       trackStep,
     );
@@ -647,7 +674,7 @@ export async function runSwarm(
     trackStep({ agent: 'orchestrator', type: 'handoff', content: 'Routing to Reviewer Agent', timestamp: Date.now() });
 
     const reviewResult = await runAgentLoop(
-      `${contextBlock}Original task: ${task}\n\nInterpretation summary:\n${interpData}\n\nSimulation results:\n${simData}\n\nReview these results for safety, sanity, standards compliance, and parse safety.`,
+      `${promptContextBlock}Original task: ${task}\n\nInterpretation summary:\n${interpData}\n\nSimulation results:\n${simData}\n\nReview these results for safety, sanity, standards compliance, skill-selection appropriateness, and parse safety.`,
       config,
       reviewerPrompt(config),
       'reviewer',
@@ -714,7 +741,7 @@ export async function runSwarm(
 
   try {
     const finalResult = await generateText(
-      `${contextBlock}Task: ${task}\n\nInterpretation output:\n${interpData}\n\nSimulation output:\n${simOutput}\n\nReview status: ${session.reviewPassed ? 'APPROVED' : 'APPROVED WITH NOTES'}\nCorrections applied: ${session.corrections.length > 0 ? session.corrections.join('; ') : 'None'}\n\nSynthesize the final engineering report.`,
+      `${promptContextBlock}Task: ${task}\n\nInterpretation output:\n${interpData}\n\nSimulation output:\n${simOutput}\n\nReview status: ${session.reviewPassed ? 'APPROVED' : 'APPROVED WITH NOTES'}\nCorrections applied: ${session.corrections.length > 0 ? session.corrections.join('; ') : 'None'}\n\nSynthesize the final engineering report. Include what evidence remained blocked and which role owned each unresolved action.`,
       config,
       { systemPrompt: orchestratorPrompt(config), temperature: 0.2, maxTokens: getHostedSwarmMaxTokens(config, 'final') },
     );

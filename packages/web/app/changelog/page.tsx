@@ -8,6 +8,18 @@ const releases = [
     date: '2026-05-06',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added a deterministic role-based swarm execution plan for geotech agent --swarm with WorkspaceScout, DataEngineer, GroundModeler, StandardsChecker, DesignEngineer, RiskReviewer, and ReportEngineer ownership' },
+      { type: 'feat', text: 'Threaded workspace evidence, standards profile, calculation readiness, missing inputs, and approved executable skills into swarm prompts before specialist execution starts' },
+      { type: 'feat', text: 'Made geotech agent --workspace ... --swarm request non-executing calculation input drafts during workspace analysis so ready and blocked workflows are explicit' },
+      { type: 'fix', text: 'Excluded prompt-only and unapproved skills from swarm execution while preserving them as audit warnings' },
+      { type: 'fix', text: 'Added regression coverage for swarm plan prompt injection, role ownership, skill selection, and workspace readiness formatting' },
+    ],
+  },
+  {
+    version: '0.4.47',
+    date: '2026-05-06',
+    tag: '0.4.47 Release',
+    changes: [
       { type: 'feat', text: 'Added standards-profile assumptions for Eurocode 7, AASHTO, IS, BS, and ASTM workspace analysis so GroundModel readiness carries an explicit design-profile basis' },
       { type: 'feat', text: 'Added opt-in, non-executing calculation input drafts for bearing, settlement, pile, liquefaction, and slope workflows through geotech analyze --draft-inputs' },
       { type: 'fix', text: 'Repaired bundled skill bootstrap so partial installs no longer stop after the first few skill manifests and first use repairs the complete approved catalog' },

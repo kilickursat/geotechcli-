@@ -108,7 +108,7 @@ The operating contract includes:
 - confidence and review gates for missing, low-confidence, direct-visual-only, or canAutoProceed=false evidence
 - free/open-route adaptation for compact evidence, smaller steps, unsupported image/PDF routes, null content, and rate limits
 
-This keeps BYOK model quality dependent on model capability, while keeping GeotechCLI behavior consistent and defensible across providers.`,
+This keeps BYOK model quality dependent on model capability, while keeping GeotechCLI behavior consistent and defensible across providers. Optional swarm mode now adds a deterministic role plan on top of that contract, so BYOK models receive explicit WorkspaceScout, DataEngineer, GroundModeler, StandardsChecker, DesignEngineer, RiskReviewer, and ReportEngineer responsibilities before they reason over evidence.`,
   },
   {
     id: 'skills',
@@ -259,7 +259,7 @@ geotech analyze . --standard eurocode7
 geotech analyze . --standard eurocode7 --draft-inputs --json
 \`\`\`
 
-Current strong-beta scope: file discovery, AGS/PDF/image/GIS/CAD classification, CSV/XLSX schema inference, evidence references, canonical GroundModel construction, standards-profile assumptions, verifier findings, detected branches, calculation readiness for bearing, settlement, pile, liquefaction, and slope workflows, optional non-executing calculation input drafts, warnings, and recommended next steps. Analyze does not yet auto-run design calculations from the folder; it reports which deterministic workflow is ready, blocked, or needs explicit assumptions before routing. Map visualization and the role-based workspace agent planner remain roadmap layers.`,
+Current strong-beta scope: file discovery, AGS/PDF/image/GIS/CAD classification, CSV/XLSX schema inference, evidence references, canonical GroundModel construction, standards-profile assumptions, verifier findings, detected branches, calculation readiness for bearing, settlement, pile, liquefaction, and slope workflows, optional non-executing calculation input drafts, warnings, and recommended next steps. Analyze does not yet auto-run design calculations from the folder; it reports which deterministic workflow is ready, blocked, or needs explicit assumptions before routing. Map visualization remains a roadmap layer, while the optional agent swarm planner can now consume this workspace evidence with --workspace --swarm.`,
   },
   {
     id: 'ingest',
@@ -304,7 +304,7 @@ Hosted-beta reliability note: geotechnical PDFs above the best-result window are
   {
     id: 'agent',
     title: 'geotech agent (AI)',
-    content: `Agentic geotechnical reasoning. The default Terzaghi agent screens underspecified requests before spending hosted-beta time, can execute deterministic tools when evidence is present, can receive an evidence-bound workspace GroundModel with --workspace, and can reuse persistent project memory with --project. Use --swarm for the Bieniawski/Terzaghi/Hoek multi-agent review path.
+    content: `Agentic geotechnical reasoning. The default Terzaghi agent screens underspecified requests before spending hosted-beta time, can execute deterministic tools when evidence is present, can receive an evidence-bound workspace GroundModel with --workspace, and can reuse persistent project memory with --project. Use --swarm for a role-based specialist plan over workspace evidence, standards readiness, calculation input drafts, skills, and review gates.
 
 \`\`\`bash
 # Default Terzaghi agent
@@ -315,8 +315,8 @@ geotech agent "classify the soil profile and recommend foundation type for a 12-
 # Attach a local workspace GroundModel and verifier summary before calling the agent
 geotech agent "analyze this folder and prepare a foundation screening report" --workspace .
 
-# Optional swarm orchestration
-geotech agent "review bearing, settlement, and slope risks for this site" --swarm
+# Optional role-based swarm orchestration
+geotech agent "review bearing, settlement, and slope risks for this site" --workspace . --skills --swarm
 
 # Explicitly enable installed skill tools for this one session
 geotech agent "screen shallow foundation options for this site" --skills
@@ -331,7 +331,7 @@ geotech agent "check bearing and settlement for the current foundation concept" 
 geotech agent "analyze slope stability for 15m cut" --output slope-report.md
 \`\`\`
 
-Strong-beta reliability note: Terzaghi single-agent mode and optional swarm mode share the same under-specified hosted-beta intake screen, the same first-turn hosted-beta fallback behavior, and the same case-file deliverable tool bootstrap for report and export follow-on workflows.`,
+Strong-beta reliability note: Terzaghi single-agent mode and optional role-based swarm mode share the same under-specified hosted-beta intake screen, the same first-turn hosted-beta fallback behavior, and the same case-file deliverable tool bootstrap for report and export follow-on workflows. Swarm mode prepares WorkspaceScout, DataEngineer, GroundModeler, StandardsChecker, DesignEngineer, RiskReviewer, and ReportEngineer ownership before specialist prompts run, and prompt-only or unapproved skills stay out of execution while remaining visible in the audit context.`,
   },
   {
     id: 'export',

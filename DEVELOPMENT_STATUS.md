@@ -4,7 +4,7 @@ Last updated: 2026-05-06
 
 ## Current Work
 
-Preparing v0.4.47 on `strong-beta`. The current engineering track is provider-neutral evidence, standards-aware GroundModel readiness, skill-enabled agents, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, and the PDF/page evidence benchmark foundation so future OCR/vision and BYOK-provider changes can be measured against the same report PDF instead of judged manually.
+Preparing v0.4.48 on `strong-beta`. The current engineering track is provider-neutral evidence, standards-aware GroundModel readiness, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, and the PDF/page evidence benchmark foundation so future OCR/vision and BYOK-provider changes can be measured against the same report PDF instead of judged manually.
 
 Current focus:
 
@@ -29,11 +29,20 @@ Current focus:
 - Extend GroundModel verification with calculation-readiness routing for bearing, settlement, pile, liquefaction, and slope workflows before any deterministic calculation is auto-run.
 - Attach standards-profile assumptions and opt-in non-executing calculation input drafts to GroundModel readiness so downstream calculations are prepared but still review-gated.
 - Keep the bundled strong-beta skill catalog repairable on first use so direct skill commands and `--skills` agent sessions can see the complete approved catalog after partial installs.
+- Route optional swarm runs through a deterministic WorkspaceScout, DataEngineer, GroundModeler, StandardsChecker, DesignEngineer, RiskReviewer, and ReportEngineer plan over workspace evidence, standards readiness, calculation drafts, approved executable skills, and blocked review gates.
 - Raise hosted-beta public limits enough for image-heavy PDF development runs, while keeping developer key/IP bypass unlimited.
 - Use the server-side `ZHIPU_API_KEY` secret in GitHub and Cloudflare.
 - Keep the legacy Modal deploy workflow present but disabled by default.
 
 ## Done So Far
+
+### v0.4.48 Role-Based Swarm Planner
+
+- Added a deterministic role-based swarm execution plan for `geotech agent --swarm`, with WorkspaceScout, DataEngineer, GroundModeler, StandardsChecker, DesignEngineer, RiskReviewer, and ReportEngineer ownership.
+- Threaded workspace evidence, standards profile, calculation readiness, missing inputs, and approved executable skills into the swarm prompts before specialist execution starts.
+- Made `geotech agent --workspace ... --swarm` request non-executing calculation input drafts during workspace analysis so the swarm can route ready, blocked, and assumption-bound workflows without inventing missing inputs.
+- Excluded prompt-only and unapproved skills from swarm execution while still surfacing them as audit warnings.
+- Added JSON/session output for the generated swarm plan plus regression coverage for prompt injection, role ownership, skill selection, and workspace readiness formatting.
 
 ### v0.4.47 Standards Drafts and Skill Catalog Repair
 
@@ -209,7 +218,6 @@ Highest-value next work:
 - Expand the benchmark harness from the current cached-rerun acceptance fixture into broader latency/provider profiles, region-level preprocessing comparisons, and historical trend output.
 - Add provider/BYOK benchmark profiles so OpenAI-compatible, hosted-beta, and future user-selected LLMs are evaluated with the same PDF/image evidence contract instead of model-specific assumptions.
 - Add `geotech signal analyze` for settlement, piezometer, inclinometer, vibration, load-test, and time-series data.
-- Add role-based swarm planning over structured evidence: WorkspaceScout, DataEngineer, GroundModeler, StandardsChecker, DesignEngineer, RiskReviewer, ReportEngineer.
 - Add benchmark evaluation fixtures for boreholes, CPT, lab, reports, monitoring, sensor, pile load, and signal datasets.
 
 ## Cost And Reliability Notes

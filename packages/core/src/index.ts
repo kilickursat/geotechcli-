@@ -62,6 +62,18 @@ export {
   type SwarmCallback,
 } from './agents/swarm.js';
 export {
+  SWARM_PLANNING_ROLES,
+  buildSkillAwareSwarmPlan,
+  formatSwarmPlanForPrompt,
+  loadInstalledSkillsForSwarmPlanning,
+  type SwarmExecutionPlan,
+  type SwarmPlanningRole,
+  type SwarmPlanStatus,
+  type SwarmPlanningSkill,
+  type SwarmRolePlan,
+  type SwarmPlanWorkspaceSnapshot,
+} from './agents/swarm-planner.js';
+export {
   buildProviderOperatingContract,
   buildProviderOperatingPrompt,
   type AgentOperatingTask,
