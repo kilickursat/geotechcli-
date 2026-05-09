@@ -5,8 +5,20 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 const releases = [
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-05-06',
+    date: '2026-05-09',
     tag: `${GEOTECHCLI_VERSION} Release`,
+    changes: [
+      { type: 'feat', text: 'Added a provider-neutral ground-model-map.v1 contract with borehole coordinate points, CRS/local-grid warnings, confidence, source evidence references, and plottable extents' },
+      { type: 'feat', text: 'Attached GroundModel map data during geotech analyze so workspace analysis carries spatial evidence alongside boreholes, standards readiness, and calculation-routing context' },
+      { type: 'feat', text: 'Added a GroundModel Map section to geotech analyze --format html with plan-view SVG coordinates, map metrics, warnings, and traceable coordinate rows' },
+      { type: 'feat', text: 'Updated geotech viz so GroundModel JSON and analyze JSON are detected automatically and rendered as an interactive coordinate map with point labels and evidence metadata' },
+      { type: 'fix', text: 'Added regression coverage for GroundModel map creation, analyze HTML rendering, and map chart generation' },
+    ],
+  },
+  {
+    version: '0.4.48',
+    date: '2026-05-06',
+    tag: '0.4.48 Release',
     changes: [
       { type: 'feat', text: 'Added a deterministic role-based swarm execution plan for geotech agent --swarm with WorkspaceScout, DataEngineer, GroundModeler, StandardsChecker, DesignEngineer, RiskReviewer, and ReportEngineer ownership' },
       { type: 'feat', text: 'Threaded workspace evidence, standards profile, calculation readiness, missing inputs, and approved executable skills into swarm prompts before specialist execution starts' },

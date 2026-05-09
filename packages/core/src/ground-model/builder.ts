@@ -9,6 +9,7 @@ import {
   type TabularSchemaInference,
 } from '../tabular/index.js';
 import type { ProjectManifest, WorkspaceFileEntry } from '../workspace/index.js';
+import { buildGroundModelMap } from './map.js';
 import {
   type GroundModel,
   type GroundModelBorehole,
@@ -498,7 +499,7 @@ export async function buildGroundModelFromManifest(
     rejectedObservations: state.rejectedObservations.length,
   };
 
-  return {
+  const model: GroundModel = {
     schemaVersion: 'ground-model.v1',
     generatedAt: new Date().toISOString(),
     project: {
@@ -517,5 +518,10 @@ export async function buildGroundModelFromManifest(
     rejectedObservations: state.rejectedObservations,
     warnings: [...new Set([...state.warnings, ...coordinateSystem.warnings])],
     stats,
+  };
+
+  return {
+    ...model,
+    map: buildGroundModelMap(model),
   };
 }

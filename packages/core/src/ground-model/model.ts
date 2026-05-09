@@ -103,6 +103,54 @@ export interface GroundModelRejectedObservation {
   rawValue?: string | number | boolean | null;
 }
 
+export type GroundModelMapSchemaVersion = 'ground-model-map.v1';
+
+export type GroundModelMapPointKind = 'borehole' | 'cpt' | 'monitoring' | 'unknown';
+
+export type GroundModelMapCoordinateType = 'projected' | 'geographic';
+
+export interface GroundModelMapPoint {
+  id: string;
+  label: string;
+  kind: GroundModelMapPointKind;
+  coordinateType: GroundModelMapCoordinateType;
+  x: number;
+  y: number;
+  easting?: number;
+  northing?: number;
+  latitude?: number;
+  longitude?: number;
+  sourceEvidenceIds: string[];
+  confidence: number;
+  warnings: string[];
+}
+
+export interface GroundModelMapExtent {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+  width: number;
+  height: number;
+}
+
+export interface GroundModelMapSummary {
+  totalPoints: number;
+  boreholePoints: number;
+  missingBoreholeCoordinates: number;
+  averageConfidence: number;
+}
+
+export interface GroundModelMap {
+  schemaVersion: GroundModelMapSchemaVersion;
+  coordinateSystem: GroundModelCoordinateSystem;
+  coordinateType?: GroundModelMapCoordinateType;
+  points: GroundModelMapPoint[];
+  extent?: GroundModelMapExtent;
+  summary: GroundModelMapSummary;
+  warnings: string[];
+}
+
 export interface GroundModelStats {
   boreholes: number;
   sptTests: number;
@@ -126,6 +174,7 @@ export interface GroundModel {
   labTests: GroundModelLabTest[];
   parameters: GroundModelParameter[];
   monitoringSeries: GroundModelMonitoringSeries[];
+  map?: GroundModelMap;
   evidence: EvidenceRef[];
   rejectedObservations: GroundModelRejectedObservation[];
   warnings: string[];

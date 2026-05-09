@@ -1,6 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { basename, extname } from 'node:path';
 import ExcelJS from 'exceljs';
+import {
+  buildGroundModelMap,
+  type GroundModel,
+  type GroundModelMap,
+  type GroundModelMapPoint,
+} from '@geotechcli/core';
 import type { XYSeriesSpec } from '../ui/terminal.js';
 
 export interface ChartSpec {
@@ -21,7 +27,7 @@ export interface ChartSpec {
 }
 
 export interface VisualizationSource {
-  sourceType: 'json' | 'csv' | 'xlsx' | 'preset';
+  sourceType: 'json' | 'csv' | 'xlsx' | 'preset' | 'ground-model';
   sourceName: string;
   charts: ChartSpec[];
 }
@@ -236,6 +242,108 @@ function buildXYChart(options: {
     yDomain: options.yDomain,
     note: options.note,
   };
+}
+
+function isGroundModel(value: unknown): value is GroundModel {
+  return isRecord(value)
+    && value.schemaVersion === 'ground-model.v1'
+    && isRecord(value.coordinateSystem)
+    && Array.isArray(value.boreholes);
+}
+
+function isGroundModelMap(value: unknown): value is GroundModelMap {
+  return isRecord(value)
+    && value.schemaVersion === 'ground-model-map.v1'
+    && Array.isArray(value.points)
+    && isRecord(value.summary)
+    && isRecord(value.coordinateSystem);
+}
+
+function getGroundModelFromJson(data: Record<string, unknown>): GroundModel | undefined {
+  if (isGroundModel(data)) {
+    return data;
+  }
+  return isGroundModel(data.groundModel) ? data.groundModel : undefined;
+}
+
+function getGroundModelMapFromJson(data: Record<string, unknown>): GroundModelMap | undefined {
+  if (isGroundModelMap(data)) {
+    return data;
+  }
+
+  const model = getGroundModelFromJson(data);
+  if (!model) {
+    return undefined;
+  }
+  if (isGroundModelMap(model.map)) {
+    return model.map;
+  }
+  return buildGroundModelMap(model);
+}
+
+function coordinateLabelsForMap(map: GroundModelMap): { xLabel: string; yLabel: string } {
+  const coordinateType = map.coordinateType ?? map.points[0]?.coordinateType ?? 'projected';
+  return coordinateType === 'geographic'
+    ? { xLabel: 'Longitude', yLabel: 'Latitude' }
+    : { xLabel: 'Easting', yLabel: 'Northing' };
+}
+
+function mapPointToXY(point: GroundModelMapPoint): {
+  x: number;
+  y: number;
+  label: string;
+  meta: Record<string, string | number | boolean | null>;
+} {
+  return {
+    x: point.x,
+    y: point.y,
+    label: point.label,
+    meta: {
+      kind: point.kind,
+      confidence: `${Math.round(point.confidence * 100)}%`,
+      evidence: point.sourceEvidenceIds.join(', ') || '-',
+      coordinateType: point.coordinateType,
+      warnings: point.warnings.join('; ') || '-',
+    },
+  };
+}
+
+function buildGroundModelMapCharts(map: GroundModelMap, sourceName: string): ChartSpec[] {
+  if (map.points.length === 0 || !map.extent) {
+    return [];
+  }
+
+  const { xLabel, yLabel } = coordinateLabelsForMap(map);
+  const groupedPoints = new Map<string, GroundModelMapPoint[]>();
+  for (const point of map.points) {
+    const key = point.kind;
+    groupedPoints.set(key, [...(groupedPoints.get(key) ?? []), point]);
+  }
+
+  const series: XYSeriesSpec[] = [...groupedPoints.entries()].map(([kind, points]) => ({
+    label: kind === 'borehole' ? 'Boreholes' : humanizeKey(kind),
+    points: points.map(mapPointToXY),
+    style: 'scatter',
+    symbol: 'o',
+  }));
+
+  const coordinateSystem = map.coordinateSystem.crs ?? humanizeKey(map.coordinateSystem.kind);
+  const warningText = map.warnings.length > 0
+    ? ` Warnings: ${map.warnings.slice(0, 2).join(' ')}`
+    : '';
+
+  return [
+    buildXYChart({
+      id: slugify(`${sourceName}-ground-model-map`),
+      title: `${sourceName}: GroundModel coordinate map`,
+      xLabel,
+      yLabel,
+      series,
+      xDomain: [map.extent.minX, map.extent.maxX],
+      yDomain: [map.extent.minY, map.extent.maxY],
+      note: `Plan-view GroundModel map with ${map.summary.totalPoints} coordinate point${map.summary.totalPoints === 1 ? '' : 's'}; CRS: ${coordinateSystem}.${warningText}`,
+    }),
+  ];
 }
 
 function inferUnitToken(column: string): string | null {
@@ -671,6 +779,11 @@ export function buildChartsFromJson(data: unknown, sourceName: string): ChartSpe
     return charts;
   }
 
+  const groundModelMap = getGroundModelMapFromJson(data);
+  if (groundModelMap) {
+    return buildGroundModelMapCharts(groundModelMap, sourceName);
+  }
+
   if (Array.isArray(data.timeSettlement) && data.timeSettlement.every((item) => isRecord(item))) {
     const transformedRows = data.timeSettlement.map((item) => ({
       timeYears: toFiniteNumber(item.timeYears) ?? 0,
@@ -789,7 +902,7 @@ export async function loadVisualizationSource(
     }
 
     return {
-      sourceType: 'json',
+      sourceType: isRecord(parsed) && getGroundModelMapFromJson(parsed) ? 'ground-model' : 'json',
       sourceName,
       charts: buildChartsFromJson(parsed, sourceName),
     };

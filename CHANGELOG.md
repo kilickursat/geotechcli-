@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.49] - 2026-05-09
+
+### GroundModel Map Visualization
+
+- Added a provider-neutral `ground-model-map.v1` contract with borehole coordinate points, CRS/local-grid warnings, confidence, source evidence references, and plottable extents.
+- Attached GroundModel map data during `geotech analyze` so workspace analysis carries spatial evidence alongside boreholes, standards readiness, and calculation-routing context.
+- Added a GroundModel Map section to `geotech analyze --format html`, including plan-view SVG coordinates, map metrics, warnings, and traceable coordinate rows.
+- Updated `geotech viz` so GroundModel JSON and analyze JSON are detected automatically and rendered as an interactive coordinate map with point labels and evidence metadata.
+- Added regression coverage for GroundModel map creation, analyze HTML rendering, and map chart generation.
+
 ## [0.4.48] - 2026-05-06
 
 ### Role-Based Swarm Planner

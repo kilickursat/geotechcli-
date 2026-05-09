@@ -68,6 +68,10 @@ describe('workspace analysis', () => {
     expect(manifest.groundModel?.stats.boreholes).toBe(1);
     expect(manifest.groundModel?.stats.sptTests).toBe(2);
     expect(manifest.groundModel?.boreholes[0].coordinates?.easting).toBe(500000);
+    expect(manifest.groundModel?.map?.schemaVersion).toBe('ground-model-map.v1');
+    expect(manifest.groundModel?.map?.summary.boreholePoints).toBe(1);
+    expect(manifest.groundModel?.map?.points[0]?.label).toBe('BH-01');
+    expect(manifest.groundModel?.map?.warnings.join(' ')).toMatch(/Local-grid map points/i);
     expect(manifest.verifier?.schemaVersion).toBe('ground-model-verifier.v1');
 
     const sptFile = manifest.files.find((file) => file.path === 'spt-profile.csv');

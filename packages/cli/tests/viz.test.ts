@@ -34,6 +34,63 @@ describe('visualization utilities', () => {
     expect(charts.some((chart) => chart.title.includes('Factor Of Safety'))).toBe(true);
   });
 
+  it('turns GroundModel JSON into a coordinate map chart', () => {
+    const charts = buildChartsFromJson({
+      schemaVersion: 'ground-model.v1',
+      generatedAt: '2026-05-09T00:00:00.000Z',
+      project: { rootPath: '/tmp/site' },
+      coordinateSystem: {
+        kind: 'local-grid',
+        warnings: ['Easting/northing coordinates were detected without a declared CRS.'],
+      },
+      boreholes: [
+        {
+          id: 'BH-01',
+          coordinates: {
+            easting: 500000,
+            northing: 3200000,
+            evidenceIds: ['ev-1'],
+            confidence: 0.92,
+          },
+          sptTests: [],
+          strata: [],
+          groundwater: [],
+          evidenceIds: ['ev-1'],
+          confidence: 0.92,
+          warnings: [],
+        },
+      ],
+      sptTests: [],
+      strata: [],
+      groundwater: [],
+      labTests: [],
+      parameters: [],
+      monitoringSeries: [],
+      evidence: [],
+      rejectedObservations: [],
+      warnings: [],
+      stats: {
+        boreholes: 1,
+        sptTests: 0,
+        strata: 0,
+        groundwaterObservations: 0,
+        labTests: 0,
+        parameters: 0,
+        monitoringSeries: 0,
+        evidenceRefs: 1,
+        rejectedObservations: 0,
+      },
+    }, 'ground-model');
+
+    expect(charts).toHaveLength(1);
+    expect(charts[0]?.id).toContain('ground-model-map');
+    expect(charts[0]?.kind).toBe('xy');
+    expect(charts[0]?.xLabel).toBe('Easting');
+    expect(charts[0]?.xySeries?.[0]?.points[0]?.label).toBe('BH-01');
+    expect(charts[0]?.xySeries?.[0]?.points[0]?.meta?.evidence).toBe('ev-1');
+    expect(charts[0]?.note).toContain('Local-grid map points');
+  });
+
   it('loads numeric CSV data into chart specs', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'geotech-viz-csv-'));
     tempDirs.push(dir);

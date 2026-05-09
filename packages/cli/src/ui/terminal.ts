@@ -5,6 +5,8 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core';
 export interface XYPoint {
   x: number;
   y: number;
+  label?: string;
+  meta?: Record<string, string | number | boolean | null>;
 }
 
 export interface XYSeriesSpec {

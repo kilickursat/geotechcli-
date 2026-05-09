@@ -54,6 +54,8 @@ geotech status
 # Local project manifest, GroundModel, and verifier
 geotech analyze .
 geotech analyze . --format html --no-open
+geotech analyze . --json --output workspace.json
+geotech viz workspace.json --save-html ground-model-map.html --no-open
 
 # Bearing capacity (Meyerhof)
 geotech bearing --depth 5 --phi 30 --cohesion 25 --width 2.5
@@ -103,7 +105,7 @@ geotech analyze . --standard eurocode7
 geotech analyze . --standard eurocode7 --draft-inputs --json
 ```
 
-Current strong-beta scope: workspace awareness, CSV/XLSX schema inference, AGS/PDF/image/GIS/CAD classification, evidence references, canonical GroundModel construction, standards-profile assumptions, deterministic verifier findings, calculation readiness for bearing, settlement, pile, liquefaction, and slope workflows, optional non-executing calculation input drafts, recommendations, and a self-contained HTML report. It does not yet auto-run branch-specific design calculations from the folder; it tells you which calculation route is ready, blocked, or needs explicit assumptions.
+Current strong-beta scope: workspace awareness, CSV/XLSX schema inference, AGS/PDF/image/GIS/CAD classification, evidence references, canonical GroundModel construction, GroundModel coordinate map output with CRS/local-grid warnings, standards-profile assumptions, deterministic verifier findings, calculation readiness for bearing, settlement, pile, liquefaction, and slope workflows, optional non-executing calculation input drafts, recommendations, and a self-contained HTML report. It does not yet auto-run branch-specific design calculations from the folder; it tells you which calculation route is ready, blocked, or needs explicit assumptions.
 
 ## Interactive Visualization
 
@@ -113,6 +115,8 @@ Use `geotech viz` to open browser-grade interactive engineering plots from saved
 geotech viz samples/visualization/geotech-viz-showcase.csv
 geotech viz samples/visualization/geotech-viz-showcase.xlsx --list
 geotech viz result.json
+geotech analyze . --json --output workspace.json
+geotech viz workspace.json --save-html ground-model-map.html --no-open
 geotech viz --preset mohr-circle --sigma1 250 --sigma3 90 --cohesion 15 --phi 28
 geotech viz --preset atterberg --ll 55 --pl 25
 geotech viz samples/visualization/geotech-viz-compaction.csv --template compaction
@@ -158,8 +162,8 @@ These commands are the public strong-beta foundation and are available now.
 | `geotech slope` | Slope stability using Bishop Simplified |
 | `geotech pile` | Pile capacity using alpha, beta, and SPT methods |
 | `geotech retaining` | Lateral earth pressure using Rankine and Coulomb |
-| `geotech analyze` | Local project manifest, CSV/XLSX schema inference, evidence-bound GroundModel, verifier, and HTML report |
-| `geotech viz` | Interactive browser visualization for saved JSON, CSV, and Excel data |
+| `geotech analyze` | Local project manifest, CSV/XLSX schema inference, evidence-bound GroundModel, coordinate map, verifier, and HTML report |
+| `geotech viz` | Interactive browser visualization for saved JSON, GroundModel maps, CSV, and Excel data |
 
 ### AI-Assisted
 

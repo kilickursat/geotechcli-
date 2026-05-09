@@ -1,10 +1,10 @@
 # geotechCLI Development Status
 
-Last updated: 2026-05-06
+Last updated: 2026-05-09
 
 ## Current Work
 
-Preparing v0.4.48 on `strong-beta`. The current engineering track is provider-neutral evidence, standards-aware GroundModel readiness, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, and the PDF/page evidence benchmark foundation so future OCR/vision and BYOK-provider changes can be measured against the same report PDF instead of judged manually.
+Preparing v0.4.49 on `strong-beta`. The current engineering track is provider-neutral evidence, standards-aware GroundModel readiness, GroundModel spatial visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, and the PDF/page evidence benchmark foundation so future OCR/vision and BYOK-provider changes can be measured against the same report PDF instead of judged manually.
 
 Current focus:
 
@@ -27,6 +27,7 @@ Current focus:
 - Keep a canonical cached-rerun fixture and `npm run benchmark:geotech-report` local harness for the `GeotechnicalInvestigationReport (1).pdf` acceptance target.
 - Keep the agentic document evidence contract provider-neutral so hosted GLM is only the strong-beta default; future BYOK LLMs should plug into the same page evidence, cache, traceability, and GroundModel readiness space.
 - Extend GroundModel verification with calculation-readiness routing for bearing, settlement, pile, liquefaction, and slope workflows before any deterministic calculation is auto-run.
+- Render GroundModel coordinate evidence as map-ready output in `geotech analyze --format html` and `geotech viz`, while keeping CRS/local-grid assumptions visible.
 - Attach standards-profile assumptions and opt-in non-executing calculation input drafts to GroundModel readiness so downstream calculations are prepared but still review-gated.
 - Keep the bundled strong-beta skill catalog repairable on first use so direct skill commands and `--skills` agent sessions can see the complete approved catalog after partial installs.
 - Route optional swarm runs through a deterministic WorkspaceScout, DataEngineer, GroundModeler, StandardsChecker, DesignEngineer, RiskReviewer, and ReportEngineer plan over workspace evidence, standards readiness, calculation drafts, approved executable skills, and blocked review gates.
@@ -35,6 +36,14 @@ Current focus:
 - Keep the legacy Modal deploy workflow present but disabled by default.
 
 ## Done So Far
+
+### v0.4.49 GroundModel Map Visualization
+
+- Added a provider-neutral `ground-model-map.v1` contract with borehole coordinate points, CRS/local-grid warnings, confidence, source evidence references, and plottable extents.
+- Attached GroundModel map data during `geotech analyze` so workspace analysis carries spatial evidence alongside boreholes, standards readiness, and calculation-routing context.
+- Added a GroundModel Map section to `geotech analyze --format html`, including plan-view SVG coordinates, map metrics, warnings, and traceable coordinate rows.
+- Updated `geotech viz` so GroundModel JSON and analyze JSON are detected automatically and rendered as an interactive coordinate map with point labels and evidence metadata.
+- Added regression coverage for GroundModel map creation, analyze HTML rendering, and map chart generation.
 
 ### v0.4.48 Role-Based Swarm Planner
 
@@ -212,7 +221,6 @@ Current focus:
 
 Highest-value next work:
 
-- Add map visualization from GroundModel coordinates and local CRS assumptions.
 - Expand the lightweight report borehole SVG into richer strip logs, SPT-depth plots, lab charts, and monitoring plots.
 - Expand PDF/image preprocessing before vision beyond margin trimming with deskew, crop tables/log panels, and normalized page-region assets.
 - Expand the benchmark harness from the current cached-rerun acceptance fixture into broader latency/provider profiles, region-level preprocessing comparisons, and historical trend output.

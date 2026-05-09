@@ -38,7 +38,12 @@ interface BrowserXYChart {
   series: Array<{
     label: string;
     style: 'line' | 'scatter';
-    points: Array<{ x: number; y: number }>;
+    points: Array<{
+      x: number;
+      y: number;
+      label?: string;
+      meta?: Record<string, string | number | boolean | null>;
+    }>;
   }>;
 }
 
@@ -91,7 +96,12 @@ function serializeChart(chart: ChartSpec): BrowserChart {
         style: series.style ?? 'line',
         points: series.points
           .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
-          .map((point) => ({ x: point.x, y: point.y })),
+          .map((point) => ({
+            x: point.x,
+            y: point.y,
+            label: point.label,
+            meta: point.meta,
+          })),
       })),
     };
   }
@@ -616,10 +626,22 @@ function buildHtml(payload: BrowserPayload): string {
         return chart.series.map((series, index) => ({
           type: series.style === 'scatter' ? 'scatter' : 'line',
           name: series.label,
-          data: series.points.map((point) => [point.x, point.y]),
+          data: series.points.map((point) => ({
+            value: [point.x, point.y],
+            name: point.label || series.label,
+            meta: point.meta || {}
+          })),
           smooth: series.style !== 'scatter',
           showSymbol: series.style === 'scatter' || series.points.length <= 40,
           symbolSize: series.style === 'scatter' ? 8 : 6,
+          label: {
+            show: series.style === 'scatter' && series.points.length <= 24,
+            formatter: '{b}',
+            color: '#32465a',
+            fontSize: 11,
+            fontWeight: 700,
+            position: 'top'
+          },
           lineStyle: {
             width: 2.4,
             shadowBlur: 8,
@@ -683,6 +705,25 @@ function buildHtml(payload: BrowserPayload): string {
         tooltip: {
           trigger: 'axis',
           confine: true,
+          formatter: function(params) {
+            const items = Array.isArray(params) ? params : [params];
+            return items.map((item) => {
+              const data = item.data || {};
+              const value = Array.isArray(data.value) ? data.value : item.value;
+              const x = Array.isArray(value) ? value[0] : value;
+              const y = Array.isArray(value) ? value[1] : undefined;
+              const meta = data.meta || {};
+              const metaLines = Object.entries(meta)
+                .filter((entry) => entry[1] !== null && entry[1] !== undefined && String(entry[1]).length > 0)
+                .map(([key, val]) => '<div><strong>' + escapeHtml(key) + ':</strong> ' + escapeHtml(val) + '</div>')
+                .join('');
+              const title = escapeHtml(data.name || item.seriesName || 'Point');
+              const xy = y === undefined
+                ? escapeHtml(x)
+                : escapeHtml(chart.xLabel + ': ' + x + ' | ' + chart.yLabel + ': ' + y);
+              return '<div><strong>' + title + '</strong></div><div>' + xy + '</div>' + metaLines;
+            }).join('<hr style="border:none;border-top:1px solid rgba(20,86,240,0.12);margin:8px 0;" />');
+          },
           axisPointer: {
             type: 'cross',
             label: {

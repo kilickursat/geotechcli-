@@ -1,3 +1,4 @@
+import type { GroundModelMap, GroundModelMapPoint } from '../ground-model/index.js';
 import type { ProjectManifest, WorkspaceFileEntry } from './manifest.js';
 
 function escapeHtml(value: unknown): string {
@@ -21,6 +22,99 @@ function percent(confidence: number): string {
 
 function renderMetric(label: string, value: string | number): string {
   return `<div class="metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`;
+}
+
+function formatCoordinate(point: GroundModelMapPoint): string {
+  return point.coordinateType === 'geographic'
+    ? `${point.latitude?.toFixed(6) ?? '-'}, ${point.longitude?.toFixed(6) ?? '-'}`
+    : `${point.easting?.toFixed(2) ?? '-'}, ${point.northing?.toFixed(2) ?? '-'}`;
+}
+
+function renderGroundModelMapSvg(map: GroundModelMap): string {
+  if (!map.extent || map.points.length === 0) {
+    return '<p class="empty">No plottable GroundModel coordinates were detected.</p>';
+  }
+
+  const width = 760;
+  const height = 380;
+  const pad = 56;
+  const plotWidth = width - pad * 2;
+  const plotHeight = height - pad * 2;
+  const scaleX = (x: number) => pad + ((x - map.extent!.minX) / map.extent!.width) * plotWidth;
+  const scaleY = (y: number) => height - pad - ((y - map.extent!.minY) / map.extent!.height) * plotHeight;
+  const gridLines = Array.from({ length: 5 }, (_, index) => {
+    const ratio = index / 4;
+    const x = pad + ratio * plotWidth;
+    const y = pad + ratio * plotHeight;
+    const xValue = map.extent!.minX + ratio * map.extent!.width;
+    const yValue = map.extent!.maxY - ratio * map.extent!.height;
+    return `
+      <line x1="${x.toFixed(2)}" y1="${pad}" x2="${x.toFixed(2)}" y2="${height - pad}" stroke="#d8dfdc" stroke-width="1" />
+      <line x1="${pad}" y1="${y.toFixed(2)}" x2="${width - pad}" y2="${y.toFixed(2)}" stroke="#d8dfdc" stroke-width="1" />
+      <text x="${x.toFixed(2)}" y="${height - 20}" text-anchor="middle" fill="#64706b" font-size="10">${escapeHtml(xValue.toFixed(map.coordinateType === 'geographic' ? 5 : 0))}</text>
+      <text x="18" y="${(y + 4).toFixed(2)}" fill="#64706b" font-size="10">${escapeHtml(yValue.toFixed(map.coordinateType === 'geographic' ? 5 : 0))}</text>
+    `;
+  }).join('');
+
+  const points = map.points.map((point, index) => {
+    const x = scaleX(point.x);
+    const y = scaleY(point.y);
+    const labelOffset = index % 2 === 0 ? -10 : 20;
+    return `
+      <g class="map-point">
+        <circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="7" fill="#006b5a" stroke="#ffffff" stroke-width="2">
+          <title>${escapeHtml(`${point.label} | ${formatCoordinate(point)} | evidence ${point.sourceEvidenceIds.join(', ') || '-'}`)}</title>
+        </circle>
+        <text x="${x.toFixed(2)}" y="${(y + labelOffset).toFixed(2)}" text-anchor="middle" fill="#17201d" font-size="11" font-weight="700">${escapeHtml(point.label)}</text>
+      </g>
+    `;
+  }).join('');
+
+  const xLabel = map.coordinateType === 'geographic' ? 'Longitude' : 'Easting';
+  const yLabel = map.coordinateType === 'geographic' ? 'Latitude' : 'Northing';
+
+  return `
+    <div class="map-shell">
+      <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="GroundModel plan map">
+        <rect x="0" y="0" width="${width}" height="${height}" rx="18" fill="#ffffff" />
+        <rect x="${pad}" y="${pad}" width="${plotWidth}" height="${plotHeight}" fill="#f8faf9" stroke="#b8c4bf" />
+        ${gridLines}
+        ${points}
+        <text x="${width / 2}" y="${height - 4}" text-anchor="middle" fill="#64706b" font-size="11">${escapeHtml(xLabel)}</text>
+        <text x="14" y="${height / 2}" transform="rotate(-90 14 ${height / 2})" text-anchor="middle" fill="#64706b" font-size="11">${escapeHtml(yLabel)}</text>
+      </svg>
+    </div>
+  `;
+}
+
+function renderGroundModelMapSection(map: GroundModelMap | undefined): string {
+  if (!map) {
+    return '<p class="empty">GroundModel map data was not generated.</p>';
+  }
+
+  const pointRows = map.points.map((point) => `<tr>
+    <td><code>${escapeHtml(point.label)}</code></td>
+    <td>${escapeHtml(point.kind)}</td>
+    <td>${escapeHtml(formatCoordinate(point))}</td>
+    <td>${escapeHtml(point.coordinateType)}</td>
+    <td>${escapeHtml(percent(point.confidence))}</td>
+    <td>${escapeHtml(point.sourceEvidenceIds.join(', ') || '-')}</td>
+  </tr>`).join('\n');
+
+  return `
+    <div class="metrics">
+      ${renderMetric('Map Points', map.summary.totalPoints)}
+      ${renderMetric('Borehole Points', map.summary.boreholePoints)}
+      ${renderMetric('Missing Coords', map.summary.missingBoreholeCoordinates)}
+      ${renderMetric('CRS', map.coordinateSystem.crs ?? map.coordinateSystem.kind)}
+      ${renderMetric('Avg Confidence', percent(map.summary.averageConfidence))}
+    </div>
+    ${map.warnings.length > 0 ? `<ul class="list warning map-warnings">${map.warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join('\n')}</ul>` : ''}
+    ${renderGroundModelMapSvg(map)}
+    ${pointRows
+      ? `<table><thead><tr><th>Point</th><th>Kind</th><th>Coordinate</th><th>Type</th><th>Confidence</th><th>Evidence</th></tr></thead><tbody>${pointRows}</tbody></table>`
+      : '<p class="empty">No coordinate rows are available for map review.</p>'}
+  `;
 }
 
 function renderFileRows(files: WorkspaceFileEntry[]): string {
@@ -384,6 +478,22 @@ export function renderWorkspaceManifestAsHtml(manifest: ProjectManifest): string
     .badge.ready { color: #075e45; background: #eaf8f1; }
     .badge.ready_with_assumptions { color: #7b4a00; background: #fff7e8; min-width: 150px; }
     .badge.blocked { color: #8c1d18; background: #fff0ee; }
+    .map-shell {
+      margin: 18px 0;
+      border: 1px solid var(--line);
+      background: white;
+      overflow-x: auto;
+      border-radius: 12px;
+    }
+    .map-shell svg {
+      display: block;
+      min-width: 720px;
+      width: 100%;
+      height: auto;
+    }
+    .map-warnings {
+      margin-top: 16px;
+    }
     @media (max-width: 720px) {
       main { padding: 26px 14px 46px; }
       table { display: block; overflow-x: auto; }
@@ -450,6 +560,11 @@ export function renderWorkspaceManifestAsHtml(manifest: ProjectManifest): string
     <section>
       <h2>GroundModel</h2>
       ${renderGroundModelSection(manifest)}
+    </section>
+
+    <section>
+      <h2>GroundModel Map</h2>
+      ${renderGroundModelMapSection(manifest.groundModel?.map)}
     </section>
 
     <section>

@@ -55,6 +55,10 @@ describe('analyze command', () => {
     const html = await readFile(htmlPath, 'utf-8');
     expect(html).toContain('Workspace Report');
     expect(html).toContain('GroundModel');
+    expect(html).toContain('GroundModel Map');
+    expect(html).toContain('Map Points');
+    expect(html).toContain('BH-01');
+    expect(html).toContain('Local-grid map points');
     expect(html).toContain('Verifier Findings');
     expect(html).toContain('Calculation Readiness');
     expect(html).toContain('locations.csv');

@@ -3,6 +3,10 @@ export {
 } from './builder.js';
 
 export {
+  buildGroundModelMap,
+} from './map.js';
+
+export {
   type GroundModel,
   type GroundModelBorehole,
   type GroundModelCoordinate,
@@ -10,6 +14,13 @@ export {
   type GroundModelCoordinateSystemKind,
   type GroundModelGroundwaterObservation,
   type GroundModelLabTest,
+  type GroundModelMap,
+  type GroundModelMapCoordinateType,
+  type GroundModelMapExtent,
+  type GroundModelMapPoint,
+  type GroundModelMapPointKind,
+  type GroundModelMapSchemaVersion,
+  type GroundModelMapSummary,
   type GroundModelMonitoringSeries,
   type GroundModelParameter,
   type GroundModelProject,
