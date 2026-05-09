@@ -193,7 +193,8 @@ export function registerVizCommand(program: Command): void {
     geotech viz samples/visualization/geotech-viz-gradation.csv --template gradation
     geotech viz output/liquefaction.json --list
     geotech analyze . --json --output workspace.json
-    geotech viz workspace.json --save-html ground-model-map.html --no-open
+    geotech viz workspace.json --list
+    geotech viz workspace.json --save-html ground-model-review.html --no-open
     geotech viz --preset mohr-circle --sigma1 250 --sigma3 90 --cohesion 15 --phi 28
     geotech viz --preset atterberg --ll 55 --pl 25
 `)

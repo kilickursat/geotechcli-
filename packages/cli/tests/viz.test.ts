@@ -52,43 +52,117 @@ describe('visualization utilities', () => {
             evidenceIds: ['ev-1'],
             confidence: 0.92,
           },
-          sptTests: [],
-          strata: [],
-          groundwater: [],
+          sptTests: [
+            {
+              depth: 1.5,
+              nValue: 12,
+              evidenceIds: ['ev-spt-1'],
+              confidence: 0.9,
+              warnings: [],
+            },
+            {
+              depth: 3,
+              nValue: 18,
+              evidenceIds: ['ev-spt-2'],
+              confidence: 0.9,
+              warnings: [],
+            },
+          ],
+          strata: [
+            {
+              boreholeId: 'BH-01',
+              topDepth: 0,
+              bottomDepth: 2,
+              description: 'medium dense silty sand',
+              evidenceIds: ['ev-strata-1'],
+              confidence: 0.86,
+              warnings: [],
+            },
+          ],
+          groundwater: [
+            {
+              boreholeId: 'BH-01',
+              depth: 1.2,
+              evidenceIds: ['ev-gwl-1'],
+              confidence: 0.88,
+              warnings: [],
+            },
+          ],
           evidenceIds: ['ev-1'],
           confidence: 0.92,
           warnings: [],
         },
       ],
-      sptTests: [],
+      sptTests: [
+        {
+          depth: 1.5,
+          nValue: 12,
+          evidenceIds: ['ev-spt-1'],
+          confidence: 0.9,
+          warnings: [],
+        },
+      ],
       strata: [],
-      groundwater: [],
-      labTests: [],
-      parameters: [],
+      groundwater: [
+        {
+          boreholeId: 'BH-01',
+          depth: 1.2,
+          evidenceIds: ['ev-gwl-1'],
+          confidence: 0.88,
+          warnings: [],
+        },
+      ],
+      labTests: [
+        {
+          sampleId: 'S-01',
+          boreholeId: 'BH-01',
+          depth: 2,
+          parameters: [],
+          evidenceIds: ['ev-ll-1'],
+          confidence: 0.87,
+          warnings: [],
+        },
+      ],
+      parameters: [
+        {
+          name: 'liquidLimit',
+          value: 42,
+          unit: '%',
+          boreholeId: 'BH-01',
+          sampleId: 'S-01',
+          depth: 2,
+          evidenceIds: ['ev-ll-1'],
+          confidence: 0.87,
+          warnings: [],
+        },
+      ],
       monitoringSeries: [],
       evidence: [],
       rejectedObservations: [],
       warnings: [],
       stats: {
         boreholes: 1,
-        sptTests: 0,
-        strata: 0,
-        groundwaterObservations: 0,
-        labTests: 0,
-        parameters: 0,
+        sptTests: 2,
+        strata: 1,
+        groundwaterObservations: 1,
+        labTests: 1,
+        parameters: 1,
         monitoringSeries: 0,
         evidenceRefs: 1,
         rejectedObservations: 0,
       },
     }, 'ground-model');
 
-    expect(charts).toHaveLength(1);
+    expect(charts.length).toBeGreaterThanOrEqual(4);
     expect(charts[0]?.id).toContain('ground-model-map');
     expect(charts[0]?.kind).toBe('xy');
     expect(charts[0]?.xLabel).toBe('Easting');
     expect(charts[0]?.xySeries?.[0]?.points[0]?.label).toBe('BH-01');
     expect(charts[0]?.xySeries?.[0]?.points[0]?.meta?.evidence).toBe('ev-1');
     expect(charts[0]?.note).toContain('Local-grid map points');
+    expect(charts.some((chart) => chart.id.includes('spt-depth'))).toBe(true);
+    expect(charts.some((chart) => chart.id.includes('lab-liquidlimit'))).toBe(true);
+    expect(charts.some((chart) => chart.id.includes('groundwater-depth'))).toBe(true);
   });
 
   it('loads numeric CSV data into chart specs', async () => {

@@ -8,6 +8,18 @@ const releases = [
     date: '2026-05-09',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added a GroundModel Visual Review section to geotech analyze --format html with compact borehole strip logs, SPT N-value depth plotting, lab-parameter depth mini charts, and groundwater/monitoring summaries' },
+      { type: 'feat', text: 'Extended geotech viz GroundModel support beyond coordinate maps so analyze JSON now renders map, SPT-depth, lab-depth, and groundwater charts from the same provider-neutral GroundModel contract' },
+      { type: 'fix', text: 'Added context-aware table inference so common coordinate headers such as id and groundwater files with generic depth_m columns still bind to borehole map points and groundwater observations' },
+      { type: 'fix', text: 'Kept visual outputs evidence-first by carrying borehole IDs, depth, confidence, warnings, and evidence IDs into SVG titles and interactive chart metadata' },
+      { type: 'fix', text: 'Added regression coverage for richer HTML visual review and multi-chart GroundModel visualization output' },
+    ],
+  },
+  {
+    version: '0.4.49',
+    date: '2026-05-09',
+    tag: '0.4.49 Release',
+    changes: [
       { type: 'feat', text: 'Added a provider-neutral ground-model-map.v1 contract with borehole coordinate points, CRS/local-grid warnings, confidence, source evidence references, and plottable extents' },
       { type: 'feat', text: 'Attached GroundModel map data during geotech analyze so workspace analysis carries spatial evidence alongside boreholes, standards readiness, and calculation-routing context' },
       { type: 'feat', text: 'Added a GroundModel Map section to geotech analyze --format html with plan-view SVG coordinates, map metrics, warnings, and traceable coordinate rows' },

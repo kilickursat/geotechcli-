@@ -241,7 +241,7 @@ geotech vision log Appendix-2A-Geotechnical-Report-Part-6.pdf
   {
     id: 'analyze',
     title: 'geotech analyze',
-    content: `Local project-folder intelligence. This deterministic command scans a workspace, builds a project manifest, classifies geotechnical files, samples CSV/XLSX schemas, builds an evidence-bound GroundModel with coordinate map output, records requested branch or standard context, and reports calculation-readiness routing without spending hosted-beta GPU time.
+    content: `Local project-folder intelligence. This deterministic command scans a workspace, builds a project manifest, classifies geotechnical files, samples CSV/XLSX schemas, builds an evidence-bound GroundModel with visual review, records requested branch or standard context, and reports calculation-readiness routing without spending hosted-beta GPU time.
 
 \`\`\`bash
 # Compact terminal analysis
@@ -253,9 +253,10 @@ geotech analyze . --json
 # Self-contained browser report
 geotech analyze . --format html
 
-# Save the manifest, then plot the GroundModel coordinate map
+# Save the manifest, then plot GroundModel map, SPT, lab, and groundwater charts
 geotech analyze . --json --output workspace.json
-geotech viz workspace.json --save-html ground-model-map.html --no-open
+geotech viz workspace.json --list
+geotech viz workspace.json --save-html ground-model-review.html --no-open
 
 # Branch and standards context for downstream workflows
 geotech analyze . --branch foundation
@@ -263,7 +264,7 @@ geotech analyze . --standard eurocode7
 geotech analyze . --standard eurocode7 --draft-inputs --json
 \`\`\`
 
-Current strong-beta scope: file discovery, AGS/PDF/image/GIS/CAD classification, CSV/XLSX schema inference, evidence references, canonical GroundModel construction, GroundModel coordinate-map output with CRS/local-grid warnings, standards-profile assumptions, verifier findings, detected branches, calculation readiness for bearing, settlement, pile, liquefaction, and slope workflows, optional non-executing calculation input drafts, warnings, and recommended next steps. Analyze does not yet auto-run design calculations from the folder; it reports which deterministic workflow is ready, blocked, or needs explicit assumptions before routing. The optional agent swarm planner can consume this workspace evidence with --workspace --swarm.`,
+Current strong-beta scope: file discovery, AGS/PDF/image/GIS/CAD classification, context-aware CSV/XLSX schema inference for common borehole IDs and groundwater-depth tables, evidence references, canonical GroundModel construction, GroundModel coordinate maps with CRS/local-grid warnings, compact borehole strip logs, SPT-depth plots, lab-parameter depth charts, groundwater/monitoring summaries, standards-profile assumptions, verifier findings, detected branches, calculation readiness for bearing, settlement, pile, liquefaction, and slope workflows, optional non-executing calculation input drafts, warnings, and recommended next steps. Analyze does not yet auto-run design calculations from the folder; it reports which deterministic workflow is ready, blocked, or needs explicit assumptions before routing. The optional agent swarm planner can consume this workspace evidence with --workspace --swarm.`,
   },
   {
     id: 'ingest',
@@ -356,7 +357,7 @@ geotech export csv --input samples/exports/mock-liquefaction.json --output data.
   {
     id: 'viz',
     title: 'geotech viz',
-    content: `Interactive browser visualization for saved JSON, GroundModel maps, CSV, and Excel data.
+    content: `Interactive browser visualization for saved JSON, GroundModel maps, SPT-depth charts, lab-depth charts, groundwater plots, CSV, and Excel data.
 
 \`\`\`bash
 # Inspect available series first
@@ -368,9 +369,10 @@ geotech viz samples/visualization/geotech-viz-showcase.csv
 # Plot saved JSON analysis data
 geotech viz result.json
 
-# Plot a GroundModel coordinate map from analyze JSON
+# Plot GroundModel map, SPT, lab, and groundwater charts from analyze JSON
 geotech analyze . --json --output workspace.json
-geotech viz workspace.json --save-html ground-model-map.html --no-open
+geotech viz workspace.json --list
+geotech viz workspace.json --save-html ground-model-review.html --no-open
 
 # Common engineering presets
 geotech viz --preset mohr-circle --sigma1 250 --sigma3 90 --cohesion 15 --phi 28

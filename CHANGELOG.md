@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.50] - 2026-05-09
+
+### GroundModel Visual Pack
+
+- Added a GroundModel Visual Review section to `geotech analyze --format html` with compact borehole strip logs, SPT N-value depth plotting, lab-parameter depth mini charts, and groundwater/monitoring summaries.
+- Extended `geotech viz` GroundModel support beyond coordinate maps so analyze JSON now renders map, SPT-depth, lab-depth, and groundwater charts from the same provider-neutral `GroundModel` contract.
+- Added context-aware table inference so common coordinate headers such as `id` and groundwater files with generic `depth_m` columns still bind to borehole map points and groundwater observations.
+- Kept visual outputs evidence-first by carrying borehole IDs, depth, confidence, warnings, and evidence IDs into SVG titles and interactive chart metadata.
+- Added regression coverage for the richer HTML visual review and multi-chart GroundModel visualization output.
+
 ## [0.4.49] - 2026-05-09
 
 ### GroundModel Map Visualization

@@ -204,6 +204,47 @@ function namesByRole(columns: ColumnInference[], role: InferredColumnRole): stri
   return columns.filter((column) => column.roles.includes(role)).map((column) => column.name);
 }
 
+function addContextRole(column: ColumnInference, role: InferredColumnRole): ColumnInference {
+  const roles = column.roles.includes('unknown')
+    ? column.roles.filter((candidate) => candidate !== 'unknown')
+    : [...column.roles];
+  if (!roles.includes(role)) roles.push(role);
+  return { ...column, roles };
+}
+
+function looksLikeBoreholeId(value: string): boolean {
+  return /^(?:bh|borehole|cpt|tp|trialpit|ha|loc|location)[-_\s]?[a-z0-9]+$/i.test(value.trim());
+}
+
+function applyContextualRoles(columns: ColumnInference[], contextName: string): ColumnInference[] {
+  let next = columns;
+  const has = (role: InferredColumnRole) => next.some((column) => column.roles.includes(role));
+  const hasCoordinates = (has('easting') && has('northing')) || (has('latitude') && has('longitude'));
+
+  if (hasCoordinates && !has('borehole_id')) {
+    const idCandidateIndex = next.findIndex((column) => {
+      if (column.type !== 'text' || column.nonEmptyCount === 0) return false;
+      const normalized = column.normalizedName;
+      return ['id', 'location', 'locationname', 'point', 'pointid', 'hole', 'holeid', 'bh'].includes(normalized)
+        || column.examples.some(looksLikeBoreholeId);
+    });
+
+    if (idCandidateIndex >= 0) {
+      next = next.map((column, index) => (index === idCandidateIndex ? addContextRole(column, 'borehole_id') : column));
+    }
+  }
+
+  const isGroundwaterSource = /\b(?:ground\s*water|groundwater|water\s*table|watertable|gwl|piezometer|standpipe)\b/i.test(contextName);
+  if (isGroundwaterSource && !has('groundwater_depth')) {
+    const depthCandidateIndex = next.findIndex((column) => column.roles.includes('depth'));
+    if (depthCandidateIndex >= 0) {
+      next = next.map((column, index) => (index === depthCandidateIndex ? addContextRole(column, 'groundwater_depth') : column));
+    }
+  }
+
+  return next;
+}
+
 function inferDatasetType(columns: ColumnInference[]): InferredDatasetType {
   const has = (role: InferredColumnRole) => columns.some((column) => column.roles.includes(role));
   const hasAnyRole = (roles: InferredColumnRole[]) => roles.some(has);
@@ -294,8 +335,10 @@ export function inferTabularSchema(options: {
     };
   });
 
-  const datasetType = inferDatasetType(columns);
-  const branches = inferBranches(datasetType, columns);
+  const columnsWithContext = applyContextualRoles(columns, `${options.sourceName ?? ''} ${options.sheetName ?? ''}`);
+  const datasetType = inferDatasetType(columnsWithContext);
+  const columnsForResult = columnsWithContext;
+  const branches = inferBranches(datasetType, columnsForResult);
   const warnings = [...(options.warnings ?? [])];
 
   if (datasetType === 'generic-table') {
@@ -307,40 +350,40 @@ export function inferTabularSchema(options: {
     sheetName: options.sheetName,
     rowCount: options.rowCount ?? options.rows.length,
     sampledRowCount: options.rows.length,
-    columnCount: columns.length,
-    columns,
+    columnCount: columnsForResult.length,
+    columns: columnsForResult,
     datasetType,
     branches,
     detected: {
-      depthColumns: namesByRole(columns, 'depth'),
-      timeColumns: [...new Set([...namesByRole(columns, 'time'), ...namesByRole(columns, 'date')])],
+      depthColumns: namesByRole(columnsForResult, 'depth'),
+      timeColumns: [...new Set([...namesByRole(columnsForResult, 'time'), ...namesByRole(columnsForResult, 'date')])],
       coordinateColumns: [...new Set([
-        ...namesByRole(columns, 'easting'),
-        ...namesByRole(columns, 'northing'),
-        ...namesByRole(columns, 'latitude'),
-        ...namesByRole(columns, 'longitude'),
+        ...namesByRole(columnsForResult, 'easting'),
+        ...namesByRole(columnsForResult, 'northing'),
+        ...namesByRole(columnsForResult, 'latitude'),
+        ...namesByRole(columnsForResult, 'longitude'),
       ])],
-      boreholeIdColumns: namesByRole(columns, 'borehole_id'),
-      sampleIdColumns: namesByRole(columns, 'sample_id'),
-      sptColumns: namesByRole(columns, 'spt_n'),
-      cptColumns: [...new Set([...namesByRole(columns, 'cpt_qc'), ...namesByRole(columns, 'cpt_fs')])],
+      boreholeIdColumns: namesByRole(columnsForResult, 'borehole_id'),
+      sampleIdColumns: namesByRole(columnsForResult, 'sample_id'),
+      sptColumns: namesByRole(columnsForResult, 'spt_n'),
+      cptColumns: [...new Set([...namesByRole(columnsForResult, 'cpt_qc'), ...namesByRole(columnsForResult, 'cpt_fs')])],
       labColumns: [...new Set([
-        ...namesByRole(columns, 'water_content'),
-        ...namesByRole(columns, 'liquid_limit'),
-        ...namesByRole(columns, 'plastic_limit'),
-        ...namesByRole(columns, 'plasticity_index'),
-        ...namesByRole(columns, 'gradation_size'),
-        ...namesByRole(columns, 'percent_passing'),
-        ...namesByRole(columns, 'unit_weight'),
+        ...namesByRole(columnsForResult, 'water_content'),
+        ...namesByRole(columnsForResult, 'liquid_limit'),
+        ...namesByRole(columnsForResult, 'plastic_limit'),
+        ...namesByRole(columnsForResult, 'plasticity_index'),
+        ...namesByRole(columnsForResult, 'gradation_size'),
+        ...namesByRole(columnsForResult, 'percent_passing'),
+        ...namesByRole(columnsForResult, 'unit_weight'),
       ])],
       monitoringColumns: [...new Set([
-        ...namesByRole(columns, 'settlement'),
-        ...namesByRole(columns, 'pore_pressure'),
-        ...namesByRole(columns, 'inclination'),
-        ...namesByRole(columns, 'vibration'),
+        ...namesByRole(columnsForResult, 'settlement'),
+        ...namesByRole(columnsForResult, 'pore_pressure'),
+        ...namesByRole(columnsForResult, 'inclination'),
+        ...namesByRole(columnsForResult, 'vibration'),
       ])],
     },
-    confidence: inferConfidence(datasetType, columns, options.rows.length),
+    confidence: inferConfidence(datasetType, columnsForResult, options.rows.length),
     warnings,
   };
 }

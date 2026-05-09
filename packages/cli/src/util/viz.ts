@@ -4,8 +4,12 @@ import ExcelJS from 'exceljs';
 import {
   buildGroundModelMap,
   type GroundModel,
+  type GroundModelBorehole,
+  type GroundModelGroundwaterObservation,
   type GroundModelMap,
   type GroundModelMapPoint,
+  type GroundModelParameter,
+  type GroundModelSptTest,
 } from '@geotechcli/core';
 import type { XYSeriesSpec } from '../ui/terminal.js';
 
@@ -343,6 +347,206 @@ function buildGroundModelMapCharts(map: GroundModelMap, sourceName: string): Cha
       yDomain: [map.extent.minY, map.extent.maxY],
       note: `Plan-view GroundModel map with ${map.summary.totalPoints} coordinate point${map.summary.totalPoints === 1 ? '' : 's'}; CRS: ${coordinateSystem}.${warningText}`,
     }),
+  ];
+}
+
+function maxDepthForGroundModel(model: GroundModel): number {
+  const depths = [
+    ...model.boreholes.flatMap((borehole) => [
+      ...borehole.sptTests.map((test) => test.depth),
+      ...borehole.strata.flatMap((stratum) => [stratum.topDepth, stratum.bottomDepth]),
+      ...borehole.groundwater.map((observation) => observation.depth),
+    ]),
+    ...model.groundwater.map((observation) => observation.depth),
+    ...model.labTests.map((test) => test.depth),
+    ...model.parameters.map((parameter) => parameter.depth),
+  ].filter((value): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0);
+
+  return depths.length > 0 ? Math.max(...depths) : 1;
+}
+
+function sptPoint(borehole: GroundModelBorehole, test: GroundModelSptTest): {
+  x: number;
+  y: number;
+  label: string;
+  meta: Record<string, string | number | boolean | null>;
+} {
+  return {
+    x: test.nValue,
+    y: test.depth,
+    label: `${borehole.id} ${test.depth}m`,
+    meta: {
+      borehole: borehole.id,
+      depth: test.depth,
+      nValue: test.nValue,
+      confidence: `${Math.round(test.confidence * 100)}%`,
+      evidence: test.evidenceIds.join(', ') || '-',
+      warnings: test.warnings.join('; ') || '-',
+    },
+  };
+}
+
+function buildSptDepthChart(model: GroundModel, sourceName: string): ChartSpec[] {
+  const series = model.boreholes
+    .map((borehole) => ({
+      label: `${borehole.id} SPT`,
+      points: borehole.sptTests
+        .filter((test) => Number.isFinite(test.depth) && Number.isFinite(test.nValue))
+        .sort((left, right) => left.depth - right.depth)
+        .map((test) => sptPoint(borehole, test)),
+      style: 'scatter' as const,
+      symbol: 'o',
+    }))
+    .filter((entry) => entry.points.length > 0);
+
+  if (series.length === 0) {
+    return [];
+  }
+
+  const allN = series.flatMap((entry) => entry.points.map((point) => point.x));
+  const [xMin, xMax] = expandDomain(0, Math.max(...allN));
+  const [yMin, yMax] = expandDomain(0, maxDepthForGroundModel(model));
+
+  return [
+    buildXYChart({
+      id: slugify(`${sourceName}-ground-model-spt-depth`),
+      title: `${sourceName}: SPT N-value vs depth`,
+      xLabel: 'SPT N-value',
+      yLabel: 'Depth (m)',
+      invertY: true,
+      xDomain: [Math.min(0, xMin), xMax],
+      yDomain: [Math.min(0, yMin), yMax],
+      series,
+      note: `Depth-aligned SPT profile from ${series.reduce((count, entry) => count + entry.points.length, 0)} evidence-bound tests`,
+    }),
+  ];
+}
+
+function groundwaterPoint(index: number, observation: GroundModelGroundwaterObservation): {
+  x: number;
+  y: number;
+  label: string;
+  meta: Record<string, string | number | boolean | null>;
+} {
+  return {
+    x: index + 1,
+    y: observation.depth,
+    label: observation.boreholeId ?? `GWL ${index + 1}`,
+    meta: {
+      borehole: observation.boreholeId ?? '-',
+      depth: observation.depth,
+      confidence: `${Math.round(observation.confidence * 100)}%`,
+      evidence: observation.evidenceIds.join(', ') || '-',
+      warnings: observation.warnings.join('; ') || '-',
+    },
+  };
+}
+
+function buildGroundwaterChart(model: GroundModel, sourceName: string): ChartSpec[] {
+  const observations = model.groundwater
+    .filter((observation) => Number.isFinite(observation.depth))
+    .sort((left, right) => (left.boreholeId ?? '').localeCompare(right.boreholeId ?? '') || left.depth - right.depth);
+
+  if (observations.length === 0) {
+    return [];
+  }
+
+  const maxDepth = Math.max(maxDepthForGroundModel(model), ...observations.map((observation) => observation.depth));
+  return [
+    buildXYChart({
+      id: slugify(`${sourceName}-groundwater-depth`),
+      title: `${sourceName}: Groundwater observations`,
+      xLabel: 'Observation index',
+      yLabel: 'Depth below ground (m)',
+      invertY: true,
+      xDomain: expandDomain(1, observations.length),
+      yDomain: expandDomain(0, maxDepth),
+      series: [
+        {
+          label: 'Groundwater',
+          points: observations.map((observation, index) => groundwaterPoint(index, observation)),
+          style: 'scatter',
+          symbol: '~',
+        },
+      ],
+      note: 'Groundwater depths are plotted by observation index because borehole spacing is stored separately in the GroundModel map.',
+    }),
+  ];
+}
+
+function labParameterPoint(parameter: GroundModelParameter): {
+  x: number;
+  y: number;
+  label: string;
+  meta: Record<string, string | number | boolean | null>;
+} | undefined {
+  const value = toFiniteNumber(parameter.value);
+  if (value == null || parameter.depth == null || !Number.isFinite(parameter.depth)) {
+    return undefined;
+  }
+
+  return {
+    x: value,
+    y: parameter.depth,
+    label: `${parameter.boreholeId ?? parameter.sampleId ?? parameter.name} ${parameter.depth}m`,
+    meta: {
+      parameter: parameter.name,
+      borehole: parameter.boreholeId ?? '-',
+      sample: parameter.sampleId ?? '-',
+      depth: parameter.depth,
+      value,
+      unit: parameter.unit ?? '-',
+      confidence: `${Math.round(parameter.confidence * 100)}%`,
+      evidence: parameter.evidenceIds.join(', ') || '-',
+      warnings: parameter.warnings.join('; ') || '-',
+    },
+  };
+}
+
+function buildLabParameterCharts(model: GroundModel, sourceName: string): ChartSpec[] {
+  const groups = new Map<string, { name: string; unit?: string; points: ReturnType<typeof labParameterPoint>[] }>();
+  for (const parameter of model.parameters) {
+    const point = labParameterPoint(parameter);
+    if (!point) continue;
+    const key = `${parameter.name}::${parameter.unit ?? ''}`;
+    const existing = groups.get(key) ?? { name: parameter.name, unit: parameter.unit, points: [] };
+    existing.points.push(point);
+    groups.set(key, existing);
+  }
+
+  return [...groups.values()]
+    .filter((group): group is { name: string; unit?: string; points: Exclude<ReturnType<typeof labParameterPoint>, undefined>[] } => group.points.length > 0)
+    .slice(0, 6)
+    .map((group) => {
+      const values = group.points.map((point) => point.x);
+      return buildXYChart({
+        id: slugify(`${sourceName}-lab-${group.name}-${group.unit ?? 'value'}`),
+        title: `${sourceName}: ${humanizeKey(group.name)} vs depth`,
+        xLabel: `${humanizeKey(group.name)}${group.unit ? ` (${group.unit})` : ''}`,
+        yLabel: 'Depth (m)',
+        invertY: true,
+        xDomain: expandDomain(Math.min(...values), Math.max(...values)),
+        yDomain: expandDomain(0, Math.max(maxDepthForGroundModel(model), ...group.points.map((point) => point.y))),
+        series: [
+          {
+            label: humanizeKey(group.name),
+            points: group.points.sort((left, right) => left.y - right.y),
+            style: 'scatter',
+            symbol: '+',
+          },
+        ],
+        note: `Evidence-bound lab/design parameter plot with ${group.points.length} sample${group.points.length === 1 ? '' : 's'}`,
+      });
+    });
+}
+
+function buildGroundModelCharts(model: GroundModel, sourceName: string): ChartSpec[] {
+  const map = isGroundModelMap(model.map) ? model.map : buildGroundModelMap(model);
+  return [
+    ...buildGroundModelMapCharts(map, sourceName),
+    ...buildSptDepthChart(model, sourceName),
+    ...buildLabParameterCharts(model, sourceName),
+    ...buildGroundwaterChart(model, sourceName),
   ];
 }
 
@@ -777,6 +981,11 @@ export function buildChartsFromJson(data: unknown, sourceName: string): ChartSpe
       return buildChartsFromTable(data as TableRow[], { sourceName });
     }
     return charts;
+  }
+
+  const groundModel = getGroundModelFromJson(data);
+  if (groundModel) {
+    return buildGroundModelCharts(groundModel, sourceName);
   }
 
   const groundModelMap = getGroundModelMapFromJson(data);

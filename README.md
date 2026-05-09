@@ -55,7 +55,7 @@ geotech status
 geotech analyze .
 geotech analyze . --format html --no-open
 geotech analyze . --json --output workspace.json
-geotech viz workspace.json --save-html ground-model-map.html --no-open
+geotech viz workspace.json --save-html ground-model-review.html --no-open
 
 # Bearing capacity (Meyerhof)
 geotech bearing --depth 5 --phi 30 --cohesion 25 --width 2.5
@@ -94,7 +94,7 @@ geotech export dxf --input boreholes.json --output profile.dxf
 
 ## Workspace Analysis
 
-`geotech analyze` is the deterministic local project analyst surface. It scans a project folder, classifies geotechnical files, samples CSV/XLSX schemas, detects likely branches such as foundation, mapping, monitoring, and signal processing, and builds an evidence-bound `GroundModel` with verifier findings and calculation-readiness routing without spending hosted-beta GPU time.
+`geotech analyze` is the deterministic local project analyst surface. It scans a project folder, classifies geotechnical files, samples CSV/XLSX schemas, detects likely branches such as foundation, mapping, monitoring, and signal processing, and builds an evidence-bound `GroundModel` with visual review, verifier findings, and calculation-readiness routing without spending hosted-beta GPU time.
 
 ```bash
 geotech analyze .
@@ -105,18 +105,19 @@ geotech analyze . --standard eurocode7
 geotech analyze . --standard eurocode7 --draft-inputs --json
 ```
 
-Current strong-beta scope: workspace awareness, CSV/XLSX schema inference, AGS/PDF/image/GIS/CAD classification, evidence references, canonical GroundModel construction, GroundModel coordinate map output with CRS/local-grid warnings, standards-profile assumptions, deterministic verifier findings, calculation readiness for bearing, settlement, pile, liquefaction, and slope workflows, optional non-executing calculation input drafts, recommendations, and a self-contained HTML report. It does not yet auto-run branch-specific design calculations from the folder; it tells you which calculation route is ready, blocked, or needs explicit assumptions.
+Current strong-beta scope: workspace awareness, context-aware CSV/XLSX schema inference for common borehole IDs and groundwater-depth tables, AGS/PDF/image/GIS/CAD classification, evidence references, canonical GroundModel construction, GroundModel coordinate maps with CRS/local-grid warnings, compact borehole strip logs, SPT-depth plots, lab-parameter depth charts, groundwater/monitoring summaries, standards-profile assumptions, deterministic verifier findings, calculation readiness for bearing, settlement, pile, liquefaction, and slope workflows, optional non-executing calculation input drafts, recommendations, and a self-contained HTML report. It does not yet auto-run branch-specific design calculations from the folder; it tells you which calculation route is ready, blocked, or needs explicit assumptions.
 
 ## Interactive Visualization
 
-Use `geotech viz` to open browser-grade interactive engineering plots from saved analysis data, with terminal ASCII fallback available when needed.
+Use `geotech viz` to open browser-grade interactive engineering plots from saved analysis data, including GroundModel coordinate maps, SPT-depth charts, lab-depth charts, and groundwater plots, with terminal ASCII fallback available when needed.
 
 ```bash
 geotech viz samples/visualization/geotech-viz-showcase.csv
 geotech viz samples/visualization/geotech-viz-showcase.xlsx --list
 geotech viz result.json
 geotech analyze . --json --output workspace.json
-geotech viz workspace.json --save-html ground-model-map.html --no-open
+geotech viz workspace.json --list
+geotech viz workspace.json --save-html ground-model-review.html --no-open
 geotech viz --preset mohr-circle --sigma1 250 --sigma3 90 --cohesion 15 --phi 28
 geotech viz --preset atterberg --ll 55 --pl 25
 geotech viz samples/visualization/geotech-viz-compaction.csv --template compaction
@@ -162,8 +163,8 @@ These commands are the public strong-beta foundation and are available now.
 | `geotech slope` | Slope stability using Bishop Simplified |
 | `geotech pile` | Pile capacity using alpha, beta, and SPT methods |
 | `geotech retaining` | Lateral earth pressure using Rankine and Coulomb |
-| `geotech analyze` | Local project manifest, CSV/XLSX schema inference, evidence-bound GroundModel, coordinate map, verifier, and HTML report |
-| `geotech viz` | Interactive browser visualization for saved JSON, GroundModel maps, CSV, and Excel data |
+| `geotech analyze` | Local project manifest, CSV/XLSX schema inference, evidence-bound GroundModel, map, strip logs, verifier, and HTML report |
+| `geotech viz` | Interactive browser visualization for saved JSON, GroundModel maps, SPT/lab/GWL charts, CSV, and Excel data |
 
 ### AI-Assisted
 

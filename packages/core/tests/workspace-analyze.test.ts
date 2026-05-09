@@ -144,6 +144,40 @@ describe('workspace analysis', () => {
     expect(manifest.verifier?.findings.some((finding) => finding.code === 'rejected_spt_observation')).toBe(true);
   });
 
+  it('uses source context to bind common coordinate and groundwater headers', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-ground-model-context-'));
+    tempDirs.push(dir);
+
+    await writeFile(
+      join(dir, 'locations.csv'),
+      [
+        'id,northing,easting,total_depth',
+        'BH1,0,0,10',
+        'BH2,0,20,12',
+      ].join('\n'),
+      'utf-8',
+    );
+    await writeFile(
+      join(dir, 'groundwater.csv'),
+      [
+        'location_id,depth_m,type',
+        'BH1,2.4,static',
+        'BH2,3.1,static',
+      ].join('\n'),
+      'utf-8',
+    );
+
+    const manifest = await analyzeWorkspace(dir);
+    const locationSchema = manifest.files.find((file) => file.path === 'locations.csv')?.schemas?.[0];
+    const groundwaterSchema = manifest.files.find((file) => file.path === 'groundwater.csv')?.schemas?.[0];
+
+    expect(locationSchema?.detected.boreholeIdColumns).toContain('id');
+    expect(groundwaterSchema?.columns.find((column) => column.name === 'depth_m')?.roles).toContain('groundwater_depth');
+    expect(manifest.groundModel?.map?.summary.boreholePoints).toBe(2);
+    expect(manifest.groundModel?.stats.groundwaterObservations).toBe(2);
+    expect(manifest.groundModel?.boreholes.find((borehole) => borehole.id === 'BH1')?.groundwater[0]?.depth).toBe(2.4);
+  });
+
   it('supports manifest-only scans when GroundModel construction is disabled', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'geotech-manifest-only-'));
     tempDirs.push(dir);

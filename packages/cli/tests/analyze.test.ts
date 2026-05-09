@@ -45,6 +45,25 @@ describe('analyze command', () => {
       ['borehole_id,easting,northing', 'BH-01,500000,3200000'].join('\n'),
       'utf-8',
     );
+    await writeFile(
+      join(dir, 'spt.csv'),
+      [
+        'borehole_id,description,depth_m,sptN',
+        'BH-01,"medium dense silty sand",1.5,12',
+        'BH-01,"stiff clay",3.0,18',
+      ].join('\n'),
+      'utf-8',
+    );
+    await writeFile(
+      join(dir, 'groundwater.csv'),
+      ['borehole_id,groundwater_depth_m', 'BH-01,1.2'].join('\n'),
+      'utf-8',
+    );
+    await writeFile(
+      join(dir, 'lab.csv'),
+      ['borehole_id,sample_id,depth_m,liquid_limit,plasticity_index', 'BH-01,S-01,2.0,42,18'].join('\n'),
+      'utf-8',
+    );
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const program = new Command();
@@ -56,6 +75,10 @@ describe('analyze command', () => {
     expect(html).toContain('Workspace Report');
     expect(html).toContain('GroundModel');
     expect(html).toContain('GroundModel Map');
+    expect(html).toContain('GroundModel Visual Review');
+    expect(html).toContain('Borehole Strip Logs');
+    expect(html).toContain('SPT N vs Depth');
+    expect(html).toContain('Lab Parameter Depth Charts');
     expect(html).toContain('Map Points');
     expect(html).toContain('BH-01');
     expect(html).toContain('Local-grid map points');

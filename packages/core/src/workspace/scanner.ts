@@ -177,7 +177,7 @@ function buildRecommendations(manifest: Omit<ProjectManifest, 'summary'>, summar
   }
 
   if ((datasetTypes['coordinate-table'] ?? 0) > 0) {
-    recommendations.push('Coordinate tables detected and bound into GroundModel where borehole IDs are present. Next: use map visualization once enabled.');
+    recommendations.push('Coordinate tables detected and bound into GroundModel where borehole IDs are present. Use geotech viz for map and depth-profile visualization.');
   }
   if ((datasetTypes['spt-profile'] ?? 0) > 0 || (datasetTypes['cpt-profile'] ?? 0) > 0) {
     recommendations.push('SPT/CPT profiles detected. Next: foundation screening and liquefaction workflows can consume these tables.');
