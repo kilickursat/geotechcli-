@@ -139,7 +139,19 @@ function compareBenchmarks(first, second) {
 
 function summarizeRun(benchmark) {
   return {
-    confidence: benchmark.document.confidence,
+    reviewConfidence: benchmark.document.confidence,
+    confidenceBreakdown: benchmark.document.confidenceBreakdown
+      ? {
+          extractionConfidence: benchmark.document.confidenceBreakdown.extractionConfidence,
+          pageEvidenceConfidence: benchmark.document.confidenceBreakdown.pageEvidenceConfidence,
+          traceabilityScore: benchmark.document.confidenceBreakdown.traceabilityScore,
+          corroborationScore: benchmark.document.confidenceBreakdown.corroborationScore,
+          engineeringCompleteness: benchmark.document.confidenceBreakdown.engineeringCompleteness,
+          readinessScore: benchmark.document.confidenceBreakdown.readinessScore,
+          missingCriticalData: benchmark.document.confidenceBreakdown.missingCriticalData,
+          reviewGates: benchmark.document.confidenceBreakdown.reviewGates,
+        }
+      : null,
     parseStatus: benchmark.document.parseStatus,
     cacheHitRate: benchmark.evidenceCache.hitRate,
     estimatedHostedCalls: totalHostedCalls(benchmark),
@@ -167,6 +179,11 @@ function renderSummary(first, second, comparison, comparisonOutputPath) {
   console.log(`Cached rerun cache hit rate: ${formatPercent(second.evidenceCache.hitRate)}`);
   console.log(`First run estimated hosted calls: ${totalHostedCalls(first)}`);
   console.log(`Cached rerun estimated hosted calls: ${totalHostedCalls(second)}`);
+  if (second.document.confidenceBreakdown) {
+    console.log(
+      `Cached rerun Trust breakdown: extraction ${second.document.confidenceBreakdown.extractionConfidence}%, page evidence ${second.document.confidenceBreakdown.pageEvidenceConfidence}%, traceability ${second.document.confidenceBreakdown.traceabilityScore}%, readiness ${second.document.confidenceBreakdown.readinessScore}%`,
+    );
+  }
   console.log(`Cached rerun direct source-page traceability: ${formatPercent(second.traceability.directParameterTraceabilityRate)}`);
   console.log(`Cached rerun GroundModel readiness: ${second.groundModelReadiness.status} (${second.groundModelReadiness.score}/100)`);
   console.log(`Comparison: ${comparisonOutputPath}`);

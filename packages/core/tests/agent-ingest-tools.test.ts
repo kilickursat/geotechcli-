@@ -195,6 +195,25 @@ function createGeotechDocumentEvidenceResult(overrides?: Record<string, unknown>
     reviewReasons: ['Page 3 used direct visual extraction.'],
     parseStatus: 'partial',
     confidence: 82,
+    confidenceBreakdown: {
+      schemaVersion: 1,
+      overall: 82,
+      extractionConfidence: 83,
+      engineeringCompleteness: 48,
+      traceabilityScore: 50,
+      corroborationScore: 73,
+      readinessScore: 58,
+      pageEvidenceConfidence: 82,
+      methodCoverage: {
+        nativeTextPages: 1,
+        layoutOcrPages: 1,
+        visualReasoningPages: 1,
+        directVisualPages: 1,
+      },
+      missingCriticalData: ['SPT N-values', 'RQD', 'cohesion', 'friction angle'],
+      reviewGates: ['partial-pages-remain', 'direct-visual-verification-required'],
+      notes: ['Confidence is provider-neutral workflow trust, not a model self-score.'],
+    },
     reviewRequired: true,
     canAutoProceed: false,
     ...overrides,
@@ -622,6 +641,7 @@ describe('agent ingest tools', () => {
       const summary = (toolResult.data as any).agentEvidenceSummary;
       expect(summary).toContain('DocumentEvidencePacket v2 provider-neutral agent context');
       expect(summary).toContain('source pages 2');
+      expect(summary).toContain('Trust breakdown:');
       expect(summary).toContain('layout/OCR pages 2');
       expect(summary).toContain('direct visual pages 3');
       expect(summary).toContain('Missing parameters: Groundwater level');

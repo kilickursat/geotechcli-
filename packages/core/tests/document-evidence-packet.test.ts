@@ -138,6 +138,25 @@ function makeResult(
     reviewReasons: ['Page 3 used direct visual extraction.'],
     parseStatus: 'partial',
     confidence: 82,
+    confidenceBreakdown: {
+      schemaVersion: 1,
+      overall: 82,
+      extractionConfidence: 83,
+      engineeringCompleteness: 48,
+      traceabilityScore: 50,
+      corroborationScore: 73,
+      readinessScore: 58,
+      pageEvidenceConfidence: 82,
+      methodCoverage: {
+        nativeTextPages: 1,
+        layoutOcrPages: 1,
+        visualReasoningPages: 1,
+        directVisualPages: 1,
+      },
+      missingCriticalData: ['SPT N-values', 'RQD', 'cohesion', 'friction angle'],
+      reviewGates: ['partial-pages-remain', 'direct-visual-verification-required'],
+      notes: ['Confidence is provider-neutral workflow trust, not a model self-score.'],
+    },
     reviewRequired: true,
     canAutoProceed: false,
     ...overrides,
@@ -188,6 +207,11 @@ describe('document evidence packet', () => {
       parameterTraceabilityRate: 0.5,
     });
     expect(packet.providerContract.reviewGates).toContain('direct-visual-verification-required');
+    expect(packet.document.confidenceBreakdown).toEqual(expect.objectContaining({
+      schemaVersion: 1,
+      overall: 82,
+      readinessScore: expect.any(Number),
+    }));
   });
 
   it('summarizes evidence packets for agent context without raw page dump', () => {
@@ -198,6 +222,7 @@ describe('document evidence packet', () => {
     expect(summary).toContain('source pages 2');
     expect(summary).toContain('layout/OCR pages 2');
     expect(summary).toContain('direct visual pages 3');
+    expect(summary).toContain('Trust breakdown:');
     expect(summary).toContain('Review gates:');
     expect(summary).toContain('direct-visual-verification-required');
     expect(summary).toContain('Missing parameters: Groundwater level');

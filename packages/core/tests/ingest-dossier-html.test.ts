@@ -145,6 +145,25 @@ function makeGeotechResult(
     reviewReasons: ['Page 5 timed out and needs a manual check.'],
     parseStatus: 'partial',
     confidence: 81,
+    confidenceBreakdown: {
+      schemaVersion: 1,
+      overall: 81,
+      extractionConfidence: 76,
+      engineeringCompleteness: 62,
+      traceabilityScore: 100,
+      corroborationScore: 75,
+      readinessScore: 71,
+      pageEvidenceConfidence: 75,
+      methodCoverage: {
+        nativeTextPages: 1,
+        layoutOcrPages: 0,
+        visualReasoningPages: 1,
+        directVisualPages: 0,
+      },
+      missingCriticalData: ['groundwater level', 'SPT N-values', 'RQD', 'friction angle'],
+      reviewGates: ['partial-pages-remain'],
+      notes: ['Confidence is provider-neutral workflow trust, not a model self-score.'],
+    },
     reviewRequired: true,
     canAutoProceed: false,
     ...overrides,
@@ -175,6 +194,19 @@ describe('ingest dossier HTML', () => {
     expect(dossier.sourceLabel).toBe('School packet - April 2026');
     expect(dossier.badges.some((badge) => badge.label === 'Document class' && badge.value === 'site-investigation-report')).toBe(true);
     expect(dossier.metrics.some((metric) => metric.label === 'Parameters' && metric.value === '2')).toBe(true);
+    expect(dossier.metrics.some((metric) =>
+      metric.label === 'Review confidence'
+      && metric.value === '81%'
+      && /pages avg/i.test(metric.detail ?? '')
+      && /traceability/i.test(metric.detail ?? ''),
+    )).toBe(true);
+    expect(dossier.confidenceBreakdown?.map((item) => item.label)).toEqual([
+      'Workflow confidence',
+      'Page evidence',
+      'Source traceability',
+      'Review gates',
+      'Engineering completeness',
+    ]);
     expect(dossier.findings[0]?.label).toBe('Needs review');
     expect(dossier.tables.some((table) => table.title === 'Key engineering parameters')).toBe(true);
     expect(dossier.tables.some((table) => table.title === 'Segment execution')).toBe(true);
@@ -210,6 +242,8 @@ describe('ingest dossier HTML', () => {
     expect(html).not.toContain('Geotechnical Intelligence Dossier');
     expect(html).toContain('AI-assisted extraction, verification, and engineering interpretation from geotechnical reports.');
     expect(html).toContain('Engineering Parameters');
+    expect(html).toContain('Trust breakdown');
+    expect(html).toContain('Review confidence');
     expect(html).toContain('Key engineering parameters');
     expect(html).toContain('Segment execution');
     expect(html).toContain('Source Evidence');
@@ -260,6 +294,7 @@ describe('ingest dossier HTML', () => {
     expect(html).toContain('native-text');
     expect(html).toContain('vision-ocr');
     expect(html).toContain('GLM-5.1 synthesis');
+    expect(html.indexOf('Trust breakdown')).toBeLessThan(html.indexOf('<h2>Ground Model</h2>'));
     expect(html.indexOf('GLM-5.1 synthesis')).toBeGreaterThan(html.indexOf('Processing Audit'));
   });
 
@@ -382,6 +417,49 @@ describe('ingest dossier HTML', () => {
     expect(html).toContain('N21');
     expect(html).toContain('plasticityIndex');
     expect(html).toContain('1.8 m bgl');
+  });
+
+  it('does not promote unassigned report SPT rows into fake GroundModel boreholes', () => {
+    const dossier = buildIngestDossier(makeGeotechResult({
+      summary: 'BH1 field data includes one retained SPT row; other numeric rows lack source context.',
+      materials: [],
+      classifications: [],
+      synthesis: null,
+      contentChunks: [],
+      parameters: [
+        { name: 'sptN', valueText: '21', numericValue: 21, unit: 'blows/300mm', material: 'BH1', context: 'SPT at depth 3.0 m on page 2', sourcePages: [2] },
+        { name: 'sptN', valueText: '8', numericValue: 8, unit: null, material: null, context: 'depth 8.0 m', sourcePages: [29] },
+      ],
+    }));
+
+    const html = renderIngestDossierAsHtml(dossier);
+
+    expect(dossier.groundModel?.stats.boreholes).toBe(1);
+    expect(dossier.groundModel?.stats.sptTests).toBe(1);
+    expect(dossier.groundModel?.boreholes.map((borehole) => borehole.id)).toEqual(['BH1']);
+    expect(html).toContain('N21');
+    expect(html).not.toContain('UNASSIGNED');
+  });
+
+  it('does not promote footing-table values as SPT tests in the report GroundModel', () => {
+    const dossier = buildIngestDossier(makeGeotechResult({
+      summary: 'BH3 has a foundation recommendation table that must not become an SPT plot.',
+      materials: [],
+      classifications: [],
+      synthesis: null,
+      contentChunks: [],
+      parameters: [
+        { name: 'sptN', valueText: '15', numericValue: 15, unit: 'blows/ft', material: 'BH-3', context: 'Depth 1.5, footing table dimension 2 m x 2 m', sourcePages: [5] },
+        { name: 'groundwaterDepth', valueText: '2.4 m', numericValue: 2.4, unit: 'm bgl', material: 'BH-3', context: 'Water table at 2.4 m on page 5', sourcePages: [5] },
+      ],
+    }));
+
+    const html = renderIngestDossierAsHtml(dossier);
+
+    expect(dossier.groundModel?.stats.sptTests ?? 0).toBe(0);
+    expect(dossier.groundModel?.stats.groundwaterObservations).toBe(1);
+    expect(html).not.toContain('N15');
+    expect(html).toContain('2.4 m bgl');
   });
 
   it('builds a conceptual profile from retained inspection and chunk evidence when parameters omit depth rows', () => {

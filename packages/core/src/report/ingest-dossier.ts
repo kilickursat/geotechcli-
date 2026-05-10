@@ -27,6 +27,13 @@ export interface IngestDossierMetric {
   tone?: IngestDossierTone;
 }
 
+export interface IngestDossierConfidenceItem {
+  label: string;
+  value: string;
+  detail: string;
+  tone: IngestDossierTone;
+}
+
 export interface IngestDossierTable {
   title: string;
   description?: string;
@@ -145,6 +152,7 @@ export interface IngestDossier {
   executiveItems: IngestDossierExecutiveItem[];
   insightCards: IngestDossierInsightCard[];
   trustItems: IngestDossierTrustItem[];
+  confidenceBreakdown?: IngestDossierConfidenceItem[];
   boreholeProfile?: IngestDossierBoreholeProfile;
   groundModel?: GroundModel;
   storedReview?: IngestDossierStoredReview;
@@ -571,6 +579,16 @@ function toneFromParseStatus(parseStatus: string, confidence: number): IngestDos
   return 'good';
 }
 
+function toneFromScore(score: number): IngestDossierTone {
+  if (score >= 80) {
+    return 'good';
+  }
+  if (score >= 60) {
+    return 'warning';
+  }
+  return 'danger';
+}
+
 function evidenceCacheStatusLabel(status: string | undefined): string {
   switch (status) {
     case 'hit':
@@ -937,14 +955,61 @@ function buildGeotechMetrics(result: GeotechDocumentIngestResult): IngestDossier
   const statusCounts = countGeotechPageStatuses(result);
   const cacheHits = result.pageAudits.filter((audit) => audit.evidenceCache?.status === 'hit').length;
   const cacheStored = result.pageAudits.filter((audit) => audit.evidenceCache?.status === 'stored').length;
+  const breakdown = result.confidenceBreakdown;
   return [
     { label: 'Pages processed', value: `${result.source.successfulPages}/${result.source.totalPages}`, tone: result.source.failedPages > 0 ? 'warning' : 'good' },
-    { label: 'Confidence', value: `${result.confidence}%`, tone: toneFromParseStatus(result.parseStatus ?? 'parsed', result.confidence) },
+    {
+      label: 'Review confidence',
+      value: `${result.confidence}%`,
+      detail: breakdown
+        ? `pages avg ${breakdown.pageEvidenceConfidence}%, traceability ${breakdown.traceabilityScore}%, readiness ${breakdown.readinessScore}%`
+        : 'Workflow confidence for review triage.',
+      tone: toneFromParseStatus(result.parseStatus ?? 'parsed', result.confidence),
+    },
     { label: 'Page outcomes', value: `${statusCounts.parsed}/${result.pageAudits.length}`, detail: `${statusCounts.partial} partial, ${statusCounts.failed} failed`, tone: statusCounts.failed > 0 ? 'danger' : statusCounts.partial > 0 ? 'warning' : 'good' },
     { label: 'Materials', value: String(result.materials.length), detail: `${result.classifications.length} classifications`, tone: result.materials.length > 0 ? 'good' : 'warning' },
     { label: 'Parameters', value: String(result.parameters.length), detail: result.documentClass ?? 'No document class', tone: result.parameters.length > 0 ? 'good' : 'warning' },
     { label: 'OCR hints', value: String(result.inspectionSummary?.ocrRecoveredPageCount ?? 0), detail: `${result.inspectionSummary?.imageHeavyPageCount ?? 0} image-heavy pages`, tone: (result.inspectionSummary?.ocrRecoveredPageCount ?? 0) > 0 ? 'good' : 'neutral' },
     { label: 'Evidence cache', value: String(cacheHits), detail: `${cacheStored} stored this run`, tone: cacheHits > 0 ? 'good' : cacheStored > 0 ? 'accent' : 'neutral' },
+  ];
+}
+
+function buildGeotechConfidenceItems(result: GeotechDocumentIngestResult): IngestDossierConfidenceItem[] | undefined {
+  const breakdown = result.confidenceBreakdown;
+  if (!breakdown) {
+    return undefined;
+  }
+  return [
+    {
+      label: 'Workflow confidence',
+      value: `${breakdown.overall}%`,
+      detail: 'Legacy review-triage score; synthesis cannot raise it.',
+      tone: toneFromScore(breakdown.overall),
+    },
+    {
+      label: 'Page evidence',
+      value: `${breakdown.pageEvidenceConfidence}%`,
+      detail: `${result.pageAudits.length} audited page(s); extraction score ${breakdown.extractionConfidence}%.`,
+      tone: toneFromScore(breakdown.pageEvidenceConfidence),
+    },
+    {
+      label: 'Source traceability',
+      value: `${breakdown.traceabilityScore}%`,
+      detail: `${result.parameters.filter((parameter) => sourcePageText(parameter.context, parameter.sourcePages) !== '-').length}/${result.parameters.length} parameter(s) with source pages.`,
+      tone: toneFromScore(breakdown.traceabilityScore),
+    },
+    {
+      label: 'Review gates',
+      value: String(breakdown.reviewGates.length),
+      detail: breakdown.reviewGates.length > 0 ? breakdown.reviewGates.slice(0, 3).join(', ') : 'No retained confidence gates.',
+      tone: breakdown.reviewGates.length > 0 ? 'warning' : 'good',
+    },
+    {
+      label: 'Engineering completeness',
+      value: `${breakdown.engineeringCompleteness}%`,
+      detail: breakdown.missingCriticalData.length > 0 ? `Missing: ${breakdown.missingCriticalData.join(', ')}.` : 'Common critical data categories retained.',
+      tone: toneFromScore(breakdown.engineeringCompleteness),
+    },
   ];
 }
 
@@ -990,7 +1055,14 @@ function buildGeotechExecutiveItems(result: GeotechDocumentIngestResult, sourceL
       detail: result.parseStatus,
       tone: result.reviewRequired ? 'warning' : 'good',
     },
-    { label: 'Confidence', value: `${result.confidence}%`, tone: toneFromParseStatus(result.parseStatus, result.confidence) },
+    {
+      label: 'Review confidence',
+      value: `${result.confidence}%`,
+      detail: result.confidenceBreakdown
+        ? `Evidence ${result.confidenceBreakdown.pageEvidenceConfidence}%, readiness ${result.confidenceBreakdown.readinessScore}%.`
+        : undefined,
+      tone: toneFromParseStatus(result.parseStatus, result.confidence),
+    },
     { label: 'Boreholes detected', value: boreholeIds.length > 0 ? boreholeIds.join(', ') : 'Not explicitly detected', tone: boreholeIds.length > 0 ? 'good' : 'warning' },
     { label: 'Max depth', value: formatDepthMeters(maxDepth), tone: maxDepth != null ? 'good' : 'warning' },
     { label: 'Key engineering concern', value: inferKeyConcern(result), tone: 'warning' },
@@ -1560,6 +1632,16 @@ function parameterBoreholeId(parameter: GeotechDocumentIngestResult['parameters'
   return inferBoreholeIdsFromText(parameter.material, parameter.context, parameter.name)[0];
 }
 
+function looksLikeBearingTableSptFalsePositive(parameter: GeotechDocumentIngestResult['parameters'][number]): boolean {
+  const normalizedName = parameter.name.toLowerCase().replace(/\s+/g, '');
+  if (!/spt|nvalue|n-value|standardpenetration/.test(normalizedName)) {
+    return false;
+  }
+  const retainedContext = [parameter.material, parameter.context].filter(Boolean).join(' ');
+  return /\b(?:foundation|footing|allowable\s+bearing|bearing\s+pressure|net\s+bearing|dimension|size\s+of\s+footing)\b/i.test(retainedContext)
+    && !/\b(?:spt|standard\s+penetration|n[-\s]?value|blows?\b)\b/i.test(retainedContext);
+}
+
 function buildGroundModelFromGeotechReport(
   result: GeotechDocumentIngestResult,
   profile: IngestDossierBoreholeProfile | undefined,
@@ -1639,6 +1721,9 @@ function buildGroundModelFromGeotechReport(
     const normalizedName = parameter.name.toLowerCase().replace(/\s+/g, '');
 
     if (numericValue != null && /spt|nvalue|n-value|standardpenetration/.test(normalizedName)) {
+      if (!boreholeId || looksLikeBearingTableSptFalsePositive(parameter)) {
+        continue;
+      }
       const testDepth = depth ?? depthFromEvidenceText(parameter.valueText);
       if (testDepth != null && numericValue >= 0 && numericValue <= 100) {
         const evidenceId = addReportEvidenceRef(evidenceState, {
@@ -1647,7 +1732,7 @@ function buildGroundModelFromGeotechReport(
           normalizedValue: numericValue,
           unit: parameter.unit,
         });
-        ensureBorehole(boreholeId ?? 'UNASSIGNED', [evidenceId]).sptTests.push({
+        ensureBorehole(boreholeId, [evidenceId]).sptTests.push({
           depth: testDepth,
           nValue: numericValue,
           ...(parameter.unit ? { unit: parameter.unit } : {}),
@@ -1861,6 +1946,7 @@ export function buildIngestDossier(
       executiveItems: buildGeotechExecutiveItems(geotechResult, sourceLabel),
       insightCards: buildGeotechInsightCards(geotechResult),
       trustItems: buildGeotechTrustItems(geotechResult),
+      confidenceBreakdown: buildGeotechConfidenceItems(geotechResult),
       boreholeProfile,
       groundModel: buildGroundModelFromGeotechReport(geotechResult, boreholeProfile, sourceLabel),
       storedReview,

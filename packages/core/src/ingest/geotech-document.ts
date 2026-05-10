@@ -107,6 +107,26 @@ export interface GeotechDocumentInspectionSummary {
   ocrRecoveredPageCount: number;
 }
 
+export interface GeotechDocumentConfidenceBreakdown {
+  schemaVersion: 1;
+  overall: number;
+  extractionConfidence: number;
+  engineeringCompleteness: number;
+  traceabilityScore: number;
+  corroborationScore: number;
+  readinessScore: number;
+  pageEvidenceConfidence: number;
+  methodCoverage: {
+    nativeTextPages: number;
+    layoutOcrPages: number;
+    visualReasoningPages: number;
+    directVisualPages: number;
+  };
+  missingCriticalData: string[];
+  reviewGates: string[];
+  notes: string[];
+}
+
 export interface GeotechDocumentIngestResult {
   kind: 'geotech-ingest-result';
   schemaVersion: 1;
@@ -137,6 +157,7 @@ export interface GeotechDocumentIngestResult {
   reviewReasons: string[];
   parseStatus: ParseStatus;
   confidence: number;
+  confidenceBreakdown?: GeotechDocumentConfidenceBreakdown;
   reviewRequired: boolean;
   canAutoProceed: boolean;
 }
@@ -641,6 +662,195 @@ function mergeParameters(
   return parameters;
 }
 
+interface GeotechDocumentPageEvidence {
+  pageNumber: number;
+  text: string;
+  boreholeIds: string[];
+}
+
+interface GeotechDocumentEvidenceReconciliation {
+  parameters: GeotechParameterObservation[];
+  warnings: string[];
+}
+
+function clampScore(value: number): number {
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function normalizeBoreholeId(value: string): string {
+  const match = value.match(/\bBH[-\s]?0*(\d{1,3})\b/i);
+  return match ? `BH${Number(match[1])}` : value.trim().toUpperCase();
+}
+
+function inferBoreholeIdsFromEvidenceText(...values: Array<string | null | undefined>): string[] {
+  const text = values.filter(Boolean).join('\n');
+  const patterns = [
+    /\bBH\s*[-:]?\s*0*(\d{1,3})\b/gi,
+    /\bB\.?\s*H\.?\s*(?:NO\.?)?\s*[:#-]?\s*0*(\d{1,3})\b/gi,
+    /\bBORE\s*HOLE\s*NO\.?\s*[:#-]?\s*0*(\d{1,3})\b/gi,
+    /\bBOREHOLE\s*NO\.?\s*[:#-]?\s*0*(\d{1,3})\b/gi,
+    /\bBOREHOLENO\s*[:#-]?\s*0*(\d{1,3})\b/gi,
+  ];
+  const ids = patterns.flatMap((pattern) =>
+    [...text.matchAll(pattern)]
+      .map((match) => Number(match[1]))
+      .filter((id) => Number.isInteger(id) && id > 0 && id <= 120)
+      .map((id) => `BH${id}`),
+  );
+  return [...new Set(ids)].sort((left, right) => left.localeCompare(right, undefined, { numeric: true }));
+}
+
+function isSptParameter(parameter: GeotechParameterObservation): boolean {
+  return /spt|n[-\s]?value|standard\s*penetration/i.test(parameter.name);
+}
+
+function hasSptCueText(...values: Array<string | null | undefined>): boolean {
+  const text = values.filter(Boolean).join(' ');
+  return /\b(?:spt|standard\s+penetration|n[-\s]?value|blows?\s*\/?\s*(?:300\s*mm|ft)|blows?\b)\b/i.test(text);
+}
+
+function hasBearingTableCue(parameter: GeotechParameterObservation): boolean {
+  const text = [parameter.material, parameter.context].filter(Boolean).join(' ');
+  return /\b(?:foundation|footing|allowable\s+bearing|bearing\s+pressure|net\s+bearing|dimension|size\s+of\s+footing)\b/i.test(text)
+    && !hasSptCueText(parameter.context, parameter.material);
+}
+
+function shouldBindParameterToBorehole(parameter: GeotechParameterObservation): boolean {
+  if (parameter.numericValue == null) {
+    return false;
+  }
+  return /spt|n[-\s]?value|ground\s*water|groundwater|water\s*table|gwl|rqd|rmr|ucs|cohesion|friction|phi|moisture|water\s*content|liquid|plasticity|atterberg|unit\s*weight|density|depth|thickness|permeability/i.test(parameter.name);
+}
+
+function inspectionPageForResult(
+  inspection: PdfDocumentInspection | null | undefined,
+  result: GeotechDocumentInsight,
+  sourcePage: number | null,
+): PdfDocumentInspection['pages'][number] | undefined {
+  if (!inspection) {
+    return undefined;
+  }
+  return inspection.pages.find((page) =>
+    page.pageNumber === result.pageNumber || (sourcePage != null && page.pageNumber === sourcePage),
+  ) ?? (result.pageNumber != null ? inspection.pages[result.pageNumber - 1] : undefined);
+}
+
+function buildPageEvidenceIndex(
+  results: GeotechDocumentInsight[],
+  source: GeotechDocumentSource,
+  inspection: PdfDocumentInspection | null | undefined,
+): Map<number, GeotechDocumentPageEvidence> {
+  const index = new Map<number, GeotechDocumentPageEvidence>();
+
+  for (const result of results) {
+    const sourcePage = resolveResultSourcePageNumber(source, result.pageNumber);
+    if (sourcePage == null) {
+      continue;
+    }
+    const inspectionPage = inspectionPageForResult(inspection, result, sourcePage);
+    const text = [
+      result.title,
+      result.summary,
+      collectResultTextSignals(result),
+      ...(inspectionPage?.normalizedArtifact?.headingHints ?? []),
+      inspectionPage?.normalizedArtifact?.nativeText,
+      inspectionPage?.normalizedText,
+      inspectionPage?.extractedText,
+    ]
+      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      .join('\n');
+
+    index.set(sourcePage, {
+      pageNumber: sourcePage,
+      text,
+      boreholeIds: inferBoreholeIdsFromEvidenceText(text),
+    });
+  }
+
+  return index;
+}
+
+function assignBoreholeToParameter(
+  parameter: GeotechParameterObservation,
+  boreholeId: string,
+): GeotechParameterObservation {
+  const normalizedId = normalizeBoreholeId(boreholeId);
+  const material = parameter.material?.trim();
+  const context = parameter.context?.trim();
+  return {
+    ...parameter,
+    material: material
+      ? inferBoreholeIdsFromEvidenceText(material).includes(normalizedId)
+        ? material
+        : `${material} (${normalizedId})`
+      : normalizedId,
+    context: context
+      ? inferBoreholeIdsFromEvidenceText(context).includes(normalizedId)
+        ? context
+        : `${context}; borehole reconciled from page evidence: ${normalizedId}`
+      : `Borehole reconciled from page evidence: ${normalizedId}`,
+  };
+}
+
+function reconcileGeotechDocumentEvidence(input: {
+  pageResults: GeotechDocumentInsight[];
+  source: GeotechDocumentSource;
+  inspection: PdfDocumentInspection | null | undefined;
+  parameters: GeotechParameterObservation[];
+}): GeotechDocumentEvidenceReconciliation {
+  const pageEvidence = buildPageEvidenceIndex(input.pageResults, input.source, input.inspection);
+  const warnings: string[] = [];
+  const parameters: GeotechParameterObservation[] = [];
+
+  for (const parameter of input.parameters) {
+    const sourcePages = normalizeSourcePages(parameter.sourcePages);
+    const sourceEvidence = sourcePages
+      .map((page) => pageEvidence.get(page))
+      .filter((page): page is GeotechDocumentPageEvidence => Boolean(page));
+    const pageBoreholeIds = uniqueStrings(sourceEvidence.flatMap((page) => page.boreholeIds));
+    const parameterBoreholeIds = inferBoreholeIdsFromEvidenceText(parameter.material, parameter.context, parameter.name);
+    let reconciled = parameter;
+
+    if (
+      parameterBoreholeIds.length === 0
+      && pageBoreholeIds.length === 1
+      && shouldBindParameterToBorehole(parameter)
+    ) {
+      reconciled = assignBoreholeToParameter(parameter, pageBoreholeIds[0]!);
+    }
+
+    if (isSptParameter(reconciled) && reconciled.numericValue != null) {
+      const hasRetainedContext =
+        Boolean(reconciled.material?.trim())
+        || Boolean(reconciled.context?.trim())
+        || Boolean(reconciled.unit?.trim());
+
+      if (reconciled.numericValue > 200) {
+        parameters.push(reconciled);
+        continue;
+      }
+
+      if (hasBearingTableCue(reconciled)) {
+        warnings.push(
+          `Ignored SPT N value (${reconciled.valueText}); its retained context resembles a footing or bearing-pressure table rather than a Standard Penetration Test row.`,
+        );
+        continue;
+      }
+
+      if (!hasRetainedContext) {
+        warnings.push(
+          `Ignored unassigned SPT N value (${reconciled.valueText}); no borehole, depth, unit, or retained SPT context was available.`,
+        );
+        continue;
+      }
+    }
+
+    parameters.push(reconciled);
+  }
+
+  return { parameters, warnings };
+}
+
 function sanitizeImplausibleSptParameters(parameters: GeotechParameterObservation[]): {
   parameters: GeotechParameterObservation[];
   warnings: string[];
@@ -658,6 +868,168 @@ function sanitizeImplausibleSptParameters(parameters: GeotechParameterObservatio
   });
 
   return { parameters: sanitized, warnings };
+}
+
+function parameterHasSourcePage(parameter: GeotechParameterObservation): boolean {
+  return normalizeSourcePages(parameter.sourcePages).length > 0
+    || /\bpage\s+\d+\b/i.test(parameter.context ?? '');
+}
+
+function parameterLooksMissing(parameter: GeotechParameterObservation): boolean {
+  const text = [parameter.valueText, parameter.unit, parameter.material, parameter.context]
+    .filter(Boolean)
+    .join(' ');
+  return parameter.numericValue == null
+    && (
+      /^(?:[-–—]|n\/?a|none|unknown|null)$/i.test(parameter.valueText.trim())
+      || /\b(?:not\s+(?:reported|extracted|provided|available|conducted|found|identified)|no\s+(?:data|test|result|value)|missing|unavailable|absent)\b/i.test(text)
+    );
+}
+
+function hasUsableCriticalParameter(
+  parameters: GeotechParameterObservation[],
+  pattern: RegExp,
+): boolean {
+  return parameters.some((parameter) => {
+    const text = `${parameter.name} ${parameter.valueText} ${parameter.unit ?? ''} ${parameter.material ?? ''} ${parameter.context ?? ''}`;
+    return pattern.test(text) && !parameterLooksMissing(parameter);
+  });
+}
+
+function buildMissingCriticalData(parameters: GeotechParameterObservation[]): string[] {
+  return [
+    hasUsableCriticalParameter(parameters, /\bground\s*water|groundwater|water\s*table|gwl\b/i) ? null : 'groundwater level',
+    hasUsableCriticalParameter(parameters, /\bspt\b|standard\s*penetration|n[-\s]?value/i) ? null : 'SPT N-values',
+    hasUsableCriticalParameter(parameters, /\brqd\b/i) ? null : 'RQD',
+    hasUsableCriticalParameter(parameters, /\bcohesion\b|\bc\b/i) ? null : 'cohesion',
+    hasUsableCriticalParameter(parameters, /\bfriction\b|\bphi\b|\bangle\b/i) ? null : 'friction angle',
+  ].filter((value): value is string => value != null);
+}
+
+function buildConfidenceBreakdown(input: {
+  pageAudits: GeotechDocumentPageAudit[];
+  pageFailures: string[];
+  source: GeotechDocumentSource & { totalPages: number; successfulPages: number; failedPages: number };
+  parseStatus: ParseStatus;
+  confidence: number;
+  materials: GeotechMaterialObservation[];
+  classifications: GeotechDocumentClassification[];
+  parameters: GeotechParameterObservation[];
+  reviewFindings: GeotechDocumentFinding[];
+  parameterWarnings: string[];
+  synthesis: GeotechDocumentSynthesis | null;
+}): GeotechDocumentConfidenceBreakdown {
+  const engineeringAudits = input.pageAudits.filter((audit) =>
+    audit.parseStatus !== 'failed'
+    && (
+      audit.materialCount > 0
+      || audit.classificationCount > 0
+      || audit.parameterCount > 0
+      || audit.textHintSource === 'native-text'
+      || audit.textHintSource === 'pdfjs-text'
+      || audit.textHintSource === 'glm-ocr'
+      || audit.textHintSource === 'local-ocr'
+    ),
+  );
+  const pageConfidenceInputs = (engineeringAudits.length > 0 ? engineeringAudits : input.pageAudits)
+    .map((audit) => audit.confidence)
+    .filter((value) => Number.isFinite(value));
+  const pageEvidenceConfidence = pageConfidenceInputs.length > 0
+    ? clampScore(pageConfidenceInputs.reduce((sum, value) => sum + value, 0) / pageConfidenceInputs.length)
+    : 0;
+  const successfulRate = input.source.totalPages > 0
+    ? input.source.successfulPages / input.source.totalPages
+    : 0;
+  const partialPages = input.pageAudits.filter((audit) => audit.parseStatus === 'partial').length;
+  const failedPages = Math.max(
+    input.pageAudits.filter((audit) => audit.parseStatus === 'failed').length,
+    input.source.failedPages,
+    input.pageFailures.length,
+  );
+  const extractionConfidence = clampScore(
+    (pageEvidenceConfidence * 0.72)
+    + (successfulRate * 22)
+    - (partialPages * 3)
+    - (failedPages * 7),
+  );
+
+  const sourcePageParameters = input.parameters.filter(parameterHasSourcePage).length;
+  const traceabilityRate = input.parameters.length > 0 ? sourcePageParameters / input.parameters.length : 0;
+  const traceabilityScore = clampScore(traceabilityRate * 100);
+
+  const methodSet = new Set(input.pageAudits.map((audit) => audit.textHintSource));
+  const methodCoverage = {
+    nativeTextPages: input.pageAudits.filter((audit) => audit.textHintSource === 'native-text' || audit.textHintSource === 'pdfjs-text').length,
+    layoutOcrPages: input.pageAudits.filter((audit) => audit.textHintSource === 'glm-ocr' || audit.textHintSource === 'local-ocr').length,
+    visualReasoningPages: input.pageAudits.filter((audit) => audit.textHintSource === 'vision-ocr' || audit.textHintSource === 'vision-visual').length,
+    directVisualPages: input.pageAudits.filter((audit) => audit.textHintSource === 'vision-visual').length,
+  };
+  const corroborationScore = clampScore(
+    45
+    + (methodSet.has('native-text') || methodSet.has('pdfjs-text') ? 18 : 0)
+    + (methodSet.has('glm-ocr') || methodSet.has('local-ocr') ? 18 : 0)
+    + (methodSet.has('vision-ocr') || methodSet.has('vision-visual') ? 12 : 0)
+    + (traceabilityRate >= 0.8 ? 7 : 0)
+    - (methodCoverage.directVisualPages * 4)
+    - (input.parameterWarnings.length * 3),
+  );
+
+  const missingCriticalData = buildMissingCriticalData(input.parameters);
+  const engineeringCompleteness = clampScore(
+    100
+    - (missingCriticalData.length * 13)
+    - (input.materials.length === 0 ? 18 : 0)
+    - (input.classifications.length === 0 ? 8 : 0)
+    - (input.parameters.length === 0 ? 22 : 0)
+    - (input.synthesis?.groundModel.length ? 0 : 6),
+  );
+
+  const reviewGates = uniqueStrings([
+    input.parseStatus !== 'parsed' ? `parse-status-${input.parseStatus}` : null,
+    partialPages > 0 ? 'partial-pages-remain' : null,
+    failedPages > 0 ? 'failed-pages-remain' : null,
+    methodCoverage.directVisualPages > 0 ? 'direct-visual-verification-required' : null,
+    traceabilityScore < 80 ? 'parameter-source-page-gaps' : null,
+    corroborationScore < 70 ? 'limited-cross-method-corroboration' : null,
+    ...missingCriticalData.map((item) => `missing-${item.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`),
+    ...input.parameterWarnings.map((warning) => warning.includes('Ignored') ? 'parameter-artifact-filtered' : 'parameter-warning'),
+    ...input.reviewFindings.filter(findingRequiresReview).map((finding) => finding.code),
+  ]);
+  const readinessScore = clampScore(
+    (engineeringCompleteness * 0.36)
+    + (traceabilityScore * 0.24)
+    + (corroborationScore * 0.18)
+    + (extractionConfidence * 0.22)
+    - (reviewGates.length * 2),
+  );
+
+  const notes = uniqueStrings([
+    'Confidence is provider-neutral workflow trust, not a model self-score.',
+    methodCoverage.directVisualPages > 0
+      ? 'Direct visual extraction remains review-gated even when the vision model returns structured values.'
+      : null,
+    missingCriticalData.length > 0
+      ? `Missing critical data lowers engineering completeness: ${missingCriticalData.join(', ')}.`
+      : null,
+    traceabilityScore >= 80
+      ? 'Most retained parameters have source-page traceability.'
+      : 'Some retained parameters lack explicit source-page traceability.',
+  ]);
+
+  return {
+    schemaVersion: 1,
+    overall: input.confidence,
+    extractionConfidence,
+    engineeringCompleteness,
+    traceabilityScore,
+    corroborationScore,
+    readinessScore,
+    pageEvidenceConfidence,
+    methodCoverage,
+    missingCriticalData,
+    reviewGates,
+    notes,
+  };
 }
 
 function resolvePageConcurrency(
@@ -824,7 +1196,7 @@ function collectResultTextSignals(result: GeotechDocumentInsight): string {
       `${classification.system} ${classification.value}${classification.context ? ` ${classification.context}` : ''}`.trim(),
     ),
     ...result.parameters.map((parameter) =>
-      `${parameter.name} ${parameter.valueText}${parameter.unit ? ` ${parameter.unit}` : ''}${parameter.context ? ` ${parameter.context}` : ''}`.trim(),
+      `${parameter.name} ${parameter.valueText}${parameter.unit ? ` ${parameter.unit}` : ''}${parameter.material ? ` ${parameter.material}` : ''}${parameter.context ? ` ${parameter.context}` : ''}`.trim(),
     ),
     ...result.risks,
     ...result.recommendations,
@@ -2072,7 +2444,13 @@ export async function ingestGeotechDocument(
 
   const materials = mergeMaterials(pageResults, options.source);
   const classifications = mergeClassifications(pageResults, options.source);
-  const parameterSanitization = sanitizeImplausibleSptParameters(mergeParameters(pageResults, options.source));
+  const parameterReconciliation = reconcileGeotechDocumentEvidence({
+    pageResults,
+    source: options.source,
+    inspection: options.inspection,
+    parameters: mergeParameters(pageResults, options.source),
+  });
+  const parameterSanitization = sanitizeImplausibleSptParameters(parameterReconciliation.parameters);
   const parameters = parameterSanitization.parameters;
   const risks = uniqueStrings(pageResults.flatMap((result) => result.risks));
   const recommendations = uniqueStrings(pageResults.flatMap((result) => result.recommendations));
@@ -2133,6 +2511,25 @@ export async function ingestGeotechDocument(
   }
   const reviewRequired = reviewFindings.some(findingRequiresReview);
   const allPagesParsed = pageAudits.length > 0 && pageAudits.every((audit) => audit.parseStatus === 'parsed');
+  const resultSource = {
+    ...options.source,
+    totalPages: options.pages?.length ?? 1,
+    successfulPages: pageResults.length,
+    failedPages: pageFailures.length,
+  };
+  const confidenceBreakdown = buildConfidenceBreakdown({
+    pageAudits,
+    pageFailures,
+    source: resultSource,
+    parseStatus,
+    confidence,
+    materials,
+    classifications,
+    parameters,
+    reviewFindings,
+    parameterWarnings: [...parameterReconciliation.warnings, ...parameterSanitization.warnings],
+    synthesis: null,
+  });
   const contentChunksForResult = contentChunks.map((chunk) => ({
     chunkId: chunk.chunkId,
     pageRange: chunk.pageRange,
@@ -2149,12 +2546,7 @@ export async function ingestGeotechDocument(
     schemaVersion: 1 as const,
     documentType: 'geotech-document' as const,
     generatedAt,
-    source: {
-      ...options.source,
-      totalPages: options.pages?.length ?? 1,
-      successfulPages: pageResults.length,
-      failedPages: pageFailures.length,
-    },
+    source: resultSource,
     inspection: options.inspection ?? null,
     inspectionSummary: summarizeInspection(options.inspection, recoveredOcrPages.size),
     documentClass,
@@ -2173,12 +2565,14 @@ export async function ingestGeotechDocument(
     reviewReasons: summarizeReviewReasons(reviewFindings),
     parseStatus,
     confidence,
+    confidenceBreakdown,
     reviewRequired,
     canAutoProceed: !reviewRequired
       && parseStatus === 'parsed'
       && confidence >= 70
       && allPagesParsed
       && pageFailures.length === 0
+      && parameterReconciliation.warnings.length === 0
       && parameterSanitization.warnings.length === 0,
   };
   let synthesis: GeotechDocumentSynthesis | null = null;
@@ -2203,6 +2597,7 @@ export async function ingestGeotechDocument(
   }
   const warnings = uniqueStrings([
     ...documentWarnings,
+    ...parameterReconciliation.warnings,
     ...parameterSanitization.warnings,
     ...synthesisWarnings,
     ...pageResults.flatMap((result) => result.warnings),

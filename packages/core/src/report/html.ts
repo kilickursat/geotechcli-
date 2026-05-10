@@ -219,6 +219,34 @@ function renderMetric(metric: IngestDossier['metrics'][number]): string {
   `;
 }
 
+function renderConfidenceBreakdown(dossier: IngestDossier): string {
+  if (!dossier.confidenceBreakdown?.length) {
+    return '';
+  }
+  return `
+    <section class="data-section compact-section" id="trust-breakdown">
+      <div class="section-heading">
+        <h2>Trust breakdown</h2>
+        <p>Provider-neutral confidence split for review triage. Raw page/model details remain in Processing Audit.</p>
+      </div>
+      <div class="metric-grid trust-breakdown-grid">
+        ${dossier.confidenceBreakdown.map((item) => `
+          <article class="metric-card ${toneClass(item.tone)}">
+            <span>${escapeHtml(item.label)}</span>
+            <strong>${escapeHtml(item.value)}</strong>
+            ${parsePercent(item.value) != null ? `
+              <span class="meter" aria-label="${escapeHtml(item.label)} ${escapeHtml(item.value)}">
+                <span style="width: ${escapeHtml(parsePercent(item.value) ?? 0)}%"></span>
+              </span>
+            ` : ''}
+            <small>${escapeHtml(item.detail)}</small>
+          </article>
+        `).join('')}
+      </div>
+    </section>
+  `;
+}
+
 function renderStatusBadges(dossier: IngestDossier): string {
   if (dossier.badges.length === 0) {
     return '';
@@ -2054,6 +2082,7 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
         ${renderActionBar()}
       </header>
 
+      ${renderConfidenceBreakdown(dossier)}
       <section class="data-section" id="ground-model">
         <div class="section-heading">
           <h2>Ground Model</h2>

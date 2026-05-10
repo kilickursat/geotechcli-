@@ -1,10 +1,10 @@
 # geotechCLI Development Status
 
-Last updated: 2026-05-09
+Last updated: 2026-05-10
 
 ## Current Work
 
-Preparing v0.4.51 on `strong-beta`. The current engineering track is provider-neutral evidence, standards-aware GroundModel readiness, GroundModel spatial and engineering visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, and the PDF/page evidence benchmark foundation so future OCR/vision and BYOK-provider changes can be measured against the same report PDF instead of judged manually.
+Preparing v0.4.52 on `strong-beta`. The current engineering track is provider-neutral evidence, standards-aware GroundModel readiness, GroundModel spatial and engineering visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, and the PDF/page evidence benchmark foundation so future OCR/vision and BYOK-provider changes can be measured against the same report PDF instead of judged manually.
 
 Current focus:
 
@@ -26,6 +26,8 @@ Current focus:
 - Keep BYOK capability gates honest for OpenAI-compatible/free routes so text-only models are guided through OCR/page evidence instead of being treated as native image readers.
 - Keep a canonical cached-rerun fixture and `npm run benchmark:geotech-report` local harness for the `GeotechnicalInvestigationReport (1).pdf` acceptance target.
 - Keep the agentic document evidence contract provider-neutral so hosted GLM is only the strong-beta default; future BYOK LLMs should plug into the same page evidence, cache, traceability, and GroundModel readiness space.
+- Reconcile extracted report parameters against retained page evidence before visualization, so SPT/lab/groundwater rows are either source-bound to a borehole/depth context or kept out of engineering plots.
+- Split report confidence into provider-neutral workflow trust components covering extraction quality, page evidence, source traceability, cross-method corroboration, engineering completeness, readiness, missing critical data, and review gates.
 - Extend GroundModel verification with calculation-readiness routing for bearing, settlement, pile, liquefaction, and slope workflows before any deterministic calculation is auto-run.
 - Render GroundModel coordinate evidence, strip logs, SPT-depth plots, lab-depth charts, and groundwater/monitoring summaries in `geotech analyze --format html` and `geotech viz`, while keeping CRS/local-grid assumptions and evidence IDs visible.
 - Attach standards-profile assumptions and opt-in non-executing calculation input drafts to GroundModel readiness so downstream calculations are prepared but still review-gated.
@@ -36,6 +38,23 @@ Current focus:
 - Keep the legacy Modal deploy workflow present but disabled by default.
 
 ## Done So Far
+
+### v0.4.52 Confidence v2 Foundation
+
+- Added a provider-neutral `confidenceBreakdown` contract to geotechnical document ingest results so hosted GLM and future BYOK models are judged by the same evidence workflow, not by model self-confidence.
+- Separated confidence into extraction quality, page evidence confidence, source traceability, cross-method corroboration, engineering completeness, readiness, missing critical data, and retained review gates.
+- Threaded the confidence breakdown into `DocumentEvidencePacket`, compact agent summaries, benchmark JSON, and HTML report rendering without changing the legacy top-level `confidence` score.
+- Renamed the main report metric to `Review confidence` and added a compact Trust breakdown section before GroundModel visuals, while keeping raw page/model details in Processing Audit.
+- Verified the real `GeotechnicalInvestigationReport (1).pdf` cached benchmark with 34/34 pages processed, 100% cache hits, zero estimated hosted calls, 100% direct parameter source-page traceability, Review confidence 55%, page evidence 73%, traceability 100%, readiness 50%, and GroundModel readiness 61/100.
+- Added Playwright as a development dependency and verified the generated Confidence v2 HTML report at desktop and mobile widths with no page-level horizontal overflow.
+- Added regression coverage for ingest confidence breakdown generation, evidence packet/schema propagation, benchmark output, report view-model metrics, and rendered HTML ordering.
+
+### Unreleased Report Evidence Reconciliation
+
+- Added deterministic geotechnical report evidence reconciliation before synthesis, binding depth-bound parameters such as SPT, groundwater, index/lab, and strength values to a single clear borehole ID when retained page evidence supports it.
+- Quarantined naked SPT rows that have no retained borehole, depth, unit, or SPT context instead of letting numeric chart/table artifacts pollute the report parameter set.
+- Stopped the report GroundModel adapter from rendering fake `UNASSIGNED` SPT boreholes and from promoting footing/bearing-pressure table values into SPT-depth plots.
+- Added regression coverage for page-evidence borehole reconciliation, SPT artifact quarantine, report GroundModel SPT filtering, and footing-table false positive handling.
 
 ### v0.4.51 PDF Report GroundModel Visual Review
 

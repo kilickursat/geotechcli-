@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.4.52] - 2026-05-10
+
+### Confidence v2 and Report Trust Breakdown
+
+- Added a provider-neutral `confidenceBreakdown` contract to geotechnical document ingest results, separating review confidence into extraction quality, page evidence, source traceability, cross-method corroboration, engineering completeness, readiness, missing critical data, and retained review gates.
+- Threaded the confidence breakdown into `DocumentEvidencePacket`, compact agent summaries, benchmark JSON, CLI summaries, and generated HTML reports while keeping the legacy top-level confidence score stable for compatibility.
+- Renamed geotechnical report presentation from generic confidence to Review confidence and added a compact Trust breakdown section before GroundModel visuals, with raw page/model details still kept in Processing Audit.
+- Tightened missing-critical-data scoring so values such as "not reported" or missing SPT/RQD/friction evidence do not count as usable engineering evidence.
+- Updated the canonical cached PDF benchmark fixture from `GeotechnicalInvestigationReport (1).pdf` with Confidence v2 data: 34/34 pages processed, 100% cache hits, zero estimated hosted calls, 100% direct parameter source-page traceability, Review confidence 55%, page evidence 73%, traceability 100%, readiness 50%, and GroundModel readiness 61/100.
+- Added Playwright as a development dependency and verified the generated Confidence v2 HTML report at desktop and mobile widths with no page-level horizontal overflow.
+
 ## [0.4.51] - 2026-05-09
 
 ### PDF Report GroundModel Visual Review

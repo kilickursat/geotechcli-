@@ -45,6 +45,7 @@ export interface GeotechDocumentBenchmark {
     title: string | null;
     parseStatus: GeotechDocumentIngestResult['parseStatus'];
     confidence: number;
+    confidenceBreakdown?: GeotechDocumentIngestResult['confidenceBreakdown'];
     reviewRequired: boolean;
     canAutoProceed: boolean;
   };
@@ -192,6 +193,7 @@ export function buildGeotechDocumentBenchmark(
       title: result.title,
       parseStatus: result.parseStatus,
       confidence: result.confidence,
+      ...(result.confidenceBreakdown ? { confidenceBreakdown: result.confidenceBreakdown } : {}),
       reviewRequired: result.reviewRequired,
       canAutoProceed: result.canAutoProceed,
     },

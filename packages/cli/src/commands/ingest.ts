@@ -208,7 +208,17 @@ function renderGeotechBenchmarkSummary(benchmark: ReturnType<typeof buildGeotech
   heading('Geotechnical Ingest Benchmark');
   keyValue('Source', benchmark.source.fileName ?? benchmark.source.filePath ?? benchmark.label ?? 'Unknown');
   keyValue('Pages processed', `${benchmark.source.successfulPages}/${benchmark.source.totalPages}`);
-  keyValue('Confidence', `${benchmark.document.confidence}%`);
+  keyValue('Review confidence', `${benchmark.document.confidence}%`);
+  if (benchmark.document.confidenceBreakdown) {
+    keyValue(
+      'Trust breakdown',
+      [
+        `page evidence ${benchmark.document.confidenceBreakdown.pageEvidenceConfidence}%`,
+        `traceability ${benchmark.document.confidenceBreakdown.traceabilityScore}%`,
+        `readiness ${benchmark.document.confidenceBreakdown.readinessScore}%`,
+      ].join(', '),
+    );
+  }
   keyValue('Cache hit rate', `${Math.round(benchmark.evidenceCache.hitRate * 100)}%`);
   keyValue(
     'Estimated hosted calls',
@@ -812,6 +822,7 @@ function renderGeotechDocumentResultReport(
       ocrRecoveredPageCount: number;
     } | null;
     confidence: number;
+    confidenceBreakdown?: GeotechDocumentIngestResult['confidenceBreakdown'];
     parseStatus?: string;
     reviewRequired: boolean;
     canAutoProceed: boolean;
@@ -840,7 +851,13 @@ function renderGeotechDocumentResultReport(
   keyValue('Document class', result.documentClass ?? 'Unavailable');
   keyValue('Materials extracted', String(result.materials.length));
   keyValue('Parameters extracted', String(result.parameters.length));
-  keyValue('Confidence', `${result.confidence}%`);
+  keyValue('Review confidence', `${result.confidence}%`);
+  if (result.confidenceBreakdown) {
+    keyValue(
+      'Trust breakdown',
+      `page evidence ${result.confidenceBreakdown.pageEvidenceConfidence}%, traceability ${result.confidenceBreakdown.traceabilityScore}%, readiness ${result.confidenceBreakdown.readinessScore}%`,
+    );
+  }
   if (result.parseStatus) {
     keyValue('Parse status', result.parseStatus);
   }
@@ -1853,7 +1870,13 @@ function renderCompactIngestResultSummary(
     keyValue('Boreholes extracted', String(result.boreholes.length));
   }
 
-  keyValue('Confidence', `${result.confidence}%`);
+  keyValue(result.documentType === 'geotech-document' ? 'Review confidence' : 'Confidence', `${result.confidence}%`);
+  if (result.documentType === 'geotech-document' && result.confidenceBreakdown) {
+    keyValue(
+      'Trust breakdown',
+      `page evidence ${result.confidenceBreakdown.pageEvidenceConfidence}%, traceability ${result.confidenceBreakdown.traceabilityScore}%, readiness ${result.confidenceBreakdown.readinessScore}%`,
+    );
+  }
   keyValue('Review required', result.reviewRequired ? 'Yes' : 'No');
   keyValue('Auto proceed', result.canAutoProceed ? 'Yes' : 'No');
 

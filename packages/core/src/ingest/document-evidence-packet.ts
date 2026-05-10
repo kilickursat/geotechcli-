@@ -45,6 +45,25 @@ const DocumentSchema = z.object({
   documentClass: z.string().nullable(),
   parseStatus: z.enum(['parsed', 'partial', 'failed']),
   confidence: z.number().min(0).max(100),
+  confidenceBreakdown: z.object({
+    schemaVersion: z.literal(1),
+    overall: z.number().min(0).max(100),
+    extractionConfidence: z.number().min(0).max(100),
+    engineeringCompleteness: z.number().min(0).max(100),
+    traceabilityScore: z.number().min(0).max(100),
+    corroborationScore: z.number().min(0).max(100),
+    readinessScore: z.number().min(0).max(100),
+    pageEvidenceConfidence: z.number().min(0).max(100),
+    methodCoverage: z.object({
+      nativeTextPages: z.number().int().nonnegative(),
+      layoutOcrPages: z.number().int().nonnegative(),
+      visualReasoningPages: z.number().int().nonnegative(),
+      directVisualPages: z.number().int().nonnegative(),
+    }),
+    missingCriticalData: z.array(z.string()),
+    reviewGates: z.array(z.string()),
+    notes: z.array(z.string()),
+  }).optional(),
   reviewRequired: z.boolean(),
   canAutoProceed: z.boolean(),
 });
@@ -215,6 +234,7 @@ export function buildDocumentEvidencePacket(result: GeotechDocumentIngestResult)
       documentClass: result.documentClass,
       parseStatus: result.parseStatus,
       confidence: normalizeConfidence(result.confidence),
+      ...(result.confidenceBreakdown ? { confidenceBreakdown: result.confidenceBreakdown } : {}),
       reviewRequired: result.reviewRequired,
       canAutoProceed: result.canAutoProceed,
     },
@@ -370,6 +390,9 @@ export function compileDocumentEvidenceSynthesisPrompt(
     `Packet schema: v${packet.schemaVersion}; providerNeutral=${packet.providerContract.providerNeutral}; purpose=${packet.providerContract.purpose}.`,
     `Source: ${packet.source.fileName ?? packet.source.filePath ?? packet.source.inputKind}; pages ${packet.source.successfulPages}/${packet.source.totalPages}; evidence pages ${pageList(packet.traceability.pagesWithEvidence)}.`,
     `Document: ${packet.document.title ?? 'untitled'}; class=${packet.document.documentClass ?? 'unknown'}; status=${packet.document.parseStatus}; confidence=${packet.document.confidence}%; reviewRequired=${packet.document.reviewRequired ? 'yes' : 'no'}; canAutoProceed=${packet.document.canAutoProceed ? 'yes' : 'no'}.`,
+    packet.document.confidenceBreakdown
+      ? `Trust breakdown: extraction=${packet.document.confidenceBreakdown.extractionConfidence}%; completeness=${packet.document.confidenceBreakdown.engineeringCompleteness}%; traceability=${packet.document.confidenceBreakdown.traceabilityScore}%; corroboration=${packet.document.confidenceBreakdown.corroborationScore}%; readiness=${packet.document.confidenceBreakdown.readinessScore}%.`
+      : null,
     `Traceability: source pages ${pageList(packet.traceability.sourcePages)}; native=${pageList(packet.traceability.nativeTextPages)}; layout/OCR=${pageList(packet.traceability.layoutOcrPages)}; visual=${pageList(packet.traceability.directVisualPages)}; parameter source-page rate=${Math.round(packet.traceability.parameterTraceabilityRate * 100)}%.`,
     `Review gates: ${packet.providerContract.reviewGates.join('; ') || 'none'}.`,
     `Borehole summary: ${packet.traceability.boreholeIds.join(', ') || 'not detected'}; max depth=${packet.traceability.maxDepthMeters != null ? `${packet.traceability.maxDepthMeters} m` : 'not extracted'}.`,
@@ -411,7 +434,7 @@ export function compileDocumentEvidenceSynthesisPrompt(
         `${finding.severity.toUpperCase()} ${finding.code}${finding.pageNumber ? ` page ${finding.pageNumber}` : ''}: ${compactText(finding.message, 220)}`,
       ),
     ].join('\n') || 'None.',
-  ].join('\n'), maxEvidenceChars);
+  ].filter((line): line is string => typeof line === 'string').join('\n'), maxEvidenceChars);
 
   const prompt = `Create a concise engineering synthesis from the provider-neutral geotechnical document evidence packet below. Respond with ONLY a JSON object:
 {
@@ -488,6 +511,9 @@ export function summarizeDocumentEvidencePacketForAgent(
     `DocumentEvidencePacket v${packet.schemaVersion} provider-neutral agent context.`,
     `Source: ${packet.source.fileName ?? packet.source.filePath ?? packet.source.inputKind}; pages ${packet.source.successfulPages}/${packet.source.totalPages}; evidence pages ${pageList(packet.traceability.pagesWithEvidence)}.`,
     `Document: ${packet.document.title ?? 'untitled'}; class ${packet.document.documentClass ?? 'unknown'}; status ${packet.document.parseStatus}; confidence ${packet.document.confidence}%; reviewRequired ${packet.document.reviewRequired ? 'yes' : 'no'}; canAutoProceed ${packet.document.canAutoProceed ? 'yes' : 'no'}.`,
+    packet.document.confidenceBreakdown
+      ? `Trust breakdown: extraction ${packet.document.confidenceBreakdown.extractionConfidence}%, completeness ${packet.document.confidenceBreakdown.engineeringCompleteness}%, traceability ${packet.document.confidenceBreakdown.traceabilityScore}%, corroboration ${packet.document.confidenceBreakdown.corroborationScore}%, readiness ${packet.document.confidenceBreakdown.readinessScore}%.`
+      : null,
     `Methods: ${methods}; native pages ${pageList(packet.traceability.nativeTextPages)}; layout/OCR pages ${pageList(packet.traceability.layoutOcrPages)}; direct visual pages ${pageList(packet.traceability.directVisualPages)}.`,
     `Page outcomes: parsed ${pageOutcomes.parsed}, partial ${pageOutcomes.partial}, failed ${pageOutcomes.failed}.`,
     `Traceability: source pages ${pageList(packet.traceability.sourcePages)}; parameter source-page rate ${Math.round(packet.traceability.parameterTraceabilityRate * 100)}%; with source ${packet.traceability.parametersWithSourcePage}, without source ${packet.traceability.parametersWithoutSourcePage}.`,
@@ -503,7 +529,7 @@ export function summarizeDocumentEvidencePacketForAgent(
     packet.engineeringSignals.recommendations.length > 0 ? `Recommendations: ${packet.engineeringSignals.recommendations.slice(0, 5).map((item) => compactText(item, 140)).join('; ')}.` : '',
     packet.review.warnings.length > 0 ? `Warnings: ${packet.review.warnings.slice(0, 6).join('; ')}.` : '',
     'Agent rule: cite source pages from this packet; do not run deterministic calculations from missing, direct-visual-only, or needs-review evidence without explicit review/approval.',
-  ].filter(Boolean).join('\n'), maxContentChars);
+  ].filter((line): line is string => typeof line === 'string' && line.length > 0).join('\n'), maxContentChars);
 }
 
 export function summarizeGeotechDocumentResultForAgent(

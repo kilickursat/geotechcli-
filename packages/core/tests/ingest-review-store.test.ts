@@ -200,6 +200,25 @@ function makeGeotechDocumentResult(
     reviewReasons: [],
     parseStatus: 'parsed',
     confidence: 79,
+    confidenceBreakdown: {
+      schemaVersion: 1,
+      overall: 79,
+      extractionConfidence: 86,
+      engineeringCompleteness: 74,
+      traceabilityScore: 100,
+      corroborationScore: 88,
+      readinessScore: 78,
+      pageEvidenceConfidence: 82,
+      methodCoverage: {
+        nativeTextPages: 1,
+        layoutOcrPages: 0,
+        visualReasoningPages: 0,
+        directVisualPages: 0,
+      },
+      missingCriticalData: ['groundwater level', 'SPT N-values', 'RQD', 'friction angle'],
+      reviewGates: [],
+      notes: ['Confidence is provider-neutral workflow trust, not a model self-score.'],
+    },
     reviewRequired: false,
     canAutoProceed: true,
     ...overrides,
@@ -463,6 +482,11 @@ describe('ingest review persistence', () => {
 
     const direct = loadPersistedBoreholeIngestReview(project.meta.id, review.datasetName);
     expect(direct?.approval?.datasetName).toBe(approval.datasetName);
+    expect((direct?.result as GeotechDocumentIngestResult | undefined)?.confidenceBreakdown).toEqual(expect.objectContaining({
+      schemaVersion: 1,
+      overall: 79,
+      readinessScore: expect.any(Number),
+    }));
 
     const loaded = loadProject(project.meta.id);
     expect(loaded.namedDatasets[review.datasetName]?.kind).toBe('geotech-ingest-review');

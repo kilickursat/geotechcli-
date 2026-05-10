@@ -225,7 +225,8 @@ geotech ingest review demo-project --dataset ingest-review:latest --format html 
 
 The HTML report is a self-contained Geotechnical Intelligence Report with:
 
-- executive facts, confidence metrics, review actions, and sticky navigation
+- executive facts, Review confidence metrics, review actions, and sticky navigation
+- a provider-neutral Trust breakdown for extraction quality, page evidence, source traceability, cross-method corroboration, engineering completeness, readiness, missing critical data, and retained review gates
 - engineering insight cards for ground conditions, design implications, missing critical data, and verification focus
 - an evidence-first trust table for retained and missing parameters with source page, confidence, review posture, and evidence snippets
 - extracted materials, classifications, grouped engineering parameters, and normalized section map
@@ -236,7 +237,7 @@ The HTML report is a self-contained Geotechnical Intelligence Report with:
 - stored-review and approval context when the ingest is project-backed
 
 Hosted-beta reliability note: geotechnical PDFs above the best-result window are now split into linked sequential packets automatically, and the final result plus HTML report merge those packets back into one review surface.
-Benchmark note: `--format benchmark` emits a compact JSON harness for geotechnical reports with cache hit rate, estimated hosted calls, direct and audit-backed source-page traceability, retained signal counts, and ground-model readiness gates so OCR/vision changes can be compared against the same PDF instead of judged manually. `npm run benchmark:geotech-report` runs the local two-pass harness against `GeotechnicalInvestigationReport (1).pdf` when that file is available, writes first-run/cached-rerun benchmark JSON, and fails if cache reuse, source-page traceability, or GroundModel readiness falls below the current acceptance floor. The evidence model is provider-neutral: hosted GLM is the strong-beta default, but BYOK providers should be judged against the same PDF/page evidence, cache, traceability, and readiness contract.
+Benchmark note: `--format benchmark` emits a compact JSON harness for geotechnical reports with cache hit rate, estimated hosted calls, direct and audit-backed source-page traceability, retained signal counts, confidence breakdown, and ground-model readiness gates so OCR/vision changes can be compared against the same PDF instead of judged manually. `npm run benchmark:geotech-report` runs the local two-pass harness against `GeotechnicalInvestigationReport (1).pdf` when that file is available, writes first-run/cached-rerun benchmark JSON, and fails if cache reuse, source-page traceability, or GroundModel readiness falls below the current acceptance floor. The evidence model is provider-neutral: hosted GLM is the strong-beta default, but BYOK providers should be judged against the same PDF/page evidence, cache, traceability, and readiness contract. Confidence is treated as workflow trust, not model self-score, and synthesis alone does not raise it.
 Cost-control note: hosted-beta PDF ingest now tries GLM-OCR layout parsing before vision OCR, routes image-only pages into GLM-5V visual extraction only when layout/text is insufficient, caches compact page evidence locally by file/page/model/preprocessing/schema hash, and marks direct visual pages for human review as `vision-visual`.
 
 ### Bundled Skills

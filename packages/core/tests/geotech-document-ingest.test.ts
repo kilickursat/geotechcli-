@@ -207,6 +207,16 @@ describe('ingestGeotechDocument', () => {
     expect(result.synthesis?.takeaways[0]).toMatch(/Stiff CL clay/i);
     expect(result.summary).toMatch(/Stiff CL clay/i);
     expect(result.confidence).toBe(74);
+    expect(result.confidenceBreakdown).toEqual(expect.objectContaining({
+      schemaVersion: 1,
+      overall: 74,
+      extractionConfidence: expect.any(Number),
+      engineeringCompleteness: expect.any(Number),
+      traceabilityScore: expect.any(Number),
+      corroborationScore: expect.any(Number),
+      readinessScore: expect.any(Number),
+    }));
+    expect(result.confidenceBreakdown?.notes.join(' ')).toMatch(/provider-neutral workflow trust/i);
     expect(result.warnings.join(' ')).toMatch(/GLM-5\.1 synthesis/i);
   });
 
@@ -1308,6 +1318,123 @@ describe('ingestGeotechDocument', () => {
 
     expect(result.parameters.some((parameter) => parameter.name === 'sptN')).toBe(false);
     expect(result.warnings.join(' ')).toMatch(/implausible SPT N value/i);
+  });
+
+  it('reconciles unassigned SPT rows to a single borehole ID from page evidence', async () => {
+    const pageText = 'B.H.NO.: 02\nStandard Penetration Test results show N = 18 at 3.0 m.';
+    const extractTextFacts = vi.fn(async (_pageText: string, _config: any, context: any) => makeResult({
+      documentClass: 'borehole-log',
+      title: 'Borehole log',
+      summary: 'SPT values were retained from a borehole log table.',
+      parameters: [
+        { name: 'sptN', valueText: '18', numericValue: 18, unit: 'blows/300mm', material: null, context: 'SPT at depth 3.0 m' },
+      ],
+      pageNumber: context.pageNumber ?? null,
+      totalPages: context.totalPages ?? null,
+      rawLLMText: 'mock',
+    }) as any);
+
+    const result = await ingestGeotechDocument({
+      config: { provider: 'openai-compatible', timeout: 60000 } as any,
+      source: {
+        filePath: 'borehole-log.pdf',
+        fileName: 'borehole-log.pdf',
+        inputKind: 'pdf',
+      },
+      inspection: {
+        kind: 'pdf-document-inspection',
+        totalPages: 1,
+        warnings: [],
+        capabilities: { nativeTextExtraction: 'available', rasterImageExtraction: 'available' },
+        degradation: { level: 'none', reasons: [] },
+        gracefulDegradationNotes: [],
+        metadata: { parser: 'lightweight-page-inspector', byteLength: 100, pdfVersion: '1.7', isEncrypted: false, objectCount: 1 },
+        pages: [{
+          pageNumber: 1,
+          classification: 'digital-text',
+          capabilities: { nativeTextExtraction: 'available', rasterImageExtraction: 'available' },
+          degradation: { level: 'none', reasons: [] },
+          warnings: [],
+          normalizedText: pageText,
+          extractedText: pageText,
+          normalizedArtifact: {
+            pageNumber: 1,
+            classification: 'digital-text',
+            rotation: 0,
+            headingHints: ['B.H.NO.: 02'],
+            nativeText: pageText,
+            textQuality: { accepted: true },
+            textSource: 'native-text',
+            renderedImageAvailable: true,
+            tablesDetected: true,
+            figuresDetected: false,
+            warnings: [],
+            confidence: 95,
+          },
+          metadata: { wordCount: 12 },
+        }],
+      } as any,
+      pages: [{ base64: 'page-1', mimeType: 'application/pdf', pageNumber: 1, totalPages: 1 }],
+      extractTextFacts,
+      interpretPage: vi.fn(),
+    });
+
+    const spt = result.parameters.find((parameter) => parameter.name === 'sptN');
+    expect(spt?.material).toBe('BH2');
+    expect(spt?.context).toContain('borehole reconciled from page evidence: BH2');
+    expect(result.warnings.join(' ')).not.toMatch(/unassigned SPT/i);
+  });
+
+  it('quarantines naked SPT rows that have no retained borehole, depth, unit, or SPT context', async () => {
+    const result = await ingestGeotechDocument({
+      config: { provider: 'openai-compatible', timeout: 60000 } as any,
+      source: {
+        filePath: 'axis-values.pdf',
+        fileName: 'axis-values.pdf',
+        inputKind: 'pdf',
+      },
+      pages: [{ base64: 'page-1', mimeType: 'application/pdf', pageNumber: 1, totalPages: 1 }],
+      interpretPage: async (_imageBase64, _mimeType, _config, context) => makeResult({
+        documentClass: 'geotechnical-document',
+        title: 'Chart appendix',
+        summary: 'A figure page contained numeric tick labels.',
+        parameters: [
+          { name: 'sptN', valueText: '5', numericValue: 5, unit: null, material: null, context: null },
+        ],
+        pageNumber: context.pageNumber ?? null,
+        totalPages: context.totalPages ?? null,
+        rawLLMText: 'mock',
+      }) as any,
+    });
+
+    expect(result.parameters.some((parameter) => parameter.name === 'sptN')).toBe(false);
+    expect(result.warnings.join(' ')).toMatch(/unassigned SPT N value/i);
+  });
+
+  it('quarantines SPT rows whose context resembles a footing or bearing-pressure table', async () => {
+    const result = await ingestGeotechDocument({
+      config: { provider: 'openai-compatible', timeout: 60000 } as any,
+      source: {
+        filePath: 'bearing-table.pdf',
+        fileName: 'bearing-table.pdf',
+        inputKind: 'pdf',
+      },
+      pages: [{ base64: 'page-1', mimeType: 'application/pdf', pageNumber: 1, totalPages: 1 }],
+      interpretPage: async (_imageBase64, _mimeType, _config, context) => makeResult({
+        documentClass: 'geotechnical-document',
+        title: 'Foundation recommendation table',
+        summary: 'Allowable bearing pressure values were extracted from a footing table.',
+        parameters: [
+          { name: 'sptN', valueText: '15', numericValue: 15, unit: 'blows/ft', material: 'BH-3', context: 'Depth 1.5, footing table dimension 2 m x 2 m' },
+        ],
+        pageNumber: context.pageNumber ?? null,
+        totalPages: context.totalPages ?? null,
+        rawLLMText: 'mock',
+      }) as any,
+    });
+
+    expect(result.parameters.some((parameter) => parameter.name === 'sptN')).toBe(false);
+    expect(result.warnings.join(' ')).toMatch(/bearing-pressure table/i);
   });
 
   it('short-circuits zero-word late raster pages when adjacent tail pages are visual-only appendices', async () => {

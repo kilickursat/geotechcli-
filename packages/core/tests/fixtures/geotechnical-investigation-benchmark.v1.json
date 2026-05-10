@@ -1,7 +1,7 @@
 {
   "kind": "geotech-document-benchmark",
   "schemaVersion": 1,
-  "fixtureSource": "GeotechnicalInvestigationReport (1).pdf cached rerun, 2026-05-04",
+  "fixtureSource": "GeotechnicalInvestigationReport (1).pdf cached rerun with Confidence v2, 2026-05-10",
   "source": {
     "fileName": "GeotechnicalInvestigationReport (1).pdf",
     "inputKind": "pdf",
@@ -14,6 +14,40 @@
     "title": "Geotechnical Investigation Report",
     "parseStatus": "partial",
     "confidence": 55,
+    "confidenceBreakdown": {
+      "schemaVersion": 1,
+      "overall": 55,
+      "extractionConfidence": 66,
+      "engineeringCompleteness": 68,
+      "traceabilityScore": 100,
+      "corroborationScore": 30,
+      "readinessScore": 50,
+      "pageEvidenceConfidence": 73,
+      "methodCoverage": {
+        "nativeTextPages": 27,
+        "layoutOcrPages": 0,
+        "visualReasoningPages": 7,
+        "directVisualPages": 7
+      },
+      "missingCriticalData": ["SPT N-values", "friction angle"],
+      "reviewGates": [
+        "parse-status-partial",
+        "partial-pages-remain",
+        "direct-visual-verification-required",
+        "limited-cross-method-corroboration",
+        "missing-spt-n-values",
+        "missing-friction-angle",
+        "parameter-artifact-filtered",
+        "page_geotech_extraction_partial",
+        "direct_visual_review_required"
+      ],
+      "notes": [
+        "Confidence is provider-neutral workflow trust, not a model self-score.",
+        "Direct visual extraction remains review-gated even when the vision model returns structured values.",
+        "Missing critical data lowers engineering completeness: SPT N-values, friction angle.",
+        "Most retained parameters have source-page traceability."
+      ]
+    },
     "reviewRequired": true,
     "canAutoProceed": false
   },
@@ -32,12 +66,14 @@
   "retainedSignals": {
     "materials": 49,
     "classifications": 13,
-    "parameters": 37,
+    "parameters": 29,
+    "risks": 26,
+    "recommendations": 44,
     "contentChunks": 34,
     "synthesisGroundModelItems": 5
   },
   "traceability": {
-    "parametersWithSourcePage": 37,
+    "parametersWithSourcePage": 29,
     "parametersWithoutSourcePage": 0,
     "directParameterTraceabilityRate": 1,
     "auditBackedParameterTraceabilityRate": 1,
@@ -52,5 +88,25 @@
     "hasGroundModelSynthesis": true,
     "missingCriticalData": ["SPT N-values"],
     "gates": ["missing-spt-n-values", "partial-pages-remain", "low-confidence"]
+  },
+  "evidenceContract": {
+    "schemaVersion": 2,
+    "providerNeutral": true,
+    "pages": 34,
+    "observations": {
+      "materials": 49,
+      "classifications": 13,
+      "parameters": 29,
+      "total": 91
+    },
+    "methodCounts": {
+      "native-pdf-text": 27,
+      "layout-ocr": 0,
+      "visual-reasoning": 7,
+      "hybrid": 0,
+      "none": 0
+    },
+    "sourcePages": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34],
+    "reviewGateCount": 3
   }
 }

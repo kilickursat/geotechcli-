@@ -145,6 +145,25 @@ function makeResult(
     reviewReasons: ['Missing SPT and groundwater data.'],
     parseStatus: 'partial',
     confidence: 82,
+    confidenceBreakdown: {
+      schemaVersion: 1,
+      overall: 82,
+      extractionConfidence: 83,
+      engineeringCompleteness: 48,
+      traceabilityScore: 33,
+      corroborationScore: 73,
+      readinessScore: 54,
+      pageEvidenceConfidence: 81,
+      methodCoverage: {
+        nativeTextPages: 1,
+        layoutOcrPages: 1,
+        visualReasoningPages: 1,
+        directVisualPages: 1,
+      },
+      missingCriticalData: ['RQD', 'cohesion', 'friction angle'],
+      reviewGates: ['partial-pages-remain', 'parameter-source-page-gaps'],
+      notes: ['Confidence is provider-neutral workflow trust, not a model self-score.'],
+    },
     reviewRequired: true,
     canAutoProceed: false,
     ...overrides,
@@ -165,6 +184,11 @@ describe('geotech document benchmark', () => {
     });
 
     expect(benchmark.kind).toBe('geotech-document-benchmark');
+    expect(benchmark.document.confidenceBreakdown).toEqual(expect.objectContaining({
+      schemaVersion: 1,
+      overall: 82,
+      readinessScore: expect.any(Number),
+    }));
     expect(benchmark.evidenceCache).toMatchObject({
       hit: 1,
       stored: 1,
@@ -278,10 +302,31 @@ describe('geotech document benchmark', () => {
       successfulPages: 34,
       failedPages: 0,
     });
+    expect(fixture.document.confidenceBreakdown).toMatchObject({
+      schemaVersion: 1,
+      overall: fixture.document.confidence,
+      traceabilityScore: 100,
+      readinessScore: 50,
+      methodCoverage: {
+        nativeTextPages: 27,
+        visualReasoningPages: 7,
+        directVisualPages: 7,
+      },
+    });
+    expect(fixture.document.confidenceBreakdown.missingCriticalData).toEqual([
+      'SPT N-values',
+      'friction angle',
+    ]);
     expect(fixture.evidenceCache.hitRate).toBe(1);
     expect(hostedCalls).toBe(0);
     expect(fixture.traceability.directParameterTraceabilityRate).toBeGreaterThanOrEqual(0.95);
     expect(fixture.traceability.parametersWithoutSourcePage).toBe(0);
+    expect(fixture.evidenceContract).toMatchObject({
+      schemaVersion: 2,
+      providerNeutral: true,
+      pages: 34,
+      reviewGateCount: 3,
+    });
     expect(fixture.groundModelReadiness).toMatchObject({
       status: 'needs_engineering_review',
       score: 61,

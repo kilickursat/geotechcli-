@@ -5,8 +5,21 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 const releases = [
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-05-09',
+    date: '2026-05-10',
     tag: `${GEOTECHCLI_VERSION} Release`,
+    changes: [
+      { type: 'feat', text: 'Added provider-neutral Confidence v2 for geotechnical document ingest results with extraction, page evidence, traceability, corroboration, engineering completeness, readiness, missing-data, and review-gate scores' },
+      { type: 'feat', text: 'Threaded confidenceBreakdown into DocumentEvidencePacket, compact agent summaries, benchmark JSON, CLI summaries, and generated HTML reports' },
+      { type: 'feat', text: 'Renamed report confidence presentation to Review confidence and added a compact Trust breakdown section before GroundModel visuals' },
+      { type: 'fix', text: 'Tightened missing-critical-data scoring so not-reported values do not count as usable engineering evidence' },
+      { type: 'fix', text: 'Updated the canonical GeotechnicalInvestigationReport cached benchmark fixture with Confidence v2 data and verified the real PDF benchmark with 34/34 pages, 100% cache hits, zero hosted calls, and 100% direct source-page traceability' },
+      { type: 'fix', text: 'Added Playwright as a development dependency and verified the generated Confidence v2 HTML report at desktop and mobile widths with no page-level horizontal overflow' },
+    ],
+  },
+  {
+    version: '0.4.51',
+    date: '2026-05-09',
+    tag: '0.4.51 Release',
     changes: [
       { type: 'feat', text: 'Added a report-side GroundModel adapter for geotechnical PDF ingest results with source-page evidence IDs, inferred strata, SPT N-values, depth-bound parameters, and groundwater observations' },
       { type: 'feat', text: 'Added a GroundModel Visual Review section to generated geotechnical report HTML with compact borehole strip logs, SPT N-value depth plotting, lab-parameter depth charts, and groundwater summaries' },
