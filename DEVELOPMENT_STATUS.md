@@ -4,7 +4,7 @@ Last updated: 2026-05-09
 
 ## Current Work
 
-Preparing v0.4.50 on `strong-beta`. The current engineering track is provider-neutral evidence, standards-aware GroundModel readiness, GroundModel spatial and engineering visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, and the PDF/page evidence benchmark foundation so future OCR/vision and BYOK-provider changes can be measured against the same report PDF instead of judged manually.
+Preparing v0.4.51 on `strong-beta`. The current engineering track is provider-neutral evidence, standards-aware GroundModel readiness, GroundModel spatial and engineering visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, and the PDF/page evidence benchmark foundation so future OCR/vision and BYOK-provider changes can be measured against the same report PDF instead of judged manually.
 
 Current focus:
 
@@ -36,6 +36,13 @@ Current focus:
 - Keep the legacy Modal deploy workflow present but disabled by default.
 
 ## Done So Far
+
+### v0.4.51 PDF Report GroundModel Visual Review
+
+- Added a report-side GroundModel adapter for geotechnical PDF ingest results, preserving source-page evidence IDs, inferred strata, SPT N-values, depth-bound parameters, and groundwater observations in a provider-neutral visual model.
+- Added a GroundModel Visual Review section to generated geotechnical report HTML with compact borehole strip logs, SPT N-value depth plotting, lab-parameter depth charts, and groundwater/monitoring summaries.
+- Kept the existing DocumentEvidencePacket schema stable while wiring the richer visual review through the report view model.
+- Added regression coverage for report HTML GroundModel visual rendering from PDF evidence.
 
 ### v0.4.50 GroundModel Visual Pack
 
@@ -229,7 +236,6 @@ Current focus:
 
 Highest-value next work:
 
-- Expand geotechnical report HTML visuals with the richer GroundModel strip-log, SPT-depth, lab-chart, and monitoring views now available in workspace analysis.
 - Expand PDF/image preprocessing before vision beyond margin trimming with deskew, crop tables/log panels, and normalized page-region assets.
 - Expand the benchmark harness from the current cached-rerun acceptance fixture into broader latency/provider profiles, region-level preprocessing comparisons, and historical trend output.
 - Add provider/BYOK benchmark profiles so OpenAI-compatible, hosted-beta, and future user-selected LLMs are evaluated with the same PDF/image evidence contract instead of model-specific assumptions.

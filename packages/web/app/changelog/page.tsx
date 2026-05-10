@@ -8,6 +8,17 @@ const releases = [
     date: '2026-05-09',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added a report-side GroundModel adapter for geotechnical PDF ingest results with source-page evidence IDs, inferred strata, SPT N-values, depth-bound parameters, and groundwater observations' },
+      { type: 'feat', text: 'Added a GroundModel Visual Review section to generated geotechnical report HTML with compact borehole strip logs, SPT N-value depth plotting, lab-parameter depth charts, and groundwater summaries' },
+      { type: 'fix', text: 'Kept the DocumentEvidencePacket schema stable while wiring richer visual review through the report view model' },
+      { type: 'fix', text: 'Added regression coverage for report HTML GroundModel visual rendering from PDF evidence' },
+    ],
+  },
+  {
+    version: '0.4.50',
+    date: '2026-05-09',
+    tag: '0.4.50 Release',
+    changes: [
       { type: 'feat', text: 'Added a GroundModel Visual Review section to geotech analyze --format html with compact borehole strip logs, SPT N-value depth plotting, lab-parameter depth mini charts, and groundwater/monitoring summaries' },
       { type: 'feat', text: 'Extended geotech viz GroundModel support beyond coordinate maps so analyze JSON now renders map, SPT-depth, lab-depth, and groundwater charts from the same provider-neutral GroundModel contract' },
       { type: 'fix', text: 'Added context-aware table inference so common coordinate headers such as id and groundwater files with generic depth_m columns still bind to borehole map points and groundwater observations' },

@@ -6,6 +6,7 @@ import type {
   IngestDossierTable,
   IngestDossierTone,
 } from './ingest-dossier.js';
+import type { GroundModel, GroundModelParameter, GroundModelStratum } from '../ground-model/index.js';
 
 function escapeHtml(value: string | number | null | undefined): string {
   return String(value ?? '')
@@ -507,6 +508,293 @@ function renderBoreholeProfile(profile: IngestDossierBoreholeProfile | undefined
       </div>
       ${renderProfileLegend(profile)}
       ${profile.notes.length > 0 ? `<ul class="profile-notes">${profile.notes.map((note) => `<li>${escapeHtml(note)}</li>`).join('')}</ul>` : ''}
+    </section>
+  `;
+}
+
+function groundModelMaterialKey(description: string): string {
+  const text = description.toLowerCase();
+  if (/bedrock|fresh\s+rock|strong\s+(?:rock|shale|sandstone|siltstone|gneiss)/.test(text)) return 'bedrock';
+  if (/weathered|fractured|rock|shale|sandstone|siltstone|gneiss/.test(text)) return 'weathered-rock';
+  if (/gravel|\bgm\b|\bgp\b|\bgw\b/.test(text)) return 'gravel';
+  if (/sand|\bsm\b|\bsp\b|\bsw\b|\bsc\b/.test(text)) return 'sand';
+  if (/clay|clayey|\bci\b|\bcl\b|\bch\b/.test(text)) return 'clay';
+  if (/silt|silty|\bml\b|\bmh\b/.test(text)) return 'silt';
+  if (/fill|made\s+ground|debris/.test(text)) return 'fill';
+  return 'mixed';
+}
+
+function finiteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function groundModelMaxDepth(model: GroundModel): number {
+  const depths = [
+    ...model.boreholes.flatMap((borehole) => [
+      ...borehole.sptTests.map((test) => test.depth),
+      ...borehole.strata.flatMap((stratum) => [stratum.topDepth, stratum.bottomDepth]),
+      ...borehole.groundwater.map((observation) => observation.depth),
+    ]),
+    ...model.groundwater.map((observation) => observation.depth),
+    ...model.labTests.map((test) => test.depth),
+    ...model.parameters.map((parameter) => parameter.depth),
+  ].filter((value): value is number => finiteNumber(value) && value >= 0);
+  return Math.max(1, ...depths);
+}
+
+function stratumTopDepth(stratum: GroundModelStratum, index: number, sorted: GroundModelStratum[]): number {
+  if (finiteNumber(stratum.topDepth)) return Math.max(0, stratum.topDepth);
+  if (index === 0) return 0;
+  return sorted[index - 1]?.bottomDepth ?? sorted[index - 1]?.topDepth ?? 0;
+}
+
+function stratumBottomDepth(stratum: GroundModelStratum, index: number, sorted: GroundModelStratum[], maxDepth: number): number {
+  if (finiteNumber(stratum.bottomDepth)) return Math.max(0, stratum.bottomDepth);
+  const nextTop = sorted.slice(index + 1).find((candidate) => finiteNumber(candidate.topDepth))?.topDepth;
+  if (finiteNumber(nextTop)) return nextTop;
+  const top = stratumTopDepth(stratum, index, sorted);
+  return Math.min(maxDepth, Math.max(top + Math.max(0.5, maxDepth * 0.08), top));
+}
+
+function renderGroundModelStripLogs(model: GroundModel): string {
+  if (model.boreholes.length === 0) {
+    return '<div class="empty-state">No borehole evidence was available for strip-log rendering.</div>';
+  }
+
+  const maxDepth = groundModelMaxDepth(model);
+  const plotTop = 42;
+  const plotHeight = 280;
+  const axisWidth = 54;
+  const columnWidth = 58;
+  const gap = 74;
+  const width = Math.max(520, axisWidth + model.boreholes.length * columnWidth + Math.max(0, model.boreholes.length - 1) * gap + 120);
+  const height = plotTop + plotHeight + 54;
+  const yForDepth = (depth: number) => plotTop + (Math.max(0, Math.min(maxDepth, depth)) / maxDepth) * plotHeight;
+  const ticks = Array.from({ length: 6 }, (_value, index) => Number((maxDepth * index / 5).toFixed(2)));
+  const layerKeys = model.boreholes.flatMap((borehole) => borehole.strata.map((stratum) => groundModelMaterialKey(stratum.description)));
+
+  const columns = model.boreholes.map((borehole, boreholeIndex) => {
+    const x = axisWidth + boreholeIndex * (columnWidth + gap);
+    const sorted = [...borehole.strata].sort((left, right) => stratumTopDepth(left, 0, []) - stratumTopDepth(right, 0, []));
+    const strata = sorted.map((stratum, stratumIndex) => {
+      const top = stratumTopDepth(stratum, stratumIndex, sorted);
+      const bottom = stratumBottomDepth(stratum, stratumIndex, sorted, maxDepth);
+      const y = yForDepth(top);
+      const height = Math.max(8, yForDepth(bottom) - y);
+      const key = groundModelMaterialKey(stratum.description);
+      const uncertain = !finiteNumber(stratum.topDepth) || !finiteNumber(stratum.bottomDepth) || stratum.warnings.length > 0;
+      return `
+        <g>
+          <title>${escapeHtml(`${borehole.id}: ${top.toFixed(2)}-${bottom.toFixed(2)} m | ${stratum.description} | evidence ${stratum.evidenceIds.join(', ') || '-'}`)}</title>
+          <rect x="${x}" y="${y.toFixed(2)}" width="${columnWidth}" height="${height.toFixed(2)}" rx="4"
+            fill="url(#${lithologyPatternId(key)})" stroke="${uncertain ? '#f59e0b' : '#7a8aa0'}" stroke-width="${uncertain ? '1.6' : '1'}" ${uncertain ? 'stroke-dasharray="6 5"' : ''} />
+          ${height >= 28 ? `<text x="${x + columnWidth / 2}" y="${(y + Math.min(height - 8, 18)).toFixed(2)}" text-anchor="middle" class="profile-label">${escapeHtml(compactSvgText(key, 9))}</text>` : ''}
+        </g>
+      `;
+    }).join('');
+    const spt = borehole.sptTests.map((test) => {
+      const y = yForDepth(test.depth);
+      return `
+        <g>
+          <title>${escapeHtml(`${borehole.id}: SPT N=${test.nValue} at ${test.depth} m | evidence ${test.evidenceIds.join(', ') || '-'}`)}</title>
+          <circle cx="${x + columnWidth + 14}" cy="${y.toFixed(2)}" r="4.5" fill="#38bdf8" stroke="#0f172a" stroke-width="1.5" />
+          <text x="${x + columnWidth + 22}" y="${(y + 4).toFixed(2)}" class="profile-small">N${escapeHtml(test.nValue)}</text>
+        </g>
+      `;
+    }).join('');
+    const groundwater = borehole.groundwater.map((observation) => {
+      const y = yForDepth(observation.depth);
+      return `
+        <g>
+          <title>${escapeHtml(`${borehole.id}: groundwater ${observation.depth} m bgl | evidence ${observation.evidenceIds.join(', ') || '-'}`)}</title>
+          <line x1="${x - 7}" y1="${y.toFixed(2)}" x2="${x + columnWidth + 8}" y2="${y.toFixed(2)}" stroke="#67e8f9" stroke-width="2" stroke-dasharray="6 4" />
+          <text x="${x + columnWidth / 2}" y="${(y - 6).toFixed(2)}" text-anchor="middle" class="profile-water">GWL</text>
+        </g>
+      `;
+    }).join('');
+
+    return `
+      <g>
+        <text x="${x + columnWidth / 2}" y="24" text-anchor="middle" class="profile-title">${escapeHtml(borehole.id)}</text>
+        <rect x="${x}" y="${plotTop}" width="${columnWidth}" height="${plotHeight}" rx="4" fill="#111827" stroke="#64748b" stroke-width="1" />
+        ${strata || `<text x="${x + columnWidth / 2}" y="${plotTop + plotHeight / 2}" text-anchor="middle" class="profile-small">No strata</text>`}
+        ${groundwater}
+        ${spt}
+      </g>
+    `;
+  }).join('');
+
+  return `
+    <div class="gm-chart-shell">
+      <svg class="gm-strip-log" viewBox="0 0 ${width} ${height}" style="width: ${width}px; max-width: none;" role="img" aria-label="GroundModel borehole strip logs">
+        <rect x="0" y="0" width="${width}" height="${height}" rx="18" fill="#0f172a" />
+        ${renderLithologyDefs(layerKeys)}
+        ${ticks.map((tick) => {
+          const y = yForDepth(tick);
+          return `<line x1="46" y1="${y.toFixed(2)}" x2="${width - 24}" y2="${y.toFixed(2)}" stroke="#334155" /><text x="8" y="${(y + 4).toFixed(2)}" class="profile-axis">${escapeHtml(tick.toFixed(tick % 1 === 0 ? 0 : 1))} m</text>`;
+        }).join('')}
+        ${columns}
+      </svg>
+    </div>
+  `;
+}
+
+function renderGroundModelSptPlot(model: GroundModel): string {
+  const tests = model.boreholes.flatMap((borehole) => borehole.sptTests.map((test) => ({ borehole, test })));
+  if (tests.length === 0) {
+    return '<div class="empty-state">No depth-bound SPT N-values were retained.</div>';
+  }
+
+  const width = 520;
+  const height = 290;
+  const pad = 48;
+  const maxDepth = groundModelMaxDepth(model);
+  const maxN = Math.max(1, ...tests.map(({ test }) => test.nValue));
+  const xForN = (nValue: number) => pad + (nValue / maxN) * (width - pad * 2);
+  const yForDepth = (depth: number) => pad + (depth / maxDepth) * (height - pad * 2);
+  const colors = ['#38bdf8', '#34d399', '#f59e0b', '#a78bfa', '#f87171'];
+  const boreholeIndex = new Map(model.boreholes.map((borehole, index) => [borehole.id, index]));
+
+  return `
+    <div class="gm-chart-shell">
+      <svg class="gm-depth-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="SPT N-value versus depth plot">
+        <rect x="0" y="0" width="${width}" height="${height}" rx="16" fill="#0f172a" />
+        <rect x="${pad}" y="${pad}" width="${width - pad * 2}" height="${height - pad * 2}" fill="#111827" stroke="#334155" />
+        ${[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+          const x = pad + ratio * (width - pad * 2);
+          const n = ratio * maxN;
+          return `<line x1="${x.toFixed(2)}" y1="${pad}" x2="${x.toFixed(2)}" y2="${height - pad}" stroke="#1e293b" /><text x="${x.toFixed(2)}" y="${height - 18}" text-anchor="middle" class="profile-axis">${escapeHtml(n.toFixed(0))}</text>`;
+        }).join('')}
+        ${[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+          const y = pad + ratio * (height - pad * 2);
+          const depth = ratio * maxDepth;
+          return `<line x1="${pad}" y1="${y.toFixed(2)}" x2="${width - pad}" y2="${y.toFixed(2)}" stroke="#1e293b" /><text x="${pad - 10}" y="${(y + 4).toFixed(2)}" text-anchor="end" class="profile-axis">${escapeHtml(depth.toFixed(1))}</text>`;
+        }).join('')}
+        ${tests.map(({ borehole, test }) => {
+          const color = colors[(boreholeIndex.get(borehole.id) ?? 0) % colors.length];
+          return `<circle cx="${xForN(test.nValue).toFixed(2)}" cy="${yForDepth(test.depth).toFixed(2)}" r="5" fill="${color}" stroke="#0f172a" stroke-width="1.5"><title>${escapeHtml(`${borehole.id}: N=${test.nValue}, depth ${test.depth} m, evidence ${test.evidenceIds.join(', ') || '-'}`)}</title></circle>`;
+        }).join('')}
+        <text x="${width / 2}" y="${height - 4}" text-anchor="middle" class="profile-axis">SPT N-value</text>
+        <text x="14" y="${height / 2}" transform="rotate(-90 14 ${height / 2})" text-anchor="middle" class="profile-axis">Depth (m)</text>
+      </svg>
+    </div>
+  `;
+}
+
+function numericGroundModelParameterGroups(model: GroundModel): Array<{ name: string; unit?: string; parameters: GroundModelParameter[] }> {
+  const groups = new Map<string, { name: string; unit?: string; parameters: GroundModelParameter[] }>();
+  for (const parameter of model.parameters) {
+    const value = Number(parameter.value);
+    if (!Number.isFinite(value) || !finiteNumber(parameter.depth)) continue;
+    const key = `${parameter.name}::${parameter.unit ?? ''}`;
+    const group = groups.get(key) ?? { name: parameter.name, unit: parameter.unit, parameters: [] };
+    group.parameters.push(parameter);
+    groups.set(key, group);
+  }
+  return [...groups.values()].slice(0, 6);
+}
+
+function renderGroundModelLabCharts(model: GroundModel): string {
+  const groups = numericGroundModelParameterGroups(model);
+  if (groups.length === 0) {
+    return '<div class="empty-state">No depth-bound lab or design parameters were retained for plotting.</div>';
+  }
+
+  return `<div class="gm-mini-grid">${groups.map((group) => {
+    const width = 300;
+    const height = 190;
+    const pad = 38;
+    const values = group.parameters.map((parameter) => Number(parameter.value));
+    const depths = group.parameters.map((parameter) => parameter.depth ?? 0);
+    const minValue = Math.min(...values);
+    const maxValue = Math.max(...values);
+    const valueRange = maxValue === minValue ? 1 : maxValue - minValue;
+    const maxDepth = Math.max(groundModelMaxDepth(model), ...depths);
+    const xForValue = (value: number) => pad + ((value - minValue) / valueRange) * (width - pad * 2);
+    const yForDepth = (depth: number) => pad + (depth / maxDepth) * (height - pad * 2);
+    return `
+      <article class="gm-mini-card">
+        <h4>${escapeHtml(compactSvgText(group.name, 34))}${group.unit ? ` (${escapeHtml(group.unit)})` : ''}</h4>
+        <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(group.name)} versus depth plot">
+          <rect x="0" y="0" width="${width}" height="${height}" rx="14" fill="#0f172a" />
+          <rect x="${pad}" y="${pad}" width="${width - pad * 2}" height="${height - pad * 2}" fill="#111827" stroke="#334155" />
+          ${group.parameters.map((parameter) => `<circle cx="${xForValue(Number(parameter.value)).toFixed(2)}" cy="${yForDepth(parameter.depth ?? 0).toFixed(2)}" r="4.5" fill="#34d399" stroke="#0f172a" stroke-width="1.4"><title>${escapeHtml(`${parameter.name}: ${parameter.value}${parameter.unit ? ` ${parameter.unit}` : ''} at ${parameter.depth} m | ${parameter.boreholeId ?? '-'} | evidence ${parameter.evidenceIds.join(', ') || '-'}`)}</title></circle>`).join('')}
+          <text x="${pad}" y="${height - 12}" class="profile-axis">${escapeHtml(minValue.toFixed(1))}</text>
+          <text x="${width - pad}" y="${height - 12}" text-anchor="end" class="profile-axis">${escapeHtml(maxValue.toFixed(1))}</text>
+          <text x="10" y="${pad + 4}" class="profile-axis">0 m</text>
+          <text x="10" y="${height - pad + 4}" class="profile-axis">${escapeHtml(maxDepth.toFixed(1))} m</text>
+        </svg>
+      </article>
+    `;
+  }).join('')}</div>`;
+}
+
+function renderGroundModelWaterSummary(model: GroundModel): string {
+  if (model.groundwater.length === 0 && model.monitoringSeries.length === 0) {
+    return '<div class="empty-state">No groundwater or monitoring observations were retained.</div>';
+  }
+
+  const rows = [
+    ...model.groundwater.map((observation) => `<tr><td>Groundwater</td><td>${escapeHtml(observation.boreholeId ?? '-')}</td><td>${escapeHtml(`${observation.depth} m bgl`)}</td><td>${escapeHtml(observation.evidenceIds.join(', ') || '-')}</td></tr>`),
+    ...model.monitoringSeries.map((series) => `<tr><td>${escapeHtml(series.kind)}</td><td>${escapeHtml(series.sourcePath)}</td><td>${escapeHtml(`${series.sampleCount} samples`)}</td><td>${escapeHtml(series.evidenceIds.join(', ') || '-')}</td></tr>`),
+  ];
+
+  return `
+    <div class="table-shell gm-monitoring-table">
+      <table>
+        <thead><tr><th>Type</th><th>Source / Borehole</th><th>Observation</th><th>Evidence</th></tr></thead>
+        <tbody>${rows.join('')}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderGroundModelVisualReview(model: GroundModel | undefined): string {
+  const hasVisualEvidence = model
+    && (
+      model.boreholes.some((borehole) => borehole.strata.length > 0 || borehole.sptTests.length > 0 || borehole.groundwater.length > 0)
+      || model.groundwater.length > 0
+      || model.parameters.length > 0
+      || model.monitoringSeries.length > 0
+    );
+  if (!model || !hasVisualEvidence) {
+    return `
+      <section class="data-section" id="groundmodel-visual-review">
+        <div class="section-heading">
+          <h2>GroundModel Visual Review</h2>
+          <p>Structured visual review needs borehole, depth, and material evidence.</p>
+        </div>
+        <div class="empty-state">No GroundModel visual review could be generated from retained PDF evidence.</div>
+      </section>
+    `;
+  }
+
+  const waterPanelTitle = model.monitoringSeries.length > 0 ? 'Groundwater and Monitoring' : 'Groundwater Summary';
+  return `
+    <section class="data-section" id="groundmodel-visual-review">
+      <div class="section-heading">
+        <h2>GroundModel Visual Review</h2>
+        <p>Provider-neutral engineering visuals adapted from source-page evidence. Use these for review routing, not as final design stratigraphy.</p>
+      </div>
+      <div class="gm-visual-grid">
+        <article class="gm-panel gm-panel-wide">
+          <h3>Borehole Strip Logs</h3>
+          ${renderGroundModelStripLogs(model)}
+        </article>
+        <article class="gm-panel">
+          <h3>SPT N vs Depth</h3>
+          ${renderGroundModelSptPlot(model)}
+        </article>
+        <article class="gm-panel gm-panel-wide">
+          <h3>Lab Parameter Depth Charts</h3>
+          ${renderGroundModelLabCharts(model)}
+        </article>
+        <article class="gm-panel">
+          <h3>${waterPanelTitle}</h3>
+          ${renderGroundModelWaterSummary(model)}
+        </article>
+      </div>
+      ${model.warnings.length > 0 ? `<ul class="profile-notes">${model.warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join('')}</ul>` : ''}
     </section>
   `;
 }
@@ -1230,6 +1518,89 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
       border-left: 3px solid var(--warning);
     }
 
+    .gm-visual-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 16px;
+      min-width: 0;
+    }
+
+    .gm-panel {
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+      padding: 16px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+
+    .gm-panel h3, .gm-mini-card h4 {
+      margin: 0;
+      color: var(--text);
+      letter-spacing: 0;
+    }
+
+    .gm-panel h3 {
+      font-size: 1rem;
+    }
+
+    .gm-chart-shell {
+      overflow-x: auto;
+      overflow-y: visible;
+      max-width: 100%;
+      min-width: 0;
+      border: 1px solid rgba(100, 116, 139, 0.28);
+      border-radius: 16px;
+      background: #0b1120;
+    }
+
+    .gm-strip-log, .gm-depth-chart {
+      display: block;
+      width: min(100%, 900px);
+      min-width: 520px;
+      height: auto;
+      margin: 0 auto;
+      max-height: 410px;
+    }
+
+    .gm-strip-log {
+      margin: 0;
+    }
+
+    .gm-mini-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .gm-mini-card {
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+      padding: 12px;
+      border: 1px solid rgba(100, 116, 139, 0.28);
+      border-radius: 14px;
+      background: #0b1120;
+    }
+
+    .gm-mini-card h4 {
+      font-size: 0.86rem;
+      overflow-wrap: anywhere;
+    }
+
+    .gm-mini-card svg {
+      display: block;
+      width: 100%;
+      height: auto;
+      max-height: 230px;
+    }
+
+    .gm-monitoring-table table {
+      min-width: 620px;
+    }
+
     .profile-title { font: 800 15px Inter, Segoe UI, sans-serif; fill: #f8fafc; }
     .profile-label { font: 800 13px Inter, Segoe UI, sans-serif; fill: #f8fafc; }
     .profile-small { font: 11px Inter, Segoe UI, sans-serif; fill: #cbd5e1; }
@@ -1642,6 +2013,7 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
         <a href="#overview">Overview</a>
         <a href="#ground-model">Ground Model</a>
         <a href="#ground-cross-section">Cross-Section</a>
+        <a href="#groundmodel-visual-review">Visual Review</a>
         <a href="#boreholes">Boreholes</a>
         <a href="#parameters">Engineering Parameters</a>
         <a href="#risks">Risks and Limitations</a>
@@ -1699,6 +2071,7 @@ export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
       </section>
 
       ${renderGroundModelCrossSection(dossier.boreholeProfile)}
+      ${renderGroundModelVisualReview(dossier.groundModel)}
       ${renderBoreholeProfile(dossier.boreholeProfile)}
       ${renderTrustTable(dossier)}
       ${mainTables.map((table) => renderTable(table)).join('')}

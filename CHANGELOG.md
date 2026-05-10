@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.51] - 2026-05-09
+
+### PDF Report GroundModel Visual Review
+
+- Added a report-side GroundModel adapter for geotechnical PDF ingest results, preserving source-page evidence IDs, inferred strata, SPT N-values, depth-bound parameters, and groundwater observations in a provider-neutral visual model.
+- Added a GroundModel Visual Review section to generated geotechnical report HTML with compact borehole strip logs, SPT N-value depth plotting, lab-parameter depth charts, and groundwater summaries.
+- Kept the existing DocumentEvidencePacket schema stable while wiring the richer visual review through the report view model.
+- Added regression coverage for report HTML GroundModel visual rendering from PDF evidence.
+
 ## [0.4.50] - 2026-05-09
 
 ### GroundModel Visual Pack

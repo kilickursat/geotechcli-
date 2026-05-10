@@ -9,6 +9,8 @@ import type {
   GeotechDocumentIngestResult,
   GeotechDocumentPageAudit,
 } from '../ingest/geotech-document.js';
+import { buildGroundModelMap, type GroundModel } from '../ground-model/index.js';
+import type { EvidenceMethod, EvidenceRef } from '../evidence/index.js';
 
 export type IngestDossierTone = 'accent' | 'good' | 'warning' | 'danger' | 'neutral';
 
@@ -144,6 +146,7 @@ export interface IngestDossier {
   insightCards: IngestDossierInsightCard[];
   trustItems: IngestDossierTrustItem[];
   boreholeProfile?: IngestDossierBoreholeProfile;
+  groundModel?: GroundModel;
   storedReview?: IngestDossierStoredReview;
   approval?: IngestDossierApproval;
   footerNotes: string[];
@@ -1459,6 +1462,305 @@ function buildGeotechBoreholeProfile(result: GeotechDocumentIngestResult): Inges
   };
 }
 
+type ReportGroundModelBorehole = GroundModel['boreholes'][number];
+type ReportGroundModelStratum = GroundModel['strata'][number];
+type ReportGroundModelParameter = GroundModel['parameters'][number];
+type ReportGroundModelGroundwater = GroundModel['groundwater'][number];
+
+interface ReportGroundModelEvidenceState {
+  refs: EvidenceRef[];
+  counter: number;
+  sourcePath: string;
+  result: GeotechDocumentIngestResult;
+}
+
+function confidenceRatio(value: number | null | undefined): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 0.5;
+  const normalized = value > 1 ? value / 100 : value;
+  return Math.round(Math.max(0, Math.min(1, normalized)) * 100) / 100;
+}
+
+function firstSourcePage(values: Array<number[] | undefined>): number | undefined {
+  return uniqueSortedPages(values.flatMap((pages) => pages ?? []))[0];
+}
+
+function evidenceMethodForPage(result: GeotechDocumentIngestResult, pageNumber?: number): EvidenceMethod {
+  const audit = pageNumber != null
+    ? result.pageAudits.find((candidate) => candidate.pageNumber === pageNumber)
+    : undefined;
+  if (!audit) {
+    return 'manual';
+  }
+  switch (audit?.textHintSource) {
+    case 'native-text':
+    case 'pdfjs-text':
+      return 'pdf-text';
+    case 'none':
+      return 'manual';
+    default:
+      return 'vision';
+  }
+}
+
+function addReportEvidenceRef(
+  state: ReportGroundModelEvidenceState,
+  input: {
+    pageNumber?: number;
+    rawValue?: string | number | boolean | null;
+    normalizedValue?: string | number | boolean | null;
+    unit?: string | null;
+    warnings?: string[];
+  },
+): string {
+  state.counter += 1;
+  const id = `doc-ev-${String(state.counter).padStart(5, '0')}`;
+  const hasAudit = input.pageNumber == null
+    || state.result.pageAudits.some((candidate) => candidate.pageNumber === input.pageNumber);
+  const warnings = [
+    ...(input.warnings ?? []),
+    ...(!hasAudit ? [`Source page ${input.pageNumber} was not present in retained page audit; verify against the PDF.`] : []),
+  ];
+  state.refs.push({
+    id,
+    sourceType: 'pdf-page',
+    sourcePath: state.sourcePath,
+    location: {
+      filePath: state.sourcePath,
+      ...(input.pageNumber != null ? { pageNumber: input.pageNumber } : {}),
+    },
+    method: evidenceMethodForPage(state.result, input.pageNumber),
+    confidence: confidenceRatio(state.result.confidence),
+    rawValue: input.rawValue,
+    normalizedValue: input.normalizedValue,
+    ...(input.unit ? { unit: input.unit } : {}),
+    warnings,
+  });
+  return id;
+}
+
+function depthFromEvidenceText(...values: Array<string | number | null | undefined>): number | undefined {
+  for (const value of values) {
+    const depth = readDepthMeters(value);
+    if (depth != null && depth >= 0) {
+      return depth;
+    }
+  }
+  return undefined;
+}
+
+function numericParameterValue(parameter: GeotechDocumentIngestResult['parameters'][number]): number | undefined {
+  if (parameter.numericValue != null && Number.isFinite(parameter.numericValue)) {
+    return parameter.numericValue;
+  }
+  const value = Number(String(parameter.valueText ?? '').replace(/,/g, '').trim());
+  return Number.isFinite(value) ? value : undefined;
+}
+
+function parameterBoreholeId(parameter: GeotechDocumentIngestResult['parameters'][number]): string | undefined {
+  return inferBoreholeIdsFromText(parameter.material, parameter.context, parameter.name)[0];
+}
+
+function buildGroundModelFromGeotechReport(
+  result: GeotechDocumentIngestResult,
+  profile: IngestDossierBoreholeProfile | undefined,
+  sourceLabel: string,
+): GroundModel | undefined {
+  const evidenceState: ReportGroundModelEvidenceState = {
+    refs: [],
+    counter: 0,
+    sourcePath: result.source.fileName ?? result.source.filePath ?? sourceLabel,
+    result,
+  };
+  const boreholes = new Map<string, ReportGroundModelBorehole>();
+  const strata: ReportGroundModelStratum[] = [];
+  const groundwater: ReportGroundModelGroundwater[] = [];
+  const parameters: ReportGroundModelParameter[] = [];
+
+  const ensureBorehole = (id: string, evidenceIds: string[] = []): ReportGroundModelBorehole => {
+    const normalizedId = normalizeBoreholeId(id);
+    const existing = boreholes.get(normalizedId);
+    if (existing) {
+      existing.evidenceIds = uniqueStrings([...existing.evidenceIds, ...evidenceIds]);
+      return existing;
+    }
+    const borehole: ReportGroundModelBorehole = {
+      id: normalizedId,
+      sptTests: [],
+      strata: [],
+      groundwater: [],
+      evidenceIds,
+      confidence: confidenceRatio(result.confidence),
+      warnings: [],
+    };
+    boreholes.set(normalizedId, borehole);
+    return borehole;
+  };
+
+  for (const boreholeId of profile?.columns.map((column) => column.boreholeId) ?? inferGeotechBoreholeIds(result)) {
+    ensureBorehole(boreholeId);
+  }
+
+  if (profile) {
+    for (const column of profile.columns) {
+      const borehole = ensureBorehole(column.boreholeId);
+      for (const layer of column.layers) {
+        const pageNumber = firstSourcePage([layer.sourcePages]);
+        const warnings = layer.uncertain ? ['Layer boundary inferred or unverified.'] : [];
+        const evidenceId = addReportEvidenceRef(evidenceState, {
+          pageNumber,
+          rawValue: layer.description,
+          normalizedValue: `${layer.depthFrom}-${layer.depthTo}m ${layer.description}`,
+          warnings,
+        });
+        const stratum: ReportGroundModelStratum = {
+          boreholeId: borehole.id,
+          topDepth: layer.depthFrom,
+          bottomDepth: layer.depthTo,
+          description: layer.description,
+          evidenceIds: [evidenceId],
+          confidence: confidenceRatio(result.confidence),
+          warnings,
+        };
+        strata.push(stratum);
+        borehole.strata.push(stratum);
+        borehole.evidenceIds = uniqueStrings([...borehole.evidenceIds, evidenceId]);
+      }
+
+      // Groundwater is added from the source parameter rows below so page-level
+      // evidence is preserved and duplicate profile-derived observations are avoided.
+    }
+  }
+
+  for (const parameter of result.parameters) {
+    const numericValue = numericParameterValue(parameter);
+    const boreholeId = parameterBoreholeId(parameter);
+    const depth = depthFromEvidenceText(parameter.context, parameter.material);
+    const sourcePage = firstSourcePage([parameter.sourcePages]);
+    const normalizedName = parameter.name.toLowerCase().replace(/\s+/g, '');
+
+    if (numericValue != null && /spt|nvalue|n-value|standardpenetration/.test(normalizedName)) {
+      const testDepth = depth ?? depthFromEvidenceText(parameter.valueText);
+      if (testDepth != null && numericValue >= 0 && numericValue <= 100) {
+        const evidenceId = addReportEvidenceRef(evidenceState, {
+          pageNumber: sourcePage,
+          rawValue: parameter.valueText,
+          normalizedValue: numericValue,
+          unit: parameter.unit,
+        });
+        ensureBorehole(boreholeId ?? 'UNASSIGNED', [evidenceId]).sptTests.push({
+          depth: testDepth,
+          nValue: numericValue,
+          ...(parameter.unit ? { unit: parameter.unit } : {}),
+          evidenceIds: [evidenceId],
+          confidence: confidenceRatio(result.confidence),
+          warnings: [],
+        });
+      }
+      continue;
+    }
+
+    if (numericValue != null && /groundwater|ground\s*water|watertable|water\s*table|gwl/.test(normalizedName)) {
+      const groundwaterDepth = depthFromEvidenceText(parameter.valueText, parameter.context, numericValue);
+      if (groundwaterDepth != null) {
+        const evidenceId = addReportEvidenceRef(evidenceState, {
+          pageNumber: sourcePage,
+          rawValue: parameter.valueText,
+          normalizedValue: groundwaterDepth,
+          unit: parameter.unit,
+        });
+        const observation: ReportGroundModelGroundwater = {
+          ...(boreholeId ? { boreholeId } : {}),
+          depth: groundwaterDepth,
+          evidenceIds: [evidenceId],
+          confidence: confidenceRatio(result.confidence),
+          warnings: [],
+        };
+        groundwater.push(observation);
+        if (boreholeId) {
+          ensureBorehole(boreholeId, [evidenceId]).groundwater.push(observation);
+        }
+      }
+      continue;
+    }
+
+    if (numericValue == null || depth == null || /(?:^|[^a-z])depth|elevation|thickness/.test(normalizedName)) {
+      continue;
+    }
+
+    const evidenceId = addReportEvidenceRef(evidenceState, {
+      pageNumber: sourcePage,
+      rawValue: parameter.valueText,
+      normalizedValue: numericValue,
+      unit: parameter.unit,
+    });
+    const visualParameter: ReportGroundModelParameter = {
+      name: parameter.name,
+      value: numericValue,
+      ...(parameter.unit ? { unit: parameter.unit } : {}),
+      ...(boreholeId ? { boreholeId } : {}),
+      depth,
+      evidenceIds: [evidenceId],
+      confidence: confidenceRatio(result.confidence),
+      warnings: [],
+    };
+    parameters.push(visualParameter);
+  }
+
+  const boreholeList = [...boreholes.values()].sort((left, right) => left.id.localeCompare(right.id, undefined, { numeric: true }));
+  const sptTestCount = boreholeList.reduce((count, borehole) => count + borehole.sptTests.length, 0);
+  if (strata.length === 0 && groundwater.length === 0 && parameters.length === 0 && sptTestCount === 0) {
+    return undefined;
+  }
+  const labTests = parameters
+    .filter((parameter) => parameter.depth != null)
+    .map((parameter, index) => ({
+      sampleId: `report-sample-${index + 1}`,
+      ...(parameter.boreholeId ? { boreholeId: parameter.boreholeId } : {}),
+      depth: parameter.depth,
+      parameters: [parameter],
+      evidenceIds: parameter.evidenceIds,
+      confidence: parameter.confidence,
+      warnings: parameter.warnings,
+    }));
+
+  const model: GroundModel = {
+    schemaVersion: 'ground-model.v1',
+    generatedAt: result.generatedAt,
+    project: {
+      rootPath: result.source.filePath ?? result.source.fileName ?? sourceLabel,
+    },
+    coordinateSystem: {
+      kind: 'unknown',
+      warnings: ['PDF report evidence did not include plottable coordinate data.'],
+    },
+    boreholes: boreholeList,
+    strata,
+    groundwater,
+    labTests,
+    parameters,
+    monitoringSeries: [],
+    evidence: evidenceState.refs,
+    rejectedObservations: [],
+    warnings: ['GroundModel visual review was adapted from PDF report evidence; source-page verification is required before design use.'],
+    stats: {
+      boreholes: boreholeList.length,
+      sptTests: sptTestCount,
+      strata: strata.length,
+      groundwaterObservations: groundwater.length,
+      labTests: labTests.length,
+      parameters: parameters.length,
+      monitoringSeries: 0,
+      evidenceRefs: evidenceState.refs.length,
+      rejectedObservations: 0,
+    },
+  };
+
+  return {
+    ...model,
+    map: buildGroundModelMap(model),
+  };
+}
+
 function buildBoreholeProfile(result: BoreholeDocumentIngestResult): IngestDossierBoreholeProfile | undefined {
   if (result.boreholes.length === 0) {
     return undefined;
@@ -1539,6 +1841,7 @@ export function buildIngestDossier(
     const summary =
       cleanSummary
       || geotechOutcomeSummary(geotechResult);
+    const boreholeProfile = buildGeotechBoreholeProfile(geotechResult);
 
     return {
       title,
@@ -1558,7 +1861,8 @@ export function buildIngestDossier(
       executiveItems: buildGeotechExecutiveItems(geotechResult, sourceLabel),
       insightCards: buildGeotechInsightCards(geotechResult),
       trustItems: buildGeotechTrustItems(geotechResult),
-      boreholeProfile: buildGeotechBoreholeProfile(geotechResult),
+      boreholeProfile,
+      groundModel: buildGroundModelFromGeotechReport(geotechResult, boreholeProfile, sourceLabel),
       storedReview,
       approval,
       footerNotes: buildFooterNotes(geotechResult),

@@ -230,6 +230,7 @@ The HTML report is a self-contained Geotechnical Intelligence Report with:
 - an evidence-first trust table for retained and missing parameters with source page, confidence, review posture, and evidence snippets
 - extracted materials, classifications, grouped engineering parameters, and normalized section map
 - a lightweight borehole stratigraphy visualization when borehole/layer evidence is available
+- a GroundModel Visual Review with compact strip logs, SPT-depth plots, lab-parameter depth charts, and groundwater summaries when PDF evidence supports them
 - source evidence cards for page-level review
 - collapsed Processing Audit details for page audit matrices, local evidence cache status, operational warnings, and native text, GLM-OCR, GLM-5V, and GLM-5.1 synthesis stage badges
 - stored-review and approval context when the ingest is project-backed

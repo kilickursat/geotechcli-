@@ -298,6 +298,92 @@ describe('ingest dossier HTML', () => {
     expect(html).toContain('Dashed layer boundaries indicate missing or unverified stratum intervals.');
   });
 
+  it('renders GroundModel visual review from PDF report evidence', () => {
+    const dossier = buildIngestDossier(makeGeotechResult({
+      summary: 'BH1 and BH2 were drilled to 10.00 m with clay, sand, and groundwater observations.',
+      parameters: [
+        { name: 'depth', valueText: '10.00 m', numericValue: 10, unit: 'm', material: 'BH1', context: 'Page 12 borehole log', sourcePages: [12] },
+        { name: 'depth', valueText: '10.00 m', numericValue: 10, unit: 'm', material: 'BH2', context: 'Page 13 borehole log', sourcePages: [13] },
+        { name: 'sptN', valueText: '18', numericValue: 18, unit: 'blows/300mm', material: 'BH1', context: 'SPT at depth 3.0 m on page 12', sourcePages: [12] },
+        { name: 'liquidLimit', valueText: '42', numericValue: 42, unit: '%', material: 'BH1 clay', context: 'Sample depth 2.5 m on page 14', sourcePages: [14] },
+        { name: 'groundwaterDepth', valueText: '2.4 m', numericValue: 2.4, unit: 'm bgl', material: 'BH1', context: 'Water table at 2.4 m on page 12', sourcePages: [12] },
+      ],
+      contentChunks: [
+        {
+          chunkId: 'bh1-layers',
+          pageRange: [12, 12],
+          headingAncestry: ['BH1'],
+          scope: 'section',
+          sectionType: 'ground-model',
+          significance: 94,
+          text: 'Layer 1 (0.0 m to 2.0 m): stiff clay. Layer 2 (2.0 m to 6.0 m): silty sand. Layer 3 (6.0 m to 10.0 m): weathered rock.',
+          sourcePages: [12],
+        },
+        {
+          chunkId: 'bh2-layers',
+          pageRange: [13, 13],
+          headingAncestry: ['BH2'],
+          scope: 'section',
+          sectionType: 'ground-model',
+          significance: 92,
+          text: 'Layer 1 (0.0 m to 3.0 m): stiff clay. Layer 2 (3.0 m to 7.0 m): dense sand. Layer 3 (7.0 m to 10.0 m): weathered rock.',
+          sourcePages: [13],
+        },
+      ],
+    }));
+
+    const html = renderIngestDossierAsHtml(dossier);
+
+    expect(dossier.groundModel?.stats.boreholes).toBe(2);
+    expect(dossier.groundModel?.stats.sptTests).toBe(1);
+    expect(dossier.groundModel?.stats.groundwaterObservations).toBeGreaterThanOrEqual(1);
+    expect(dossier.groundModel?.stats.parameters).toBe(1);
+    expect(dossier.groundModel?.evidence.some((ref) => ref.rawValue === '10.00 m')).toBe(false);
+    expect(dossier.groundModel?.evidence.every((ref) => ref.method === 'manual')).toBe(true);
+    expect(dossier.groundModel?.evidence.some((ref) => ref.warnings.join(' ').includes('not present in retained page audit'))).toBe(true);
+    expect(html).toContain('GroundModel Visual Review');
+    expect(html).toContain('Borehole Strip Logs');
+    expect(html).toContain('SPT N vs Depth');
+    expect(html).toContain('Lab Parameter Depth Charts');
+    expect(html).toContain('Groundwater Summary');
+    expect(html).toContain('BH1');
+    expect(html).toContain('N18');
+    expect(html).toContain('2.4 m bgl');
+    expect(html).toContain('liquidLimit');
+    expect(html).toContain('doc-ev-');
+  });
+
+  it('renders GroundModel visual review when report evidence has no retained strata', () => {
+    const dossier = buildIngestDossier(makeGeotechResult({
+      summary: 'BH1 field data includes SPT, groundwater, and index test observations.',
+      materials: [],
+      classifications: [],
+      synthesis: null,
+      contentChunks: [],
+      parameters: [
+        { name: 'sptN', valueText: '21', numericValue: 21, unit: 'blows/300mm', material: 'BH1', context: 'SPT at depth 3.0 m on page 2', sourcePages: [2] },
+        { name: 'plasticityIndex', valueText: '18', numericValue: 18, unit: '%', material: 'BH1', context: 'Sample depth 2.5 m on page 2', sourcePages: [2] },
+        { name: 'groundwaterDepth', valueText: '1.8 m', numericValue: 1.8, unit: 'm bgl', material: 'BH1', context: 'Water table at 1.8 m on page 2', sourcePages: [2] },
+      ],
+    }));
+
+    const html = renderIngestDossierAsHtml(dossier);
+
+    expect(dossier.boreholeProfile).toBeUndefined();
+    expect(dossier.groundModel?.stats.boreholes).toBe(1);
+    expect(dossier.groundModel?.stats.strata).toBe(0);
+    expect(dossier.groundModel?.stats.sptTests).toBe(1);
+    expect(dossier.groundModel?.stats.groundwaterObservations).toBe(1);
+    expect(dossier.groundModel?.stats.parameters).toBe(1);
+    expect(dossier.groundModel?.evidence.every((ref) => ref.location.pageNumber === 2)).toBe(true);
+    expect(dossier.groundModel?.evidence.every((ref) => ref.method === 'pdf-text')).toBe(true);
+    expect(html).toContain('GroundModel Visual Review');
+    expect(html).toContain('No strata');
+    expect(html).toContain('N21');
+    expect(html).toContain('plasticityIndex');
+    expect(html).toContain('1.8 m bgl');
+  });
+
   it('builds a conceptual profile from retained inspection and chunk evidence when parameters omit depth rows', () => {
     const scheduleText = [
       'Schedule of boreholes is tabulated below.',
