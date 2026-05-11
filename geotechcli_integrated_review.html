@@ -1,0 +1,1108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>geotechCLI Integrated Vision + Geospatial Review</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  integrity="sha256-p4NxAoJBhIINfQpD3T98H7uJ03aIihUJcvkLsM8fNHI=" crossorigin="" />
+<style>
+:root{
+  --bg:#f6f7f9;--panel:#fff;--ink:#172033;--muted:#697386;--line:#d8dee9;--soft:#eef2f7;
+  --good:#1f8f5f;--warn:#b7791f;--bad:#c2410c;--blue:#2563eb;--deep:#0f172a;
+  --made:#8b5a2b;--clay:#c98b67;--sand:#f5d77b;--gravel:#a3a3a3;
+  --shadow:0 10px 25px rgba(23,32,51,.08);--radius:16px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+button,select{font:inherit}
+header{background:linear-gradient(135deg,#0f172a,#1e293b 55%,#334155);color:#fff;padding:28px 36px}
+.header-top{display:flex;justify-content:space-between;align-items:flex-start;gap:22px}
+h1{margin:0;font-size:28px;letter-spacing:-.03em}.subtitle{margin-top:8px;color:#cbd5e1;line-height:1.5;max-width:1120px}
+.badge-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}.badge{display:inline-flex;border-radius:999px;padding:7px 10px;background:rgba(255,255,255,.11);border:1px solid rgba(255,255,255,.16);color:#e5e7eb;font-size:12px;font-weight:750}
+.run-card{min-width:315px;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.16);border-radius:16px;padding:16px;font-size:13px}
+.run-card div{display:flex;justify-content:space-between;gap:14px;padding:4px 0;color:#dbeafe}.run-card span:first-child{color:#a7b3c7}
+main{padding:24px 28px 42px;max-width:1760px;margin:0 auto}
+.summary-grid{display:grid;grid-template-columns:repeat(5,minmax(160px,1fr));gap:14px;margin-bottom:16px}
+.metric{background:#fff;border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px}.metric .label{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}.metric .value{font-size:25px;font-weight:850;letter-spacing:-.04em}.metric .note{color:var(--muted);font-size:12px;margin-top:6px;line-height:1.35}
+.status-good{color:var(--good)}.status-warn{color:var(--warn)}.status-blue{color:var(--blue)}.status-bad{color:var(--bad)}
+.view-nav{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}.nav-btn{border:1px solid #cbd5e1;background:#fff;color:#172033;border-radius:999px;padding:9px 12px;font-weight:800;font-size:13px;cursor:pointer}.nav-btn:hover{border-color:var(--blue);color:var(--blue)}.nav-btn.active{background:var(--blue);border-color:var(--blue);color:#fff}
+.view{display:none}.view.active{display:block}
+.panel{background:#fff;border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+.panel h2{font-size:16px;margin:0;padding:15px 17px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:12px;align-items:center}
+.panel h2 small{color:var(--muted);font-weight:500}.panel-body{padding:15px}
+.review-grid{display:grid;grid-template-columns:minmax(340px,1.02fr) minmax(340px,.78fr) minmax(380px,1.08fr);gap:16px;align-items:start}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}.tool-btn{border:1px solid #cbd5e1;background:#fff;color:#172033;border-radius:999px;padding:7px 10px;font-weight:750;font-size:12px;cursor:pointer}.tool-btn.active{background:var(--blue);border-color:var(--blue);color:#fff}
+.mock-page{position:relative;width:100%;aspect-ratio:.707/1;background:#fff;border:1px solid #cbd5e1;border-radius:12px;overflow:hidden}
+.page-title{position:absolute;left:5%;top:3.2%;width:90%;height:5%;border-bottom:2px solid #111827;font-weight:850;font-size:clamp(12px,1vw,18px);display:flex;align-items:center;justify-content:space-between}
+.page-title span:last-child{color:#475569}.page-meta{position:absolute;left:5%;top:9.5%;width:90%;height:8.4%;border:1px solid #94a3b8;display:grid;grid-template-columns:1fr 1fr;font-size:clamp(8px,.62vw,11px)}.page-meta div{padding:4px 6px;border-bottom:1px solid #e2e8f0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.log-frame{position:absolute;left:5%;top:20%;width:90%;height:72%;border:2px solid #334155}.col{position:absolute;top:0;height:100%;border-right:1px solid #64748b}.c-depth{left:0;width:11%}.c-lith{left:11%;width:10%}.c-desc{left:21%;width:38%}.c-sample{left:59%;width:13%}.c-spt{left:72%;width:12%}.c-water{left:84%;width:8%}.c-remarks{left:92%;width:8%;border-right:none}
+.col-label{position:absolute;top:0;height:6.2%;width:100%;background:#e2e8f0;border-bottom:1px solid #64748b;font-size:clamp(6px,.55vw,9px);font-weight:800;display:flex;justify-content:center;align-items:center;text-align:center}
+.depth-tick{position:absolute;left:0;width:100%;border-top:1px solid #cbd5e1;font-size:clamp(6px,.55vw,9px);color:#334155}.depth-tick span{position:absolute;left:5%;top:-7px;background:#fff;padding-right:2px}
+.desc-text{position:absolute;left:23%;width:34%;font-size:clamp(6.5px,.58vw,10px);line-height:1.18;color:#111827;overflow:hidden}
+.hatch{position:absolute;left:12%;width:8%;border-left:1px solid #94a3b8;border-right:1px solid #94a3b8;background:repeating-linear-gradient(45deg,rgba(15,23,42,.24) 0 2px,transparent 2px 7px)}
+.hatch.made{background:repeating-linear-gradient(135deg,rgba(139,90,43,.55) 0 4px,rgba(139,90,43,.18) 4px 8px)}
+.hatch.clay{background:repeating-linear-gradient(45deg,rgba(111,78,55,.3) 0 2px,transparent 2px 7px),#f3d3c1}
+.hatch.sand{background:radial-gradient(circle,rgba(15,23,42,.35) 1px,transparent 1.5px) 0 0/8px 8px,#fde68a}
+.hatch.gravel{background:radial-gradient(circle,rgba(15,23,42,.35) 1.5px,transparent 2px) 0 0/10px 10px,repeating-linear-gradient(135deg,transparent 0 7px,rgba(15,23,42,.2) 7px 9px),#d4d4d4}
+.layer-line{position:absolute;left:11%;width:48%;border-top:2px solid #111827}.layer-line.review{border-top:2px dashed var(--warn)}
+.sample-text,.spt-text,.water-text{position:absolute;font-size:clamp(6.5px,.58vw,10px);color:#111827;font-weight:850}.sample-text{left:61%}.spt-text{left:75%}.water-text{left:86%;color:#0369a1}
+.evidence-box{position:absolute;border:2px solid var(--blue);background:rgba(37,99,235,.10);border-radius:4px;opacity:.55;cursor:pointer;transition:.15s ease;padding:0}.evidence-box:hover,.evidence-box.active{opacity:1;background:rgba(37,99,235,.18);box-shadow:0 0 0 3px rgba(37,99,235,.16);z-index:20}.evidence-box.warn{border-color:var(--warn);background:rgba(183,121,31,.12)}
+.legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;font-size:12px;color:var(--muted)}.legend-item{display:flex;align-items:center;gap:7px}.swatch{width:20px;height:12px;border-radius:3px;border:2px solid var(--blue);background:rgba(37,99,235,.12)}.swatch.warn{border-color:var(--warn);background:rgba(183,121,31,.12)}.swatch.good{border-color:var(--good);background:rgba(31,143,95,.12)}.swatch.bad{border-color:var(--bad);background:rgba(194,65,12,.12)}.swatch.made{background:var(--made);border-color:rgba(15,23,42,.2)}.swatch.clay{background:var(--clay);border-color:rgba(15,23,42,.2)}.swatch.sand{background:var(--sand);border-color:rgba(15,23,42,.2)}.swatch.gravel{background:var(--gravel);border-color:rgba(15,23,42,.2)}
+.svg-wrap{display:flex;justify-content:center;background:linear-gradient(#fff,#f8fafc);border:1px solid #e2e8f0;border-radius:13px;padding:8px;overflow:auto}svg text{font-family:Inter,ui-sans-serif,system-ui,sans-serif}.log-highlight{cursor:pointer;transition:.15s ease}.log-highlight.active{filter:drop-shadow(0 0 6px rgba(37,99,235,.72))}
+.fields{display:grid;gap:9px;max-height:694px;overflow:auto;padding-right:4px}.field-card{border:1px solid #e2e8f0;border-radius:12px;padding:11px;cursor:pointer;transition:.15s ease;background:#fff}.field-card:hover,.field-card.active{border-color:var(--blue);box-shadow:0 0 0 3px rgba(37,99,235,.12)}.field-title{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;font-weight:850}.field-value{margin-top:6px;color:#111827;font-size:13.5px;line-height:1.32}.field-meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:9px;color:var(--muted);font-size:12px}
+.pill{display:inline-flex;align-items:center;border-radius:999px;padding:4px 8px;background:#eef2f7;color:#475569;font-size:12px;font-weight:800}.pill.good{background:#dcfce7;color:#166534}.pill.warn{background:#fef3c7;color:#92400e}.pill.bad{background:#ffedd5;color:#9a3412}.pill.blue{background:#dbeafe;color:#1d4ed8}
+.confidence{margin-top:9px;height:8px;background:#e2e8f0;border-radius:999px;overflow:hidden}.confidence span{display:block;height:100%;background:linear-gradient(90deg,var(--good),#65a30d)}.confidence span.warn{background:linear-gradient(90deg,var(--warn),#d97706)}.confidence span.bad{background:linear-gradient(90deg,var(--bad),#ef4444)}
+.geo-grid{display:grid;grid-template-columns:minmax(520px,1.18fr) minmax(360px,.82fr);gap:16px;align-items:start}.map-toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:10px;flex-wrap:wrap}.select-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}select{border:1px solid #cbd5e1;background:#fff;color:#172033;border-radius:999px;padding:8px 10px;font-weight:800;font-size:12px}
+#map{height:420px;width:100%;border:1px solid #d8dee9;border-radius:14px;overflow:hidden;background:#e2e8f0}.map-fallback{display:none;height:420px;border:1px solid #d8dee9;border-radius:14px;background:linear-gradient(90deg,rgba(37,99,235,.08) 1px,transparent 1px) 0 0/48px 48px,linear-gradient(0deg,rgba(37,99,235,.08) 1px,transparent 1px) 0 0/48px 48px,linear-gradient(#f8fafc,#e2e8f0);position:relative;overflow:hidden}.fallback-line{position:absolute;left:13%;top:53%;width:72%;height:4px;background:var(--blue);transform:rotate(28deg);transform-origin:left center;border-radius:99px;opacity:.75}.fallback-point{position:absolute;width:22px;height:22px;border-radius:50%;background:var(--blue);border:3px solid #fff;box-shadow:0 5px 12px rgba(0,0,0,.2);color:white;font-size:10px;display:flex;align-items:center;justify-content:center;font-weight:900}
+.notice{border:1px solid #fde68a;background:#fffbeb;color:#78350f;padding:10px 12px;border-radius:12px;font-size:13px;line-height:1.45;margin-top:10px}.selected-panel{border:1px solid #dbeafe;border-radius:14px;background:#eff6ff;padding:13px;margin-bottom:11px}.selected-panel strong{font-size:18px}.selected-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px;font-size:13px;color:#334155}.crs-card{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.crs-box{border:1px solid #e2e8f0;border-radius:12px;padding:11px;background:#f8fafc}.crs-box .k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px}.crs-box .v{font-weight:850}.crs-box .s{font-size:12px;color:var(--muted);margin-top:5px;line-height:1.35}
+.section-panel{margin-top:16px}.cross-section-wrap{overflow:auto;background:linear-gradient(#fff,#f8fafc);border:1px solid #e2e8f0;border-radius:14px;padding:8px}.bh-log{cursor:pointer;transition:.15s ease}.bh-log.active{filter:drop-shadow(0 0 8px rgba(37,99,235,.75))}
+.data-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}.footer-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:9px;border-bottom:1px solid #e2e8f0;vertical-align:top}th{color:#475569;background:#f8fafc;font-size:11px;text-transform:uppercase;letter-spacing:.04em}code{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:12px}
+.tabs{display:flex;gap:8px;padding:0 15px 13px;border-bottom:1px solid var(--line);flex-wrap:wrap}.tab{border:1px solid #cbd5e1;background:#fff;color:#172033;border-radius:999px;padding:7px 10px;font-weight:800;font-size:12px;cursor:pointer}.tab.active{background:var(--blue);border-color:var(--blue);color:#fff}.tab-content{display:none}.tab-content.active{display:block}
+.warning-list{display:grid;gap:10px}.warning{border-left:4px solid var(--warn);background:#fffbeb;border-radius:10px;padding:12px;color:#78350f;font-size:13px}.warning.bad{border-left-color:var(--bad);background:#fff7ed;color:#7c2d12}
+.pipeline{display:grid;gap:10px}.step{display:grid;grid-template-columns:34px 1fr auto;gap:10px;align-items:center;border:1px solid #e2e8f0;border-radius:12px;padding:10px}.num{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#dbeafe;color:#1d4ed8;font-weight:900}.step strong{display:block}.step small{color:var(--muted)}
+pre{background:#0f172a;color:#e2e8f0;border-radius:12px;padding:14px;overflow:auto;font-size:12px;line-height:1.45;max-height:520px}.small-muted{color:var(--muted);font-size:12px;line-height:1.45}.leaflet-popup-content{font-family:Inter,ui-sans-serif,system-ui,sans-serif}.popup-title{font-weight:900;font-size:14px;margin-bottom:5px}.popup-row{font-size:12px;color:#334155;margin:2px 0}
+@media(max-width:1400px){.review-grid,.geo-grid,.data-grid,.footer-grid{grid-template-columns:1fr}.fields{max-height:none}.summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.header-top{flex-direction:column}.run-card{min-width:0;width:100%}}
+@media(max-width:720px){main{padding:16px}header{padding:22px 18px}.summary-grid,.crs-card{grid-template-columns:1fr}.metric .value{font-size:22px}.review-grid{gap:12px}.panel h2{align-items:flex-start;flex-direction:column}.legend{display:grid;grid-template-columns:1fr}.mock-page{min-height:560px}.page-meta{font-size:8px}}
+</style>
+</head>
+<body>
+<header>
+  <div class="header-top">
+    <div>
+      <h1>geotechCLI Integrated Vision + Geospatial Review</h1>
+      <div class="subtitle">
+        One data-driven review package: extracted report evidence, borehole strip logs, validated coordinates,
+        real-map markers, CRS guardrails, and a professional A-A′ stratigraphic section generated from the same borehole JSON.
+      </div>
+      <div class="badge-row">
+        <span class="badge">OCR: GLM-OCR</span>
+        <span class="badge">Vision: GLM-5V-Turbo</span>
+        <span class="badge">Text / Agent: GLM-5.1</span>
+        <span class="badge">BYOK profile: glm_default</span>
+        <span class="badge">CRS checked before map render</span>
+      </div>
+    </div>
+    <div class="run-card" id="runCard"></div>
+  </div>
+</header>
+
+<main>
+  <section class="summary-grid" id="summaryGrid"></section>
+
+  <nav class="view-nav" aria-label="Review views">
+    <button class="nav-btn active" data-view="reviewView">Extraction review</button>
+    <button class="nav-btn" data-view="geoView">Map + A-A′ section</button>
+    <button class="nav-btn" data-view="validationView">Validation + JSON</button>
+  </nav>
+
+  <section id="reviewView" class="view active">
+    <div class="review-grid">
+      <div class="panel">
+        <h2>Source report evidence <small>generated from selected borehole evidence IDs</small></h2>
+        <div class="panel-body">
+          <div class="toolbar">
+            <button class="tool-btn filter active" data-filter="all">All evidence</button>
+            <button class="tool-btn filter" data-filter="header">Header</button>
+            <button class="tool-btn filter" data-filter="strata">Strata</button>
+            <button class="tool-btn filter" data-filter="spt">SPT</button>
+            <button class="tool-btn filter" data-filter="water">Water</button>
+          </div>
+          <div class="mock-page" id="mockPage"></div>
+          <div class="legend">
+            <span class="legend-item"><span class="swatch"></span>Accepted evidence</span>
+            <span class="legend-item"><span class="swatch warn"></span>Review recommended</span>
+            <span class="legend-item"><span class="swatch good"></span>Validated geometry</span>
+            <span class="legend-item"><span class="swatch bad"></span>Blocking error, if present</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Validated strip log <small>deterministic renderer</small></h2>
+        <div class="panel-body">
+          <div class="svg-wrap" id="stripWrap"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Extracted fields <small>schema + confidence + evidence</small></h2>
+        <div class="panel-body">
+          <div class="fields" id="fields"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="geoView" class="view">
+    <div class="geo-grid">
+      <div class="panel">
+        <h2>Real-map borehole view <small>source CRS transformed before visualization</small></h2>
+        <div class="panel-body">
+          <div class="map-toolbar">
+            <div class="select-row">
+              <label for="crsSelect"><strong>Input CRS</strong></label>
+              <select id="crsSelect">
+                <option value="EPSG:27700" selected>EPSG:27700 OSGB36 / British National Grid</option>
+                <option value="EPSG:32630">EPSG:32630 WGS84 / UTM zone 30N</option>
+                <option value="EPSG:3857">EPSG:3857 Web Mercator</option>
+                <option value="custom">Custom / project-defined CRS</option>
+              </select>
+              <button class="tool-btn" id="fitBtn" type="button">Fit boreholes</button>
+            </div>
+            <span class="pill good">Map uses EPSG:4326 lat/lon</span>
+          </div>
+          <div id="map"></div>
+          <div class="map-fallback" id="mapFallback">
+            <div class="fallback-line"></div>
+            <div class="fallback-point" style="left:13%;top:56%">1</div>
+            <div class="fallback-point" style="left:36%;top:43%">2</div>
+            <div class="fallback-point" style="left:61%;top:31%">3</div>
+            <div class="fallback-point" style="left:84%;top:19%">4</div>
+          </div>
+          <div class="notice"><strong>CRS rule:</strong> no map or section is rendered in production until the source CRS, units, project country, and vertical datum have passed validation.</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Selected borehole + CRS guardrail <small>same object drives log, map, and section</small></h2>
+        <div class="panel-body">
+          <div id="selectedPanel"></div>
+          <div class="crs-card" id="crsCard"></div>
+          <table style="margin-top:12px">
+            <thead><tr><th>Guardrail</th><th>Status</th><th>Reason</th></tr></thead>
+            <tbody>
+              <tr><td>CRS present in metadata</td><td><span class="pill good">pass</span></td><td>Source CRS explicitly set from project/report metadata.</td></tr>
+              <tr><td>Country / CRS compatibility</td><td><span class="pill good">pass</span></td><td>United Kingdom project and British National Grid are compatible.</td></tr>
+              <tr><td>Coordinate magnitude sanity</td><td><span class="pill good">pass</span></td><td>Eastings around 526k and northings around 183k are plausible.</td></tr>
+              <tr><td>Datum transformation</td><td><span class="pill warn">verify</span></td><td>Confirm grid shift and vertical datum for survey-grade deliverables.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel section-panel">
+      <h2>Professional A-A′ stratigraphic section <small>interpolated contacts + actual vertical borehole log columns</small></h2>
+      <div class="panel-body">
+        <div class="cross-section-wrap" id="sectionWrap"></div>
+        <div class="legend">
+          <span class="legend-item"><span class="swatch made"></span>Made Ground</span>
+          <span class="legend-item"><span class="swatch clay"></span>Firm silty CLAY</span>
+          <span class="legend-item"><span class="swatch sand"></span>Medium dense SAND</span>
+          <span class="legend-item"><span class="swatch gravel"></span>Dense sandy GRAVEL</span>
+          <span class="legend-item"><span style="width:30px;border-top:3px dashed #0284c7;display:inline-block"></span>Groundwater strikes</span>
+          <span class="legend-item"><span style="width:30px;border-top:2px dashed #64748b;display:inline-block"></span>Interpolated contacts</span>
+        </div>
+        <div class="notice"><strong>Engineering note:</strong> strata between boreholes are conceptual interpolations for review. Directly extracted log columns are shown at borehole locations; interpolated surfaces must not be treated as design surfaces without engineering review.</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="validationView" class="view">
+    <div class="data-grid">
+      <div class="panel">
+        <h2>Validation workflow <small>extraction, geospatial, and rendering checks</small></h2>
+        <div class="tabs">
+          <button class="tab active" data-tab="warningsTab">Warnings</button>
+          <button class="tab" data-tab="pipelineTab">Pipeline</button>
+          <button class="tab" data-tab="artifactsTab">Artifacts</button>
+        </div>
+        <div class="panel-body">
+          <div id="warningsTab" class="tab-content active">
+            <div class="warning-list">
+              <div class="warning"><strong>LOW_CONFIDENCE_STRATA_BOUNDARY</strong><br>Some gravel boundaries are accepted for visualization but marked review-recommended in export.</div>
+              <div class="warning"><strong>GROUNDWATER_SYMBOL_REVIEW</strong><br>Graphical water strike symbols are detected; standing-water dates are not present in the source evidence.</div>
+              <div class="warning"><strong>DATUM_TRANSFORM_VERIFY</strong><br>mAOD vertical datum is extracted, but survey-grade deliverables should confirm project datum and grid-shift availability.</div>
+            </div>
+            <table style="margin-top:13px">
+              <thead><tr><th>Validator</th><th>Status</th><th>Result</th></tr></thead>
+              <tbody>
+                <tr><td>Evidence coverage</td><td><span class="pill good">pass</span></td><td>All non-null extracted values have evidence IDs.</td></tr>
+                <tr><td>Depth-axis calibration</td><td><span class="pill good">pass</span></td><td>R² 0.998 from detected depth labels.</td></tr>
+                <tr><td>Strata monotonicity</td><td><span class="pill good">pass</span></td><td>No overlaps or unexplained gaps in selected logs.</td></tr>
+                <tr><td>CRS validation</td><td><span class="pill good">pass</span></td><td>EPSG:27700 converted to EPSG:4326 for map rendering.</td></tr>
+                <tr><td>Cross-section interpolation</td><td><span class="pill warn">review</span></td><td>Interpolated boundaries are conceptual.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div id="pipelineTab" class="tab-content">
+            <div class="pipeline">
+              <div class="step"><div class="num">1</div><div><strong>GLM-OCR layout parsing</strong><small>Markdown, layout blocks, bboxes, page dimensions, crop artifacts</small></div><span class="pill good">done</span></div>
+              <div class="step"><div class="num">2</div><div><strong>GLM-5.1 page classification</strong><small>Borehole pages routed to the borehole extractor</small></div><span class="pill good">done</span></div>
+              <div class="step"><div class="num">3</div><div><strong>Deterministic depth mapping</strong><small>y-coordinate to depth model; no LLM guessing for depths</small></div><span class="pill good">done</span></div>
+              <div class="step"><div class="num">4</div><div><strong>GLM-5V crop verification</strong><small>Used only for uncertain symbols, columns, and OCR alternatives</small></div><span class="pill warn">targeted</span></div>
+              <div class="step"><div class="num">5</div><div><strong>Schema normalization</strong><small>Evidence packets become borehole JSON with coordinates and source references</small></div><span class="pill good">done</span></div>
+              <div class="step"><div class="num">6</div><div><strong>CRS transform + geospatial render</strong><small>Source easting/northing transformed before mapping and section generation</small></div><span class="pill good">done</span></div>
+            </div>
+          </div>
+          <div id="artifactsTab" class="tab-content">
+            <table>
+              <thead><tr><th>Artifact</th><th>Purpose</th><th>Status</th></tr></thead>
+              <tbody>
+                <tr><td><code>evidence/evidence.jsonl</code></td><td>OCR/layout evidence packets with bboxes and crop links</td><td><span class="pill good">ready</span></td></tr>
+                <tr><td><code>extraction/boreholes.json</code></td><td>Strict structured borehole data used by every UI view</td><td><span class="pill good">ready</span></td></tr>
+                <tr><td><code>geospatial/crs_validation.json</code></td><td>CRS checks, candidate systems, transform status</td><td><span class="pill warn">verify</span></td></tr>
+                <tr><td><code>geospatial/boreholes.geojson</code></td><td>EPSG:4326 map-ready borehole points</td><td><span class="pill good">ready</span></td></tr>
+                <tr><td><code>review/integrated_review.html</code></td><td>Unified evidence, log, map, and section review package</td><td><span class="pill good">ready</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Integrated extraction JSON <small>single source of truth for this UI</small></h2>
+        <div class="panel-body"><pre id="jsonBlock"></pre></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+const model = {
+  "schemaVersion": "geotech.integrated_review.v1",
+  "run": {
+    "id": "run_demo_2026_05_11_001",
+    "document": "Metro_Extension_GI_Report.pdf",
+    "documentHash": "sha256:demo-integrated",
+    "providerProfile": "glm_default",
+    "models": {
+      "ocr": "glm-ocr",
+      "vision": "glm-5v-turbo",
+      "text": "glm-5.1"
+    },
+    "status": "review_recommended"
+  },
+  "project": {
+    "name": "Metro Extension Package A",
+    "country": "United Kingdom",
+    "site": "London demo corridor",
+    "inputCrs": "EPSG:27700",
+    "inputCrsName": "OSGB36 / British National Grid",
+    "displayCrs": "EPSG:4326",
+    "displayCrsName": "WGS84 latitude/longitude",
+    "verticalDatum": "mAOD",
+    "crsTransformEngine": "pyproj"
+  },
+  "quality": {
+    "overallConfidence": 0.87,
+    "evidenceCoverage": 1.0,
+    "depthMappingR2": 0.998,
+    "warnings": [
+      "LOW_CONFIDENCE_STRATA_BOUNDARY",
+      "GROUNDWATER_SYMBOL_REVIEW",
+      "DATUM_TRANSFORM_VERIFY"
+    ]
+  },
+  "boreholes": [
+    {
+      "id": "BH-01",
+      "sourcePage": 10,
+      "easting": 526020.0,
+      "northing": 182890.0,
+      "lat": 51.53086366,
+      "lon": -0.18463393,
+      "groundLevel": 14.6,
+      "totalDepth": 11.0,
+      "chainage": 0,
+      "offset": -7,
+      "confidence": 0.88,
+      "evidence": {
+        "id": "ev_BH01_id",
+        "coords": "ev_BH01_coords",
+        "gl": "ev_BH01_gl",
+        "td": "ev_BH01_td"
+      },
+      "strata": [
+        {
+          "top": 0.0,
+          "base": 1.0,
+          "name": "Made Ground",
+          "description": "MADE GROUND: sandy gravelly clay with brick fragments.",
+          "className": "made",
+          "confidence": 0.91,
+          "status": "accepted",
+          "evidence": "ev_BH01_layer_0"
+        },
+        {
+          "top": 1.0,
+          "base": 4.2,
+          "name": "Firm silty CLAY",
+          "description": "Firm brown slightly sandy silty CLAY.",
+          "className": "clay",
+          "confidence": 0.88,
+          "status": "accepted",
+          "evidence": "ev_BH01_layer_1"
+        },
+        {
+          "top": 4.2,
+          "base": 7.7,
+          "name": "Medium dense SAND",
+          "description": "Medium dense yellow-brown fine to medium SAND.",
+          "className": "sand",
+          "confidence": 0.86,
+          "status": "accepted",
+          "evidence": "ev_BH01_layer_2"
+        },
+        {
+          "top": 7.7,
+          "base": 11.0,
+          "name": "Dense sandy GRAVEL",
+          "description": "Dense sandy GRAVEL.",
+          "className": "gravel",
+          "confidence": 0.79,
+          "status": "review_recommended",
+          "evidence": "ev_BH01_layer_3"
+        }
+      ],
+      "spt": [
+        {
+          "depth": 1.5,
+          "n": 8,
+          "confidence": 0.91,
+          "evidence": "ev_BH01_spt_0"
+        },
+        {
+          "depth": 3.0,
+          "n": 11,
+          "confidence": 0.9,
+          "evidence": "ev_BH01_spt_1"
+        },
+        {
+          "depth": 6.0,
+          "n": 18,
+          "confidence": 0.88,
+          "evidence": "ev_BH01_spt_2"
+        },
+        {
+          "depth": 9.0,
+          "n": 31,
+          "confidence": 0.82,
+          "evidence": "ev_BH01_spt_3"
+        }
+      ],
+      "groundwater": [
+        {
+          "depth": 3.1,
+          "type": "water_strike_symbol",
+          "confidence": 0.78,
+          "evidence": "ev_BH01_water_0"
+        }
+      ]
+    },
+    {
+      "id": "BH-02",
+      "sourcePage": 11,
+      "easting": 526090.0,
+      "northing": 182930.0,
+      "lat": 51.53120752,
+      "lon": -0.18361101,
+      "groundLevel": 14.25,
+      "totalDepth": 10.0,
+      "chainage": 82,
+      "offset": 2,
+      "confidence": 0.89,
+      "evidence": {
+        "id": "ev_BH02_id",
+        "coords": "ev_BH02_coords",
+        "gl": "ev_BH02_gl",
+        "td": "ev_BH02_td"
+      },
+      "strata": [
+        {
+          "top": 0.0,
+          "base": 1.2,
+          "name": "Made Ground",
+          "description": "MADE GROUND: sandy gravelly clay with brick fragments.",
+          "className": "made",
+          "confidence": 0.93,
+          "status": "accepted",
+          "evidence": "ev_BH02_layer_0"
+        },
+        {
+          "top": 1.2,
+          "base": 4.5,
+          "name": "Firm silty CLAY",
+          "description": "Firm brown slightly sandy silty CLAY.",
+          "className": "clay",
+          "confidence": 0.88,
+          "status": "accepted",
+          "evidence": "ev_BH02_layer_1"
+        },
+        {
+          "top": 4.5,
+          "base": 7.9,
+          "name": "Medium dense SAND",
+          "description": "Medium dense yellow-brown fine to medium SAND.",
+          "className": "sand",
+          "confidence": 0.86,
+          "status": "accepted",
+          "evidence": "ev_BH02_layer_2"
+        },
+        {
+          "top": 7.9,
+          "base": 10.0,
+          "name": "Dense sandy GRAVEL",
+          "description": "Dense sandy GRAVEL. Boundary flagged for review.",
+          "className": "gravel",
+          "confidence": 0.74,
+          "status": "review_recommended",
+          "evidence": "ev_BH02_layer_3"
+        }
+      ],
+      "spt": [
+        {
+          "depth": 1.5,
+          "n": 8,
+          "confidence": 0.92,
+          "evidence": "ev_BH02_spt_0"
+        },
+        {
+          "depth": 3.0,
+          "n": 12,
+          "confidence": 0.91,
+          "evidence": "ev_BH02_spt_1"
+        },
+        {
+          "depth": 6.5,
+          "n": 18,
+          "confidence": 0.89,
+          "evidence": "ev_BH02_spt_2"
+        },
+        {
+          "depth": 8.5,
+          "n": 32,
+          "confidence": 0.84,
+          "evidence": "ev_BH02_spt_3"
+        }
+      ],
+      "groundwater": [
+        {
+          "depth": 3.05,
+          "type": "water_strike_symbol",
+          "confidence": 0.76,
+          "evidence": "ev_BH02_water_0"
+        }
+      ]
+    },
+    {
+      "id": "BH-03",
+      "sourcePage": 12,
+      "easting": 526170.0,
+      "northing": 182975.0,
+      "lat": 51.53159408,
+      "lon": -0.18244221,
+      "groundLevel": 13.85,
+      "totalDepth": 12.0,
+      "chainage": 176,
+      "offset": -3,
+      "confidence": 0.88,
+      "evidence": {
+        "id": "ev_BH03_id",
+        "coords": "ev_BH03_coords",
+        "gl": "ev_BH03_gl",
+        "td": "ev_BH03_td"
+      },
+      "strata": [
+        {
+          "top": 0.0,
+          "base": 0.8,
+          "name": "Made Ground",
+          "description": "MADE GROUND: brown sandy gravelly clay with brick fragments.",
+          "className": "made",
+          "confidence": 0.9,
+          "status": "accepted",
+          "evidence": "ev_BH03_layer_0"
+        },
+        {
+          "top": 0.8,
+          "base": 3.8,
+          "name": "Firm silty CLAY",
+          "description": "Firm brown slightly sandy silty CLAY.",
+          "className": "clay",
+          "confidence": 0.86,
+          "status": "accepted",
+          "evidence": "ev_BH03_layer_1"
+        },
+        {
+          "top": 3.8,
+          "base": 8.4,
+          "name": "Medium dense SAND",
+          "description": "Medium dense yellow-brown fine to medium SAND.",
+          "className": "sand",
+          "confidence": 0.87,
+          "status": "accepted",
+          "evidence": "ev_BH03_layer_2"
+        },
+        {
+          "top": 8.4,
+          "base": 12.0,
+          "name": "Dense sandy GRAVEL",
+          "description": "Dense sandy GRAVEL. Boundary verified by GLM-5V crop.",
+          "className": "gravel",
+          "confidence": 0.82,
+          "status": "accepted",
+          "evidence": "ev_BH03_layer_3"
+        }
+      ],
+      "spt": [
+        {
+          "depth": 1.5,
+          "n": 9,
+          "confidence": 0.92,
+          "evidence": "ev_BH03_spt_0"
+        },
+        {
+          "depth": 3.0,
+          "n": 13,
+          "confidence": 0.91,
+          "evidence": "ev_BH03_spt_1"
+        },
+        {
+          "depth": 6.0,
+          "n": 21,
+          "confidence": 0.89,
+          "evidence": "ev_BH03_spt_2"
+        },
+        {
+          "depth": 10.0,
+          "n": 38,
+          "confidence": 0.84,
+          "evidence": "ev_BH03_spt_3"
+        }
+      ],
+      "groundwater": [
+        {
+          "depth": 2.75,
+          "type": "water_strike_symbol",
+          "confidence": 0.79,
+          "evidence": "ev_BH03_water_0"
+        }
+      ]
+    },
+    {
+      "id": "BH-04",
+      "sourcePage": 13,
+      "easting": 526250.0,
+      "northing": 183025.0,
+      "lat": 51.53202556,
+      "lon": -0.18127159,
+      "groundLevel": 13.55,
+      "totalDepth": 12.5,
+      "chainage": 270,
+      "offset": 6,
+      "confidence": 0.86,
+      "evidence": {
+        "id": "ev_BH04_id",
+        "coords": "ev_BH04_coords",
+        "gl": "ev_BH04_gl",
+        "td": "ev_BH04_td"
+      },
+      "strata": [
+        {
+          "top": 0.0,
+          "base": 0.9,
+          "name": "Made Ground",
+          "description": "MADE GROUND: sandy gravelly clay.",
+          "className": "made",
+          "confidence": 0.88,
+          "status": "accepted",
+          "evidence": "ev_BH04_layer_0"
+        },
+        {
+          "top": 0.9,
+          "base": 3.2,
+          "name": "Firm silty CLAY",
+          "description": "Firm brown slightly sandy silty CLAY.",
+          "className": "clay",
+          "confidence": 0.83,
+          "status": "accepted",
+          "evidence": "ev_BH04_layer_1"
+        },
+        {
+          "top": 3.2,
+          "base": 8.9,
+          "name": "Medium dense SAND",
+          "description": "Medium dense yellow-brown fine to medium SAND.",
+          "className": "sand",
+          "confidence": 0.84,
+          "status": "accepted",
+          "evidence": "ev_BH04_layer_2"
+        },
+        {
+          "top": 8.9,
+          "base": 12.5,
+          "name": "Dense sandy GRAVEL",
+          "description": "Dense sandy GRAVEL.",
+          "className": "gravel",
+          "confidence": 0.8,
+          "status": "review_recommended",
+          "evidence": "ev_BH04_layer_3"
+        }
+      ],
+      "spt": [
+        {
+          "depth": 1.5,
+          "n": 10,
+          "confidence": 0.9,
+          "evidence": "ev_BH04_spt_0"
+        },
+        {
+          "depth": 3.0,
+          "n": 15,
+          "confidence": 0.9,
+          "evidence": "ev_BH04_spt_1"
+        },
+        {
+          "depth": 6.5,
+          "n": 23,
+          "confidence": 0.88,
+          "evidence": "ev_BH04_spt_2"
+        },
+        {
+          "depth": 10.5,
+          "n": 41,
+          "confidence": 0.81,
+          "evidence": "ev_BH04_spt_3"
+        }
+      ],
+      "groundwater": [
+        {
+          "depth": 2.4,
+          "type": "water_strike_symbol",
+          "confidence": 0.77,
+          "evidence": "ev_BH04_water_0"
+        }
+      ]
+    }
+  ]
+};
+let selectedBhId = "BH-03";
+let selectedEvidenceId = "ev_BH03_layer_3";
+let evidenceFilter = "all";
+let map, polyline;
+const markers = {};
+
+const clsColor = {made:"#8b5a2b", clay:"#c98b67", sand:"#f5d77b", gravel:"#a3a3a3"};
+const clsPattern = {made:"madePattern", clay:"clayPattern", sand:"sandPattern", gravel:"gravelPattern"};
+
+function bh(){ return model.boreholes.find(b => b.id === selectedBhId) || model.boreholes[0]; }
+function pct(v){ return Math.round(v * 100); }
+function statusClass(status){ return status === "accepted" ? "good" : status === "review_recommended" || status === "review" ? "warn" : "bad"; }
+function fmt(n, d=2){ return Number(n).toFixed(d); }
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); }
+
+function initHeader(){
+  const r = model.run, p = model.project;
+  document.getElementById("runCard").innerHTML = `
+    <div><span>Run ID</span><strong>${r.id}</strong></div>
+    <div><span>Document</span><strong>${r.document}</strong></div>
+    <div><span>Provider</span><strong>${r.providerProfile}</strong></div>
+    <div><span>Schema</span><strong>${model.schemaVersion}</strong></div>
+    <div><span>Status</span><strong>${r.status.replace("_"," ")}</strong></div>`;
+  document.getElementById("summaryGrid").innerHTML = `
+    <div class="metric"><div class="label">Overall confidence</div><div class="value status-warn">${pct(model.quality.overallConfidence)}%</div><div class="note">Borehole extraction confidence after validation.</div></div>
+    <div class="metric"><div class="label">Evidence coverage</div><div class="value status-good">${pct(model.quality.evidenceCoverage)}%</div><div class="note">Every rendered value has source evidence.</div></div>
+    <div class="metric"><div class="label">Boreholes</div><div class="value status-blue">${model.boreholes.length}</div><div class="note">Mapped and included in A-A′ section.</div></div>
+    <div class="metric"><div class="label">CRS</div><div class="value status-good">${p.inputCrs}</div><div class="note">Transformed to ${p.displayCrs} for mapping.</div></div>
+    <div class="metric"><div class="label">Depth mapping</div><div class="value status-good">R² ${model.quality.depthMappingR2}</div><div class="note">Deterministic y-coordinate to depth calibration.</div></div>`;
+}
+
+function evidenceTypeFor(id){
+  if(id.includes("_layer_")) return "strata";
+  if(id.includes("_spt_")) return "spt";
+  if(id.includes("_water_")) return "water";
+  return "header";
+}
+
+function yPct(depth, totalDepth){ return 7 + (depth / totalDepth) * 91; }
+
+function renderSourcePage(){
+  const b = bh();
+  const total = Math.ceil(b.totalDepth);
+  let ticks = "";
+  for(let d=0; d<=total; d++){
+    const y = yPct(d, b.totalDepth);
+    ticks += `<div class="depth-tick" style="top:${y}%"><span>${d}</span></div>`;
+  }
+
+  let layers = "";
+  b.strata.forEach((s, i) => {
+    const top = yPct(s.top, b.totalDepth), bottom = yPct(s.base, b.totalDepth), h = bottom - top;
+    const tone = s.status === "accepted" ? "" : "review";
+    layers += `
+      <div class="hatch ${s.className}" style="top:${top}%;height:${h}%"></div>
+      <div class="layer-line ${tone}" style="top:${bottom}%"></div>
+      <div class="desc-text" style="top:${top + 1}%;height:${Math.max(4, h - 1)}%">${escapeHtml(s.description)}</div>
+      <button class="evidence-box ${s.status === "accepted" ? "" : "warn"}" data-type="strata" data-id="${s.evidence}" title="${s.name} evidence" style="left:23%;top:${top + 0.7}%;width:34%;height:${Math.max(4.2, Math.min(8, h - 1))}%"></button>`;
+  });
+
+  let spts = "";
+  b.spt.forEach((s, i) => {
+    const y = yPct(s.depth, b.totalDepth);
+    spts += `
+      <div class="spt-text" style="top:${y - 0.7}%">N=${s.n}</div>
+      <button class="evidence-box" data-type="spt" data-id="${s.evidence}" title="SPT N=${s.n}" style="left:72.5%;top:${y - 1.2}%;width:10.5%;height:2.6%"></button>`;
+  });
+
+  let water = "";
+  (b.groundwater || []).forEach(w => {
+    const y = yPct(w.depth, b.totalDepth);
+    water += `
+      <div class="water-text" style="top:${y - 0.9}%">▽</div>
+      <button class="evidence-box warn" data-type="water" data-id="${w.evidence}" title="Groundwater symbol" style="left:84.7%;top:${y - 1.3}%;width:6.8%;height:3.0%"></button>`;
+  });
+
+  document.getElementById("mockPage").innerHTML = `
+    <div class="page-title"><span>GROUND INVESTIGATION LOG</span><span>${b.id}</span></div>
+    <div class="page-meta">
+      <div>Project: ${model.project.name}</div><div>Exploratory Hole: ${b.id}</div>
+      <div>Ground Level: ${fmt(b.groundLevel)} ${model.project.verticalDatum}</div><div>Final Depth: ${fmt(b.totalDepth)} m bgl</div>
+      <div>E: ${fmt(b.easting)}</div><div>N: ${fmt(b.northing)}</div>
+    </div>
+    <button class="evidence-box" data-type="header" data-id="${b.evidence.id}" title="Borehole ID evidence" style="left:63%;top:10.2%;width:22%;height:3.8%"></button>
+    <button class="evidence-box" data-type="header" data-id="${b.evidence.gl}" title="Ground level evidence" style="left:5.5%;top:14.1%;width:38%;height:3.2%"></button>
+    <button class="evidence-box" data-type="header" data-id="${b.evidence.td}" title="Total depth evidence" style="left:50.5%;top:14.1%;width:38%;height:3.2%"></button>
+    <button class="evidence-box" data-type="header" data-id="${b.evidence.coords}" title="Coordinate evidence" style="left:5.5%;top:16.7%;width:83%;height:2.0%"></button>
+    <div class="log-frame">
+      <div class="col c-depth"><div class="col-label">Depth<br>m</div></div>
+      <div class="col c-lith"><div class="col-label">Legend</div></div>
+      <div class="col c-desc"><div class="col-label">Strata description</div></div>
+      <div class="col c-sample"><div class="col-label">Sample</div></div>
+      <div class="col c-spt"><div class="col-label">SPT</div></div>
+      <div class="col c-water"><div class="col-label">Water</div></div>
+      <div class="col c-remarks"><div class="col-label">Remarks</div></div>
+      ${ticks}${layers}${spts}${water}
+    </div>`;
+  applyEvidenceFilter();
+  highlightEvidence();
+}
+
+function renderStripLog(){
+  const b = bh();
+  const top = 82, h = 560, bottom = top + h, width = 430;
+  const y = d => top + (d / b.totalDepth) * h;
+  const ticks = [];
+  for(let d=0; d<=Math.ceil(b.totalDepth); d++){
+    const yy = y(d);
+    ticks.push(`<text x="30" y="${yy+4}" font-size="10" fill="#475569">${d}</text><line x1="52" y1="${yy}" x2="388" y2="${yy}" stroke="${d===0 || d===Math.ceil(b.totalDepth) ? "#334155" : "#e2e8f0"}"/>`);
+  }
+  const layers = b.strata.map(s => {
+    const yy = y(s.top), hh = Math.max(2, y(s.base)-y(s.top));
+    const dash = s.status === "accepted" ? "" : 'stroke-dasharray="7 5"';
+    const stroke = s.status === "accepted" ? "#111827" : "#b7791f";
+    return `<g class="log-highlight" data-id="${s.evidence}">
+      <rect x="72" y="${yy}" width="188" height="${hh}" fill="url(#strip-${s.className})" stroke="${stroke}" stroke-width="1.5" ${dash}/>
+      <text x="84" y="${yy + Math.min(30, hh/2)}" font-size="11" fill="#111827">${escapeHtml(s.name)}</text>
+      <text x="84" y="${yy + Math.min(46, hh/2 + 16)}" font-size="10" fill="#475569">${fmt(s.top)} - ${fmt(s.base)} m</text>
+    </g>`;
+  }).join("");
+  const spts = b.spt.map(s => `<g class="log-highlight" data-id="${s.evidence}">
+    <circle cx="290" cy="${y(s.depth)}" r="9" fill="#dbeafe" stroke="#1d4ed8"/><text x="306" y="${y(s.depth)+4}" font-size="12" fill="#111827">${s.n}</text>
+  </g>`).join("");
+  const water = (b.groundwater || []).map(w => `<g class="log-highlight" data-id="${w.evidence}">
+    <path d="M346 ${y(w.depth)-6} l18 0 l-9 15 z" fill="#bae6fd" stroke="#0369a1" stroke-width="2"/>
+    <text x="334" y="${y(w.depth)+30}" font-size="10" fill="#0369a1">${fmt(w.depth)} m</text>
+  </g>`).join("");
+
+  document.getElementById("stripWrap").innerHTML = `
+    <svg width="${width}" height="720" viewBox="0 0 ${width} 720" role="img" aria-label="Rendered borehole log">
+      <defs>
+        <pattern id="strip-made" width="12" height="12" patternUnits="userSpaceOnUse"><rect width="12" height="12" fill="#8b5a2b" opacity=".75"/><path d="M0 10 L12 0" stroke="#6b3f1d" stroke-width="2" opacity=".5"/></pattern>
+        <pattern id="strip-clay" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" fill="#f3d3c1"/><line x1="0" y1="0" x2="0" y2="8" stroke="#8a4d33" stroke-width="2" opacity=".55"/></pattern>
+        <pattern id="strip-sand" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="#f5d77b"/><circle cx="2" cy="2" r="1.2" fill="#8a6a10"/><circle cx="7" cy="6" r="1.2" fill="#8a6a10"/></pattern>
+        <pattern id="strip-gravel" width="14" height="14" patternUnits="userSpaceOnUse"><rect width="14" height="14" fill="#d4d4d4"/><circle cx="4" cy="5" r="2" fill="#64748b"/><circle cx="10" cy="10" r="2.4" fill="#64748b"/></pattern>
+      </defs>
+      <rect x="0" y="0" width="${width}" height="720" rx="14" fill="#ffffff"/>
+      <text x="20" y="32" font-size="18" font-weight="850" fill="#111827">${b.id}</text>
+      <text x="20" y="52" font-size="12" fill="#64748b">GL ${fmt(b.groundLevel)} ${model.project.verticalDatum} | TD ${fmt(b.totalDepth)} m bgl | Page ${b.sourcePage}</text>
+      <line x1="72" y1="${top}" x2="72" y2="${bottom}" stroke="#334155" stroke-width="2"/>
+      <line x1="260" y1="${top}" x2="260" y2="${bottom}" stroke="#334155" stroke-width="2"/>
+      <line x1="320" y1="${top}" x2="320" y2="${bottom}" stroke="#334155" stroke-width="2"/>
+      <line x1="388" y1="${top}" x2="388" y2="${bottom}" stroke="#334155" stroke-width="2"/>
+      <text x="24" y="78" font-size="11" font-weight="850" fill="#334155">Depth</text>
+      <text x="118" y="78" font-size="11" font-weight="850" fill="#334155">Strata</text>
+      <text x="275" y="78" font-size="11" font-weight="850" fill="#334155">SPT N</text>
+      <text x="335" y="78" font-size="11" font-weight="850" fill="#334155">Water</text>
+      <g>${ticks.join("")}</g>${layers}${spts}${water}
+      <rect x="20" y="668" width="390" height="34" rx="10" fill="#f8fafc" stroke="#e2e8f0"/>
+      <text x="34" y="689" font-size="11" fill="#475569">Rendered from validated JSON; dashed boundaries require review.</text>
+    </svg>`;
+  highlightEvidence();
+}
+
+function buildFields(b){
+  const arr = [
+    {id:b.evidence.id,type:"header",title:"Borehole ID",value:b.id,conf:.96,status:"accepted",model:"GLM-OCR + GLM-5.1"},
+    {id:b.evidence.gl,type:"header",title:"Ground level",value:`${fmt(b.groundLevel)} ${model.project.verticalDatum}`,conf:.91,status:"accepted",model:"GLM-OCR"},
+    {id:b.evidence.td,type:"header",title:"Final depth",value:`${fmt(b.totalDepth)} m bgl`,conf:.93,status:"accepted",model:"GLM-OCR"},
+    {id:b.evidence.coords,type:"header",title:"Coordinates",value:`E ${fmt(b.easting)} / N ${fmt(b.northing)} (${model.project.inputCrs})`,conf:.88,status:"accepted",model:"GLM-OCR + CRS validator"}
+  ];
+  b.strata.forEach((s,i)=>arr.push({id:s.evidence,type:"strata",title:`Stratum ${i+1}`,value:`${fmt(s.top)}-${fmt(s.base)} m | ${s.description}`,conf:s.confidence,status:s.status==="accepted"?"accepted":"review",model:"OCR + depth map"}));
+  b.spt.forEach((s,i)=>arr.push({id:s.evidence,type:"spt",title:"SPT",value:`N=${s.n} at ${fmt(s.depth)} m`,conf:s.confidence,status:"accepted",model:"OCR + geometry"}));
+  (b.groundwater||[]).forEach((w,i)=>arr.push({id:w.evidence,type:"water",title:"Groundwater",value:`${w.type.replaceAll("_"," ")} at ${fmt(w.depth)} m`,conf:w.confidence,status:"review",model:"GLM-5V symbol check"}));
+  return arr;
+}
+
+function renderFields(){
+  const container = document.getElementById("fields");
+  container.innerHTML = buildFields(bh()).map(f=>{
+    const barClass = f.conf >= .85 ? "" : f.conf >= .7 ? "warn" : "bad";
+    return `<div class="field-card ${selectedEvidenceId===f.id ? "active" : ""}" data-id="${f.id}" data-type="${f.type}">
+      <div class="field-title"><span>${escapeHtml(f.title)}</span><span class="pill ${statusClass(f.status)}">${f.status==="accepted"?"accepted":"review"}</span></div>
+      <div class="field-value">${escapeHtml(f.value)}</div>
+      <div class="field-meta"><span>${pct(f.conf)}% confidence</span><span>${f.id}</span><span>${escapeHtml(f.model)}</span></div>
+      <div class="confidence"><span class="${barClass}" style="width:${pct(f.conf)}%"></span></div>
+    </div>`;
+  }).join("");
+  highlightEvidence();
+}
+
+function renderSelectedPanel(){
+  const b = bh(), gw = b.groundwater && b.groundwater[0];
+  document.getElementById("selectedPanel").innerHTML = `<div class="selected-panel">
+    <strong>${b.id}</strong>
+    <div class="selected-grid">
+      <div><b>Source page</b><br>${b.sourcePage}</div><div><b>Confidence</b><br>${pct(b.confidence)}%</div>
+      <div><b>Easting</b><br>${fmt(b.easting)}</div><div><b>Northing</b><br>${fmt(b.northing)}</div>
+      <div><b>Lat</b><br>${b.lat.toFixed(6)}</div><div><b>Lon</b><br>${b.lon.toFixed(6)}</div>
+      <div><b>GL</b><br>${fmt(b.groundLevel)} ${model.project.verticalDatum}</div><div><b>Total depth</b><br>${fmt(b.totalDepth)} m</div>
+      <div><b>Groundwater</b><br>${gw ? fmt(gw.depth) + " m" : "not detected"}</div><div><b>Chainage</b><br>${b.chainage} m</div>
+    </div></div>`;
+  const p = model.project;
+  document.getElementById("crsCard").innerHTML = `
+    <div class="crs-box"><div class="k">Project</div><div class="v">${p.name}</div><div class="s">Country: ${p.country}<br>Site: ${p.site}</div></div>
+    <div class="crs-box"><div class="k">Input coordinates</div><div class="v">${p.inputCrs}</div><div class="s">${p.inputCrsName}<br>Easting / Northing in metres</div></div>
+    <div class="crs-box"><div class="k">Display coordinates</div><div class="v">${p.displayCrs}</div><div class="s">${p.displayCrsName}<br>Used by Leaflet marker positions</div></div>
+    <div class="crs-box"><div class="k">Transform engine</div><div class="v">${p.crsTransformEngine}</div><div class="s">Authoritative conversion should run server-side.</div></div>`;
+}
+
+function renderCrossSection(){
+  const bhs = model.boreholes;
+  const maxChain = Math.max(...bhs.map(b=>b.chainage));
+  const maxElev = Math.ceil(Math.max(...bhs.map(b=>b.groundLevel)) + 1);
+  const minElev = Math.floor(Math.min(...bhs.map(b=>b.groundLevel - b.totalDepth)) - .5);
+  const chart = {x0:86,y0:86,w:1100,h:450};
+  const x = ch => chart.x0 + (ch / maxChain) * chart.w;
+  const y = elev => chart.y0 + ((maxElev - elev) / (maxElev - minElev)) * chart.h;
+  const elevAt = (b, depth) => b.groundLevel - depth;
+
+  let grid = "";
+  for(let e=maxElev; e>=minElev; e-=2){
+    const yy = y(e);
+    grid += `<line x1="${chart.x0}" y1="${yy}" x2="${chart.x0+chart.w}" y2="${yy}" stroke="#e2e8f0"/><text x="${chart.x0-52}" y="${yy+4}" font-size="10" fill="#475569">${e} m</text>`;
+  }
+
+  const groundPath = bhs.map((b,i)=>`${i?"L":"M"}${x(b.chainage)} ${y(b.groundLevel)}`).join(" ");
+  let layerPolys = "";
+  const layerCount = Math.max(...bhs.map(b=>b.strata.length));
+  for(let li=0; li<layerCount; li++){
+    const topPts = bhs.map(b => `${x(b.chainage)},${y(elevAt(b, b.strata[li].top))}`).join(" ");
+    const botPts = [...bhs].reverse().map(b => `${x(b.chainage)},${y(elevAt(b, b.strata[li].base))}`).join(" ");
+    const cls = bhs.find(b=>b.strata[li])?.strata[li].className || "clay";
+    layerPolys += `<polygon points="${topPts} ${botPts}" fill="url(#${clsPattern[cls]})" stroke="${clsColor[cls]}" stroke-width="1.4" stroke-dasharray="${li===0 ? "" : "6 5"}" opacity=".88"/>`;
+  }
+
+  const gwPts = bhs.map(b => {
+    const gw = b.groundwater && b.groundwater[0];
+    return gw ? `${x(b.chainage)},${y(elevAt(b, gw.depth))}` : null;
+  }).filter(Boolean).join(" ");
+  const gwLine = `<polyline points="${gwPts}" fill="none" stroke="#0284c7" stroke-width="3" stroke-dasharray="9 6"/><text x="${chart.x0+chart.w-235}" y="${y(elevAt(bhs[bhs.length-1], bhs[bhs.length-1].groundwater[0].depth))-12}" font-size="12" fill="#0369a1" font-weight="850">interpreted groundwater strikes</text>`;
+
+  const columns = bhs.map(b => {
+    const cx = x(b.chainage), colW = 30, glY = y(b.groundLevel), tdY = y(b.groundLevel - b.totalDepth);
+    const segs = b.strata.map(s => {
+      const yy = y(elevAt(b,s.top)), hh = y(elevAt(b,s.base)) - yy;
+      const stroke = s.status === "accepted" ? "#172033" : "#b7791f";
+      const dash = s.status === "accepted" ? "" : 'stroke-dasharray="5 4"';
+      return `<rect x="${cx-colW/2}" y="${yy}" width="${colW}" height="${Math.max(2,hh)}" fill="url(#${clsPattern[s.className]})" stroke="${stroke}" stroke-width="1" ${dash}/>`;
+    }).join("");
+    const sp = b.spt.map(s => `<g><circle cx="${cx+24}" cy="${y(elevAt(b,s.depth))}" r="4.2" fill="#dbeafe" stroke="#1d4ed8"/><text x="${cx+32}" y="${y(elevAt(b,s.depth))+3}" font-size="9" fill="#1e293b">N${s.n}</text></g>`).join("");
+    const gw = (b.groundwater||[]).map(w => `<path d="M${cx-40} ${y(elevAt(b,w.depth))-5} l15 0 l-7.5 12 z" fill="#bae6fd" stroke="#0369a1" stroke-width="1.5"/>`).join("");
+    return `<g class="bh-log ${b.id===selectedBhId?"active":""}" data-bh="${b.id}">
+      <line x1="${cx}" y1="${glY}" x2="${cx}" y2="${tdY}" stroke="#111827" stroke-width="1" opacity=".35"/>
+      ${segs}${sp}${gw}
+      <circle cx="${cx}" cy="${glY}" r="7.5" fill="#2563eb" stroke="#fff" stroke-width="3"/>
+      <text x="${cx-22}" y="${glY-14}" font-size="12" font-weight="850" fill="#111827">${b.id}</text>
+      <text x="${cx-24}" y="${tdY+18}" font-size="10" fill="#64748b">TD ${fmt(b.totalDepth,1)} m</text>
+    </g>`;
+  }).join("");
+
+  const chainTicks = bhs.map(b => `<line x1="${x(b.chainage)}" y1="${chart.y0+chart.h+26}" x2="${x(b.chainage)}" y2="${chart.y0+chart.h+38}" stroke="#334155"/><text x="${x(b.chainage)-12}" y="${chart.y0+chart.h+55}" font-size="11" fill="#475569">${b.chainage}</text>`).join("");
+
+  document.getElementById("sectionWrap").innerHTML = `
+    <svg width="1240" height="650" viewBox="0 0 1240 650" role="img" aria-label="Professional stratigraphic cross-section">
+      <defs>
+        <pattern id="madePattern" width="14" height="14" patternUnits="userSpaceOnUse"><rect width="14" height="14" fill="#8b5a2b" opacity=".78"/><path d="M0 12 L14 0" stroke="#6b3f1d" stroke-width="2" opacity=".45"/></pattern>
+        <pattern id="clayPattern" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="10" height="10" fill="#c98b67" opacity=".72"/><line x1="0" y1="0" x2="0" y2="10" stroke="#8a4d33" stroke-width="2" opacity=".45"/></pattern>
+        <pattern id="sandPattern" width="12" height="12" patternUnits="userSpaceOnUse"><rect width="12" height="12" fill="#f5d77b" opacity=".80"/><circle cx="3" cy="3" r="1.2" fill="#9a7216" opacity=".55"/><circle cx="9" cy="8" r="1.2" fill="#9a7216" opacity=".55"/></pattern>
+        <pattern id="gravelPattern" width="16" height="16" patternUnits="userSpaceOnUse"><rect width="16" height="16" fill="#a3a3a3" opacity=".72"/><circle cx="5" cy="6" r="2.1" fill="#525252" opacity=".55"/><circle cx="11" cy="11" r="2.5" fill="#525252" opacity=".55"/></pattern>
+      </defs>
+      <rect x="0" y="0" width="1240" height="650" rx="16" fill="#ffffff"/>
+      <text x="28" y="34" font-size="19" font-weight="850" fill="#111827">A-A′ Stratigraphic Section Along Borehole Alignment</text>
+      <text x="28" y="56" font-size="12" fill="#64748b">Direct log columns are drawn at borehole positions. Dashed layer contacts are interpolated between extracted borehole boundaries.</text>
+      <rect x="${chart.x0}" y="${chart.y0}" width="${chart.w}" height="${chart.h}" fill="#f8fafc" stroke="#cbd5e1"/>
+      <g>${grid}<text x="24" y="${chart.y0+chart.h/2}" font-size="12" fill="#64748b" transform="rotate(-90 24 ${chart.y0+chart.h/2})">Elevation (${model.project.verticalDatum})</text></g>
+      ${layerPolys}
+      <path d="${groundPath}" fill="none" stroke="#166534" stroke-width="4"/>
+      ${gwLine}
+      ${columns}
+      <line x1="${chart.x0}" y1="${chart.y0+chart.h+32}" x2="${chart.x0+chart.w}" y2="${chart.y0+chart.h+32}" stroke="#334155" stroke-width="2"/>
+      ${chainTicks}
+      <text x="${chart.x0+chart.w/2-70}" y="${chart.y0+chart.h+82}" font-size="13" fill="#64748b">Chainage along A-A′ section (m)</text>
+      <text x="${chart.x0}" y="${chart.y0+chart.h+108}" font-size="11" fill="#64748b">Vertical exaggeration used for review. Use engineering judgement before adopting interpolated strata surfaces.</text>
+    </svg>`;
+}
+
+function initMap(){
+  try{
+    if(map) return;
+    map = L.map("map", {scrollWheelZoom:false});
+    const latlngs = model.boreholes.map(b => [b.lat, b.lon]);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom:20, attribution:"&copy; OpenStreetMap contributors"}).addTo(map);
+    polyline = L.polyline(latlngs, {color:"#2563eb", weight:4, opacity:.8}).addTo(map);
+    model.boreholes.forEach(b => {
+      const marker = L.circleMarker([b.lat,b.lon], {radius:b.id===selectedBhId?10:8,color:"#fff",weight:3,fillColor:b.id===selectedBhId?"#1d4ed8":"#2563eb",fillOpacity:.95}).addTo(map);
+      marker.bindPopup(`<div class="popup-title">${b.id}</div><div class="popup-row">E/N: ${fmt(b.easting)} / ${fmt(b.northing)}</div><div class="popup-row">Lat/Lon: ${b.lat.toFixed(6)} / ${b.lon.toFixed(6)}</div><div class="popup-row">GL: ${fmt(b.groundLevel)} m | TD: ${fmt(b.totalDepth)} m</div><div class="popup-row">Input CRS: ${model.project.inputCrs}</div>`);
+      marker.on("click", () => selectBorehole(b.id));
+      markers[b.id] = marker;
+    });
+    map.fitBounds(polyline.getBounds(), {padding:[40,40]});
+  }catch(err){
+    document.getElementById("map").style.display = "none";
+    document.getElementById("mapFallback").style.display = "block";
+  }
+}
+
+function updateMapMarkers(){
+  Object.entries(markers).forEach(([id, marker]) => marker.setStyle({radius:id===selectedBhId?10:8, fillColor:id===selectedBhId?"#1d4ed8":"#2563eb"}));
+}
+
+function renderCoordTable(){
+  return `<table><thead><tr><th>BH</th><th>Easting</th><th>Northing</th><th>Latitude</th><th>Longitude</th><th>Status</th></tr></thead><tbody>
+    ${model.boreholes.map(b => `<tr><td><button class="tool-btn" data-bh="${b.id}">${b.id}</button></td><td>${fmt(b.easting)}</td><td>${fmt(b.northing)}</td><td>${b.lat.toFixed(7)}</td><td>${b.lon.toFixed(7)}</td><td><span class="pill good">converted</span></td></tr>`).join("")}
+  </tbody></table>`;
+}
+
+function renderJson(){
+  const integrated = {
+    schema_version: model.schemaVersion,
+    run: model.run,
+    project: model.project,
+    selected_borehole: selectedBhId,
+    boreholes: model.boreholes.map(b => ({
+      id:b.id, source_page:b.sourcePage,
+      source_coordinates:{easting:b.easting,northing:b.northing,crs:model.project.inputCrs,unit:"m",evidence_id:b.evidence.coords},
+      display_coordinates:{latitude:b.lat,longitude:b.lon,crs:model.project.displayCrs},
+      ground_level_m:b.groundLevel,total_depth_m:b.totalDepth,chainage_m:b.chainage,
+      evidence:b.evidence,strata:b.strata,spt:b.spt,groundwater:b.groundwater
+    })),
+    validation:{status:model.run.status,warnings:model.quality.warnings}
+  };
+  document.getElementById("jsonBlock").textContent = JSON.stringify(integrated, null, 2);
+}
+
+function highlightEvidence(){
+  document.querySelectorAll(".evidence-box,.field-card,.log-highlight").forEach(el => el.classList.remove("active"));
+  document.querySelectorAll(`[data-id="${selectedEvidenceId}"]`).forEach(el => el.classList.add("active"));
+}
+
+function applyEvidenceFilter(){
+  document.querySelectorAll(".evidence-box").forEach(box => {
+    box.style.display = (evidenceFilter === "all" || box.dataset.type === evidenceFilter) ? "block" : "none";
+  });
+}
+
+function selectEvidence(id){
+  selectedEvidenceId = id;
+  highlightEvidence();
+  const field = document.querySelector(`.field-card[data-id="${id}"]`);
+  if(field) field.scrollIntoView({block:"nearest", behavior:"smooth"});
+}
+
+function selectBorehole(id){
+  selectedBhId = id;
+  const b = bh();
+  selectedEvidenceId = b.strata[Math.min(3,b.strata.length-1)].evidence;
+  renderSourcePage();
+  renderStripLog();
+  renderFields();
+  renderSelectedPanel();
+  renderCrossSection();
+  renderJson();
+  updateMapMarkers();
+}
+
+function initEvents(){
+  document.addEventListener("click", e => {
+    const evidence = e.target.closest("[data-id]");
+    if(evidence && (evidence.classList.contains("evidence-box") || evidence.classList.contains("field-card") || evidence.classList.contains("log-highlight"))){
+      selectEvidence(evidence.dataset.id);
+    }
+    const bhButton = e.target.closest("[data-bh]");
+    if(bhButton && bhButton.dataset.bh) selectBorehole(bhButton.dataset.bh);
+  });
+  document.querySelectorAll(".filter").forEach(btn => btn.addEventListener("click", () => {
+    document.querySelectorAll(".filter").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    evidenceFilter = btn.dataset.filter;
+    applyEvidenceFilter();
+  }));
+  document.querySelectorAll(".nav-btn").forEach(btn => btn.addEventListener("click", () => {
+    document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById(btn.dataset.view).classList.add("active");
+    if(btn.dataset.view === "geoView"){
+      setTimeout(() => { initMap(); if(map){ map.invalidateSize(); if(polyline) map.fitBounds(polyline.getBounds(), {padding:[40,40]}); }}, 80);
+    }
+  }));
+  document.querySelectorAll(".tab").forEach(btn => btn.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById(btn.dataset.tab).classList.add("active");
+  }));
+  document.getElementById("fitBtn").addEventListener("click", () => { if(map && polyline) map.fitBounds(polyline.getBounds(), {padding:[40,40]}); });
+  document.getElementById("crsSelect").addEventListener("change", event => {
+    if(event.target.value !== model.project.inputCrs){
+      alert("Preview data are validated for " + model.project.inputCrs + ". Production should re-run CRS validation and transformation before rendering another CRS.");
+      event.target.value = model.project.inputCrs;
+    }
+  });
+}
+
+function init(){
+  initHeader();
+  initEvents();
+  renderSourcePage();
+  renderStripLog();
+  renderFields();
+  renderSelectedPanel();
+  renderCrossSection();
+  renderJson();
+
+  const dataView = document.getElementById("validationView");
+  const coordPanel = document.createElement("div");
+  coordPanel.className = "footer-grid";
+  coordPanel.innerHTML = `
+    <div class="panel"><h2>Borehole coordinate table <small>source CRS + transformed map CRS</small></h2><div class="panel-body">${renderCoordTable()}</div></div>
+    <div class="panel"><h2>Provider-agnostic contract <small>same UI, any BYOK provider</small></h2><div class="panel-body">
+      <table><thead><tr><th>Capability</th><th>Current provider</th><th>Required contract</th></tr></thead><tbody>
+        <tr><td>OCR layout</td><td>GLM-OCR</td><td>Returns text, tables, bboxes, page dimensions, crop refs</td></tr>
+        <tr><td>Vision verification</td><td>GLM-5V-Turbo</td><td>Answers bounded crop questions as JSON</td></tr>
+        <tr><td>Text extraction / agent</td><td>GLM-5.1</td><td>Normalizes evidence into strict schema, no invention</td></tr>
+        <tr><td>CRS transform</td><td>geotechCLI local</td><td>Validates source CRS and transforms to EPSG:4326</td></tr>
+        <tr><td>Visualization</td><td>geotechCLI local</td><td>Rendered only from validated structured JSON</td></tr>
+      </tbody></table><p class="small-muted">The interface is not a static dashboard: every visible value is tied to an extracted borehole object, evidence ID, CRS state, and validation status.</p>
+    </div></div>`;
+  dataView.appendChild(coordPanel);
+}
+init();
+</script>
+</body>
+</html>
