@@ -1,0 +1,84 @@
+```
+The key idea is:
+
+cd ./my-geotech-project
+geotech agent
+
+should not behave like generic chat. It should:
+
+1. Detect the current project folder.
+2. Safely scan structured and unstructured project files.
+3. Build a .geotech/ local project state.
+4. Create a manifest, evidence index, and readiness report.
+5. Understand what workflows are possible.
+6. Ask the user what they want next.
+7. Run the selected workflow through the harness.
+8. Produce traceable outputs, review packages, and visualizations.
+
+This aligns with what your current docs already suggest: geotech analyze . performs local project-folder intelligence, and geotech agent ... --workspace . can consume local workspace evidence. The implementation guide turns that into the default project-aware agent loop.
+
+The proposed UX:
+
+geotech agent
+
+Example response:
+
+I scanned this project folder and found:
+
+- 4 PDF reports
+- 11 borehole log images
+- 2 AGS files
+- 5 CSV/XLSX lab or monitoring files
+- 1 site boundary GeoJSON
+- 1 CAD drawing
+
+Ready workflows:
+1. Data inventory and quality report
+2. Ground-model interpretation
+3. Risk analysis
+4. Anomaly detection
+5. Preliminary recommendations
+6. Visualizations and maps
+7. Run a specific command
+8. Ask a custom project question
+
+Then the user can choose, for example:
+
+Do anomaly detection and create visualizations.
+
+The agent converts that into a structured intent and runs the relevant harnessed workflows.
+
+The guide includes:
+
+- workspace root detection
+- .geotech/ local project state structure
+- project manifest schema
+- readiness.json schema
+- project-aware agent command architecture
+- workspace intelligence pipeline
+- structured and unstructured file indexing
+- intent router
+- data-quality workflow
+- interpretation workflow
+- risk-analysis workflow
+- anomaly-detection workflow
+- recommendations workflow
+- visualization workflow
+- project memory
+- permission and safety model
+- required tools
+- tracing model
+- Codex implementation prompt
+- acceptance criteria
+
+It also borrows the right concepts from agent/runtime architecture: agents should have tools, guardrails, structured outputs, and traces; filesystem roots should define what the agent can access; and tool calls should be recorded for auditability.
+
+The most important design rule in the file is:
+
+The agent goes to the project data first.
+The agent builds project understanding second.
+The agent asks the user what outcome they want third.
+The agent executes only the selected harnessed workflow fourth.
+
+This makes geotech agent feel like a real local project engineer, not a disconnected chatbot.
+```
