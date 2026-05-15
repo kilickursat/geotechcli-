@@ -1,5 +1,5 @@
 import { isIPRateLimitedRedis } from '@geotechcli/core/db/redis';
-import { sanitizeUpstreamError } from '@geotechcli/core';
+import { sanitizeUpstreamError } from '@geotechcli/core/llm';
 import { NextRequest, NextResponse } from 'next/server';
 import {
   HOSTED_BETA_LIMITS,

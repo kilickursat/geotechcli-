@@ -15,11 +15,20 @@ export type EvidenceMethod =
   | 'vision'
   | 'manual';
 
+export type EvidenceBboxUnits = 'page' | 'ratio';
+export type EvidenceLayoutLabel = 'image' | 'text' | 'formula' | 'table' | 'unknown';
+
 export interface EvidenceLocation {
   filePath: string;
   absolutePath?: string;
   sheetName?: string;
   pageNumber?: number;
+  bbox?: [number, number, number, number];
+  bboxUnits?: EvidenceBboxUnits;
+  pageWidth?: number;
+  pageHeight?: number;
+  layoutElementIndex?: number | null;
+  layoutLabel?: EvidenceLayoutLabel;
   rowNumber?: number;
   columnName?: string;
   cellRef?: string;

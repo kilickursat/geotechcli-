@@ -4,8 +4,8 @@ import {
   SUPPORTED_PROXY_MODELS,
 } from '@geotechcli/core/meta';
 import { isIPRateLimitedRedis } from '@geotechcli/core/db/redis';
+import { sanitizeUpstreamError } from '@geotechcli/core/llm';
 import { NextRequest, NextResponse } from 'next/server';
-import { sanitizeUpstreamError } from '@geotechcli/core';
 import {
   HOSTED_BETA_LIMITS,
   STRONG_BETA_MODE,

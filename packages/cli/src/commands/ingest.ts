@@ -4,6 +4,7 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import {
   approvePersistedBoreholeIngestReview,
+  buildIntegratedAgentReviewFromProjectSession,
   buildGeotechDocumentBenchmark,
   buildPersistedIngestJobSegments,
   buildIngestDossier,
@@ -20,6 +21,7 @@ import {
   listPersistedBoreholeIngestReviews,
   loadLatestPersistedBoreholeIngestReviewApproval,
   loadLatestPersistedBoreholeIngestReview,
+  loadProject,
   loadPersistedIngestJob,
   loadPersistedIngestJobResult,
   loadPersistedBoreholeIngestReviewApproval,
@@ -36,6 +38,7 @@ import {
   writePdfPageSubset,
   type GeotechDocumentBenchmarkJobContext,
   type GeotechDocumentIngestResult,
+  type IntegratedReviewAgentReview,
   type IngestSegmentationSummary,
   type PdfPageRange,
 } from '@geotechcli/core';
@@ -107,6 +110,19 @@ function defaultDossierOutputPath(sourceLabel: string): string {
   return `${slugifyOutputStem(sourceLabel)}.ingest-report.html`;
 }
 
+function loadRecentAgentReviews(projectId?: string): IntegratedReviewAgentReview[] {
+  if (!projectId) {
+    return [];
+  }
+  try {
+    return loadProject(projectId).agentSessions
+      .slice(-3)
+      .map((session) => buildIntegratedAgentReviewFromProjectSession(session));
+  } catch {
+    return [];
+  }
+}
+
 function writeHtmlDossier(
   result: ProjectBackedIngestResult,
   options: {
@@ -119,6 +135,7 @@ function writeHtmlDossier(
 ): { outputPath: string; opened: boolean } {
   const dossier = buildIngestDossier(result, {
     sourceLabel: options.sourceLabel,
+    agentReviews: loadRecentAgentReviews(options.storedReview?.projectId),
     storedReview: options.storedReview
       ? {
           projectId: options.storedReview.projectId,

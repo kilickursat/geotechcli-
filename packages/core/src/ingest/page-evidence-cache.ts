@@ -4,8 +4,9 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { LLMConfig } from '../llm/types.js';
 import type { DocumentTextHintSource } from '../vision/ocr.js';
+import type { GlmOcrLayoutPage, GlmOcrLayoutElement } from '../vision/layout-ocr.js';
 
-export const PAGE_EVIDENCE_CACHE_SCHEMA_VERSION = 1;
+export const PAGE_EVIDENCE_CACHE_SCHEMA_VERSION = 2;
 export const PAGE_EVIDENCE_PREPROCESSING_VERSION = 'page-evidence-preprocess-v2';
 
 const CACHE_DIR_NAME = 'page-evidence-cache';
@@ -25,6 +26,7 @@ export interface PageEvidenceCacheEntry {
   warnings: string[];
   transformed: boolean;
   layoutSummary?: string;
+  layoutPages?: GlmOcrLayoutPage[];
   extractionResult?: unknown;
   createdAt: string;
 }
@@ -35,6 +37,7 @@ export interface WritePageEvidenceCacheInput {
   warnings?: string[];
   transformed: boolean;
   layoutSummary?: string | null;
+  layoutPages?: GlmOcrLayoutPage[] | null;
   extractionResult?: unknown;
   createdAt?: string | Date;
 }
@@ -179,6 +182,11 @@ function buildCompactEntry(
     entry.layoutSummary = layoutSummary;
   }
 
+  const layoutPages = normalizeLayoutPages(evidence.layoutPages);
+  if (layoutPages.length > 0) {
+    entry.layoutPages = layoutPages;
+  }
+
   if (evidence.extractionResult !== undefined) {
     entry.extractionResult = evidence.extractionResult;
   }
@@ -225,6 +233,11 @@ function parsePageEvidenceCacheEntry(value: unknown): PageEvidenceCacheEntry | n
     entry.layoutSummary = layoutSummary;
   }
 
+  const layoutPages = normalizeLayoutPages(value.layoutPages);
+  if (layoutPages.length > 0) {
+    entry.layoutPages = layoutPages;
+  }
+
   if (value.extractionResult !== undefined) {
     entry.extractionResult = value.extractionResult;
   }
@@ -257,6 +270,90 @@ function normalizeWarnings(values: unknown[]): string[] {
 
 function normalizeOptionalString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeLayoutPages(value: unknown): GlmOcrLayoutPage[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((entry): GlmOcrLayoutPage[] => {
+    if (!isRecord(entry)) {
+      return [];
+    }
+    const pageNumber = normalizePositiveInteger(entry.pageNumber);
+    if (pageNumber == null) {
+      return [];
+    }
+    const elements = normalizeLayoutElements(entry.elements);
+    return [{
+      pageNumber,
+      width: normalizeNullableNumber(entry.width),
+      height: normalizeNullableNumber(entry.height),
+      elements,
+      text: normalizeOptionalString(entry.text),
+      tables: normalizeStringArray(entry.tables),
+      formulas: normalizeStringArray(entry.formulas),
+      images: normalizeStringArray(entry.images),
+    }];
+  });
+}
+
+function normalizeLayoutElements(value: unknown): GlmOcrLayoutElement[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((entry): GlmOcrLayoutElement[] => {
+    if (!isRecord(entry)) {
+      return [];
+    }
+    const content = normalizeOptionalString(entry.content);
+    if (!content) {
+      return [];
+    }
+    return [{
+      index: normalizeNullableNumber(entry.index),
+      label: normalizeLayoutLabel(entry.label),
+      bbox2d: normalizeLayoutBbox(entry.bbox2d),
+      content,
+      height: normalizeNullableNumber(entry.height),
+      width: normalizeNullableNumber(entry.width),
+    }];
+  });
+}
+
+function normalizeLayoutLabel(value: unknown): GlmOcrLayoutElement['label'] {
+  return value === 'image' || value === 'text' || value === 'formula' || value === 'table'
+    ? value
+    : 'unknown';
+}
+
+function normalizeLayoutBbox(value: unknown): [number, number, number, number] | null {
+  if (!Array.isArray(value) || value.length !== 4) {
+    return null;
+  }
+  const bbox = value.map((entry) => normalizeNullableNumber(entry));
+  return bbox.every((entry) => entry != null)
+    ? bbox as [number, number, number, number]
+    : null;
+}
+
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((entry) => normalizeOptionalString(entry))
+    .filter(Boolean);
+}
+
+function normalizeNullableNumber(value: unknown): number | null {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizePositiveInteger(value: unknown): number | null {
+  const parsed = normalizeNullableNumber(value);
+  return parsed != null && Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 function requireNonEmptyString(value: string, name: string): string {

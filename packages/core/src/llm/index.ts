@@ -9,6 +9,7 @@ export {
   resolveProviderCapabilities,
   providerSupportsNativePdfDocuments,
 } from './capabilities.js';
+export { sanitizeUpstreamError } from './util.js';
 export { withRetry } from './middleware/retry.js';
 export type {
   LLMProvider,

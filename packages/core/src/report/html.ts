@@ -7,6 +7,18 @@ import type {
   IngestDossierTone,
 } from './ingest-dossier.js';
 import type { GroundModel, GroundModelParameter, GroundModelStratum } from '../ground-model/index.js';
+import {
+  buildIntegratedReviewModel,
+  integratedBoreholeMaxDepth,
+  integratedPercent,
+  sourcePagesLabel,
+  type IntegratedReviewBorehole,
+  type IntegratedReviewMaterialClass,
+  type IntegratedReviewModel,
+  type IntegratedReviewSourcePage,
+  type IntegratedReviewSourceRegion,
+  type IntegratedReviewSourceRegionType,
+} from './integrated-review-model.js';
 
 function escapeHtml(value: string | number | null | undefined): string {
   return String(value ?? '')
@@ -100,6 +112,11 @@ function compactSvgText(value: string | null | undefined, maxLength = 28): strin
     return normalized;
   }
   return `${normalized.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
+}
+
+function uniqueStrings(values: Array<string | null | undefined>): string[] {
+  return [...new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))]
+    .filter(Boolean);
 }
 
 function layerMaterialKey(layer: IngestDossierBoreholeProfileLayer): string {
@@ -227,7 +244,7 @@ function renderConfidenceBreakdown(dossier: IngestDossier): string {
     <section class="data-section compact-section" id="trust-breakdown">
       <div class="section-heading">
         <h2>Trust breakdown</h2>
-        <p>Provider-neutral confidence split for review triage. Raw page/model details remain in Processing Audit.</p>
+        <p>Provider-neutral confidence split for review triage. Raw page/model details remain in Validation + JSON.</p>
       </div>
       <div class="metric-grid trust-breakdown-grid">
         ${dossier.confidenceBreakdown.map((item) => `
@@ -827,1374 +844,683 @@ function renderGroundModelVisualReview(model: GroundModel | undefined): string {
   `;
 }
 
-function renderFindingGroups(dossier: IngestDossier): string {
-  if (dossier.findings.length === 0) {
-    return `
-      <section class="data-section" id="risks">
-        <div class="section-heading">
-          <h2>Risks and Limitations</h2>
-          <p>No blocking review finding was retained. Source verification is still recommended before engineering reuse.</p>
-        </div>
-      </section>
-    `;
+function lightMaterialClass(className: IntegratedReviewMaterialClass): 'made' | 'clay' | 'sand' | 'gravel' {
+  if (className === 'fill') return 'made';
+  if (className === 'clay') return 'clay';
+  if (className === 'sand' || className === 'silt' || className === 'mixed') return 'sand';
+  return 'gravel';
+}
+
+function lightMaterialColor(className: IntegratedReviewMaterialClass): string {
+  switch (lightMaterialClass(className)) {
+    case 'made': return '#8b5a2b';
+    case 'clay': return '#c98b67';
+    case 'sand': return '#f5d77b';
+    default: return '#a3a3a3';
   }
+}
 
+function renderLightMetric(label: string, value: string, note: string, status: 'good' | 'warn' | 'blue' = 'blue'): string {
   return `
-    <section class="data-section" id="risks">
-      <div class="section-heading">
-        <h2>Risks and Limitations</h2>
-        <p>Review gates and limitations are grouped for engineering decision-making, not as raw extraction logs.</p>
-      </div>
-      <div class="card-grid">
-        ${dossier.findings.map((group) => `
-          <article class="insight-card ${toneClass(group.tone)}">
-            <h3>${escapeHtml(group.label)}</h3>
-            <ul>${group.items.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
-          </article>
-        `).join('')}
-      </div>
-    </section>
+    <article class="metric">
+      <div class="label">${escapeHtml(label)}</div>
+      <div class="value status-${status}">${escapeHtml(value)}</div>
+      <div class="note">${escapeHtml(note)}</div>
+    </article>
   `;
 }
 
-function renderSourceEvidence(dossier: IngestDossier): string {
+function renderLightEvidenceBox(input: {
+  type: IntegratedReviewSourceRegionType;
+  id: string;
+  label: string;
+  style: string;
+  mode: 'layout' | 'reconstructed';
+  status?: 'accepted' | 'review_recommended';
+  regionId?: string;
+  text?: string;
+}): string {
+  const classes = [
+    'evidence-box',
+    input.status === 'review_recommended' ? 'warn' : '',
+  ].filter(Boolean).join(' ');
+  const regionAttr = input.regionId ? ` data-region-id="${escapeHtml(input.regionId)}"` : '';
+  const text = input.text ? `<span class="layout-region-text">${escapeHtml(compactSvgText(input.text, 120))}</span>` : '';
+  return `<button class="${classes}" type="button" data-type="${escapeHtml(input.type)}" data-id="${escapeHtml(input.id)}" data-region-mode="${escapeHtml(input.mode)}"${regionAttr} aria-label="${escapeHtml(input.label)}" title="${escapeHtml(input.label)}" style="${escapeHtml(input.style)}">${text}</button>`;
+}
+
+function collectBoreholeEvidenceIds(borehole: IntegratedReviewBorehole): Set<string> {
+  return new Set([
+    ...borehole.evidenceIds,
+    borehole.coordinateEvidenceId,
+    ...borehole.strata.map((stratum) => stratum.evidenceId),
+    ...borehole.spt.map((point) => point.evidenceId),
+    ...borehole.groundwater.map((point) => point.evidenceId),
+    ...borehole.parameters.map((parameter) => parameter.evidenceId),
+  ].filter((id): id is string => typeof id === 'string' && id.trim().length > 0));
+}
+
+function sourcePageScoreForBorehole(page: IntegratedReviewSourcePage, borehole: IntegratedReviewBorehole): number {
+  const evidenceIds = collectBoreholeEvidenceIds(borehole);
+  const pageMatch = borehole.sourcePages.includes(page.pageNumber) ? 3 : 0;
+  const regionMatches = page.regions.filter((region) => evidenceIds.has(region.evidenceId)).length * 5;
+  const textMatches = page.regions.filter((region) => region.text.toUpperCase().includes(borehole.id.toUpperCase())).length;
+  return pageMatch + regionMatches + textMatches;
+}
+
+function selectSourcePageForBorehole(
+  borehole: IntegratedReviewBorehole,
+  model: IntegratedReviewModel,
+): IntegratedReviewSourcePage | undefined {
+  const ranked = model.sourcePages
+    .filter((page) => page.regions.length > 0)
+    .map((page) => ({ page, score: sourcePageScoreForBorehole(page, borehole) }))
+    .filter((entry) => entry.score > 0)
+    .sort((left, right) => right.score - left.score || left.page.pageNumber - right.page.pageNumber);
+  return ranked[0]?.page;
+}
+
+function layoutRegionStyle(region: IntegratedReviewSourceRegion, page: IntegratedReviewSourcePage): string {
+  const [x1, y1, x2, y2] = region.bbox;
+  const left = (x1 / page.width) * 100;
+  const top = (y1 / page.height) * 100;
+  const width = ((x2 - x1) / page.width) * 100;
+  const height = ((y2 - y1) / page.height) * 100;
+  return `left:${left.toFixed(3)}%;top:${top.toFixed(3)}%;width:${Math.max(0.3, width).toFixed(3)}%;height:${Math.max(0.3, height).toFixed(3)}%`;
+}
+
+function renderLightLayoutSourcePage(
+  page: IntegratedReviewSourcePage,
+  borehole: IntegratedReviewBorehole,
+  model: IntegratedReviewModel,
+): string {
+  const evidenceIds = collectBoreholeEvidenceIds(borehole);
+  const sortedRegions = [...page.regions].sort((left, right) =>
+    left.bbox[1] - right.bbox[1] || left.bbox[0] - right.bbox[0]);
   return `
-    <section class="data-section" id="source-evidence">
-      <div class="section-heading">
-        <h2>Source Evidence</h2>
-        <p>Page-level status with product-facing extraction posture. Technical model stages are kept in the processing audit below.</p>
+    <div class="layout-source" aria-label="GLM-OCR source layout for ${escapeHtml(borehole.id)}">
+      <div class="layout-meta">
+        <span>Page ${escapeHtml(page.pageNumber)}</span>
+        <span>${escapeHtml(page.method)}</span>
+        <span>${escapeHtml(`${Math.round(page.width)} x ${Math.round(page.height)}`)}</span>
+        <span>${escapeHtml(page.sourcePath)}</span>
       </div>
-      <div class="evidence-grid">
-        ${dossier.pageCards.map((card) => `
-          <article class="evidence-card ${toneClass(card.tone)}">
-            <div>
-              <strong>${escapeHtml(card.pageLabel)}</strong>
-              <span>${escapeHtml(card.parseStatus)} | ${escapeHtml(`${card.confidence}%`)}</span>
-            </div>
-            <h3>${escapeHtml(card.title)}</h3>
-            <p>${escapeHtml([
-              sourceModeLabel(card.sourceHint),
-              card.cacheStatus === 'hit'
-                ? 'Evidence cache reused'
-                : card.cacheStatus === 'stored'
-                  ? 'Evidence cached for reruns'
-                  : null,
-            ].filter(Boolean).join(' | '))}</p>
-            ${card.highlights.length > 0 ? `<ul>${card.highlights.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : '<p>No strong structured highlight was retained for this page.</p>'}
-            ${card.warnings.length > 0 ? `<small>Human verification recommended: ${escapeHtml(String(card.warnings.length))} retained warning(s).</small>` : ''}
-            <div class="evidence-actions" aria-label="${escapeHtml(`${card.pageLabel} review actions`)}">
-              <a href="#processing-audit">Open source page</a>
-              <button type="button" data-review-action="verified">Mark verified</button>
-              <button type="button" data-review-action="flagged">Flag issue</button>
-            </div>
-          </article>
-        `).join('')}
+      <div class="layout-page" style="aspect-ratio:${escapeHtml(page.width.toFixed(0))}/${escapeHtml(page.height.toFixed(0))}">
+        <div class="layout-grid-label">GLM-OCR layout regions linked to ${escapeHtml(model.run.models.ocr)}</div>
+        ${sortedRegions.map((region) => {
+          const linked = evidenceIds.has(region.evidenceId);
+          const label = `${region.type} evidence ${region.evidenceId}: ${region.text || region.label}`;
+          return renderLightEvidenceBox({
+            type: region.type,
+            id: region.evidenceId,
+            regionId: region.id,
+            label,
+            mode: 'layout',
+            status: linked ? region.status : 'review_recommended',
+            style: layoutRegionStyle(region, page),
+            text: region.text || region.label,
+          });
+        }).join('')}
       </div>
-    </section>
+    </div>
   `;
 }
 
-function renderProcessingAudit(dossier: IngestDossier, auditTables: IngestDossierTable[]): string {
-  const counts = dossier.pageCards.reduce(
-    (acc, page) => {
-      if (page.parseStatus === 'parsed') acc.parsed += 1;
-      else if (page.parseStatus === 'partial') acc.partial += 1;
-      else acc.failed += 1;
-      return acc;
-    },
-    { parsed: 0, partial: 0, failed: 0 },
+function renderLightSourcePage(borehole: IntegratedReviewBorehole | undefined, model: IntegratedReviewModel): string {
+  if (!borehole) {
+    return '<div class="empty-light">No borehole object was available for source-page review.</div>';
+  }
+  const layoutPage = selectSourcePageForBorehole(borehole, model);
+  if (layoutPage) {
+    return renderLightLayoutSourcePage(layoutPage, borehole, model);
+  }
+  const maxDepth = integratedBoreholeMaxDepth(borehole);
+  const yPct = (depth: number) => 7 + (Math.max(0, Math.min(maxDepth, depth)) / maxDepth) * 91;
+  const ticks = Array.from({ length: 6 }, (_value, index) => Number((maxDepth * index / 5).toFixed(2)));
+  const coordinateValue = borehole.latitude != null && borehole.longitude != null
+    ? `${borehole.latitude.toFixed(6)}, ${borehole.longitude.toFixed(6)}`
+    : borehole.easting != null && borehole.northing != null
+      ? `E ${borehole.easting.toFixed(2)} / N ${borehole.northing.toFixed(2)}`
+      : 'not resolved';
+  return `
+    <div class="mock-page" aria-label="Extracted source borehole log page">
+      <div class="page-title"><span>GROUND INVESTIGATION LOG</span><span>${escapeHtml(borehole.id)}</span></div>
+      <div class="page-meta">
+        <div>Project: ${escapeHtml(model.project.name)}</div><div>Exploratory Hole: ${escapeHtml(borehole.id)}</div>
+        <div>Ground Level: ${escapeHtml(borehole.groundLevel.toFixed(2))} ${escapeHtml(model.project.verticalDatum)}</div><div>Final Depth: ${escapeHtml(borehole.totalDepth.toFixed(2))} m bgl</div>
+        <div>${escapeHtml(coordinateValue)}</div><div>${escapeHtml(sourcePagesLabel(borehole.sourcePages))}</div>
+      </div>
+      ${renderLightEvidenceBox({ type: 'header', id: borehole.evidenceIds[0] ?? `${borehole.id}-id`, label: 'Borehole ID evidence', mode: 'reconstructed', style: 'left:63%;top:10.2%;width:22%;height:3.8%' })}
+      ${renderLightEvidenceBox({ type: 'coordinates', id: borehole.coordinateEvidenceId ?? `${borehole.id}-coords`, label: 'Coordinate evidence', mode: 'reconstructed', style: 'left:5.5%;top:16.7%;width:83%;height:2.0%' })}
+      ${renderLightEvidenceBox({ type: 'totalDepth', id: `${borehole.id}-td`, label: 'Total depth evidence', mode: 'reconstructed', style: 'left:50.5%;top:14.1%;width:38%;height:3.2%' })}
+      <div class="log-frame">
+        <div class="col c-depth"><div class="col-label">Depth<br>m</div></div>
+        <div class="col c-lith"><div class="col-label">Legend</div></div>
+        <div class="col c-desc"><div class="col-label">Strata description</div></div>
+        <div class="col c-sample"><div class="col-label">Sample</div></div>
+        <div class="col c-spt"><div class="col-label">SPT</div></div>
+        <div class="col c-water"><div class="col-label">Water</div></div>
+        <div class="col c-remarks"><div class="col-label">Remarks</div></div>
+        ${ticks.map((tick) => `<div class="depth-tick" style="top:${yPct(tick).toFixed(3)}%"><span>${escapeHtml(tick.toFixed(tick % 1 === 0 ? 0 : 1))}</span></div>`).join('')}
+        ${borehole.strata.map((stratum) => {
+          const top = yPct(stratum.top);
+          const base = yPct(stratum.base);
+          const height = Math.max(3.8, base - top);
+          const material = lightMaterialClass(stratum.className);
+          return `
+            <div class="hatch ${material}" style="top:${top.toFixed(3)}%;height:${height.toFixed(3)}%"></div>
+            <div class="layer-line ${stratum.status === 'accepted' ? '' : 'review'}" style="top:${base.toFixed(3)}%"></div>
+            <div class="desc-text" style="top:${(top + 1).toFixed(3)}%;height:${Math.max(4, height - 1).toFixed(3)}%">${escapeHtml(stratum.description)}</div>
+            ${renderLightEvidenceBox({ type: 'strata', id: stratum.evidenceId, label: `${stratum.name} evidence`, mode: 'reconstructed', status: stratum.status, style: `left:23%;top:${(top + 0.7).toFixed(3)}%;width:34%;height:${Math.max(4.2, Math.min(8, height - 1)).toFixed(3)}%` })}
+          `;
+        }).join('')}
+        ${borehole.spt.map((spt) => {
+          const y = yPct(spt.depth);
+          return `
+            <div class="spt-text" style="top:${(y - 0.7).toFixed(3)}%">${escapeHtml(spt.label.replace(/^N/i, 'N='))}</div>
+            ${renderLightEvidenceBox({ type: 'spt', id: spt.evidenceId, label: `${spt.label} evidence`, mode: 'reconstructed', style: `left:72.5%;top:${(y - 1.2).toFixed(3)}%;width:10.5%;height:2.6%` })}
+          `;
+        }).join('')}
+        ${borehole.groundwater.map((water) => {
+          const y = yPct(water.depth);
+          return `
+            <div class="water-text" style="top:${(y - 0.9).toFixed(3)}%">GW</div>
+            ${renderLightEvidenceBox({ type: 'water', id: water.evidenceId, label: 'Groundwater symbol evidence', mode: 'reconstructed', status: 'review_recommended', style: `left:84.7%;top:${(y - 1.3).toFixed(3)}%;width:6.8%;height:3.0%` })}
+          `;
+        }).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderLightStripLog(borehole: IntegratedReviewBorehole | undefined, model: IntegratedReviewModel): string {
+  if (!borehole) {
+    return '<div class="empty-light">No borehole object was available for strip-log rendering.</div>';
+  }
+  const maxDepth = integratedBoreholeMaxDepth(borehole);
+  const top = 82;
+  const height = 560;
+  const yForDepth = (depth: number) => top + (Math.max(0, Math.min(maxDepth, depth)) / maxDepth) * height;
+  const ticks = Array.from({ length: 6 }, (_value, index) => Number((maxDepth * index / 5).toFixed(2)));
+  return `
+    <div class="svg-wrap">
+      <svg width="430" height="720" viewBox="0 0 430 720" role="img" aria-label="Rendered borehole log">
+        <defs>
+          <pattern id="strip-made" width="12" height="12" patternUnits="userSpaceOnUse"><rect width="12" height="12" fill="#8b5a2b" opacity=".75"/><path d="M0 10 L12 0" stroke="#6b3f1d" stroke-width="2" opacity=".5"/></pattern>
+          <pattern id="strip-clay" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" fill="#f3d3c1"/><line x1="0" y1="0" x2="0" y2="8" stroke="#8a4d33" stroke-width="2" opacity=".55"/></pattern>
+          <pattern id="strip-sand" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="#f5d77b"/><circle cx="2" cy="2" r="1.2" fill="#8a6a10"/><circle cx="7" cy="6" r="1.2" fill="#8a6a10"/></pattern>
+          <pattern id="strip-gravel" width="14" height="14" patternUnits="userSpaceOnUse"><rect width="14" height="14" fill="#d4d4d4"/><circle cx="4" cy="5" r="2" fill="#64748b"/><circle cx="10" cy="10" r="2.4" fill="#64748b"/></pattern>
+        </defs>
+        <rect x="0" y="0" width="430" height="720" rx="14" fill="#ffffff"/>
+        <text x="20" y="32" font-size="18" font-weight="850" fill="#111827">${escapeHtml(borehole.id)}</text>
+        <text x="20" y="52" font-size="12" fill="#64748b">GL ${escapeHtml(borehole.groundLevel.toFixed(2))} ${escapeHtml(model.project.verticalDatum)} | TD ${escapeHtml(borehole.totalDepth.toFixed(2))} m bgl | ${escapeHtml(sourcePagesLabel(borehole.sourcePages))}</text>
+        <line x1="72" y1="${top}" x2="72" y2="${top + height}" stroke="#334155" stroke-width="2"/>
+        <line x1="260" y1="${top}" x2="260" y2="${top + height}" stroke="#334155" stroke-width="2"/>
+        <line x1="320" y1="${top}" x2="320" y2="${top + height}" stroke="#334155" stroke-width="2"/>
+        <line x1="388" y1="${top}" x2="388" y2="${top + height}" stroke="#334155" stroke-width="2"/>
+        <text x="24" y="78" font-size="11" font-weight="850" fill="#334155">Depth</text>
+        <text x="118" y="78" font-size="11" font-weight="850" fill="#334155">Strata</text>
+        <text x="275" y="78" font-size="11" font-weight="850" fill="#334155">SPT N</text>
+        <text x="335" y="78" font-size="11" font-weight="850" fill="#334155">Water</text>
+        ${ticks.map((tick) => {
+          const y = yForDepth(tick);
+          return `<text x="30" y="${(y + 4).toFixed(2)}" font-size="10" fill="#475569">${escapeHtml(tick.toFixed(tick % 1 === 0 ? 0 : 1))}</text><line x1="52" y1="${y.toFixed(2)}" x2="388" y2="${y.toFixed(2)}" stroke="#e2e8f0"/>`;
+        }).join('')}
+        ${borehole.strata.map((stratum) => {
+          const y = yForDepth(stratum.top);
+          const h = Math.max(2, yForDepth(stratum.base) - y);
+          const material = lightMaterialClass(stratum.className);
+          return `
+            <g class="log-highlight" data-id="${escapeHtml(stratum.evidenceId)}">
+              <rect x="72" y="${y.toFixed(2)}" width="188" height="${h.toFixed(2)}" fill="url(#strip-${material})" stroke="${stratum.status === 'accepted' ? '#111827' : '#b7791f'}" stroke-width="1.5" ${stratum.status === 'accepted' ? '' : 'stroke-dasharray="7 5"'}/>
+              <text x="84" y="${(y + Math.min(30, h / 2)).toFixed(2)}" font-size="11" fill="#111827">${escapeHtml(compactSvgText(stratum.name, 20))}</text>
+              <text x="84" y="${(y + Math.min(46, h / 2 + 16)).toFixed(2)}" font-size="10" fill="#475569">${escapeHtml(stratum.top.toFixed(2))} - ${escapeHtml(stratum.base.toFixed(2))} m</text>
+            </g>
+          `;
+        }).join('')}
+        ${borehole.spt.map((spt) => {
+          const y = yForDepth(spt.depth);
+          return `<g class="log-highlight" data-id="${escapeHtml(spt.evidenceId)}"><circle cx="290" cy="${y.toFixed(2)}" r="9" fill="#dbeafe" stroke="#1d4ed8"/><text x="306" y="${(y + 4).toFixed(2)}" font-size="12" fill="#111827">${escapeHtml(spt.label.replace(/^N/i, ''))}</text></g>`;
+        }).join('')}
+        ${borehole.groundwater.map((water) => {
+          const y = yForDepth(water.depth);
+          return `<g class="log-highlight" data-id="${escapeHtml(water.evidenceId)}"><path d="M346 ${y - 6} l18 0 l-9 15 z" fill="#bae6fd" stroke="#0369a1" stroke-width="2"/><text x="334" y="${y + 30}" font-size="10" fill="#0369a1">${escapeHtml(water.depth.toFixed(2))} m</text></g>`;
+        }).join('')}
+        <rect x="20" y="668" width="390" height="34" rx="10" fill="#f8fafc" stroke="#e2e8f0"/>
+        <text x="34" y="689" font-size="11" fill="#475569">Rendered from validated JSON; dashed boundaries require review.</text>
+      </svg>
+    </div>
+  `;
+}
+
+function renderLightFields(borehole: IntegratedReviewBorehole | undefined, model: IntegratedReviewModel): string {
+  if (!borehole) {
+    return '<div class="empty-light">No extracted fields were available.</div>';
+  }
+  const fields = [
+    { id: borehole.evidenceIds[0] ?? `${borehole.id}-id`, type: 'header', title: 'Borehole ID', value: borehole.id, conf: borehole.confidence, status: 'accepted', engine: 'GLM-OCR + GLM-5.1' },
+    { id: borehole.coordinateEvidenceId ?? `${borehole.id}-coords`, type: 'header', title: 'Coordinates', value: borehole.easting != null && borehole.northing != null ? `E ${borehole.easting.toFixed(2)} / N ${borehole.northing.toFixed(2)} (${model.project.inputCrs})` : 'not resolved', conf: borehole.confidence, status: 'accepted', engine: 'OCR + CRS validator' },
+    { id: `${borehole.id}-td`, type: 'header', title: 'Final depth', value: `${borehole.totalDepth.toFixed(2)} m bgl`, conf: borehole.confidence, status: 'accepted', engine: 'GLM-OCR' },
+    ...borehole.strata.map((stratum, index) => ({ id: stratum.evidenceId, type: 'strata', title: `Stratum ${index + 1}`, value: `${stratum.top.toFixed(2)}-${stratum.base.toFixed(2)} m | ${stratum.description}`, conf: stratum.confidence, status: stratum.status === 'accepted' ? 'accepted' : 'review', engine: 'OCR + depth map' })),
+    ...borehole.spt.map((spt) => ({ id: spt.evidenceId, type: 'spt', title: 'SPT', value: `${spt.label} at ${spt.depth.toFixed(2)} m`, conf: spt.confidence, status: 'accepted', engine: 'OCR + geometry' })),
+    ...borehole.groundwater.map((water) => ({ id: water.evidenceId, type: 'water', title: 'Groundwater', value: `${water.label} at ${water.depth.toFixed(2)} m`, conf: water.confidence, status: 'review', engine: 'vision symbol check' })),
+    ...borehole.parameters.map((parameter) => ({
+      id: parameter.evidenceId,
+      type: 'parameter',
+      title: parameter.name,
+      value: `${parameter.value}${parameter.depth != null ? ` at ${parameter.depth.toFixed(2)} m` : ''}`,
+      conf: parameter.confidence,
+      status: 'accepted',
+      engine: 'OCR + lab/index parser',
+    })),
+  ];
+  return `
+    <div class="fields">
+      ${fields.map((field) => {
+        const barClass = field.conf >= 0.85 ? '' : field.conf >= 0.7 ? 'warn' : 'bad';
+        return `
+          <button type="button" class="field-card" data-id="${escapeHtml(field.id)}" data-type="${escapeHtml(field.type)}">
+            <div class="field-title"><span>${escapeHtml(field.title)}</span><span class="pill ${field.status === 'accepted' ? 'good' : 'warn'}">${escapeHtml(field.status)}</span></div>
+            <div class="field-value">${escapeHtml(field.value)}</div>
+            <div class="field-meta"><span>${escapeHtml(integratedPercent(field.conf))} confidence</span><span>${escapeHtml(field.id)}</span><span>${escapeHtml(field.engine)}</span></div>
+            <div class="confidence"><span class="${barClass}" style="width:${escapeHtml(Math.round(field.conf * 100))}%"></span></div>
+          </button>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function renderLightMap(model: IntegratedReviewModel): string {
+  const points = model.boreholes.filter((borehole) =>
+    borehole.easting != null && borehole.northing != null,
   );
-
+  if (points.length === 0) {
+    return '<div class="empty-light">No validated borehole coordinates were available for map rendering.</div>';
+  }
+  const width = 860;
+  const height = 420;
+  const pad = 52;
+  const xs = points.map((point) => point.easting ?? 0);
+  const ys = points.map((point) => point.northing ?? 0);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const xFor = (x: number) => pad + ((x - minX) / Math.max(1, maxX - minX)) * (width - pad * 2);
+  const yFor = (y: number) => height - pad - ((y - minY) / Math.max(1, maxY - minY)) * (height - pad * 2);
   return `
-    <details class="audit-drawer" id="processing-audit">
-      <summary>
-        <span>
-          <strong>Processing Audit</strong>
-          <small>Model stages, page audit matrix, warnings, and operational details</small>
-        </span>
-        <span class="disclosure-hint">Show audit</span>
-      </summary>
-      <section class="audit-content">
-        <div class="outcome-strip" aria-label="Page extraction outcomes">
-          ${dossier.pageCards.map((card) => `
-            <span class="outcome-cell ${toneClass(card.tone)}" title="${escapeHtml(`${card.pageLabel}: ${card.parseStatus}, ${card.confidence}% confidence`)}">${escapeHtml(card.pageLabel.replace(/^Page\s+/i, ''))}</span>
-          `).join('')}
-        </div>
-        <div class="legend-row">
-          <span><strong>${escapeHtml(counts.parsed)}</strong> parsed</span>
-          <span><strong>${escapeHtml(counts.partial)}</strong> partial</span>
-          <span><strong>${escapeHtml(counts.failed)}</strong> failed</span>
-        </div>
-        ${auditTables.map((table) => renderTable(table, 'audit-table')).join('')}
-        <div class="audit-page-grid">
-          ${dossier.pageCards.map((card) => `
-            <article class="audit-page-card ${toneClass(card.tone)}">
-              <div>
-                <strong>${escapeHtml(card.pageLabel)}</strong>
-                <span>${escapeHtml(card.classification)} | ${escapeHtml(card.parseStatus)} | ${escapeHtml(`${card.confidence}%`)}</span>
-              </div>
-              <div class="chip-row">
-                ${card.sourceHint ? `<span class="chip">${escapeHtml(card.sourceHint)}</span>` : ''}
-                ${card.sectionType ? `<span class="chip">${escapeHtml(card.sectionType)}</span>` : ''}
-                ${card.scope ? `<span class="chip">${escapeHtml(card.scope)}</span>` : ''}
-                ${(card.stageBadges ?? []).map((stage) => `<span class="chip stage-chip">${escapeHtml(stage)}</span>`).join('')}
-              </div>
-              ${card.warnings.length > 0 ? `<ul>${card.warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join('')}</ul>` : ''}
-            </article>
-          `).join('')}
-        </div>
-      </section>
-    </details>
+    <div class="map-canvas">
+      <svg viewBox="0 0 ${width} ${height}" style="width:100%;height:auto;display:block" role="img" aria-label="Borehole coordinate map">
+        <rect x="0" y="0" width="${width}" height="${height}" rx="14" fill="#f8fafc"/>
+        ${Array.from({ length: 9 }, (_value, index) => `<line x1="${pad + index * ((width - pad * 2) / 8)}" y1="${pad}" x2="${pad + index * ((width - pad * 2) / 8)}" y2="${height - pad}" stroke="#dbe4f0"/><line x1="${pad}" y1="${pad + index * ((height - pad * 2) / 8)}" x2="${width - pad}" y2="${pad + index * ((height - pad * 2) / 8)}" stroke="#dbe4f0"/>`).join('')}
+        <polyline points="${points.map((point) => `${xFor(point.easting ?? 0).toFixed(2)},${yFor(point.northing ?? 0).toFixed(2)}`).join(' ')}" fill="none" stroke="#2563eb" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+        ${points.map((point, index) => {
+          const x = xFor(point.easting ?? 0);
+          const y = yFor(point.northing ?? 0);
+          return `<g><circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${index === 0 ? 11 : 9}" fill="#2563eb" stroke="#ffffff" stroke-width="4"/><text x="${(x + 14).toFixed(2)}" y="${(y - 12).toFixed(2)}" font-size="12" font-weight="850" fill="#172033">${escapeHtml(point.id)}</text></g>`;
+        }).join('')}
+        <text x="${pad}" y="${height - 18}" font-size="12" fill="#64748b">Source coordinates retained in ${escapeHtml(model.project.inputCrs)}. Map-ready coordinates render only after CRS validation.</text>
+      </svg>
+    </div>
   `;
 }
 
-function renderReviewBar(dossier: IngestDossier): string {
-  const missingCount = dossier.trustItems.filter((item) => reviewFilterValue(item) === 'missing').length;
-  const needsReviewCount = dossier.trustItems.filter((item) => reviewFilterValue(item) === 'needs_review').length;
-  const reviewBadgeValue = dossier.badges.find((badge) => /review/i.test(badge.label))?.value ?? 'Yes';
-  const reviewRequired = /^no$/i.test(reviewBadgeValue) ? 'Review ready' : 'Review required';
+function renderLightSelectedBorehole(borehole: IntegratedReviewBorehole | undefined, model: IntegratedReviewModel): string {
+  if (!borehole) {
+    return '<div class="empty-light">No selected borehole was available.</div>';
+  }
   return `
-    <div class="review-bar" role="region" aria-label="Human review workflow">
-      <div>
-        <strong>${escapeHtml(reviewRequired)}</strong>
-        <span>${escapeHtml(`${dossier.pageCards.length} page(s), ${dossier.trustItems.length} review item(s), ${needsReviewCount} need review, ${missingCount} missing`)}</span>
+    <div class="selected-panel">
+      <strong>${escapeHtml(borehole.id)}</strong>
+      <div class="selected-grid">
+        <div><b>Source</b><br>${escapeHtml(sourcePagesLabel(borehole.sourcePages))}</div><div><b>Confidence</b><br>${escapeHtml(integratedPercent(borehole.confidence))}</div>
+        <div><b>Easting</b><br>${escapeHtml(borehole.easting != null ? borehole.easting.toFixed(2) : '-')}</div><div><b>Northing</b><br>${escapeHtml(borehole.northing != null ? borehole.northing.toFixed(2) : '-')}</div>
+        <div><b>Latitude</b><br>${escapeHtml(borehole.latitude != null ? borehole.latitude.toFixed(6) : '-')}</div><div><b>Longitude</b><br>${escapeHtml(borehole.longitude != null ? borehole.longitude.toFixed(6) : '-')}</div>
+        <div><b>GL</b><br>${escapeHtml(borehole.groundLevel.toFixed(2))} ${escapeHtml(model.project.verticalDatum)}</div><div><b>Total depth</b><br>${escapeHtml(borehole.totalDepth.toFixed(2))} m</div>
       </div>
-      <div class="review-actions">
-        <a href="#parameters" class="primary-action">Approve Extraction</a>
-        <a href="#risks">Flag for Review</a>
-        <button type="button" onclick="window.print()">Export Report</button>
-        <a href="#ground-cross-section">Generate Ground Model</a>
-        <a href="#source-evidence">Ask Geotech Agent</a>
-        <a href="#processing-audit">Open Audit Trail</a>
+    </div>
+    <div class="crs-card">
+      <div class="crs-box"><div class="k">Project</div><div class="v">${escapeHtml(model.project.name)}</div><div class="s">Document: ${escapeHtml(model.run.document)}</div></div>
+      <div class="crs-box"><div class="k">Input coordinates</div><div class="v">${escapeHtml(model.project.inputCrs)}</div><div class="s">Source coordinate system retained for checking.</div></div>
+      <div class="crs-box"><div class="k">Display coordinates</div><div class="v">${escapeHtml(model.project.displayCrs)}</div><div class="s">Map rendering is gated by CRS validation.</div></div>
+      <div class="crs-box"><div class="k">Transform engine</div><div class="v">${escapeHtml(model.project.crsTransformEngine)}</div><div class="s">Production transform must run locally or in trusted infrastructure.</div></div>
+    </div>
+  `;
+}
+
+function renderLightCrossSection(model: IntegratedReviewModel): string {
+  const boreholes = model.boreholes.filter((borehole) => borehole.strata.length > 0);
+  if (boreholes.length < 2) {
+    return '<div class="empty-light">A-A section needs at least two boreholes with retained stratum boundaries.</div>';
+  }
+  const maxDepth = Math.max(...boreholes.map(integratedBoreholeMaxDepth));
+  const width = Math.max(980, 220 + boreholes.length * 210);
+  const height = 590;
+  const chart = { x0: 86, y0: 86, w: width - 170, h: 360 };
+  const xFor = (index: number) => chart.x0 + (index / Math.max(1, boreholes.length - 1)) * chart.w;
+  const yForDepth = (depth: number) => chart.y0 + (Math.max(0, Math.min(maxDepth, depth)) / maxDepth) * chart.h;
+  const maxLayerCount = Math.max(...boreholes.map((borehole) => borehole.strata.length));
+  return `
+    <div class="cross-section-wrap">
+      <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Professional stratigraphic cross-section">
+        <defs>
+          <pattern id="aa-made" width="14" height="14" patternUnits="userSpaceOnUse"><rect width="14" height="14" fill="#8b5a2b" opacity=".78"/><path d="M0 12 L14 0" stroke="#6b3f1d" stroke-width="2" opacity=".45"/></pattern>
+          <pattern id="aa-clay" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="10" height="10" fill="#c98b67" opacity=".72"/><line x1="0" y1="0" x2="0" y2="10" stroke="#8a4d33" stroke-width="2" opacity=".45"/></pattern>
+          <pattern id="aa-sand" width="12" height="12" patternUnits="userSpaceOnUse"><rect width="12" height="12" fill="#f5d77b" opacity=".80"/><circle cx="3" cy="3" r="1.2" fill="#9a7216" opacity=".55"/><circle cx="9" cy="8" r="1.2" fill="#9a7216" opacity=".55"/></pattern>
+          <pattern id="aa-gravel" width="16" height="16" patternUnits="userSpaceOnUse"><rect width="16" height="16" fill="#a3a3a3" opacity=".72"/><circle cx="5" cy="6" r="2.1" fill="#525252" opacity=".55"/><circle cx="11" cy="11" r="2.5" fill="#525252" opacity=".55"/></pattern>
+        </defs>
+        <rect x="0" y="0" width="${width}" height="${height}" rx="16" fill="#ffffff"/>
+        <text x="28" y="34" font-size="19" font-weight="850" fill="#111827">A-A Stratigraphic Section Along Borehole Alignment</text>
+        <text x="28" y="56" font-size="12" fill="#64748b">Direct log columns are drawn at borehole positions. Dashed layer contacts are interpolated between extracted borehole boundaries.</text>
+        <rect x="${chart.x0}" y="${chart.y0}" width="${chart.w}" height="${chart.h}" fill="#f8fafc" stroke="#cbd5e1"/>
+        ${Array.from({ length: 6 }, (_value, index) => {
+          const depth = Number((maxDepth * index / 5).toFixed(2));
+          const y = yForDepth(depth);
+          return `<line x1="${chart.x0}" y1="${y.toFixed(2)}" x2="${chart.x0 + chart.w}" y2="${y.toFixed(2)}" stroke="#e2e8f0"/><text x="${chart.x0 - 58}" y="${(y + 4).toFixed(2)}" font-size="10" fill="#475569">${escapeHtml(depth.toFixed(depth % 1 === 0 ? 0 : 1))} m bgl</text>`;
+        }).join('')}
+        ${Array.from({ length: Math.min(maxLayerCount, 8) }, (_value, layerIndex) => {
+          const representative = boreholes.map((borehole) => borehole.strata[layerIndex]).find(Boolean);
+          if (!representative) return '';
+          const topPoints: string[] = [];
+          const bottomPoints: string[] = [];
+          boreholes.forEach((borehole, index) => {
+            const layer = borehole.strata[layerIndex] ?? representative;
+            const x = xFor(index);
+            topPoints.push(`${x.toFixed(2)},${yForDepth(layer.top).toFixed(2)}`);
+            bottomPoints.unshift(`${x.toFixed(2)},${yForDepth(layer.base).toFixed(2)}`);
+          });
+          const material = lightMaterialClass(representative.className);
+          return `<polygon points="${[...topPoints, ...bottomPoints].join(' ')}" fill="url(#aa-${material})" stroke="${lightMaterialColor(representative.className)}" stroke-width="1.4" stroke-dasharray="${layerIndex === 0 ? '' : '6 5'}" opacity=".88"/>`;
+        }).join('')}
+        ${boreholes.map((borehole, index) => {
+          const x = xFor(index);
+          return `
+            <g class="bh-log">
+              <line x1="${x.toFixed(2)}" y1="${chart.y0}" x2="${x.toFixed(2)}" y2="${yForDepth(integratedBoreholeMaxDepth(borehole)).toFixed(2)}" stroke="#111827" stroke-width="1" opacity=".35"/>
+              ${borehole.strata.map((stratum) => `<rect x="${(x - 15).toFixed(2)}" y="${yForDepth(stratum.top).toFixed(2)}" width="30" height="${Math.max(2, yForDepth(stratum.base) - yForDepth(stratum.top)).toFixed(2)}" fill="url(#aa-${lightMaterialClass(stratum.className)})" stroke="${stratum.status === 'accepted' ? '#172033' : '#b7791f'}" stroke-width="1" ${stratum.status === 'accepted' ? '' : 'stroke-dasharray="5 4"'}/>`).join('')}
+              ${borehole.spt.map((spt) => `<circle cx="${(x + 24).toFixed(2)}" cy="${yForDepth(spt.depth).toFixed(2)}" r="4.2" fill="#dbeafe" stroke="#1d4ed8"/>`).join('')}
+              ${borehole.groundwater.map((water) => `<path d="M${(x - 40).toFixed(2)} ${yForDepth(water.depth) - 5} l15 0 l-7.5 12 z" fill="#bae6fd" stroke="#0369a1" stroke-width="1.5"/>`).join('')}
+              <circle cx="${x.toFixed(2)}" cy="${chart.y0}" r="7.5" fill="#2563eb" stroke="#fff" stroke-width="3"/>
+              <text x="${(x - 22).toFixed(2)}" y="${chart.y0 - 14}" font-size="12" font-weight="850" fill="#111827">${escapeHtml(borehole.id)}</text>
+              <text x="${(x - 24).toFixed(2)}" y="${(yForDepth(integratedBoreholeMaxDepth(borehole)) + 18).toFixed(2)}" font-size="10" fill="#64748b">TD ${escapeHtml(borehole.totalDepth.toFixed(1))} m</text>
+            </g>
+          `;
+        }).join('')}
+        <text x="${chart.x0}" y="${height - 28}" font-size="11" fill="#64748b">Vertical exaggeration used for review. Use engineering judgment before adopting interpolated strata surfaces.</text>
+      </svg>
+    </div>
+  `;
+}
+
+function renderLightTables(dossier: IngestDossier): string {
+  if (dossier.tables.length === 0) {
+    return '<div class="empty-light">No audit tables were retained.</div>';
+  }
+  return `
+    <div class="table-panel-grid">
+      ${dossier.tables.map((table) => `
+        <article class="panel embedded-panel">
+          <h2>${escapeHtml(table.title)}${table.description ? `<small>${escapeHtml(table.description)}</small>` : ''}</h2>
+          <div class="panel-body table-scroll">
+            <table>
+              <thead><tr>${table.columns.map((column) => `<th>${escapeHtml(column)}</th>`).join('')}</tr></thead>
+              <tbody>${table.rows.length > 0 ? table.rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${escapeHtml(table.columns.length)}">${escapeHtml(table.emptyState ?? 'No rows retained.')}</td></tr>`}</tbody>
+            </table>
+          </div>
+        </article>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderLightAgentReviews(model: IntegratedReviewModel): string {
+  if (model.agentReviews.length === 0) {
+    return '<div class="empty-light">No single-agent or swarm review session was attached to this ingest output.</div>';
+  }
+  return `
+    <div class="pipeline">
+      ${model.agentReviews.map((review, index) => `
+        <div class="step">
+          <div class="num">${index + 1}</div>
+          <div>
+            <strong>${escapeHtml(review.title)}</strong>
+            <small>${escapeHtml(review.summary)}</small>
+            ${review.warnings.length > 0 ? `<small>${escapeHtml(review.warnings.join(' | '))}</small>` : ''}
+          </div>
+          <span class="pill ${review.warnings.length > 0 ? 'warn' : 'good'}">${escapeHtml([
+            review.mode,
+            review.stepCount != null ? `${review.stepCount} steps` : null,
+            review.tokens != null ? `${review.tokens} tokens` : null,
+          ].filter(Boolean).join(' | '))}</span>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderLightValidation(dossier: IngestDossier, model: IntegratedReviewModel): string {
+  const warnings = model.quality.warnings.length > 0
+    ? model.quality.warnings
+    : ['No integrated review warnings were retained.'];
+  const json = escapeHtml(JSON.stringify(model, null, 2));
+  return `
+    <div class="data-grid">
+      <div class="panel">
+        <h2>Validation workflow <small>extraction, geospatial, and rendering checks</small></h2>
+        <div class="tabs">
+          <button class="tab active" type="button" data-tab-target="warningsTab">Warnings</button>
+          <button class="tab" type="button" data-tab-target="pipelineTab">Pipeline</button>
+          <button class="tab" type="button" data-tab-target="agentsTab">Agents</button>
+          <button class="tab" type="button" data-tab-target="tablesTab">Tables</button>
+        </div>
+        <div class="panel-body">
+          <div id="warningsTab" class="tab-content active">
+            <div class="warning-list">
+              ${warnings.map((warning) => `<div class="warning"><strong>Review gate</strong><br>${escapeHtml(warning)}</div>`).join('')}
+            </div>
+          </div>
+          <div id="pipelineTab" class="tab-content">
+            <div class="pipeline">
+              <div class="step"><div class="num">1</div><div><strong>GLM-OCR layout evidence</strong><small>Text, tables, layout blocks, bboxes, and page dimensions seed the extraction.</small></div><span class="pill good">ready</span></div>
+              <div class="step"><div class="num">2</div><div><strong>GLM-5.1 document routing</strong><small>Pages are classified into borehole logs, report narrative, lab data, and ground model evidence.</small></div><span class="pill good">ready</span></div>
+              <div class="step"><div class="num">3</div><div><strong>Deterministic depth mapping</strong><small>Depth intervals, SPT records, and groundwater are rendered from structured objects.</small></div><span class="pill good">ready</span></div>
+              <div class="step"><div class="num">4</div><div><strong>Vision verification gate</strong><small>Uncertain symbols remain review-gated before engineering reuse.</small></div><span class="pill warn">review</span></div>
+              <div class="step"><div class="num">5</div><div><strong>Provider-neutral schema</strong><small>The same JSON drives fields, strip logs, map, section, validation, and export.</small></div><span class="pill good">ready</span></div>
+            </div>
+          </div>
+          <div id="agentsTab" class="tab-content">
+            ${renderLightAgentReviews(model)}
+          </div>
+          <div id="tablesTab" class="tab-content">
+            ${renderLightTables(dossier)}
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Integrated extraction JSON <small>single source of truth for this UI</small></h2>
+        <div class="panel-body"><pre>${json}</pre></div>
       </div>
     </div>
   `;
 }
 
-function renderActionBar(): string {
-  return `
-    <div class="action-bar" aria-label="Review actions">
-      <a href="#parameters" class="primary-action">Approve Extraction</a>
-      <a href="#risks">Flag for Review</a>
-      <a href="#source-evidence">Open Source Page</a>
-      <button type="button" onclick="window.print()">Export PDF</button>
-      <a href="#ground-model">Generate Ground Model</a>
-      <a href="#boreholes">Create Borehole Profile</a>
-      <a href="#source-evidence">Ask Geotech Agent</a>
-    </div>
-  `;
-}
-
-export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
+function renderIntegratedReviewOnlyHtml(dossier: IngestDossier): string {
+  const model = buildIntegratedReviewModel(dossier);
+  const selected = model.boreholes[0];
   const generatedDate = new Date(dossier.generatedAt).toLocaleString('en-CA', {
     dateStyle: 'medium',
     timeStyle: 'short',
   });
-  const auditTables = dossier.tables.filter((table) => isOperationalAuditTable(table.title));
-  const mainTables = dossier.tables.filter((table) => !isOperationalAuditTable(table.title));
-  const subtitle = /borehole/i.test(`${dossier.subtitle} ${dossier.title}`)
-    ? 'Borehole Log Interpretation and Review Summary'
-    : 'AI-Assisted Geotechnical Review Summary';
+  const depthMapping = model.quality.depthMappingR2 == null
+    ? 'n/a'
+    : model.quality.depthMappingR2.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
 
   return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Geotechnical Intelligence Report - ${escapeHtml(dossier.title)}</title>
+  <title>geotechCLI Integrated Vision + Geospatial Review - ${escapeHtml(dossier.title)}</title>
   <style>
-    :root {
-      --bg: #060d1b;
-      --surface: #0f172a;
-      --surface-soft: #111827;
-      --surface-raised: #0b1120;
-      --text: #f8fafc;
-      --muted: #94a3b8;
-      --primary: #06b6d4;
-      --primary-soft: rgba(6, 182, 212, 0.12);
-      --success: #10b981;
-      --success-soft: rgba(16, 185, 129, 0.13);
-      --warning: #f59e0b;
-      --warning-soft: rgba(245, 158, 11, 0.13);
-      --danger: #ef4444;
-      --danger-soft: rgba(239, 68, 68, 0.13);
-      --neutral: #cbd5e1;
-      --neutral-soft: rgba(100, 116, 139, 0.15);
-      --border: #1e293b;
-      --border-strong: #334155;
-      --shadow: 0 20px 60px rgba(0, 0, 0, 0.28);
-      --radius: 14px;
-      --radius-sm: 10px;
-    }
-
-    * { box-sizing: border-box; }
-    html {
-      scroll-behavior: smooth;
-      overflow-x: hidden;
-    }
-    html, body { margin: 0; min-height: 100%; }
-
-    body {
-      font-family: Inter, "Segoe UI Variable", "Segoe UI", Arial, sans-serif;
-      color: var(--text);
-      background: var(--bg);
-      font-variant-numeric: tabular-nums;
-      overflow-x: hidden;
-      padding-bottom: 98px;
-    }
-
-    .layout {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr);
-      gap: 24px;
-      width: 100%;
-      max-width: 1280px;
-      margin: 0 auto;
-      padding: 16px 24px 120px;
-      min-width: 0;
-    }
-
-    .sidebar {
-      position: sticky;
-      top: 0;
-      z-index: 30;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 18px;
-      align-self: stretch;
-      min-height: 58px;
-      min-width: 0;
-      padding: 12px 16px;
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      background: rgba(11, 17, 32, 0.94);
-      color: #f8fafc;
-      box-shadow: 0 14px 44px rgba(0, 0, 0, 0.26);
-      backdrop-filter: blur(14px);
-    }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 0;
-      border-bottom: 0;
-      margin: 0;
-      min-width: 190px;
-    }
-
-    .brand::before {
-      content: "";
-      width: 28px;
-      height: 28px;
-      border-radius: 8px;
-      background: var(--primary);
-      box-shadow: 0 0 24px rgba(6, 182, 212, 0.28);
-      flex: 0 0 auto;
-    }
-
-    .brand strong { font-size: 0.96rem; white-space: nowrap; }
-    .brand span { display: none; }
-
-    .nav-list {
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      gap: 6px;
-      flex-wrap: wrap;
-    }
-
-    .nav-list a {
-      color: #cbd5e1;
-      text-decoration: none;
-      padding: 8px 10px;
-      border-radius: 8px;
-      font-weight: 650;
-      font-size: 0.8rem;
-      overflow-wrap: anywhere;
-    }
-
-    .nav-list a:hover, .nav-list a:focus {
-      background: rgba(100, 116, 139, 0.16);
-      outline: none;
-    }
-
-    .content {
-      display: grid;
-      gap: 28px;
-      min-width: 0;
-      max-width: 100%;
-    }
-
-    .hero {
-      padding: 30px;
-      border: 1px solid var(--border);
-      border-radius: 18px;
-      background:
-        radial-gradient(circle at top right, rgba(6, 182, 212, 0.09), transparent 34%),
-        linear-gradient(135deg, #0b1120 0%, #0f172a 100%);
-      box-shadow: var(--shadow);
-      display: grid;
-      gap: 22px;
-      min-width: 0;
-      overflow: hidden;
-    }
-
-    .eyebrow {
-      display: inline-flex;
-      width: fit-content;
-      padding: 8px 12px;
-      border-radius: 999px;
-      background: var(--primary-soft);
-      color: #67e8f9;
-      font-weight: 800;
-      font-size: 0.78rem;
-      text-transform: uppercase;
-    }
-
-    .hero-main {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 300px;
-      gap: 24px;
-      align-items: start;
-      min-width: 0;
-    }
-
-    .hero-main > div {
-      min-width: 0;
-    }
-
-    h1, h2, h3, p { margin: 0; }
-
-    h1 {
-      margin-top: 12px;
-      font-size: clamp(2rem, 4vw, 3rem);
-      line-height: 1.04;
-      max-width: 22ch;
-      overflow-wrap: anywhere;
-    }
-
-    .hero-subtitle {
-      margin-top: 12px;
-      color: #67e8f9;
-      font-weight: 800;
-      font-size: 1.12rem;
-    }
-
-    .hero-summary {
-      margin-top: 14px;
-      color: var(--muted);
-      line-height: 1.7;
-      max-width: 92ch;
-      overflow-wrap: anywhere;
-    }
-
-    .hero-meta {
-      display: grid;
-      gap: 10px;
-      padding: 18px;
-      border: 1px solid var(--border-strong);
-      border-radius: var(--radius-sm);
-      background: rgba(15, 23, 42, 0.74);
-      color: var(--muted);
-      font-size: 0.92rem;
-      min-width: 0;
-      overflow-wrap: anywhere;
-    }
-
-    .hero-meta strong {
-      color: var(--text);
-      overflow-wrap: anywhere;
-    }
-
-    .status-badge-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 9px;
-      margin-top: 16px;
-    }
-
-    .status-badge {
-      display: inline-grid;
-      gap: 4px;
-      min-width: 126px;
-      padding: 10px 12px;
-      border: 1px solid currentColor;
-      border-radius: 999px;
-      line-height: 1.2;
-      background: rgba(15, 23, 42, 0.74);
-    }
-
-    .status-badge span {
-      color: currentColor;
-      opacity: 0.72;
-      font-size: 0.68rem;
-      text-transform: uppercase;
-      font-weight: 900;
-    }
-
-    .status-badge strong {
-      color: currentColor;
-      font-size: 0.86rem;
-      overflow-wrap: anywhere;
-    }
-
-    .executive-grid, .metric-grid, .card-grid, .evidence-grid, .audit-page-grid, .footer-grid {
-      display: grid;
-      gap: 16px;
-    }
-
-    .executive-grid {
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    }
-
-    .fact-card, .metric-card, .insight-card, .evidence-card, .footer-card, .audit-page-card {
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      background: var(--surface);
-      padding: 18px;
-      min-width: 0;
-    }
-
-    .fact-card {
-      display: grid;
-      gap: 8px;
-    }
-
-    .fact-card span, .metric-card span {
-      color: var(--muted);
-      font-size: 0.78rem;
-      text-transform: uppercase;
-      font-weight: 800;
-    }
-
-    .fact-card strong {
-      color: var(--text);
-      font-size: 1rem;
-      line-height: 1.45;
-      overflow-wrap: anywhere;
-    }
-
-    .fact-card small, .metric-card small {
-      color: var(--muted);
-      line-height: 1.5;
-    }
-
-    .metric-grid {
-      grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
-    }
-
-    .metric-card {
-      display: grid;
-      gap: 10px;
-    }
-
-    .metric-card strong {
-      font-size: 1.65rem;
-      line-height: 1;
-    }
-
-    .meter {
-      display: block;
-      height: 8px;
-      overflow: hidden;
-      border-radius: 999px;
-      background: rgba(102, 112, 133, 0.18);
-    }
-
-    .meter span {
-      display: block;
-      height: 100%;
-      border-radius: inherit;
-      background: currentColor;
-      opacity: 0.75;
-    }
-
-    .tone-accent { background: var(--primary-soft); color: #22d3ee; border-color: rgba(6, 182, 212, 0.28); }
-    .tone-good { background: var(--success-soft); color: #34d399; border-color: rgba(16, 185, 129, 0.28); }
-    .tone-warning { background: var(--warning-soft); color: #fcd34d; border-color: rgba(245, 158, 11, 0.3); }
-    .tone-danger { background: var(--danger-soft); color: #f87171; border-color: rgba(239, 68, 68, 0.32); }
-    .tone-neutral { background: var(--neutral-soft); color: #cbd5e1; border-color: rgba(100, 116, 139, 0.28); }
-
-    .action-bar {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-    }
-
-    .action-bar button, .action-bar a {
-      border: 1px solid var(--border-strong);
-      border-radius: 8px;
-      background: var(--surface-soft);
-      color: #cbd5e1;
-      padding: 9px 12px;
-      font: inherit;
-      font-weight: 800;
-      text-decoration: none;
-      box-shadow: none;
-      cursor: pointer;
-      overflow-wrap: anywhere;
-    }
-
-    .action-bar .primary-action {
-      background: var(--primary);
-      border-color: var(--primary);
-      color: #06111f;
-    }
-
-    .review-bar {
-      position: fixed;
-      left: 50%;
-      bottom: 0;
-      z-index: 45;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 18px;
-      width: min(1180px, calc(100vw - 36px));
-      margin: 10px auto 0;
-      padding: 13px 14px;
-      border: 1px solid #263244;
-      border-radius: 18px 18px 0 0;
-      background: rgba(11, 18, 32, 0.94);
-      color: #f8fafc;
-      box-shadow: 0 -18px 38px rgba(11, 18, 32, 0.2);
-      backdrop-filter: blur(14px);
-      transform: translate(-50%, 120%);
-      transition: transform 180ms ease;
-    }
-
-    .review-bar.visible {
-      transform: translate(-50%, 0);
-    }
-
-    .review-bar > div:first-child {
-      display: grid;
-      gap: 3px;
-      min-width: 220px;
-    }
-
-    .review-bar strong { font-size: 0.95rem; }
-    .review-bar span { color: #94a3b8; font-size: 0.84rem; line-height: 1.4; }
-
-    .review-actions {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: flex-end;
-      gap: 8px;
-    }
-
-    .review-actions a, .review-actions button {
-      border: 1px solid #334155;
-      border-radius: 10px;
-      background: #111827;
-      color: #dbeafe;
-      padding: 8px 10px;
-      font: inherit;
-      font-size: 0.78rem;
-      font-weight: 850;
-      text-decoration: none;
-      cursor: pointer;
-    }
-
-    .review-actions .primary-action {
-      background: #38bdf8;
-      border-color: #38bdf8;
-      color: #0b1220;
-    }
-
-    .data-section {
-      display: grid;
-      gap: 16px;
-      scroll-margin-top: 24px;
-      min-width: 0;
-    }
-
-    .section-heading {
-      display: grid;
-      gap: 8px;
-    }
-
-    .section-heading h2 {
-      font-size: 1.35rem;
-      letter-spacing: 0;
-      color: var(--text);
-    }
-
-    .section-heading p {
-      color: var(--muted);
-      line-height: 1.65;
-      max-width: 96ch;
-    }
-
-    .card-grid {
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    }
-
-    .insight-card {
-      display: grid;
-      gap: 12px;
-    }
-
-    .insight-card h3 {
-      color: var(--text);
-      font-size: 1.06rem;
-    }
-
-    .insight-card p, .insight-card li, .evidence-card p, .evidence-card li {
-      color: var(--muted);
-      line-height: 1.62;
-    }
-
-    .insight-card ul, .evidence-card ul, .profile-notes, .footer-card ul, .audit-page-card ul {
-      margin: 0;
-      padding-left: 18px;
-      display: grid;
-      gap: 7px;
-    }
-
-    .profile-shell, .table-shell {
-      overflow: auto;
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      background: var(--surface);
-      min-width: 0;
-      max-width: 100%;
-    }
-
-    .table-shell {
-      max-height: 560px;
-    }
-
-    .profile-shell {
-      overflow-x: auto;
-      overflow-y: visible;
-      max-height: none;
-    }
-
-    .borehole-profile {
-      display: block;
-      min-width: 520px;
-      width: min(100%, 900px);
-      height: auto;
-      margin: 0 auto;
-      max-height: 460px;
-    }
-
-    .profile-legend {
-      display: grid;
-      gap: 8px;
-      margin-top: 12px;
-    }
-
-    .profile-legend-row {
-      display: grid;
-      grid-template-columns: 18px minmax(64px, 0.7fr) minmax(96px, 0.8fr) minmax(160px, 2fr) minmax(94px, 0.8fr);
-      align-items: center;
-      gap: 10px;
-      padding: 10px 12px;
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      background: var(--surface-soft);
-      color: var(--muted);
-      font-size: 0.82rem;
-      line-height: 1.35;
-    }
-
-    .profile-legend-row strong {
-      color: var(--text);
-      font-size: 0.84rem;
-    }
-
-    .profile-legend-row em {
-      color: var(--warning);
-      font-style: normal;
-      font-weight: 800;
-      font-size: 0.78rem;
-      text-align: right;
-    }
-
-    .legend-swatch {
-      width: 18px;
-      height: 18px;
-      border-radius: 5px;
-      border: 1px solid rgba(255, 255, 255, 0.24);
-      box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.18);
-    }
-
-    .cross-section-shell {
-      background:
-        linear-gradient(180deg, rgba(6, 182, 212, 0.06), rgba(16, 185, 129, 0.04)),
-        var(--surface);
-    }
-
-    .ground-cross-section {
-      display: block;
-      min-width: 620px;
-      width: min(100%, 920px);
-      height: auto;
-      margin: 0 auto;
-      max-height: 430px;
-    }
-
-    .verification-note {
-      color: var(--muted);
-      font-weight: 700;
-      line-height: 1.55;
-      padding-left: 14px;
-      border-left: 3px solid var(--warning);
-    }
-
-    .gm-visual-grid {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr);
-      gap: 16px;
-      min-width: 0;
-    }
-
-    .gm-panel {
-      display: grid;
-      gap: 12px;
-      min-width: 0;
-      padding: 16px;
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      background: var(--surface);
-    }
-
-    .gm-panel h3, .gm-mini-card h4 {
-      margin: 0;
-      color: var(--text);
-      letter-spacing: 0;
-    }
-
-    .gm-panel h3 {
-      font-size: 1rem;
-    }
-
-    .gm-chart-shell {
-      overflow-x: auto;
-      overflow-y: visible;
-      max-width: 100%;
-      min-width: 0;
-      border: 1px solid rgba(100, 116, 139, 0.28);
-      border-radius: 16px;
-      background: #0b1120;
-    }
-
-    .gm-strip-log, .gm-depth-chart {
-      display: block;
-      width: min(100%, 900px);
-      min-width: 520px;
-      height: auto;
-      margin: 0 auto;
-      max-height: 410px;
-    }
-
-    .gm-strip-log {
-      margin: 0;
-    }
-
-    .gm-mini-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-      gap: 12px;
-      min-width: 0;
-    }
-
-    .gm-mini-card {
-      display: grid;
-      gap: 8px;
-      min-width: 0;
-      padding: 12px;
-      border: 1px solid rgba(100, 116, 139, 0.28);
-      border-radius: 14px;
-      background: #0b1120;
-    }
-
-    .gm-mini-card h4 {
-      font-size: 0.86rem;
-      overflow-wrap: anywhere;
-    }
-
-    .gm-mini-card svg {
-      display: block;
-      width: 100%;
-      height: auto;
-      max-height: 230px;
-    }
-
-    .gm-monitoring-table table {
-      min-width: 620px;
-    }
-
-    .profile-title { font: 800 15px Inter, Segoe UI, sans-serif; fill: #f8fafc; }
-    .profile-label { font: 800 13px Inter, Segoe UI, sans-serif; fill: #f8fafc; }
-    .profile-small { font: 11px Inter, Segoe UI, sans-serif; fill: #cbd5e1; }
-    .profile-axis { font: 11px Inter, Segoe UI, sans-serif; fill: #94a3b8; }
-    .profile-water { font: 800 11px Inter, Segoe UI, sans-serif; fill: #67e8f9; }
-
-    .profile-notes {
-      color: var(--muted);
-      line-height: 1.55;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      min-width: 920px;
-    }
-
-    th, td {
-      padding: 13px 14px;
-      border-bottom: 1px solid rgba(100, 116, 139, 0.22);
-      text-align: left;
-      vertical-align: top;
-      font-size: 0.92rem;
-      line-height: 1.48;
-      overflow-wrap: anywhere;
-      color: #cbd5e1;
-    }
-
-    th {
-      position: sticky;
-      top: 0;
-      z-index: 1;
-      background: var(--surface-raised);
-      color: var(--muted);
-      font-size: 0.76rem;
-      text-transform: uppercase;
-      font-weight: 900;
-      white-space: nowrap;
-      overflow-wrap: normal;
-    }
-
-    .status-pill, .chip {
-      display: inline-flex;
-      align-items: center;
-      width: fit-content;
-      padding: 6px 10px;
-      border-radius: 999px;
-      border: 1px solid rgba(102, 112, 133, 0.2);
-      font-size: 0.78rem;
-      font-weight: 800;
-      line-height: 1;
-    }
-
-    .trust-controls {
-      display: flex;
-      align-items: end;
-      justify-content: space-between;
-      gap: 12px;
-      flex-wrap: wrap;
-      padding: 14px;
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      background: var(--surface);
-    }
-
-    .trust-controls label {
-      display: grid;
-      gap: 7px;
-      flex: 1 1 320px;
-      color: var(--muted);
-      font-size: 0.75rem;
-      text-transform: uppercase;
-      font-weight: 900;
-    }
-
-    .trust-controls input {
-      width: 100%;
-      border: 1px solid var(--border-strong);
-      border-radius: 12px;
-      background: #0b1120;
-      color: var(--text);
-      padding: 11px 12px;
-      font: inherit;
-      font-size: 0.92rem;
-      outline: none;
-      text-transform: none;
-      font-weight: 600;
-    }
-
-    .trust-controls input:focus {
-      border-color: var(--primary);
-      box-shadow: 0 0 0 4px rgba(6, 182, 212, 0.12);
-    }
-
-    .filter-row {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .filter-button {
-      border: 1px solid var(--border-strong);
-      border-radius: 999px;
-      background: var(--surface-soft);
-      color: var(--muted);
-      padding: 9px 12px;
-      font: inherit;
-      font-size: 0.8rem;
-      font-weight: 850;
-      cursor: pointer;
-    }
-
-    .filter-button.active {
-      background: var(--primary);
-      color: #06111f;
-      border-color: var(--primary);
-    }
-
-    .evidence-grid {
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    }
-
-    .evidence-card {
-      display: grid;
-      gap: 11px;
-    }
-
-    .evidence-card > div {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      color: var(--muted);
-      font-size: 0.86rem;
-    }
-
-    .evidence-card h3 {
-      color: var(--text);
-      font-size: 1.02rem;
-    }
-
-    .evidence-card small {
-      color: var(--warning);
-      font-weight: 800;
-      line-height: 1.45;
-    }
-
-    .evidence-actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      padding-top: 4px;
-    }
-
-    .evidence-actions a, .evidence-actions button {
-      border: 1px solid var(--border-strong);
-      border-radius: 10px;
-      background: #0b1120;
-      color: #67e8f9;
-      padding: 8px 9px;
-      font: inherit;
-      font-size: 0.78rem;
-      font-weight: 850;
-      text-decoration: none;
-      cursor: pointer;
-    }
-
-    .evidence-actions button[data-state="verified"] {
-      color: var(--success);
-      border-color: rgba(22, 135, 93, 0.28);
-      background: var(--success-soft);
-    }
-
-    .evidence-actions button[data-state="flagged"] {
-      color: var(--warning);
-      border-color: rgba(183, 121, 31, 0.28);
-      background: var(--warning-soft);
-    }
-
-    .empty-state {
-      padding: 18px;
-      border: 1px dashed var(--border);
-      border-radius: var(--radius);
-      background: var(--surface);
-      color: var(--muted);
-      line-height: 1.6;
-    }
-
-    .audit-drawer {
-      scroll-margin-top: 24px;
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      background: var(--surface);
-      overflow: hidden;
-    }
-
-    .audit-drawer summary {
-      cursor: pointer;
-      list-style: none;
-      padding: 20px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-    }
-
-    .audit-drawer summary::-webkit-details-marker { display: none; }
-    .audit-drawer summary span:first-child { display: grid; gap: 5px; }
-    .audit-drawer small { color: var(--muted); }
-
-    .disclosure-hint {
-      border: 1px solid var(--border-strong);
-      border-radius: 999px;
-      padding: 7px 11px;
-      color: #67e8f9;
-      background: var(--primary-soft);
-      font-weight: 800;
-      white-space: nowrap;
-    }
-
-    .audit-content {
-      border-top: 1px solid var(--border);
-      padding: 20px;
-      display: grid;
-      gap: 20px;
-    }
-
-    .outcome-strip {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(34px, 1fr));
-      gap: 6px;
-    }
-
-    .outcome-cell {
-      min-height: 30px;
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 0.78rem;
-      font-weight: 900;
-    }
-
-    .legend-row, .chip-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      color: var(--muted);
-    }
-
-    .legend-row strong { color: var(--text); }
-
-    .audit-page-grid {
-      grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
-    }
-
-    .audit-page-card {
-      display: grid;
-      gap: 12px;
-    }
-
-    .audit-page-card > div:first-child {
-      display: grid;
-      gap: 4px;
-    }
-
-    .audit-page-card > div:first-child span, .audit-page-card li {
-      color: var(--muted);
-      line-height: 1.5;
-    }
-
-    .stage-chip {
-      color: #67e8f9;
-      background: var(--primary-soft);
-      border-color: rgba(6, 182, 212, 0.32);
-    }
-
-    .footer-grid {
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    }
-
-    .footer-card {
-      display: grid;
-      gap: 9px;
-    }
-
-    .footer-card p, .footer-card li {
-      color: var(--muted);
-      line-height: 1.58;
-    }
-
-    tr[hidden] { display: none; }
-
-    .toast-region {
-      position: fixed;
-      top: 18px;
-      right: 18px;
-      z-index: 60;
-      display: grid;
-      gap: 8px;
-      pointer-events: none;
-    }
-
-    .toast {
-      max-width: 320px;
-      padding: 11px 14px;
-      border: 1px solid #334155;
-      border-radius: 12px;
-      background: #0b1220;
-      color: #f8fafc;
-      box-shadow: 0 18px 38px rgba(11, 18, 32, 0.22);
-      font-size: 0.86rem;
-      font-weight: 700;
-    }
-
-    @media (max-width: 980px) {
-      .layout { padding: 14px 16px 96px; max-width: 100%; }
-      .sidebar { position: static; min-height: auto; align-items: flex-start; flex-direction: column; }
-      .nav-list { justify-content: flex-start; }
-      .hero-main { grid-template-columns: 1fr; }
-    }
-
-    @media (max-width: 620px) {
-      body { padding-bottom: 0; }
-      .layout {
-        display: grid;
-        width: min(100vw, 390px);
-        max-width: 390px;
-        margin: 0;
-        padding: 10px;
-        gap: 18px;
-        overflow: hidden;
-      }
-      .sidebar, .content, .hero, .data-section, .audit-drawer, .footer-grid {
-        width: 100%;
-        max-width: 100%;
-      }
-      .sidebar { padding: 14px; min-height: auto; border-radius: 14px; }
-      .brand { gap: 8px; padding-bottom: 0; margin-bottom: 0; }
-      .brand span { display: none; }
-      .nav-list {
-        width: 100%;
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 5px;
-      }
-      .nav-list a {
-        min-width: 0;
-        padding: 7px 8px;
-        font-size: 0.74rem;
-        line-height: 1.25;
-      }
-      .content { margin-top: 18px; }
-      .hero { padding: 20px; width: 100%; max-width: 100%; }
-      .hero-main { width: 100%; max-width: 100%; grid-template-columns: minmax(0, 1fr); }
-      .hero-main > div, .hero-meta, .status-badge-row {
-        width: 100%;
-        max-width: min(320px, 100%);
-      }
-      .executive-grid, .metric-grid, .card-grid, .evidence-grid, .footer-grid { grid-template-columns: 1fr; }
-      .review-bar { position: static; transform: none; width: 100%; margin-top: 18px; border-radius: 18px; align-items: stretch; }
-      .review-bar.visible { transform: none; }
-      .review-actions { justify-content: flex-start; }
-      h1 { font-size: 1.72rem; max-width: min(320px, 100%); line-height: 1.08; }
-      .hero-subtitle { max-width: min(320px, 100%); font-size: 0.96rem; line-height: 1.35; overflow-wrap: anywhere; }
-      .hero-summary { max-width: min(320px, 100%); font-size: 0.95rem; line-height: 1.55; }
-      .status-badge-row { display: grid; grid-template-columns: minmax(0, 1fr); }
-      .status-badge {
-        width: 100%;
-        max-width: 100%;
-        min-width: 0;
-        padding: 9px 10px;
-        border-radius: 18px;
-      }
-      .status-badge span, .status-badge strong {
-        min-width: 0;
-        overflow-wrap: anywhere;
-        word-break: break-word;
-      }
-      .profile-shell {
-        width: 100%;
-        border-radius: 14px;
-      }
-      .borehole-profile, .ground-cross-section {
-        min-width: 520px;
-        max-height: none;
-      }
-      .profile-legend-row {
-        grid-template-columns: 16px minmax(54px, 0.7fr) minmax(78px, 0.8fr);
-        gap: 8px;
-        font-size: 0.75rem;
-      }
-      .profile-legend-row span:nth-of-type(2),
-      .profile-legend-row em {
-        grid-column: 2 / -1;
-        text-align: left;
-      }
-      table { min-width: 760px; }
-    }
+    :root{--bg:#f6f7f9;--panel:#fff;--ink:#172033;--muted:#697386;--line:#d8dee9;--soft:#eef2f7;--good:#1f8f5f;--warn:#b7791f;--bad:#c2410c;--blue:#2563eb;--deep:#0f172a;--made:#8b5a2b;--clay:#c98b67;--sand:#f5d77b;--gravel:#a3a3a3;--shadow:0 10px 25px rgba(23,32,51,.08);--radius:16px}
+    *{box-sizing:border-box}html,body{margin:0;min-height:100%}body{background:var(--bg);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-variant-numeric:tabular-nums}button,select{font:inherit}h1,h2,p{margin:0}
+    header{background:linear-gradient(135deg,#0f172a,#1e293b 55%,#334155);color:#fff;padding:28px 36px}.header-top{display:flex;justify-content:space-between;align-items:flex-start;gap:22px}h1{font-size:28px;letter-spacing:0;line-height:1.08}.subtitle{margin-top:8px;color:#cbd5e1;line-height:1.5;max-width:1120px}.badge-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}.badge{display:inline-flex;border-radius:999px;padding:7px 10px;background:rgba(255,255,255,.11);border:1px solid rgba(255,255,255,.16);color:#e5e7eb;font-size:12px;font-weight:750}.run-card{min-width:315px;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.16);border-radius:16px;padding:16px;font-size:13px}.run-card div{display:flex;justify-content:space-between;gap:14px;padding:4px 0;color:#dbeafe}.run-card span:first-child{color:#a7b3c7}
+    main{padding:24px 28px 42px;max-width:1760px;margin:0 auto}.summary-grid{display:grid;grid-template-columns:repeat(5,minmax(160px,1fr));gap:14px;margin-bottom:16px}.metric{background:#fff;border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px}.metric .label{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}.metric .value{font-size:25px;font-weight:850;letter-spacing:0}.metric .note{color:var(--muted);font-size:12px;margin-top:6px;line-height:1.35}.status-good{color:var(--good)}.status-warn{color:var(--warn)}.status-blue{color:var(--blue)}.status-bad{color:var(--bad)}
+    .view-nav{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}.nav-btn{border:1px solid #cbd5e1;background:#fff;color:#172033;border-radius:999px;padding:9px 12px;font-weight:800;font-size:13px;cursor:pointer}.nav-btn:hover{border-color:var(--blue);color:var(--blue)}.nav-btn.active{background:var(--blue);border-color:var(--blue);color:#fff}.view{display:none}.view.active{display:block}
+    .panel{background:#fff;border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}.panel h2{font-size:16px;margin:0;padding:15px 17px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:12px;align-items:center}.panel h2 small{color:var(--muted);font-weight:500}.panel-body{padding:15px}.review-grid{display:grid;grid-template-columns:minmax(340px,1.02fr) minmax(340px,.78fr) minmax(380px,1.08fr);gap:16px;align-items:start}
+    .toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}.tool-btn{border:1px solid #cbd5e1;background:#fff;color:#172033;border-radius:999px;padding:7px 10px;font-weight:750;font-size:12px;cursor:pointer}.tool-btn.active{background:var(--blue);border-color:var(--blue);color:#fff}
+    .mock-page{position:relative;width:100%;aspect-ratio:.707/1;background:#fff;border:1px solid #cbd5e1;border-radius:12px;overflow:hidden}.page-title{position:absolute;left:5%;top:3.2%;width:90%;height:5%;border-bottom:2px solid #111827;font-weight:850;font-size:clamp(12px,1vw,18px);display:flex;align-items:center;justify-content:space-between}.page-title span:last-child{color:#475569}.page-meta{position:absolute;left:5%;top:9.5%;width:90%;height:8.4%;border:1px solid #94a3b8;display:grid;grid-template-columns:1fr 1fr;font-size:clamp(8px,.62vw,11px)}.page-meta div{padding:4px 6px;border-bottom:1px solid #e2e8f0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+    .log-frame{position:absolute;left:5%;top:20%;width:90%;height:72%;border:2px solid #334155}.col{position:absolute;top:0;height:100%;border-right:1px solid #64748b}.c-depth{left:0;width:11%}.c-lith{left:11%;width:10%}.c-desc{left:21%;width:38%}.c-sample{left:59%;width:13%}.c-spt{left:72%;width:12%}.c-water{left:84%;width:8%}.c-remarks{left:92%;width:8%;border-right:none}.col-label{position:absolute;top:0;height:6.2%;width:100%;background:#e2e8f0;border-bottom:1px solid #64748b;font-size:clamp(6px,.55vw,9px);font-weight:800;display:flex;justify-content:center;align-items:center;text-align:center}
+    .depth-tick{position:absolute;left:0;width:100%;border-top:1px solid #cbd5e1;font-size:clamp(6px,.55vw,9px);color:#334155}.depth-tick span{position:absolute;left:5%;top:-7px;background:#fff;padding-right:2px}.desc-text{position:absolute;left:23%;width:34%;font-size:clamp(6.5px,.58vw,10px);line-height:1.18;color:#111827;overflow:hidden}.hatch{position:absolute;left:12%;width:8%;border-left:1px solid #94a3b8;border-right:1px solid #94a3b8;background:repeating-linear-gradient(45deg,rgba(15,23,42,.24) 0 2px,transparent 2px 7px)}.hatch.made{background:repeating-linear-gradient(135deg,rgba(139,90,43,.55) 0 4px,rgba(139,90,43,.18) 4px 8px)}.hatch.clay{background:repeating-linear-gradient(45deg,rgba(111,78,55,.3) 0 2px,transparent 2px 7px),#f3d3c1}.hatch.sand{background:radial-gradient(circle,rgba(15,23,42,.35) 1px,transparent 1.5px) 0 0/8px 8px,#fde68a}.hatch.gravel{background:radial-gradient(circle,rgba(15,23,42,.35) 1.5px,transparent 2px) 0 0/10px 10px,repeating-linear-gradient(135deg,transparent 0 7px,rgba(15,23,42,.2) 7px 9px),#d4d4d4}.layer-line{position:absolute;left:11%;width:48%;border-top:2px solid #111827}.layer-line.review{border-top:2px dashed var(--warn)}
+    .spt-text,.water-text{position:absolute;font-size:clamp(6.5px,.58vw,10px);color:#111827;font-weight:850}.spt-text{left:75%}.water-text{left:86%;color:#0369a1}.evidence-box{position:absolute;border:2px solid var(--blue);background:rgba(37,99,235,.10);border-radius:4px;opacity:.55;cursor:pointer;transition:.15s ease;padding:0;color:#172033;text-align:left;overflow:hidden}.evidence-box:hover,.evidence-box.active,.evidence-box:focus-visible{opacity:1;background:rgba(37,99,235,.18);box-shadow:0 0 0 3px rgba(37,99,235,.16);z-index:20;outline:none}.evidence-box.warn{border-color:var(--warn);background:rgba(183,121,31,.12)}.hidden-box{display:none!important}
+    .layout-source{width:100%}.layout-meta{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;color:#475569;font-size:12px}.layout-meta span{display:inline-flex;align-items:center;border:1px solid #d8dee9;background:#f8fafc;border-radius:999px;padding:5px 8px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.layout-page{position:relative;width:100%;background:linear-gradient(#fff,#fbfdff);border:1px solid #cbd5e1;border-radius:12px;overflow:hidden;box-shadow:inset 0 0 0 1px #eef2f7}.layout-page:before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(148,163,184,.16) 1px,transparent 1px),linear-gradient(rgba(148,163,184,.16) 1px,transparent 1px);background-size:8.33% 8.33%;pointer-events:none}.layout-grid-label{position:absolute;left:10px;top:8px;z-index:1;background:rgba(255,255,255,.88);border:1px solid #e2e8f0;border-radius:999px;padding:5px 8px;color:#475569;font-size:11px;font-weight:800}.layout-region-text{position:absolute;inset:3px;font-size:clamp(6.5px,.54vw,10px);line-height:1.16;color:#172033;overflow:hidden;pointer-events:none}
+    .legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;font-size:12px;color:var(--muted)}.legend-item{display:flex;align-items:center;gap:7px}.swatch{width:20px;height:12px;border-radius:3px;border:2px solid var(--blue);background:rgba(37,99,235,.12)}.swatch.warn{border-color:var(--warn);background:rgba(183,121,31,.12)}.swatch.good{border-color:var(--good);background:rgba(31,143,95,.12)}.swatch.bad{border-color:var(--bad);background:rgba(194,65,12,.12)}.swatch.made{background:var(--made);border-color:rgba(15,23,42,.2)}.swatch.clay{background:var(--clay);border-color:rgba(15,23,42,.2)}.swatch.sand{background:var(--sand);border-color:rgba(15,23,42,.2)}.swatch.gravel{background:var(--gravel);border-color:rgba(15,23,42,.2)}
+    .svg-wrap{display:flex;justify-content:center;background:linear-gradient(#fff,#f8fafc);border:1px solid #e2e8f0;border-radius:13px;padding:8px;overflow:auto}svg text{font-family:Inter,ui-sans-serif,system-ui,sans-serif}.log-highlight{cursor:pointer;transition:.15s ease}.log-highlight.active{filter:drop-shadow(0 0 6px rgba(37,99,235,.72))}
+    .fields{display:grid;gap:9px;max-height:694px;overflow:auto;padding-right:4px}.field-card{border:1px solid #e2e8f0;border-radius:12px;padding:11px;cursor:pointer;transition:.15s ease;background:#fff;text-align:left}.field-card:hover,.field-card.active{border-color:var(--blue);box-shadow:0 0 0 3px rgba(37,99,235,.12)}.field-title{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;font-weight:850}.field-value{margin-top:6px;color:#111827;font-size:13.5px;line-height:1.32}.field-meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:9px;color:var(--muted);font-size:12px}.pill{display:inline-flex;align-items:center;border-radius:999px;padding:4px 8px;background:#eef2f7;color:#475569;font-size:12px;font-weight:800}.pill.good{background:#dcfce7;color:#166534}.pill.warn{background:#fef3c7;color:#92400e}.pill.bad{background:#ffedd5;color:#9a3412}.pill.blue{background:#dbeafe;color:#1d4ed8}.confidence{margin-top:9px;height:8px;background:#e2e8f0;border-radius:999px;overflow:hidden}.confidence span{display:block;height:100%;background:linear-gradient(90deg,var(--good),#65a30d)}.confidence span.warn{background:linear-gradient(90deg,var(--warn),#d97706)}.confidence span.bad{background:linear-gradient(90deg,var(--bad),#ef4444)}
+    .geo-grid{display:grid;grid-template-columns:minmax(520px,1.18fr) minmax(360px,.82fr);gap:16px;align-items:start}.map-toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:10px;flex-wrap:wrap}.map-canvas{border:1px solid #d8dee9;border-radius:14px;overflow:auto;background:#e2e8f0}.notice{border:1px solid #fde68a;background:#fffbeb;color:#78350f;padding:10px 12px;border-radius:12px;font-size:13px;line-height:1.45;margin-top:10px}.selected-panel{border:1px solid #dbeafe;border-radius:14px;background:#eff6ff;padding:13px;margin-bottom:11px}.selected-panel strong{font-size:18px}.selected-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px;font-size:13px;color:#334155}.crs-card{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.crs-box{border:1px solid #e2e8f0;border-radius:12px;padding:11px;background:#f8fafc}.crs-box .k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px}.crs-box .v{font-weight:850}.crs-box .s{font-size:12px;color:var(--muted);margin-top:5px;line-height:1.35}.section-panel{margin-top:16px}.cross-section-wrap{overflow:auto;background:linear-gradient(#fff,#f8fafc);border:1px solid #e2e8f0;border-radius:14px;padding:8px}
+    .data-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}.table-panel-grid{display:grid;gap:12px}.embedded-panel{box-shadow:none}.table-scroll{overflow:auto;max-height:360px}table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:9px;border-bottom:1px solid #e2e8f0;vertical-align:top;color:#172033}th{color:#475569;background:#f8fafc;font-size:11px;text-transform:uppercase;letter-spacing:.04em}code{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:12px}.tabs{display:flex;gap:8px;padding:0 15px 13px;border-bottom:1px solid var(--line);flex-wrap:wrap}.tab{border:1px solid #cbd5e1;background:#fff;color:#172033;border-radius:999px;padding:7px 10px;font-weight:800;font-size:12px;cursor:pointer}.tab.active{background:var(--blue);border-color:var(--blue);color:#fff}.tab-content{display:none}.tab-content.active{display:block}.warning-list{display:grid;gap:10px}.warning{border-left:4px solid var(--warn);background:#fffbeb;border-radius:10px;padding:12px;color:#78350f;font-size:13px}.pipeline{display:grid;gap:10px}.step{display:grid;grid-template-columns:34px 1fr auto;gap:10px;align-items:center;border:1px solid #e2e8f0;border-radius:12px;padding:10px}.num{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#dbeafe;color:#1d4ed8;font-weight:900}.step strong{display:block}.step small{color:var(--muted)}pre{background:#0f172a;color:#e2e8f0;border-radius:12px;padding:14px;overflow:auto;font-size:12px;line-height:1.45;max-height:620px}.empty-light{border:1px dashed #cbd5e1;background:#f8fafc;color:#475569;border-radius:12px;padding:16px;line-height:1.5}
+    @media(max-width:1400px){.review-grid,.geo-grid,.data-grid{grid-template-columns:1fr}.fields{max-height:none}.summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.header-top{flex-direction:column}.run-card{min-width:0;width:100%}}@media(max-width:720px){main{padding:16px}header{padding:22px 18px}.summary-grid,.crs-card{grid-template-columns:1fr}.metric .value{font-size:22px}.review-grid{gap:12px}.panel h2{align-items:flex-start;flex-direction:column}.legend{display:grid;grid-template-columns:1fr}.mock-page{min-height:560px}.page-meta{font-size:8px}.view-nav{display:grid}.nav-btn{width:100%}.selected-grid{grid-template-columns:1fr}}
   </style>
 </head>
 <body>
-  <div class="layout">
-    <aside class="sidebar" aria-label="Report navigation">
-      <div class="brand">
-        <strong>GeotechCLI Intelligence</strong>
-        <span>AI-assisted extraction, verification, and engineering interpretation from geotechnical reports.</span>
+  <header>
+    <div class="header-top">
+      <div>
+        <h1>geotechCLI Integrated Vision + Geospatial Review</h1>
+        <p class="subtitle">${escapeHtml(dossier.summary)}</p>
+        <div class="badge-row">
+          <span class="badge">OCR: ${escapeHtml(model.run.models.ocr)}</span>
+          <span class="badge">Vision: ${escapeHtml(model.run.models.vision)}</span>
+          <span class="badge">Text / Agent: ${escapeHtml(model.run.models.text)}</span>
+          <span class="badge">BYOK profile: ${escapeHtml(model.run.providerProfile)}</span>
+          <span class="badge">CRS checked before map render</span>
+        </div>
       </div>
-      <nav class="nav-list">
-        <a href="#overview">Overview</a>
-        <a href="#ground-model">Ground Model</a>
-        <a href="#ground-cross-section">Cross-Section</a>
-        <a href="#groundmodel-visual-review">Visual Review</a>
-        <a href="#boreholes">Boreholes</a>
-        <a href="#parameters">Engineering Parameters</a>
-        <a href="#risks">Risks and Limitations</a>
-        <a href="#source-evidence">Source Evidence</a>
-        <a href="#processing-audit">Audit Trail</a>
-      </nav>
-    </aside>
-
-    <main class="content">
-      <header class="hero" id="overview">
-        <div class="hero-main">
-          <div>
-            <span class="eyebrow">Review Report</span>
-            <h1>Geotechnical Intelligence Report</h1>
-            <p class="hero-subtitle">${escapeHtml(subtitle)}</p>
-            <p class="hero-summary">${escapeHtml(dossier.summary)}</p>
-            ${renderStatusBadges(dossier)}
+      <div class="run-card">
+        <div><span>Run ID</span><strong>${escapeHtml(model.run.id)}</strong></div>
+        <div><span>Document</span><strong>${escapeHtml(model.run.document)}</strong></div>
+        <div><span>Generated</span><strong>${escapeHtml(generatedDate)}</strong></div>
+        <div><span>Schema</span><strong>${escapeHtml(model.schemaVersion)}</strong></div>
+        <div><span>geotechCLI</span><strong>v${escapeHtml(GEOTECHCLI_VERSION)}</strong></div>
+        <div><span>Status</span><strong>${escapeHtml(model.run.status.replace(/_/g, ' '))}</strong></div>
+      </div>
+    </div>
+  </header>
+  <main>
+    <section class="summary-grid" aria-label="Integrated review summary">
+      ${renderLightMetric('Overall confidence', integratedPercent(model.quality.overallConfidence), 'Borehole extraction confidence after validation.', model.quality.overallConfidence >= 0.85 ? 'good' : 'warn')}
+      ${renderLightMetric('Evidence coverage', integratedPercent(model.quality.evidenceCoverage), 'Rendered values retain source evidence where available.', model.quality.evidenceCoverage >= 0.85 ? 'good' : 'warn')}
+      ${renderLightMetric('Boreholes', String(model.boreholes.length), 'Mapped and included in A-A section.', 'blue')}
+      ${renderLightMetric('CRS', model.project.inputCrs, `Display coordinates: ${model.project.displayCrs}.`, model.project.inputCrs === 'unknown' ? 'warn' : 'good')}
+      ${renderLightMetric('Depth mapping', depthMapping === 'n/a' ? 'n/a' : `R2 ${depthMapping}`, 'Deterministic depth calibration from structured intervals.', depthMapping === 'n/a' ? 'warn' : 'good')}
+    </section>
+    <nav class="view-nav" aria-label="Review views">
+      <button class="nav-btn active" type="button" data-view-target="reviewView">Extraction review</button>
+      <button class="nav-btn" type="button" data-view-target="geoView">Map + A-A section</button>
+      <button class="nav-btn" type="button" data-view-target="validationView">Validation + JSON</button>
+    </nav>
+    <section id="reviewView" class="view active">
+      <div class="review-grid">
+        <div class="panel">
+          <h2>Source report evidence <small>GLM-OCR regions when available, reconstructed log otherwise</small></h2>
+          <div class="panel-body">
+            <div class="toolbar">
+              <button class="tool-btn filter active" type="button" data-filter="all">All evidence</button>
+              <button class="tool-btn filter" type="button" data-filter="header">Header</button>
+              <button class="tool-btn filter" type="button" data-filter="coordinates">Coordinates</button>
+              <button class="tool-btn filter" type="button" data-filter="totalDepth">Total depth</button>
+              <button class="tool-btn filter" type="button" data-filter="strata">Strata</button>
+              <button class="tool-btn filter" type="button" data-filter="spt">SPT</button>
+              <button class="tool-btn filter" type="button" data-filter="water">Water</button>
+              <button class="tool-btn filter" type="button" data-filter="parameter">Parameters</button>
+              <button class="tool-btn filter" type="button" data-filter="table">Tables</button>
+            </div>
+            ${renderLightSourcePage(selected, model)}
+            <div class="legend">
+              <span class="legend-item"><span class="swatch"></span>Accepted evidence</span>
+              <span class="legend-item"><span class="swatch warn"></span>Review recommended</span>
+              <span class="legend-item"><span class="swatch good"></span>Validated geometry</span>
+              <span class="legend-item"><span class="swatch bad"></span>Blocking error, if present</span>
+            </div>
           </div>
-          <div class="hero-meta">
-            <strong>${escapeHtml(dossier.sourceLabel)}</strong>
-            <span>Generated ${escapeHtml(generatedDate)}</span>
-            <span>geotechCLI v${escapeHtml(GEOTECHCLI_VERSION)}</span>
-            <span>${escapeHtml(dossier.documentType)}</span>
+        </div>
+        <div class="panel"><h2>Validated strip log <small>deterministic renderer</small></h2><div class="panel-body">${renderLightStripLog(selected, model)}</div></div>
+        <div class="panel"><h2>Extracted fields <small>schema + confidence + evidence</small></h2><div class="panel-body">${renderLightFields(selected, model)}</div></div>
+      </div>
+    </section>
+    <section id="geoView" class="view">
+      <div class="geo-grid">
+        <div class="panel">
+          <h2>Map-ready borehole view <small>source CRS guarded before visualization</small></h2>
+          <div class="panel-body">
+            <div class="map-toolbar"><span class="pill ${model.project.inputCrs === 'unknown' ? 'warn' : 'good'}">Input CRS: ${escapeHtml(model.project.inputCrs)}</span><span class="pill blue">Display: ${escapeHtml(model.project.displayCrs)}</span></div>
+            ${renderLightMap(model)}
+            <div class="notice"><strong>CRS rule:</strong> no map or section should be treated as design-grade until source CRS, units, project location, and vertical datum have passed validation.</div>
           </div>
         </div>
-        <div class="executive-grid">
-          ${dossier.executiveItems.map((item) => `
-            <article class="fact-card ${toneClass(item.tone)}">
-              <span>${escapeHtml(item.label)}</span>
-              <strong>${escapeHtml(item.value)}</strong>
-              ${item.detail ? `<small>${escapeHtml(item.detail)}</small>` : ''}
-            </article>
-          `).join('')}
+        <div class="panel"><h2>Selected borehole + CRS guardrail <small>same object drives log, map, and section</small></h2><div class="panel-body">${renderLightSelectedBorehole(selected, model)}</div></div>
+      </div>
+      <div class="panel section-panel">
+        <h2>Professional A-A stratigraphic section <small>interpolated contacts + actual vertical borehole log columns</small></h2>
+        <div class="panel-body">
+          ${renderLightCrossSection(model)}
+          <div class="legend">
+            <span class="legend-item"><span class="swatch made"></span>Made Ground / Fill</span>
+            <span class="legend-item"><span class="swatch clay"></span>Clay</span>
+            <span class="legend-item"><span class="swatch sand"></span>Sand / Silt</span>
+            <span class="legend-item"><span class="swatch gravel"></span>Gravel / Rock</span>
+            <span class="legend-item"><span style="width:30px;border-top:2px dashed #64748b;display:inline-block"></span>Interpolated contacts</span>
+          </div>
+          <div class="notice"><strong>Engineering note:</strong> strata between boreholes are conceptual interpolations for review. Directly extracted log columns are shown at borehole locations.</div>
         </div>
-        <div class="metric-grid">
-          ${dossier.metrics.map(renderMetric).join('')}
-        </div>
-        ${renderActionBar()}
-      </header>
-
-      ${renderConfidenceBreakdown(dossier)}
-      <section class="data-section" id="ground-model">
-        <div class="section-heading">
-          <h2>Ground Model</h2>
-          <p>Decision-focused interpretation cards. The main view prioritizes engineering meaning, missing data, and verification needs.</p>
-        </div>
-        <div class="card-grid">
-          ${dossier.insightCards.map((card) => `
-            <article class="insight-card ${toneClass(card.tone)}">
-              <h3>${escapeHtml(card.title)}</h3>
-              <p>${escapeHtml(card.body)}</p>
-              ${card.detail ? `<p>${escapeHtml(card.detail)}</p>` : ''}
-            </article>
-          `).join('')}
-        </div>
-      </section>
-
-      ${renderGroundModelCrossSection(dossier.boreholeProfile)}
-      ${renderGroundModelVisualReview(dossier.groundModel)}
-      ${renderBoreholeProfile(dossier.boreholeProfile)}
-      ${renderTrustTable(dossier)}
-      ${mainTables.map((table) => renderTable(table)).join('')}
-      ${renderFindingGroups(dossier)}
-      ${renderSourceEvidence(dossier)}
-      ${renderProcessingAudit(dossier, auditTables)}
-
-      <section class="footer-grid">
-        ${dossier.storedReview ? `
-          <article class="footer-card">
-            <h3>Stored review</h3>
-            <p>Project: ${escapeHtml(dossier.storedReview.projectId)}</p>
-            <p>Dataset: ${escapeHtml(dossier.storedReview.datasetName)}</p>
-            <p>Review ID: ${escapeHtml(dossier.storedReview.reviewId)}</p>
-            ${dossier.storedReview.createdAt ? `<p>Created: ${escapeHtml(dossier.storedReview.createdAt)}</p>` : ''}
-          </article>
-        ` : ''}
-        ${dossier.approval ? `
-          <article class="footer-card">
-            <h3>Approval</h3>
-            <p>Dataset: ${escapeHtml(dossier.approval.datasetName)}</p>
-            <p>Approved: ${escapeHtml(dossier.approval.approvedAt)}</p>
-            <p>Approved by: ${escapeHtml(dossier.approval.approvedBy ?? 'Unspecified')}</p>
-            ${dossier.approval.rationale ? `<p>${escapeHtml(dossier.approval.rationale)}</p>` : ''}
-          </article>
-        ` : ''}
-        <article class="footer-card">
-          <h3>Source notes</h3>
-          <ul>${dossier.footerNotes.map((note) => `<li>${escapeHtml(note)}</li>`).join('')}</ul>
-        </article>
-      </section>
-    </main>
-  </div>
-  ${renderReviewBar(dossier)}
-  <div class="toast-region" aria-live="polite" aria-atomic="true"></div>
+      </div>
+    </section>
+    <section id="validationView" class="view">${renderLightValidation(dossier, model)}</section>
+  </main>
   <script>
     (() => {
-      const search = document.getElementById('trust-search');
-      const rows = Array.from(document.querySelectorAll('[data-trust-row]'));
-      const buttons = Array.from(document.querySelectorAll('[data-trust-filter]'));
-      const toastRegion = document.querySelector('.toast-region');
-      const reviewBar = document.querySelector('.review-bar');
-      let activeFilter = 'all';
-
-      const showToast = (message) => {
-        if (!toastRegion) return;
-        const toast = document.createElement('div');
-        toast.className = 'toast';
-        toast.textContent = message;
-        toastRegion.appendChild(toast);
-        window.setTimeout(() => toast.remove(), 2600);
-      };
-
-      const applyTrustFilter = () => {
-        const query = String(search?.value ?? '').trim().toLowerCase();
-        rows.forEach((row) => {
-          const text = row.getAttribute('data-search') ?? '';
-          const review = row.getAttribute('data-review') ?? '';
-          const queryMatch = !query || text.includes(query);
-          const filterMatch = activeFilter === 'all' || review === activeFilter;
-          row.hidden = !(queryMatch && filterMatch);
+      const setActiveEvidence = (id) => {
+        document.querySelectorAll('[data-id]').forEach((element) => {
+          element.classList.toggle('active', element.getAttribute('data-id') === id);
         });
       };
-
-      const syncReviewBar = () => {
-        if (!reviewBar) return;
-        reviewBar.classList.toggle('visible', window.innerWidth > 620 && window.scrollY > 640);
-      };
-
-      syncReviewBar();
-      window.addEventListener('scroll', syncReviewBar, { passive: true });
-      window.addEventListener('resize', syncReviewBar);
-
-      search?.addEventListener('input', applyTrustFilter);
-      buttons.forEach((button) => {
+      const firstEvidence = document.querySelector('[data-id]');
+      if (firstEvidence) setActiveEvidence(firstEvidence.getAttribute('data-id'));
+      document.addEventListener('click', (event) => {
+        const evidence = event.target.closest('[data-id]');
+        if (evidence) setActiveEvidence(evidence.getAttribute('data-id'));
+      });
+      document.querySelectorAll('[data-view-target]').forEach((button) => {
         button.addEventListener('click', () => {
-          activeFilter = button.getAttribute('data-trust-filter') ?? 'all';
-          buttons.forEach((candidate) => candidate.classList.toggle('active', candidate === button));
-          applyTrustFilter();
+          const target = button.getAttribute('data-view-target');
+          document.querySelectorAll('[data-view-target]').forEach((candidate) => candidate.classList.toggle('active', candidate === button));
+          document.querySelectorAll('.view').forEach((view) => view.classList.toggle('active', view.id === target));
         });
       });
-
-      document.querySelectorAll('[data-review-action]').forEach((control) => {
-        control.addEventListener('click', () => {
-          const state = control.getAttribute('data-review-action') ?? '';
-          control.setAttribute('data-state', state);
-          control.textContent = state === 'verified' ? 'Verified' : 'Issue flagged';
-          showToast(state === 'verified'
-            ? 'Evidence item marked verified in this local report view.'
-            : 'Evidence item flagged for engineering review in this local report view.');
+      document.querySelectorAll('[data-tab-target]').forEach((button) => {
+        button.addEventListener('click', () => {
+          const target = button.getAttribute('data-tab-target');
+          document.querySelectorAll('[data-tab-target]').forEach((candidate) => candidate.classList.toggle('active', candidate === button));
+          document.querySelectorAll('.tab-content').forEach((content) => content.classList.toggle('active', content.id === target));
+        });
+      });
+      document.querySelectorAll('.filter').forEach((button) => {
+        button.addEventListener('click', () => {
+          const filter = button.getAttribute('data-filter') || 'all';
+          document.querySelectorAll('.filter').forEach((candidate) => candidate.classList.toggle('active', candidate === button));
+          document.querySelectorAll('.evidence-box').forEach((box) => {
+            const visible = filter === 'all' || box.getAttribute('data-type') === filter;
+            box.classList.toggle('hidden-box', !visible);
+          });
         });
       });
     })();
   </script>
 </body>
 </html>`;
+}
+
+export function renderIngestDossierAsHtml(dossier: IngestDossier): string {
+  return renderIntegratedReviewOnlyHtml(dossier);
 }

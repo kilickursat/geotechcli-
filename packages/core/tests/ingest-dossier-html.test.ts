@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
+import {
+  buildIntegratedAgentReviewFromProjectSession,
+  buildIntegratedReviewModel,
+  buildIntegratedSourcePagesFromLayout,
+} from '../src/report/integrated-review-model.js';
 import { buildIngestDossier } from '../src/report/ingest-dossier.js';
 import { renderIngestDossierAsHtml } from '../src/report/html.js';
+import type { BoreholeDocumentIngestResult } from '../src/ingest/geotech-extract.js';
 import type { GeotechDocumentIngestResult } from '../src/ingest/geotech-document.js';
+import type { ProjectAgentSession } from '../src/storage/index.js';
 
 function makeGeotechResult(
   overrides?: Partial<GeotechDocumentIngestResult>,
@@ -170,6 +177,166 @@ function makeGeotechResult(
   };
 }
 
+function makeBoreholeResult(
+  overrides?: Partial<BoreholeDocumentIngestResult>,
+): BoreholeDocumentIngestResult {
+  return {
+    kind: 'geotech-ingest-result',
+    schemaVersion: 1,
+    documentType: 'borehole-log',
+    generatedAt: '2026-04-23T00:00:00.000Z',
+    source: {
+      filePath: 'Borehole-Logs.pdf',
+      fileName: 'Borehole-Logs.pdf',
+      inputKind: 'pdf',
+      totalPages: 2,
+      successfulPages: 2,
+      failedPages: 0,
+    },
+    inspection: null,
+    inspectionSummary: {
+      pageClassificationCounts: { 'image-only': 1, 'digital-text': 1 },
+      imageHeavyPageCount: 1,
+      nativeTextPageCount: 1,
+      degradedPageCount: 0,
+      ocrRecoveredPageCount: 1,
+    },
+    boreholes: [
+      {
+        boreholeId: 'BH-01',
+        totalDepth: 8,
+        waterTableDepth: 2.4,
+        layers: [
+          {
+            depthFrom: 0,
+            depthTo: 2,
+            description: 'Made ground and brown silty clay',
+            uscsSymbol: 'CL',
+            sptN: 12,
+            waterContent: 18,
+            notes: null,
+          },
+          {
+            depthFrom: 2,
+            depthTo: 8,
+            description: 'Dense sand with gravel',
+            uscsSymbol: 'SP',
+            sptN: 28,
+            waterContent: null,
+            notes: null,
+          },
+        ],
+        summary: 'BH-01 recovered made ground over dense sand.',
+        location: {
+          boreholeId: 'BH-01',
+          crs: { kind: 'projected', code: 'EPSG:32633', source: 'explicit', confidence: 0.86 },
+          projected: { easting: 542315.6, northing: 4237761.4 },
+          raw: { rawCoordinateText: 'E 542315.6 N 4237761.4' },
+        },
+        groundElevation: 12.5,
+        dateDrilled: '2026-04-20',
+        drillingMethod: 'Rotary wash',
+        projectName: 'School Campus',
+        continuationDepth: null,
+        pageNumber: 1,
+        totalPages: 2,
+        rawLLMText: '{}',
+        latencyMs: 1200,
+        parseStatus: 'parsed',
+        confidence: 88,
+        warnings: [],
+        canAutoProceed: true,
+      },
+      {
+        boreholeId: 'BH-02',
+        totalDepth: 7,
+        waterTableDepth: null,
+        layers: [
+          {
+            depthFrom: 0,
+            depthTo: 3,
+            description: 'Soft clay',
+            uscsSymbol: 'CL',
+            sptN: 6,
+            waterContent: 24,
+            notes: null,
+          },
+          {
+            depthFrom: 3,
+            depthTo: 7,
+            description: 'Weathered sandstone',
+            uscsSymbol: null,
+            sptN: null,
+            waterContent: null,
+            notes: 'weak rock',
+          },
+        ],
+        summary: 'BH-02 recovered soft clay over weathered sandstone.',
+        location: {
+          boreholeId: 'BH-02',
+          crs: { kind: 'projected', code: 'EPSG:32633', source: 'explicit', confidence: 0.84 },
+          projected: { easting: 542355.2, northing: 4237780.5 },
+          raw: { rawCoordinateText: 'E 542355.2 N 4237780.5' },
+        },
+        groundElevation: 12.2,
+        dateDrilled: '2026-04-21',
+        drillingMethod: 'Rotary wash',
+        projectName: 'School Campus',
+        continuationDepth: null,
+        pageNumber: 2,
+        totalPages: 2,
+        rawLLMText: '{}',
+        latencyMs: 1300,
+        parseStatus: 'partial',
+        confidence: 82,
+        warnings: ['Rock weathering descriptor requires review.'],
+        canAutoProceed: false,
+      },
+    ],
+    pageAudits: [
+      {
+        pageNumber: 1,
+        detectedBoreholeId: 'BH-01',
+        assignedGroup: 'BH-01',
+        classification: 'digital-text',
+        textHintSource: 'native-text',
+        parseStatus: 'parsed',
+        confidence: 91,
+        continuationDepth: null,
+        warnings: [],
+      },
+      {
+        pageNumber: 2,
+        detectedBoreholeId: 'BH-02',
+        assignedGroup: 'BH-02',
+        classification: 'image-only',
+        textHintSource: 'vision-ocr',
+        parseStatus: 'partial',
+        confidence: 76,
+        continuationDepth: null,
+        warnings: ['Image-heavy page.'],
+      },
+    ],
+    pageFailures: [],
+    warnings: ['Borehole log page 2 needs reviewer confirmation.'],
+    reviewFindings: [
+      {
+        code: 'image-heavy-page',
+        severity: 'review',
+        scope: 'page',
+        message: 'Borehole log page 2 needs reviewer confirmation.',
+        pageNumber: 2,
+        boreholeId: 'BH-02',
+      },
+    ],
+    reviewReasons: ['Borehole log page 2 needs reviewer confirmation.'],
+    reviewRequired: true,
+    confidence: 85,
+    canAutoProceed: false,
+    ...overrides,
+  };
+}
+
 describe('ingest dossier HTML', () => {
   it('builds a dossier with engineering tables, findings, and page cards', () => {
     const result = makeGeotechResult();
@@ -223,6 +390,422 @@ describe('ingest dossier HTML', () => {
     expect(dossier.footerNotes.some((note) => /Segmented execution used 2 linked packet/i.test(note))).toBe(true);
   });
 
+  it('builds a GroundModel for borehole-log ingest so the integrated review uses coordinates, SPT, groundwater, and evidence', () => {
+    const dossier = buildIngestDossier(makeBoreholeResult(), {
+      sourceLabel: 'Borehole log packet',
+    });
+    const html = renderIngestDossierAsHtml(dossier);
+
+    expect(dossier.documentType).toBe('borehole-log');
+    expect(dossier.boreholeProfile?.columns.map((column) => column.boreholeId)).toEqual(['BH-01', 'BH-02']);
+    expect(dossier.groundModel?.stats.boreholes).toBe(2);
+    expect(dossier.groundModel?.stats.strata).toBe(4);
+    expect(dossier.groundModel?.stats.sptTests).toBe(3);
+    expect(dossier.groundModel?.stats.groundwaterObservations).toBe(1);
+    expect(dossier.groundModel?.stats.parameters).toBe(2);
+    expect(dossier.groundModel?.stats.evidenceRefs).toBeGreaterThanOrEqual(10);
+    expect(dossier.groundModel?.coordinateSystem).toMatchObject({ kind: 'local-grid', crs: 'EPSG:32633' });
+    expect(dossier.groundModel?.map?.summary.boreholePoints).toBe(2);
+    expect(dossier.groundModel?.evidence.some((ref) => ref.method === 'pdf-text')).toBe(true);
+    expect(dossier.groundModel?.evidence.some((ref) => ref.method === 'vision')).toBe(true);
+    expect(dossier.groundModel?.warnings.some((warning) => /SPT depth.*inferred/i.test(warning))).toBe(true);
+
+    expect(html).toContain('geotechCLI Integrated Vision + Geospatial Review');
+    expect(html).toContain('Boreholes</div>');
+    expect(html).toContain('EPSG:32633');
+    expect(html).toContain('Map-ready borehole view');
+    expect(html).toContain('BH-01');
+    expect(html).toContain('BH-02');
+    expect(html).toContain('N12 at 1.00 m');
+    expect(html).toContain('N28 at 5.00 m');
+    expect(html).toContain('GWL at 2.40 m');
+    expect(html).toContain('waterContent');
+    expect(html).toContain('Integrated extraction JSON');
+    expect(html).toContain('data-region-mode="reconstructed"');
+    expect(html).not.toContain('Geotechnical Intelligence Report');
+  });
+
+  it('renders GLM-OCR layout regions as the source page when bbox evidence is supplied', () => {
+    const result = makeBoreholeResult();
+    const baselineDossier = buildIngestDossier(result, { sourceLabel: 'Borehole log packet' });
+    const baselineModel = buildIntegratedReviewModel(baselineDossier);
+    const borehole = baselineModel.boreholes[0]!;
+    const sourcePages = buildIntegratedSourcePagesFromLayout([
+      {
+        pageNumber: 1,
+        width: 1000,
+        height: 2000,
+        text: 'BH-01 Made ground and brown silty clay SPT N=12',
+        tables: [],
+        formulas: [],
+        images: [],
+        elements: [
+          {
+            index: 1,
+            label: 'text',
+            bbox2d: [80, 120, 410, 180],
+            content: 'Borehole BH-01',
+            width: 1000,
+            height: 2000,
+          },
+          {
+            index: 2,
+            label: 'table',
+            bbox2d: [100, 200, 220, 260],
+            content: '0.00-2.00 m Made ground and brown silty clay',
+            width: 1000,
+            height: 2000,
+          },
+        ],
+      },
+    ], {
+      sourcePath: 'Borehole-Logs.pdf',
+      links: [
+        {
+          pageNumber: 1,
+          elementIndex: 1,
+          evidenceId: borehole.evidenceIds[0]!,
+          type: 'header',
+          label: 'Borehole header',
+          confidence: 0.88,
+        },
+        {
+          pageNumber: 1,
+          elementIndex: 2,
+          evidenceId: borehole.strata[0]!.evidenceId,
+          type: 'strata',
+          label: 'Strata interval',
+          confidence: 0.86,
+        },
+      ],
+    });
+    const dossier = buildIngestDossier(result, {
+      sourceLabel: 'Borehole log packet',
+      sourcePages,
+    });
+
+    const model = buildIntegratedReviewModel(dossier);
+    const html = renderIngestDossierAsHtml(dossier);
+
+    expect(model.sourcePages[0]?.regions).toHaveLength(2);
+    expect(model.boreholes[0]?.strata[0]?.sourceRegion).toMatchObject({
+      evidenceId: borehole.strata[0]!.evidenceId,
+      bbox: [100, 200, 220, 260],
+    });
+    expect(html).toContain('data-region-mode="layout"');
+    expect(html).toContain('data-region-id="layout-p1-r2"');
+    expect(html).toContain('left:10.000%;top:10.000%;width:12.000%;height:3.000%');
+    expect(html).toContain('GLM-OCR layout regions linked');
+  });
+
+  it('builds integrated source pages automatically from retained GLM-OCR page audit layouts', () => {
+    const result = makeBoreholeResult();
+    result.pageAudits[0] = {
+      ...result.pageAudits[0]!,
+      textHintSource: 'glm-ocr',
+      layoutPages: [{
+        pageNumber: 1,
+        width: 1000,
+        height: 2000,
+        text: 'BH-01 Made ground and brown silty clay',
+        tables: [],
+        formulas: [],
+        images: [],
+        elements: [
+          {
+            index: 2,
+            label: 'table',
+            bbox2d: [100, 200, 220, 260],
+            content: '0.00-2.00 m Made ground and brown silty clay',
+            width: 1000,
+            height: 2000,
+          },
+        ],
+      }],
+    };
+
+    const dossier = buildIngestDossier(result, {
+      sourceLabel: 'Borehole log packet',
+    });
+    const model = buildIntegratedReviewModel(dossier);
+    const html = renderIngestDossierAsHtml(dossier);
+
+    expect(dossier.sourcePages?.[0]?.regions[0]).toMatchObject({
+      evidenceId: model.boreholes[0]!.strata[0]!.evidenceId,
+      method: 'glm-ocr-layout',
+      bbox: [100, 200, 220, 260],
+    });
+    expect(model.boreholes[0]?.strata[0]?.sourceRegion?.method).toBe('glm-ocr-layout');
+    expect(html).toContain('data-region-mode="layout"');
+  });
+
+  it('keeps layout region ids unique when GLM-OCR repeats element indexes', () => {
+    const sourcePages = buildIntegratedSourcePagesFromLayout([
+      {
+        pageNumber: 1,
+        width: 1000,
+        height: 2000,
+        text: 'Repeated index layout.',
+        tables: [],
+        formulas: [],
+        images: [],
+        elements: [
+          {
+            index: 1,
+            label: 'text',
+            bbox2d: [80, 120, 410, 180],
+            content: 'Borehole BH-01',
+            width: 1000,
+            height: 2000,
+          },
+          {
+            index: 1,
+            label: 'table',
+            bbox2d: [100, 200, 220, 260],
+            content: '0.00-2.00 m Made ground and brown silty clay',
+            width: 1000,
+            height: 2000,
+          },
+        ],
+      },
+    ]);
+
+    const ids = sourcePages[0]!.regions.map((region) => region.id);
+
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toEqual(['layout-p1-r1', 'layout-p1-r2']);
+  });
+
+  it('does not bind a stale layout element index by broad content fallback', () => {
+    const targetEvidenceId = 'doc-ev-stale';
+    const sourcePages = buildIntegratedSourcePagesFromLayout([
+      {
+        pageNumber: 1,
+        width: 1000,
+        height: 2000,
+        text: 'Clay row.',
+        tables: [],
+        formulas: [],
+        images: [],
+        elements: [
+          {
+            index: 1,
+            label: 'table',
+            bbox2d: [100, 200, 220, 260],
+            content: '0.00-2.00 m stiff clay',
+            width: 1000,
+            height: 2000,
+          },
+        ],
+      },
+    ], {
+      links: [{
+        pageNumber: 1,
+        elementIndex: 99,
+        contentIncludes: 'clay',
+        evidenceId: targetEvidenceId,
+      }],
+    });
+
+    expect(sourcePages[0]?.regions.find((region) => region.evidenceId === targetEvidenceId)).toBeUndefined();
+    expect(sourcePages[0]?.regions.map((region) => region.evidenceId)).toContain('layout-p1-r1');
+  });
+
+  it('normalizes ratio GLM-OCR bbox coordinates before rendering source regions', () => {
+    const sourcePages = buildIntegratedSourcePagesFromLayout([
+      {
+        pageNumber: 1,
+        width: null,
+        height: null,
+        text: 'SPT N = 12',
+        tables: ['| Depth | SPT |'],
+        formulas: [],
+        images: [],
+        elements: [
+          {
+            index: 1,
+            label: 'table',
+            bbox2d: [0.1, 0.2, 0.8, 0.4],
+            content: '| Depth | SPT |\n| 2m | 12 |',
+            width: 612,
+            height: 792,
+          },
+        ],
+      },
+    ]);
+
+    const bbox = sourcePages[0]?.regions[0]?.bbox;
+    const dossier = buildIngestDossier(makeBoreholeResult(), { sourcePages });
+    const html = renderIngestDossierAsHtml(dossier);
+
+    expect(sourcePages[0]?.width).toBeGreaterThan(10);
+    expect(sourcePages[0]?.height).toBeGreaterThan(10);
+    expect(bbox?.[0]).toBeCloseTo(61.2);
+    expect(bbox?.[1]).toBeCloseTo(158.4);
+    expect(bbox?.[2]).toBeCloseTo(489.6);
+    expect(bbox?.[3]).toBeCloseTo(316.8);
+    expect(html).not.toContain('aspect-ratio:1/0');
+  });
+
+  it('promotes evidence-location bbox metadata into integrated source regions', () => {
+    const dossier = buildIngestDossier(makeBoreholeResult(), {
+      sourceLabel: 'Borehole log packet',
+    });
+    const baselineModel = buildIntegratedReviewModel(dossier);
+    const evidenceId = baselineModel.boreholes[0]!.strata[0]!.evidenceId;
+    const ref = dossier.groundModel!.evidence.find((entry) => entry.id === evidenceId)!;
+    ref.location = {
+      ...ref.location,
+      bbox: [100, 200, 220, 260],
+      pageWidth: 1000,
+      pageHeight: 2000,
+      bboxUnits: 'page',
+      layoutElementIndex: 4,
+      layoutLabel: 'table',
+    };
+
+    const model = buildIntegratedReviewModel(dossier);
+    const html = renderIngestDossierAsHtml(dossier);
+
+    expect(model.sourcePages[0]?.regions[0]).toMatchObject({
+      evidenceId,
+      bbox: [100, 200, 220, 260],
+      method: 'pdf-text',
+    });
+    expect(model.boreholes[0]?.strata[0]?.sourceRegion?.evidenceId).toBe(evidenceId);
+    expect(html).toContain('data-region-mode="layout"');
+    expect(html).toContain('left:10.000%;top:10.000%;width:12.000%;height:3.000%');
+  });
+
+  it('prefers GLM-OCR source pages over stale evidence bbox metadata for the same evidence ID', () => {
+    const result = makeBoreholeResult();
+    const baselineDossier = buildIngestDossier(result, { sourceLabel: 'Borehole log packet' });
+    const baselineModel = buildIntegratedReviewModel(baselineDossier);
+    const evidenceId = baselineModel.boreholes[0]!.strata[0]!.evidenceId;
+    const ref = baselineDossier.groundModel!.evidence.find((entry) => entry.id === evidenceId)!;
+    ref.location = {
+      ...ref.location,
+      bbox: [10, 10, 20, 20],
+      pageWidth: 1000,
+      pageHeight: 2000,
+      bboxUnits: 'page',
+    };
+    baselineDossier.sourcePages = buildIntegratedSourcePagesFromLayout([
+      {
+        pageNumber: 1,
+        width: 1000,
+        height: 2000,
+        text: 'Made ground and brown silty clay',
+        tables: [],
+        formulas: [],
+        images: [],
+        elements: [
+          {
+            index: 7,
+            label: 'table',
+            bbox2d: [120, 240, 360, 320],
+            content: '0.00-2.00 m Made ground and brown silty clay',
+            width: 1000,
+            height: 2000,
+          },
+        ],
+      },
+    ], {
+      links: [{
+        pageNumber: 1,
+        elementIndex: 7,
+        evidenceId,
+        type: 'strata',
+        confidence: 0.9,
+      }],
+    });
+
+    const model = buildIntegratedReviewModel(baselineDossier);
+
+    expect(model.boreholes[0]?.strata[0]?.sourceRegion?.bbox).toEqual([120, 240, 360, 320]);
+    expect(model.boreholes[0]?.strata[0]?.sourceRegion?.method).toBe('glm-ocr-layout');
+  });
+
+  it('ignores invalid persisted source pages and falls back to reconstructed source overlays', () => {
+    const dossier = buildIngestDossier(makeBoreholeResult(), {
+      sourceLabel: 'Borehole log packet',
+      sourcePages: [{
+        pageNumber: 0,
+        width: 0,
+        height: 0,
+        sourcePath: 'bad-layout',
+        method: 'glm-ocr-layout',
+        regions: [{
+          id: 'bad-region',
+          evidenceId: 'bad-region',
+          pageNumber: 0,
+          type: 'strata',
+          label: 'Bad region',
+          text: 'BH-01 bad region',
+          bbox: [0, 0, 0, 0],
+          confidence: 0.9,
+          method: 'glm-ocr-layout',
+          status: 'accepted',
+        }],
+      }],
+    });
+
+    const model = buildIntegratedReviewModel(dossier);
+    const html = renderIngestDossierAsHtml(dossier);
+
+    expect(model.sourcePages).toHaveLength(0);
+    expect(html).toContain('data-region-mode="reconstructed"');
+    expect(html).not.toContain('data-region-mode="layout"');
+    expect(html).not.toContain('Infinity%');
+    expect(html).not.toContain('NaN%');
+  });
+
+  it('renders single/swarm agent reviews as provenance without inventing boreholes', () => {
+    const swarmSession: ProjectAgentSession = {
+      id: 'agent-session-1',
+      mode: 'swarm',
+      query: 'Review the extracted borehole evidence.',
+      answer: 'Reviewer found the extraction usable after checking the source pages.',
+      summary: 'Swarm review of ingest evidence.',
+      stepCount: 8,
+      tokens: 1420,
+      latencyMs: 24000,
+      context: {
+        deterministicTools: ['load_persisted_ingest_review'],
+      },
+      metadata: {
+        reviewPassed: false,
+        corrections: ['Groundwater symbol must remain review-gated.'],
+      },
+      createdAt: '2026-04-23T02:00:00.000Z',
+    };
+    const agentReview = buildIntegratedAgentReviewFromProjectSession(swarmSession);
+    const dossier = buildIngestDossier(makeGeotechResult({
+      materials: [],
+      classifications: [],
+      parameters: [],
+      synthesis: null,
+      contentChunks: [],
+      summary: 'Agent-only provenance should not create boreholes or strata.',
+    }), {
+      sourceLabel: 'Agent-reviewed packet',
+      agentReviews: [agentReview],
+    });
+
+    const model = buildIntegratedReviewModel(dossier);
+    const html = renderIngestDossierAsHtml(dossier);
+
+    expect(model.boreholes).toHaveLength(0);
+    expect(model.agentReviews).toHaveLength(1);
+    expect(model.agentReviews[0]?.title).toBe('Swarm agent review');
+    expect(model.agentReviews[0]?.warnings[0]).toContain('did not pass');
+    expect(html).toContain('Agents');
+    expect(html).toContain('Swarm agent review');
+    expect(html).toContain('Groundwater symbol must remain review-gated.');
+    expect(html).toContain('&quot;agentReviews&quot;');
+    expect(html).not.toContain('A-A Stratigraphic Section Along Borehole Alignment');
+  });
+
   it('renders a self-contained HTML dossier with escaped engineering content', () => {
     const dossier = buildIngestDossier(makeGeotechResult({
       summary: 'Clay < shale > profile & lab data.',
@@ -238,23 +821,26 @@ describe('ingest dossier HTML', () => {
     const html = renderIngestDossierAsHtml(dossier);
 
     expect(html).toContain('<!doctype html>');
-    expect(html).toContain('Geotechnical Intelligence Report');
+    expect(html).toContain('geotechCLI Integrated Vision + Geospatial Review');
+    expect(html).not.toContain('Geotechnical Intelligence Report');
     expect(html).not.toContain('Geotechnical Intelligence Dossier');
-    expect(html).toContain('AI-assisted extraction, verification, and engineering interpretation from geotechnical reports.');
-    expect(html).toContain('Engineering Parameters');
-    expect(html).toContain('Trust breakdown');
-    expect(html).toContain('Review confidence');
+    expect(html).toContain('geotech.integrated_review.v1');
+    expect(html).toContain('data-view-target="reviewView"');
+    expect(html).toContain('Source report evidence');
+    expect(html).toContain('Validated strip log');
+    expect(html).toContain('Map + A-A section');
+    expect(html).toContain('Validation + JSON');
+    expect(html).toContain('Provider-neutral schema');
     expect(html).toContain('Key engineering parameters');
     expect(html).toContain('Segment execution');
-    expect(html).toContain('Source Evidence');
-    expect(html).toContain('Processing Audit');
-    expect(html).toContain('Approve Extraction');
-    expect(html).toContain('Ask Geotech Agent');
-    expect(html).toContain('Stored review');
+    expect(html).not.toContain('Processing Audit');
+    expect(html).not.toContain('Approve Extraction');
+    expect(html).not.toContain('Ask Geotech Agent');
+    expect(html).toContain('review-1');
     expect(html).toContain('Clay &lt; shale &gt; profile &amp; lab data.');
     expect(html).toContain('Recovered OCR hints should be spot-checked.');
-    expect(html).toContain('not engineering sign-off');
-    expect(html).toContain('geotechCLI v');
+    expect(html).toContain('CRS checked before map render');
+    expect(html).toContain('<span>geotechCLI</span>');
   });
 
   it('renders extraction overview, page audit matrix, and cleaned summary text', () => {
@@ -275,16 +861,13 @@ describe('ingest dossier HTML', () => {
 
     const html = renderIngestDossierAsHtml(dossier);
 
-    expect(html).toContain('<strong>Processing Audit</strong>');
-    expect(html).toContain('Model stages, page audit matrix, warnings, and operational details');
-    expect(html).toContain('<h2>Page audit matrix</h2>');
+    expect(html).toContain('Page audit matrix');
     expect(html).toContain('Per-page extraction status, source path, cache reuse, retained signal counts, and warning volume.');
-    expect(html).toContain('<details class="audit-drawer" id="processing-audit">');
-    expect(html).toContain('class="chip stage-chip"');
-    expect(html).toContain('Needs review?');
-    expect(html).toContain('Evidence snippet');
-    expect(html).toContain('Visual extraction used');
-    expect(html.indexOf('<h2>Key engineering parameters</h2>')).toBeLessThan(html.indexOf('<h2>Page audit matrix</h2>'));
+    expect(html).toContain('Validation workflow');
+    expect(html).toContain('Integrated extraction JSON');
+    expect(html).toContain('Vision verification gate');
+    expect(html).not.toContain('<details class="audit-drawer" id="processing-audit">');
+    expect(html.indexOf('Key engineering parameters')).toBeLessThan(html.indexOf('Page audit matrix'));
     expect(html).toContain('Clay Layer 2 UCS 42 MPa and friction Angle 32 deg.');
     expect(html).not.toContain('ClayLayer2UCS42MPa');
     expect(html).toContain('18 kN/m3');
@@ -293,9 +876,7 @@ describe('ingest dossier HTML', () => {
     expect(html).toContain('1 e-6 m/s');
     expect(html).toContain('native-text');
     expect(html).toContain('vision-ocr');
-    expect(html).toContain('GLM-5.1 synthesis');
-    expect(html.indexOf('Trust breakdown')).toBeLessThan(html.indexOf('<h2>Ground Model</h2>'));
-    expect(html.indexOf('GLM-5.1 synthesis')).toBeGreaterThan(html.indexOf('Processing Audit'));
+    expect(html).toContain('GLM-5.1 document routing');
   });
 
   it('prefers attributed parameter source pages before context regex fallback', () => {
@@ -326,11 +907,11 @@ describe('ingest dossier HTML', () => {
     const html = renderIngestDossierAsHtml(dossier);
 
     expect(dossier.boreholeProfile?.columns.map((column) => column.boreholeId)).toEqual(['BH1', 'BH2', 'BH3']);
-    expect(html).toContain('<svg class="borehole-profile"');
+    expect(html).toContain('A-A Stratigraphic Section');
     expect(html).toContain('BH1');
     expect(html).toContain('BH2');
     expect(html).toContain('BH3');
-    expect(html).toContain('Dashed layer boundaries indicate missing or unverified stratum intervals.');
+    expect(html).toContain('Direct log columns are drawn at borehole positions.');
   });
 
   it('renders GroundModel visual review from PDF report evidence', () => {
@@ -376,15 +957,15 @@ describe('ingest dossier HTML', () => {
     expect(dossier.groundModel?.evidence.some((ref) => ref.rawValue === '10.00 m')).toBe(false);
     expect(dossier.groundModel?.evidence.every((ref) => ref.method === 'manual')).toBe(true);
     expect(dossier.groundModel?.evidence.some((ref) => ref.warnings.join(' ').includes('not present in retained page audit'))).toBe(true);
-    expect(html).toContain('GroundModel Visual Review');
-    expect(html).toContain('Borehole Strip Logs');
-    expect(html).toContain('SPT N vs Depth');
-    expect(html).toContain('Lab Parameter Depth Charts');
-    expect(html).toContain('Groundwater Summary');
+    expect(html).toContain('Source report evidence');
+    expect(html).toContain('Validated strip log');
+    expect(html).toContain('Extracted fields');
+    expect(html).toContain('Professional A-A stratigraphic section');
+    expect(html).toContain('Integrated extraction JSON');
     expect(html).toContain('BH1');
-    expect(html).toContain('N18');
-    expect(html).toContain('2.4 m bgl');
-    expect(html).toContain('liquidLimit');
+    expect(html).toContain('N18 at 3.00 m');
+    expect(html).toContain('2.40 m');
+    expect(html).toContain('liquid Limit');
     expect(html).toContain('doc-ev-');
   });
 
@@ -412,11 +993,11 @@ describe('ingest dossier HTML', () => {
     expect(dossier.groundModel?.stats.parameters).toBe(1);
     expect(dossier.groundModel?.evidence.every((ref) => ref.location.pageNumber === 2)).toBe(true);
     expect(dossier.groundModel?.evidence.every((ref) => ref.method === 'pdf-text')).toBe(true);
-    expect(html).toContain('GroundModel Visual Review');
-    expect(html).toContain('No strata');
-    expect(html).toContain('N21');
-    expect(html).toContain('plasticityIndex');
-    expect(html).toContain('1.8 m bgl');
+    expect(html).toContain('geotechCLI Integrated Vision + Geospatial Review');
+    expect(html).toContain('A-A section needs at least two boreholes');
+    expect(html).toContain('N21 at 3.00 m');
+    expect(html).toContain('plasticity Index');
+    expect(html).toContain('1.80 m');
   });
 
   it('does not promote unassigned report SPT rows into fake GroundModel boreholes', () => {
@@ -437,7 +1018,7 @@ describe('ingest dossier HTML', () => {
     expect(dossier.groundModel?.stats.boreholes).toBe(1);
     expect(dossier.groundModel?.stats.sptTests).toBe(1);
     expect(dossier.groundModel?.boreholes.map((borehole) => borehole.id)).toEqual(['BH1']);
-    expect(html).toContain('N21');
+    expect(html).toContain('N21 at 3.00 m');
     expect(html).not.toContain('UNASSIGNED');
   });
 
@@ -459,7 +1040,7 @@ describe('ingest dossier HTML', () => {
     expect(dossier.groundModel?.stats.sptTests ?? 0).toBe(0);
     expect(dossier.groundModel?.stats.groundwaterObservations).toBe(1);
     expect(html).not.toContain('N15');
-    expect(html).toContain('2.4 m bgl');
+    expect(html).toContain('2.40 m');
   });
 
   it('builds a conceptual profile from retained inspection and chunk evidence when parameters omit depth rows', () => {
@@ -513,8 +1094,8 @@ describe('ingest dossier HTML', () => {
     expect(dossier.boreholeProfile?.maxDepth).toBe(10);
     expect(dossier.boreholeProfile?.columns.map((column) => column.boreholeId)).toEqual(['BH1', 'BH2', 'BH3']);
     expect(dossier.boreholeProfile?.columns[0]?.layers.length).toBeGreaterThan(0);
-    expect(html).toContain('<svg class="borehole-profile"');
-    expect(html).toContain('TD 10.00 m');
+    expect(html).toContain('A-A Stratigraphic Section');
+    expect(html).toContain('TD 10.0 m');
     expect(html).toContain('Use source logs before treating the profile as design-grade stratigraphy.');
   });
 });

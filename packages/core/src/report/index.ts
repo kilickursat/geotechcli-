@@ -20,6 +20,30 @@ export {
 } from './ingest-dossier.js';
 export { renderIngestDossierAsHtml } from './html.js';
 export {
+  buildIntegratedReviewModel,
+  buildIntegratedSourcePagesFromEvidence,
+  buildIntegratedSourcePagesFromLayout,
+  buildIntegratedAgentReviewFromLiveSession,
+  buildIntegratedAgentReviewFromProjectSession,
+  integratedBoreholeMaxDepth,
+  integratedPercent,
+  normalizeIntegratedConfidence,
+  sourcePagesLabel,
+  type BuildIntegratedSourcePagesFromLayoutOptions,
+  type BuildIntegratedReviewModelOptions,
+  type IntegratedReviewAgentReview,
+  type IntegratedReviewBorehole,
+  type IntegratedReviewMaterialClass,
+  type IntegratedReviewModel,
+  type IntegratedReviewParameter,
+  type IntegratedReviewPoint,
+  type IntegratedReviewSourcePage,
+  type IntegratedReviewSourceRegion,
+  type IntegratedReviewSourceRegionLink,
+  type IntegratedReviewSourceRegionType,
+  type IntegratedReviewStratum,
+} from './integrated-review-model.js';
+export {
   buildArtifactDrivenReport,
   generateReportFromCaseFile,
   type CaseFileGeneratedReport,

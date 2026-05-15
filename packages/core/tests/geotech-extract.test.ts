@@ -132,6 +132,77 @@ function createInterpretation(overrides: Partial<BoreholeInterpretation>): Boreh
 }
 
 describe('ingestBoreholeLogDocument', () => {
+  it('records GLM-OCR layout pages on borehole page audits', async () => {
+    const originalFetch = global.fetch;
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          model: 'GLM-OCR',
+          md_results: 'Borehole BH-01 table reports silty sand and SPT N equals 18.',
+          layout_details: [[
+            {
+              index: 1,
+              label: 'table',
+              bbox_2d: [0.1, 0.2, 0.8, 0.4],
+              content: '| Material | SPT |\n| silty sand | 18 |',
+              width: 612,
+              height: 792,
+            },
+          ]],
+          data_info: { pages: [{ width: 612, height: 792 }] },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    global.fetch = fetchMock as typeof fetch;
+
+    try {
+      const transcribePageImageText = vi.fn();
+      const interpretPageWithContext = vi.fn(async (
+        _base64: string,
+        _mimeType: string,
+        _config: unknown,
+        context?: { pageTextHint?: string; pageNumber?: number },
+      ) => {
+        expect(context?.pageTextHint).toContain('SPT N equals 18');
+        return createInterpretation({
+          boreholeId: 'BH-01',
+          pageNumber: context?.pageNumber ?? 1,
+          totalPages: 1,
+        });
+      });
+
+      const result = await ingestBoreholeLogDocument({
+        config: {
+          provider: 'hosted-beta',
+          apiKey: 'test',
+          baseUrl: 'https://beta.geotechcli.com/api/proxy',
+          timeout: 60000,
+        } as any,
+        source: {
+          filePath: 'borehole-layout.pdf',
+          fileName: 'borehole-layout.pdf',
+          inputKind: 'pdf',
+        },
+        pages: [createPageInput(5, 5)],
+        interpretPageWithContext,
+        transcribePageImageText: transcribePageImageText as any,
+      });
+
+      expect(result.pageAudits[0]?.textHintSource).toBe('glm-ocr');
+      expect(result.pageAudits[0]?.layoutPages?.[0]).toMatchObject({
+        pageNumber: 5,
+        width: 612,
+        height: 792,
+        tables: ['| Material | SPT |\n| silty sand | 18 |'],
+      });
+      expect(result.pageAudits[0]?.layoutPages?.[0]?.elements[0]?.bbox2d).toEqual([0.1, 0.2, 0.8, 0.4]);
+      expect(transcribePageImageText).not.toHaveBeenCalled();
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
   it('recovers OCR-style text hints for raster page inputs and keeps the JSON envelope coherent', async () => {
     const interpretPageWithContext = vi.fn(async (_base64: string, _mimeType: string, _config: unknown, context?: { pageNumber?: number; pageTextHint?: string }) => {
       if (context?.pageNumber === 3) {

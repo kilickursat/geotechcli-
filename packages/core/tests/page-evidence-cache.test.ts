@@ -169,6 +169,53 @@ describe('page evidence cache', () => {
     }));
   });
 
+  it('persists compact GLM-OCR layout pages without storing full provider payloads', () => {
+    const parts = buildParts();
+    writePageEvidenceCache(parts, {
+      textHint: 'Recovered OCR text with a table.',
+      source: 'glm-ocr',
+      warnings: [],
+      transformed: false,
+      layoutSummary: 'One table.',
+      layoutPages: [{
+        pageNumber: 7,
+        width: 612,
+        height: 792,
+        text: 'SPT N = 12',
+        tables: ['| Depth | SPT |'],
+        formulas: [],
+        images: [],
+        elements: [{
+          index: 1,
+          label: 'table',
+          bbox2d: [0.1, 0.2, 0.8, 0.4],
+          content: '| Depth | SPT |\n| 2m | 12 |',
+          width: 612,
+          height: 792,
+        }],
+      }],
+      createdAt: '2026-05-03T00:00:00.000Z',
+    });
+
+    expect(readPageEvidenceCache(parts)?.layoutPages?.[0]).toMatchObject({
+      pageNumber: 7,
+      width: 612,
+      height: 792,
+      tables: ['| Depth | SPT |'],
+      elements: [{
+        index: 1,
+        label: 'table',
+        bbox2d: [0.1, 0.2, 0.8, 0.4],
+      }],
+    });
+
+    const raw = JSON.parse(readFileSync(getPageEvidenceCachePath(parts), 'utf-8'));
+    expect(raw.layoutPages).toHaveLength(1);
+    expect(raw).not.toHaveProperty('usage');
+    expect(raw).not.toHaveProperty('latencyMs');
+    expect(raw).not.toHaveProperty('markdown');
+  });
+
   function buildParts() {
     return {
       fileHash: hashString('source-pdf-bytes'),

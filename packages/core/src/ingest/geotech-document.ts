@@ -15,6 +15,7 @@ import {
 } from '../vision/geotech-document.js';
 import { transcribeDocumentImageText } from '../vision/index.js';
 import { recoverDocumentTextHint, type DocumentTextHintSource } from '../vision/ocr.js';
+import type { GlmOcrLayoutPage } from '../vision/layout-ocr.js';
 import type { PdfDocumentInspection, PdfPageClassification } from './pdf.js';
 import type { IngestSegmentationSummary } from './segmentation.js';
 import {
@@ -83,6 +84,7 @@ export interface GeotechDocumentPageAudit {
   materialCount: number;
   classificationCount: number;
   parameterCount: number;
+  layoutPages?: GlmOcrLayoutPage[];
   evidenceCache?: GeotechDocumentPageEvidenceCacheAudit;
   warnings: string[];
 }
@@ -225,6 +227,13 @@ export interface IngestGeotechDocumentOptions {
 
 function uniqueStrings(values: Array<string | null | undefined>): string[] {
   return [...new Set(values.filter((value): value is string => typeof value === 'string' && value.trim().length > 0))];
+}
+
+function normalizeRecoveredLayoutPages(pages: GlmOcrLayoutPage[], sourcePageNumber: number): GlmOcrLayoutPage[] {
+  return pages.map((page) => ({
+    ...page,
+    pageNumber: pages.length === 1 ? sourcePageNumber : page.pageNumber,
+  }));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -2197,6 +2206,7 @@ export async function ingestGeotechDocument(
             textHintSource: cachedEvidence!.source,
             recoveryWarnings: cachedEvidence!.warnings,
             ocrRecovered: cachedEvidence!.source === 'local-ocr' || cachedEvidence!.source === 'vision-ocr' || cachedEvidence!.source === 'glm-ocr',
+            layoutPages: cachedEvidence!.layoutPages,
             evidenceCache,
             result: cachedResult,
           };
@@ -2260,6 +2270,7 @@ export async function ingestGeotechDocument(
         let recoverySource: DocumentTextHintSource = textHintSource;
         let recoveryTransformed = cachedEvidence?.transformed ?? false;
         let layoutSummary = cachedEvidence?.layoutSummary;
+        let layoutPages = cachedEvidence?.layoutPages;
 
         if (!cachedTextHint) {
           const recovery = await withPageTimeout(
@@ -2282,8 +2293,11 @@ export async function ingestGeotechDocument(
           recoveryWarnings = recovery.warnings;
           recoverySource = recovery.source;
           recoveryTransformed = recovery.transformed;
-          layoutSummary = recovery.layout
-            ? `GLM-OCR parsed ${recovery.layout.pages.length} page(s), ${recovery.layout.pages.reduce((sum, layoutPage) => sum + layoutPage.tables.length, 0)} table(s).`
+          layoutPages = recovery.layout
+            ? normalizeRecoveredLayoutPages(recovery.layout.pages, page.pageNumber)
+            : undefined;
+          layoutSummary = layoutPages
+            ? `GLM-OCR parsed ${layoutPages.length} page(s), ${layoutPages.reduce((sum, layoutPage) => sum + layoutPage.tables.length, 0)} table(s).`
             : undefined;
         }
         textHintSource = recoverySource;
@@ -2319,6 +2333,7 @@ export async function ingestGeotechDocument(
             warnings: recoveryWarnings,
             transformed: recoveryTransformed,
             layoutSummary,
+            layoutPages,
             extractionResult: result,
           }, now);
           evidenceCache = stored.entry
@@ -2331,6 +2346,7 @@ export async function ingestGeotechDocument(
             warnings: recoveryWarnings,
             transformed: recoveryTransformed,
             layoutSummary,
+            layoutPages,
             extractionResult: result,
             createdAt: cachedEvidence.createdAt,
           }, now);
@@ -2343,6 +2359,7 @@ export async function ingestGeotechDocument(
           textHintSource,
           recoveryWarnings,
           ocrRecovered: textHintSource === 'local-ocr' || textHintSource === 'vision-ocr' || textHintSource === 'glm-ocr',
+          layoutPages,
           evidenceCache,
           result,
         };
@@ -2390,6 +2407,7 @@ export async function ingestGeotechDocument(
           materialCount: settled.result.materials.length,
           classificationCount: settled.result.classifications.length,
           parameterCount: settled.result.parameters.length,
+          ...(settled.layoutPages?.length ? { layoutPages: settled.layoutPages } : {}),
           evidenceCache: settled.evidenceCache,
           warnings: uniqueStrings([
             ...settled.recoveryWarnings,

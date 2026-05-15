@@ -1,6 +1,8 @@
 export {
   normalizeEvidenceConfidence,
+  type EvidenceBboxUnits,
   type EvidenceBoundValue,
+  type EvidenceLayoutLabel,
   type EvidenceLocation,
   type EvidenceMethod,
   type EvidenceRef,

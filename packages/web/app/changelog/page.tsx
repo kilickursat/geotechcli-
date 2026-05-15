@@ -8,6 +8,20 @@ const releases = [
     date: '2026-05-15',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Replaced the legacy dark ingest dossier with the light integrated geotechnical review interface for HTML ingest output' },
+      { type: 'feat', text: 'Persisted compact GLM-OCR layout pages through geotechnical document ingest, borehole ingest, page audits, and page evidence cache reuse' },
+      { type: 'feat', text: 'Converted persisted OCR layout geometry into source-page overlays automatically with conservative text-matched evidence linking for boreholes, extracted parameters, and image/table regions' },
+      { type: 'fix', text: 'Hardened source-region rendering for duplicate GLM indices, stale region links, invalid persisted pages, ratio bboxes, and GLM layout priority over older reconstructed evidence boxes' },
+      { type: 'fix', text: 'Narrowed hosted-beta web proxy imports to @geotechcli/core/llm, removing the Next.js critical dependency warning from the web production build without changing CLI PDF or vision runtime loading' },
+      { type: 'security', text: 'Kept the release on stable Next.js after audit review: the high and critical npm audit gate is clean, while the remaining moderate Next/PostCSS advisory is a tracked upstream nested dependency with no stable patched Next release available yet' },
+      { type: 'fix', text: 'Added regression coverage for cache layout round-tripping, geotechnical document cache hits, borehole page audits, integrated layout source pages, and Playwright-verified desktop and mobile review output' },
+    ],
+  },
+  {
+    version: '0.4.53',
+    date: '2026-05-15',
+    tag: '0.4.53 Release',
+    changes: [
       { type: 'security', text: 'Made geotech agent and geotech chat treat --skills as the authoritative per-session gate for installed skill tools' },
       { type: 'fix', text: 'Kept direct geotech skill commands live while preventing persisted skill runtime settings from leaking into LLMConfig skill access' },
       { type: 'fix', text: 'Added CLI regression coverage for agent, chat, and direct skill command behavior around skill opt-in and approved-skill execution' },

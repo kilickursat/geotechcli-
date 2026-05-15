@@ -381,6 +381,111 @@ describe('ingestGeotechDocument', () => {
     }
   });
 
+  it('persists GLM-OCR layout pages on page audits and cache hits', async () => {
+    const previousConfigDir = process.env.GEOTECHCLI_CONFIG_DIR;
+    const configDir = mkdtempSync(join(tmpdir(), 'geotechcli-geotech-layout-cache-'));
+    const originalFetch = global.fetch;
+    process.env.GEOTECHCLI_CONFIG_DIR = configDir;
+
+    try {
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            model: 'GLM-OCR',
+            md_results: 'Page 1 borehole table reports silty sand and SPT N equals 18.',
+            layout_details: [[
+              {
+                index: 1,
+                label: 'table',
+                bbox_2d: [0.1, 0.2, 0.8, 0.4],
+                content: '| Material | SPT |\n| silty sand | 18 |',
+                width: 612,
+                height: 792,
+              },
+            ]],
+            data_info: { pages: [{ width: 612, height: 792 }] },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+      global.fetch = fetchMock as typeof fetch;
+      const extractTextFacts = vi.fn(async (_pageText: string, _config: any, context: any) => makeResult({
+        documentClass: 'borehole-log',
+        summary: 'GLM-OCR page evidence was extracted.',
+        materials: [
+          { kind: 'soil', description: 'silty sand', uscsSymbol: 'SM', lithology: null },
+        ],
+        parameters: [
+          { name: 'sptN', valueText: '18', numericValue: 18, unit: null, material: 'silty sand', context: 'page 1' },
+        ],
+        pageNumber: context.pageNumber ?? null,
+        totalPages: context.totalPages ?? null,
+        rawLLMText: 'mock',
+        latencyMs: 12,
+        parseStatus: 'parsed',
+        confidence: 88,
+      }) as any);
+
+      const input = {
+        config: {
+          provider: 'hosted-beta',
+          apiKey: 'test',
+          baseUrl: 'https://beta.geotechcli.com/api/proxy',
+          timeout: 60000,
+        } as any,
+        source: {
+          filePath: 'layout-cache-report.pdf',
+          fileName: 'layout-cache-report.pdf',
+          inputKind: 'pdf' as const,
+        },
+        pages: [
+          {
+            base64: Buffer.from('fake-raster-page').toString('base64'),
+            mimeType: 'application/pdf',
+            pageNumber: 9,
+            totalPages: 9,
+            sourceKind: 'pdf-page' as const,
+          },
+        ],
+        extractTextFacts,
+        interpretPage: vi.fn(),
+        transcribePageImageText: vi.fn(),
+        synthesizeDocument: async () => null,
+        usePageEvidenceCache: true,
+      };
+
+      const first = await ingestGeotechDocument(input);
+      expect(first.pageAudits[0]?.textHintSource).toBe('glm-ocr');
+      expect(first.pageAudits[0]?.layoutPages?.[0]).toMatchObject({
+        pageNumber: 9,
+        width: 612,
+        height: 792,
+        tables: ['| Material | SPT |\n| silty sand | 18 |'],
+      });
+      expect(first.pageAudits[0]?.evidenceCache?.status).toBe('stored');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(extractTextFacts).toHaveBeenCalledTimes(1);
+
+      fetchMock.mockClear();
+      extractTextFacts.mockClear();
+
+      const second = await ingestGeotechDocument(input);
+      expect(second.pageAudits[0]?.evidenceCache?.status).toBe('hit');
+      expect(second.pageAudits[0]?.textHintSource).toBe('glm-ocr');
+      expect(second.pageAudits[0]?.layoutPages?.[0]?.elements[0]?.bbox2d).toEqual([0.1, 0.2, 0.8, 0.4]);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(extractTextFacts).not.toHaveBeenCalled();
+    } finally {
+      global.fetch = originalFetch;
+      if (previousConfigDir === undefined) {
+        delete process.env.GEOTECHCLI_CONFIG_DIR;
+      } else {
+        process.env.GEOTECHCLI_CONFIG_DIR = previousConfigDir;
+      }
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
   it('reuses durable PDF page evidence when generated page payload bytes change', async () => {
     const previousConfigDir = process.env.GEOTECHCLI_CONFIG_DIR;
     const configDir = mkdtempSync(join(tmpdir(), 'geotechcli-geotech-pdf-cache-'));

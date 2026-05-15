@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.54] - 2026-05-15
+
+### Integrated OCR Layout Review
+
+- Replaced the legacy dark ingest dossier with the light integrated geotechnical review interface for HTML ingest output.
+- Persisted compact GLM-OCR layout pages through geotechnical document ingest, borehole ingest, page audits, and page evidence cache reuse.
+- Converted persisted OCR layout geometry into source-page overlays automatically, with conservative text-matched evidence linking for boreholes, extracted parameters, and image/table regions.
+- Hardened source-region rendering for duplicate GLM indices, stale region links, invalid persisted pages, ratio bboxes, and GLM layout priority over older reconstructed evidence boxes.
+- Narrowed hosted-beta web proxy imports to `@geotechcli/core/llm`, removing the Next.js critical dependency warning from the web production build without changing CLI PDF/vision runtime loading.
+- Kept the release on stable Next.js after audit review: the high/critical npm audit gate is clean, while the remaining moderate Next/PostCSS advisory is a tracked upstream nested dependency with no stable patched Next release available yet.
+- Added regression coverage for cache layout round-tripping, geotechnical document cache hits, borehole page audits, integrated layout source pages, and Playwright-verified desktop/mobile review output.
+
 ## [0.4.53] - 2026-05-15
 
 ### Agent Skill Opt-In Hardening

@@ -8,6 +8,7 @@ import {
   type BoreholeLogPageResult,
 } from '../vision/index.js';
 import { recoverDocumentTextHint, type DocumentTextHintSource } from '../vision/ocr.js';
+import type { GlmOcrLayoutPage } from '../vision/layout-ocr.js';
 import type { ParseStatus } from '../vision/parse.js';
 import type { PdfDocumentInspection, PdfPageClassification } from './pdf.js';
 import type { IngestSegmentationSummary } from './segmentation.js';
@@ -42,6 +43,7 @@ export interface BoreholeIngestPageAudit {
   parseStatus: ParseStatus;
   confidence: number;
   continuationDepth: number | null;
+  layoutPages?: GlmOcrLayoutPage[];
   warnings: string[];
 }
 
@@ -110,6 +112,13 @@ interface BoreholeGroupAccumulator {
 
 function uniqueStrings(values: Array<string | null | undefined>): string[] {
   return [...new Set(values.filter((value): value is string => typeof value === 'string' && value.trim().length > 0))];
+}
+
+function normalizeRecoveredLayoutPages(pages: GlmOcrLayoutPage[], sourcePageNumber: number): GlmOcrLayoutPage[] {
+  return pages.map((page) => ({
+    ...page,
+    pageNumber: pages.length === 1 ? sourcePageNumber : page.pageNumber,
+  }));
 }
 
 function createFindingKey(finding: BoreholeIngestFinding): string {
@@ -696,6 +705,7 @@ export async function ingestBoreholeLogDocument(
         ?? undefined;
       let textHintSource: BoreholeIngestPageAudit['textHintSource'] =
         pageTextHint ? 'native-text' : 'none';
+      let layoutPages: GlmOcrLayoutPage[] | undefined;
 
       try {
         const pagePhaseConfig: LLMConfig = {
@@ -716,6 +726,9 @@ export async function ingestBoreholeLogDocument(
           pageTextHint = recovery.textHint;
         }
         textHintSource = recovery.source;
+        layoutPages = recovery.layout
+          ? normalizeRecoveredLayoutPages(recovery.layout.pages, page.pageNumber)
+          : undefined;
         if (recovery.source === 'local-ocr' || recovery.source === 'vision-ocr' || recovery.source === 'glm-ocr') {
           recoveredOcrPages.add(page.pageNumber);
           documentWarnings.push(
@@ -763,6 +776,7 @@ export async function ingestBoreholeLogDocument(
             parseStatus: result.parseStatus,
             confidence: result.confidence,
             continuationDepth: result.continuationDepth,
+            ...(layoutPages?.length ? { layoutPages } : {}),
             warnings: uniqueStrings([...result.warnings, warning]),
           });
           continue;
@@ -809,6 +823,7 @@ export async function ingestBoreholeLogDocument(
           parseStatus: result.parseStatus,
           confidence: result.confidence,
           continuationDepth: result.continuationDepth,
+          ...(layoutPages?.length ? { layoutPages } : {}),
           warnings: result.warnings,
         });
 
