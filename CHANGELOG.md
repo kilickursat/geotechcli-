@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.53] - 2026-05-15
+
+### Agent Skill Opt-In Hardening
+
+- Made `geotech agent` and `geotech chat` treat `--skills` as the authoritative per-session gate for installed skill tools, even when older config or environment settings request global skill enablement.
+- Kept direct `geotech skill ...` commands live while preventing persisted skill runtime settings from leaking into `LLMConfig.skillsEnabled`.
+- Added CLI regression coverage for agent, chat, and direct skill command behavior around skill opt-in and approved-skill execution.
+- Replaced several Windows-hostile CLI glyphs in agent/vision status output with ASCII text and fixed a corrupted apostrophe in the development status notes.
+- Upgraded the web workspace to the May 2026 Next.js security patch line and pinned patched PostCSS/AWS XML parser dependencies used by the website build chain.
+
 ## [0.4.52] - 2026-05-10
 
 ### Confidence v2 and Report Trust Breakdown

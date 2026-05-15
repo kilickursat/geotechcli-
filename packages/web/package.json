@@ -1,6 +1,6 @@
 {
   "name": "@geotechcli/web",
-  "version": "0.4.52",
+  "version": "0.4.53",
   "private": true,
   "scripts": {
     "dev": "node ../../node_modules/next/dist/bin/next dev",
@@ -15,9 +15,9 @@
     "cf:check": "node ../../node_modules/wrangler/bin/wrangler.js check"
   },
   "dependencies": {
-    "@geotechcli/core": "0.4.52",
+    "@geotechcli/core": "0.4.53",
     "@opennextjs/cloudflare": "^1.18.0",
-    "next": "^15.5.15",
+    "next": "15.5.18",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "three": "^0.170.0"
@@ -29,7 +29,7 @@
     "@types/react-dom": "^19.0.0",
     "@types/three": "^0.170.0",
     "esbuild": "^0.27.0",
-    "postcss": "^8.5.0",
+    "postcss": "8.5.10",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.0",
     "wrangler": "^4.80.0"

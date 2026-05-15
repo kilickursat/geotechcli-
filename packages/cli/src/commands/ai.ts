@@ -137,13 +137,13 @@ function loadImageBase64(filePath: string): { base64: string; mimeType: string }
     gif: 'image/gif', webp: 'image/webp', pdf: 'application/pdf',
   };
 
-  // Warn if user provides a PDF — vision works best with PNG/JPG images.
+  // Warn if user provides a PDF - vision works best with PNG/JPG images.
   if (ext === 'pdf') {
     console.log('');
-    console.log(chalk.yellow('  ⚠ PDF input detected.'));
+    console.log(chalk.yellow('  WARNING: PDF input detected.'));
     console.log(chalk.gray('    Vision analysis works best with image files (PNG or JPG).'));
     console.log(chalk.gray('    For PDFs: extract a page as PNG first (e.g. with pdf2pic or a screenshot).'));
-    console.log(chalk.gray('    Attempting analysis anyway — results may be incomplete.'));
+    console.log(chalk.gray('    Attempting analysis anyway - results may be incomplete.'));
     console.log('');
   }
 
@@ -602,11 +602,11 @@ function handleCommandError(
       error(message);
       console.log('');
       console.log(chalk.gray('  Vision troubleshooting tips:'));
-      console.log(chalk.gray('    · Use PNG or JPG images (not PDF or BMP)'));
-      console.log(chalk.gray('    · Ensure the image is well-lit and clearly shows the subject'));
-      console.log(chalk.gray('    · Try a smaller image file (< 5 MB)'));
-      console.log(chalk.gray('    · Wait a moment and retry — the AI provider may be busy'));
-      console.log(chalk.gray('    · Run with --verbose to see the raw response'));
+      console.log(chalk.gray('    - Use PNG or JPG images (not PDF or BMP)'));
+      console.log(chalk.gray('    - Ensure the image is well-lit and clearly shows the subject'));
+      console.log(chalk.gray('    - Try a smaller image file (< 5 MB)'));
+      console.log(chalk.gray('    - Wait a moment and retry - the AI provider may be busy'));
+      console.log(chalk.gray('    - Run with --verbose to see the raw response'));
       return;
     }
   }
@@ -1201,21 +1201,21 @@ export function registerGBRCommand(program: Command): void {
 }
 
 // ---------------------------------------------------------------------------
-// Agentic CLI — real tool-calling brain with ReAct loop
+// Agentic CLI - real tool-calling brain with ReAct loop
 // ---------------------------------------------------------------------------
 
 function renderAgentStep(step: AgentStep, json: boolean, quiet: boolean = false): void {
   if (json || quiet) return;
 
   const icons: Record<string, string> = {
-    thought: '🤔',
-    tool_call: '🔧',
-    tool_result: '📊',
-    answer: '✅',
-    error: '❌',
+    thought: '*',
+    tool_call: '>',
+    tool_result: '=',
+    answer: 'ok',
+    error: '!',
   };
 
-  const icon = icons[step.type] ?? '•';
+  const icon = icons[step.type] ?? '-';
 
   switch (step.type) {
     case 'thought':
@@ -1246,7 +1246,7 @@ function withSessionSkillOptIn<T extends { skillsEnabled?: boolean }>(
 ): T & { skillsEnabled: boolean } {
   return {
     ...config,
-    skillsEnabled: config.skillsEnabled === true || enabled,
+    skillsEnabled: enabled === true,
   };
 }
 
@@ -1261,18 +1261,18 @@ function renderSwarmStep(step: SwarmStep, json: boolean, quiet: boolean = false)
   };
 
   const icons: Record<string, string> = {
-    thought: '🤔',
-    tool_call: '🔧',
-    tool_result: '📊',
-    handoff: '🔀',
-    review: '✅',
-    correction: '🔄',
-    answer: '📋',
-    error: '❌',
+    thought: '*',
+    tool_call: '>',
+    tool_result: '=',
+    handoff: '->',
+    review: 'ok',
+    correction: 'fix',
+    answer: 'report',
+    error: '!',
   };
 
   const color = agentColors[step.agent] ?? chalk.gray;
-  const icon = icons[step.type] ?? '•';
+  const icon = icons[step.type] ?? '-';
   const tag = color(`[${step.agent}]`);
 
   switch (step.type) {
@@ -1549,7 +1549,7 @@ export function registerAgentCommand(program: Command): void {
 }
 
 // ---------------------------------------------------------------------------
-// Interactive REPL Chat — conversational agentic session with memory
+// Interactive REPL Chat - conversational agentic session with memory
 // ---------------------------------------------------------------------------
 
 export function registerChatCommand(program: Command): void {
@@ -1628,7 +1628,7 @@ export function registerChatCommand(program: Command): void {
               const summary = typeof value === 'object' && value !== null && 'steps' in (value as any)
                 ? (value as any).steps?.slice(-1)[0] ?? key
                 : key;
-              console.log(chalk.gray(`    • ${key}: `) + chalk.white(String(typeof summary === 'string' ? summary : key)));
+              console.log(chalk.gray(`    - ${key}: `) + chalk.white(String(typeof summary === 'string' ? summary : key)));
             }
           }
           console.log('');

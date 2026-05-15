@@ -5,8 +5,20 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 const releases = [
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-05-10',
+    date: '2026-05-15',
     tag: `${GEOTECHCLI_VERSION} Release`,
+    changes: [
+      { type: 'security', text: 'Made geotech agent and geotech chat treat --skills as the authoritative per-session gate for installed skill tools' },
+      { type: 'fix', text: 'Kept direct geotech skill commands live while preventing persisted skill runtime settings from leaking into LLMConfig skill access' },
+      { type: 'fix', text: 'Added CLI regression coverage for agent, chat, and direct skill command behavior around skill opt-in and approved-skill execution' },
+      { type: 'fix', text: 'Replaced several Windows-hostile CLI glyphs in agent and vision status output with ASCII text and fixed a corrupted development-status apostrophe' },
+      { type: 'security', text: 'Upgraded the web workspace to the May 2026 Next.js security patch line and pinned patched PostCSS/AWS XML parser dependencies used by the website build chain' },
+    ],
+  },
+  {
+    version: '0.4.52',
+    date: '2026-05-10',
+    tag: '0.4.52 Release',
     changes: [
       { type: 'feat', text: 'Added provider-neutral Confidence v2 for geotechnical document ingest results with extraction, page evidence, traceability, corroboration, engineering completeness, readiness, missing-data, and review-gate scores' },
       { type: 'feat', text: 'Threaded confidenceBreakdown into DocumentEvidencePacket, compact agent summaries, benchmark JSON, CLI summaries, and generated HTML reports' },

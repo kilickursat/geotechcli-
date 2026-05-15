@@ -137,7 +137,7 @@ Current focus:
 - Reduced retry pressure for vision and agent requests.
 - Serialized expensive image-heavy PDF ingest cases.
 - Added cheaper partial-failure behavior for repeated text/vision timeouts.
-- Preserved the userâ€™s limited Modal GPU credit by avoiding unnecessary warm/health calls.
+- Preserved the user's limited Modal GPU credit by avoiding unnecessary warm/health calls.
 
 ### v0.4.28 Workspace Analyze Foundation
 

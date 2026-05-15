@@ -93,7 +93,7 @@ export function loadConfig(): GeotechConfig {
       if (mode & 0o077) {
         chmodSync(configPath, 0o600);
         console.error(
-          `⚠ geotechCLI: Repaired config permissions (was ${mode.toString(8)}, now 600). Config contains API keys.`,
+          `WARNING geotechCLI: Repaired config permissions (was ${mode.toString(8)}, now 600). Config contains API keys.`,
         );
       }
     } catch { /* best effort */ }
@@ -260,6 +260,8 @@ export function buildLLMConfig(): import('../llm/types.js').LLMConfig & { timeou
     modelId,
     visionModelId: config.llm.vision_model || undefined,
     timeout: config.llm.timeout,
-    skillsEnabled: process.env.GEOTECHCLI_ENABLE_SKILLS === '1' || config.skills.enabled,
+    // Agent/chat skill tools are intentionally enabled per session by the CLI
+    // `--skills` flag. Keep persisted skill runtime settings out of LLMConfig.
+    skillsEnabled: false,
   };
 }

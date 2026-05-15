@@ -134,12 +134,43 @@ describe('hosted-beta config defaults', () => {
     expect(llmConfig.apiKey).toBe('gtdev_local_key');
   });
 
-  it('lets the environment explicitly enable skills for a session', () => {
+  it('keeps agent skill tools disabled in LLM config even when the environment requests skills', () => {
     process.env.GEOTECHCLI_ENABLE_SKILLS = '1';
 
     const llmConfig = buildLLMConfig();
 
-    expect(llmConfig.skillsEnabled).toBe(true);
+    expect(llmConfig.skillsEnabled).toBe(false);
+  });
+
+  it('keeps agent skill tools disabled in LLM config even when persisted config enables skills', () => {
+    saveConfig({
+      llm: {
+        provider: 'hosted-beta',
+        api_key: '',
+        model: '',
+        vision_model: '',
+        base_url: '',
+        timeout: 60000,
+      },
+      auth: {
+        api_key: '',
+        tier: 'free',
+      },
+      cli: {
+        color: true,
+        verbose: false,
+      },
+      skills: {
+        enabled: true,
+        directory: '',
+        python_path: 'python',
+        trusted_only: true,
+      },
+    });
+
+    const llmConfig = buildLLMConfig();
+
+    expect(llmConfig.skillsEnabled).toBe(false);
   });
 
   it('uses ZHIPU_API_KEY and ZHIPU_API_BASE_URL for direct Z.ai provider overrides', () => {
