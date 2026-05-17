@@ -7,6 +7,9 @@ export { sanitizeUpstreamError } from './llm/util.js';
 // Geotechnical computation engines
 export * from './geo/index.js';
 
+// Experimental finite-element previews
+export * from './fem/index.js';
+
 // Configuration
 export * from './config/index.js';
 export * from './meta/index.js';

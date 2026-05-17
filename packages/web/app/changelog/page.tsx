@@ -5,8 +5,20 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 const releases = [
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-05-15',
+    date: '2026-05-16',
     tag: `${GEOTECHCLI_VERSION} Release`,
+    changes: [
+      { type: 'feat', text: 'Added geotech fem demo raft --experimental as an opt-in deterministic 3D FEM/WebGL preview for raft settlement workflow development' },
+      { type: 'feat', text: 'Added a provider-neutral FEM analysis-case and result-manifest contract in core with validation for assumptions, finite result arrays, mesh references, and reaction-balance review' },
+      { type: 'feat', text: 'Added a self-contained WebGL exporter for the experimental raft preview with deformation scale, mesh wireframe, raft load patch, validation warnings, assumptions, and limitations' },
+      { type: 'fix', text: 'Documented the FEM preview as experimental non-design behavior in README and website docs while keeping production calculations and report workflows unchanged' },
+      { type: 'fix', text: 'Added regression coverage for the deterministic raft manifest, WebGL export contract, CLI experimental gate, JSON output, and artifact writing' },
+    ],
+  },
+  {
+    version: '0.4.54',
+    date: '2026-05-15',
+    tag: '0.4.54 Release',
     changes: [
       { type: 'feat', text: 'Replaced the legacy dark ingest dossier with the light integrated geotechnical review interface for HTML ingest output' },
       { type: 'feat', text: 'Persisted compact GLM-OCR layout pages through geotechnical document ingest, borehole ingest, page audits, and page evidence cache reuse' },

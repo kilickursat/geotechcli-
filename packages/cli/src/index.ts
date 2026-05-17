@@ -16,6 +16,7 @@ import { registerSlopeCommand } from './commands/slope.js';
 import { registerRetainingCommand } from './commands/retaining.js';
 import { registerSettlementCommands } from './commands/settlement.js';
 import { registerSeepageCommand } from './commands/seepage.js';
+import { registerFemCommand } from './commands/fem.js';
 import { registerVizCommand } from './commands/viz.js';
 import { registerSkillCommand } from './commands/skill.js';
 import { registerAnalyzeCommand } from './commands/analyze.js';
@@ -53,6 +54,7 @@ registerSettlementCommands(program);
 
 // Seepage
 registerSeepageCommand(program);
+registerFemCommand(program);
 registerVizCommand(program);
 registerIngestCommand(program);
 registerAnalyzeCommand(program);

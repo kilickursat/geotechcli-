@@ -1,10 +1,10 @@
 # geotechCLI Development Status
 
-Last updated: 2026-05-10
+Last updated: 2026-05-17
 
 ## Current Work
 
-Preparing v0.4.52 on `strong-beta`. The current engineering track is provider-neutral evidence, standards-aware GroundModel readiness, GroundModel spatial and engineering visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, and the PDF/page evidence benchmark foundation so future OCR/vision and BYOK-provider changes can be measured against the same report PDF instead of judged manually.
+Preparing v0.4.55 locally on `strong-beta`; commit and push are paused pending user review of the experimental FEM/WebGL screenshots and release scope. The current engineering track is provider-neutral evidence, standards-aware GroundModel readiness, GroundModel spatial and engineering visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, the PDF/page evidence benchmark foundation, and an experimental deterministic FEM/WebGL contract so future OCR/vision, BYOK-provider, and GroundModel-to-calculation changes can be measured and routed without asking LLMs to invent calculations.
 
 Current focus:
 
@@ -31,6 +31,8 @@ Current focus:
 - Extend GroundModel verification with calculation-readiness routing for bearing, settlement, pile, liquefaction, and slope workflows before any deterministic calculation is auto-run.
 - Render GroundModel coordinate evidence, strip logs, SPT-depth plots, lab-depth charts, and groundwater/monitoring summaries in `geotech analyze --format html` and `geotech viz`, while keeping CRS/local-grid assumptions and evidence IDs visible.
 - Attach standards-profile assumptions and opt-in non-executing calculation input drafts to GroundModel readiness so downstream calculations are prepared but still review-gated.
+- Keep experimental FEM previews deterministic, validation-gated, and clearly separated from production design calculations while the GroundModel-to-FEM routing contract is developed.
+- Keep the experimental FEM artifact screenshot-testable with Playwright; headless Chromium may use the deterministic Canvas fallback when WebGL exposes a zero-size drawing buffer.
 - Keep the bundled strong-beta skill catalog repairable on first use so direct skill commands and `--skills` agent sessions can see the complete approved catalog after partial installs.
 - Route optional swarm runs through a deterministic WorkspaceScout, DataEngineer, GroundModeler, StandardsChecker, DesignEngineer, RiskReviewer, and ReportEngineer plan over workspace evidence, standards readiness, calculation drafts, approved executable skills, and blocked review gates.
 - Raise hosted-beta public limits enough for image-heavy PDF development runs, while keeping developer key/IP bypass unlimited.
@@ -38,6 +40,16 @@ Current focus:
 - Keep the legacy Modal deploy workflow present but disabled by default.
 
 ## Done So Far
+
+### v0.4.55 Experimental FEM WebGL Preview
+
+- Added `geotech fem demo raft --experimental` as an opt-in deterministic 3D FEM/WebGL preview for raft settlement workflow development.
+- Added a provider-neutral FEM analysis-case and result-manifest contract in core with validation for assumptions, finite result arrays, mesh references, and reaction-balance review.
+- Added a self-contained WebGL exporter for the experimental raft preview with deformation scaling, mesh wireframe, raft load patch, result envelope, validation warnings, assumptions, and limitations.
+- Added a deterministic Canvas fallback inside the same self-contained artifact so browser automation or machines with unavailable/broken WebGL still render a meaningful FEM settlement surface instead of a blank canvas.
+- Verified the generated FEM artifact with Playwright at desktop and mobile sizes; this Windows headless Chromium run used the Canvas fallback because WebGL reported a zero-size drawing buffer.
+- Re-ran focused FEM tests, full core and CLI Vitest suites, release consistency, web smoke, monorepo build, and Cloudflare web build after the fallback patch.
+- Documented the FEM preview as experimental non-design behavior in README and website docs, and added regression coverage for the core manifest/exporter and CLI artifact path.
 
 ### v0.4.52 Confidence v2 Foundation
 
@@ -258,6 +270,7 @@ Highest-value next work:
 - Expand PDF/image preprocessing before vision beyond margin trimming with deskew, crop tables/log panels, and normalized page-region assets.
 - Expand the benchmark harness from the current cached-rerun acceptance fixture into broader latency/provider profiles, region-level preprocessing comparisons, and historical trend output.
 - Add provider/BYOK benchmark profiles so OpenAI-compatible, hosted-beta, and future user-selected LLMs are evaluated with the same PDF/image evidence contract instead of model-specific assumptions.
+- Connect experimental FEM manifests to GroundModel calculation drafts and review-gated agent routing before adding any production solver workflow.
 - Add `geotech signal analyze` for settlement, piezometer, inclinometer, vibration, load-test, and time-series data.
 - Add benchmark evaluation fixtures for boreholes, CPT, lab, reports, monitoring, sensor, pile load, and signal datasets.
 

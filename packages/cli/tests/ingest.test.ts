@@ -2502,6 +2502,7 @@ describe('registerIngestCommand', () => {
       sourceLabel: 'site-report.png',
       storedReview: null,
       approval: null,
+      agentReviews: [],
     });
     expect(coreMocks.renderIngestDossierAsHtml).toHaveBeenCalledTimes(1);
     expect(fsMocks.writeFileSync).toHaveBeenCalledWith(
@@ -2592,6 +2593,7 @@ describe('registerIngestCommand', () => {
         approvedBy: 'Lead reviewer',
         rationale: 'Reviewed against the signed report packet.',
       },
+      agentReviews: [],
     });
     expect(fsMocks.writeFileSync).toHaveBeenCalledWith(
       'review-report.html',

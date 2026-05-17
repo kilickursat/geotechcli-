@@ -57,6 +57,9 @@ geotech analyze . --format html --no-open
 geotech analyze . --json --output workspace.json
 geotech viz workspace.json --save-html ground-model-review.html --no-open
 
+# Experimental deterministic 3D FEM/WebGL preview
+geotech fem demo raft --experimental --save-html raft-fem.html --no-open
+
 # Bearing capacity (Meyerhof)
 geotech bearing --depth 5 --phi 30 --cohesion 25 --width 2.5
 
@@ -106,6 +109,18 @@ geotech analyze . --standard eurocode7 --draft-inputs --json
 ```
 
 Current strong-beta scope: workspace awareness, context-aware CSV/XLSX schema inference for common borehole IDs and groundwater-depth tables, AGS/PDF/image/GIS/CAD classification, evidence references, canonical GroundModel construction, GroundModel coordinate maps with CRS/local-grid warnings, compact borehole strip logs, SPT-depth plots, lab-parameter depth charts, groundwater/monitoring summaries, standards-profile assumptions, deterministic verifier findings, calculation readiness for bearing, settlement, pile, liquefaction, and slope workflows, optional non-executing calculation input drafts, recommendations, and a self-contained HTML report. It does not yet auto-run branch-specific design calculations from the folder; it tells you which calculation route is ready, blocked, or needs explicit assumptions.
+
+## Experimental FEM Preview
+
+`geotech fem demo raft` is an opt-in experimental 3D FEM/WebGL preview for the future finite-element workflow. It builds a deterministic elastic raft settlement case in core, validates assumptions and result arrays, then exports a self-contained WebGL artifact that can be inspected without a hosted model call.
+
+```bash
+geotech fem demo raft --experimental
+geotech fem demo raft --experimental --save-html raft-fem.html --no-open
+geotech fem demo raft --experimental --output raft-fem.manifest.json --json
+```
+
+Current scope: foundation-settlement demo only, linear elastic small-strain screening behavior, fixed built-in case geometry, deterministic result manifest, and WebGL visualization. It is not a production FEM solver or design calculation; it exists to validate the agentic contract, result schema, reviewer warnings, and browser artifact path before report-ingested GroundModel routing is added.
 
 ## Interactive Visualization
 
@@ -164,6 +179,7 @@ These commands are the public strong-beta foundation and are available now.
 | `geotech pile` | Pile capacity using alpha, beta, and SPT methods |
 | `geotech retaining` | Lateral earth pressure using Rankine and Coulomb |
 | `geotech analyze` | Local project manifest, CSV/XLSX schema inference, evidence-bound GroundModel, map, strip logs, verifier, and HTML report |
+| `geotech fem demo raft` | Experimental deterministic 3D FEM/WebGL raft settlement preview |
 | `geotech viz` | Interactive browser visualization for saved JSON, GroundModel maps, SPT/lab/GWL charts, CSV, and Excel data |
 
 ### AI-Assisted

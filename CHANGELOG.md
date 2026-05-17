@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.55] - 2026-05-16
+
+### Experimental FEM WebGL Preview
+
+- Added `geotech fem demo raft --experimental` as an opt-in deterministic 3D FEM/WebGL preview for raft settlement workflow development.
+- Added a provider-neutral FEM analysis-case and result-manifest contract in core, with validation for assumptions, finite result arrays, mesh references, and reaction-balance review.
+- Added a self-contained WebGL exporter for the experimental raft preview so users can inspect deformation scale, mesh wireframe, raft load patch, validation warnings, assumptions, and limitations without hosted model calls.
+- Documented the FEM preview as experimental, non-design behavior in README and website docs while keeping production calculations and report workflows unchanged.
+- Added regression coverage for the deterministic raft manifest, WebGL export contract, CLI experimental gate, JSON output, and artifact writing.
+
 ## [0.4.54] - 2026-05-15
 
 ### Integrated OCR Layout Review
