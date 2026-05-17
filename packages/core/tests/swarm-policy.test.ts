@@ -8,6 +8,7 @@ vi.mock('../src/llm/router.js', () => ({
 import { generateChat, generateText } from '../src/llm/router.js';
 import { toolRegistry } from '../src/agents/tools.js';
 import { getAllowedToolsForAgent, isToolAllowedForAgent, runSwarm } from '../src/agents/swarm.js';
+import { prepareFemAnalysisCaseDraft } from '../src/fem/index.js';
 
 const mockedGenerateChat = vi.mocked(generateChat);
 const mockedGenerateText = vi.mocked(generateText);
@@ -96,6 +97,134 @@ describe('Swarm tool policy', () => {
     expect(session.reviewPassed).toBe(true);
     expect(executeSpy).not.toHaveBeenCalled();
     expect(mockedGenerateChat).toHaveBeenCalled();
+  });
+
+  it('blocks reviewer attempts to prepare FEM analysis cases during runSwarm', async () => {
+    mockedGenerateChat
+      .mockResolvedValueOnce(
+        response('```handoff\n{"to":"simulation","data":{"task":"prepare FEM case"},"summary":"parsed"}\n```'),
+      )
+      .mockResolvedValueOnce(
+        response('```handoff\n{"to":"reviewer","results":{"summary":"FEM case needs review"},"summary":"simulation complete"}\n```'),
+      )
+      .mockResolvedValueOnce(
+        response('```tool\n{"tool":"prepare_fem_analysis_case","args":{"objective":"foundation-settlement","useDemoDefaults":true}}\n```'),
+      )
+      .mockResolvedValueOnce(
+        response('```review\n{"verdict":"APPROVED","notes":["blocked FEM draft tool was not executed by reviewer"],"confidence":90}\n```'),
+      );
+
+    mockedGenerateText.mockResolvedValue(response('final report'));
+
+    const executeSpy = vi.spyOn(toolRegistry, 'execute');
+    const session = await runSwarm(
+      'review a FEM case without letting reviewer draft it',
+      {} as any,
+      () => {},
+      {},
+    );
+
+    expect(session.reviewPassed).toBe(true);
+    expect(executeSpy).not.toHaveBeenCalledWith('prepare_fem_analysis_case', expect.anything());
+    expect(session.steps).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        agent: 'reviewer',
+        type: 'error',
+        content: expect.stringContaining('Blocked by role allowlist: prepare_fem_analysis_case'),
+        toolName: 'prepare_fem_analysis_case',
+      }),
+    ]));
+  });
+
+  it('threads prepared FEM tool context into reviewer validation', async () => {
+    const femInput = {
+      objective: 'excavation-deformation',
+      geometry: {
+        excavationLengthM: 18,
+        excavationWidthM: 12,
+        excavationFinalDepthM: 8,
+      },
+      excavation: {
+        stageDepthsM: [3, 6, 8],
+        supportLevelsM: [2, 5],
+        wallType: 'diaphragm_wall',
+      },
+      load: { pressureKpa: 20 },
+      material: {
+        elasticModulusKpa: 18_000,
+        poissonRatio: 0.32,
+        unitWeightKnM3: 19,
+      },
+      groundwater: {
+        condition: 'specified',
+        depthM: 2.4,
+        note: 'Workspace evidence indicates groundwater at 2.4 m bgl.',
+      },
+      evidenceRefs: [
+        {
+          id: 'gm-stratum-1',
+          source: 'GroundModel',
+          page: 7,
+          note: 'Elastic modulus and unit weight from workspace readiness.',
+        },
+      ],
+    } as const;
+    const draft = prepareFemAnalysisCaseDraft(femInput as any);
+    expect(draft.analysisCase).toBeDefined();
+
+    mockedGenerateChat
+      .mockResolvedValueOnce(
+        response('```handoff\n{"to":"simulation","data":{"task":"draft and review FEM excavation case"},"summary":"workspace evidence parsed"}\n```'),
+      )
+      .mockResolvedValueOnce(
+        response(`\`\`\`tool\n${JSON.stringify({ tool: 'prepare_fem_analysis_case', args: femInput })}\n\`\`\``),
+      )
+      .mockResolvedValueOnce(
+        response('```handoff\n{"to":"reviewer","results":{"summary":"FEM case was prepared by deterministic tool output"},"summary":"prepared FEM draft"}\n```'),
+      )
+      .mockResolvedValueOnce(
+        response(`\`\`\`tool\n${JSON.stringify({ tool: 'validate_fem_analysis_case', args: { caseFile: draft.analysisCase } })}\n\`\`\``),
+      )
+      .mockResolvedValueOnce(
+        response('```review\n{"verdict":"APPROVED","notes":["FEM case validated with review gates retained"],"confidence":91}\n```'),
+      );
+
+    mockedGenerateText.mockResolvedValue(response('final FEM review report'));
+
+    const executeSpy = vi.spyOn(toolRegistry, 'execute');
+    const session = await runSwarm(
+      'draft and review an excavation FEM analysis case from workspace evidence',
+      {} as any,
+      () => {},
+      {},
+    );
+
+    expect(session.reviewPassed).toBe(true);
+    expect(executeSpy).toHaveBeenCalledWith('prepare_fem_analysis_case', expect.objectContaining({
+      objective: 'excavation-deformation',
+    }));
+    expect(executeSpy).toHaveBeenCalledWith('validate_fem_analysis_case', expect.objectContaining({
+      caseFile: expect.objectContaining({
+        caseId: 'excavation-deformation-draft',
+        objective: 'excavation_deformation',
+      }),
+    }));
+    expect(isToolAllowedForAgent('reviewer', 'prepare_fem_analysis_case')).toBe(false);
+    expect(session.context.simulation).toMatchObject({
+      prepare_fem_analysis_case: expect.objectContaining({
+        objective: 'excavation-deformation',
+        analysisCase: expect.objectContaining({
+          caseId: 'excavation-deformation-draft',
+        }),
+      }),
+    });
+
+    const reviewerMessages = mockedGenerateChat.mock.calls[3]?.[0] as Array<{ role: string; content: string }>;
+    const reviewerUserPrompt = reviewerMessages.find((message) => message.role === 'user')?.content ?? '';
+    expect(reviewerUserPrompt).toContain('Simulation tool context:');
+    expect(reviewerUserPrompt).toContain('prepare_fem_analysis_case');
+    expect(reviewerUserPrompt).toContain('analysisCase.caseId: excavation-deformation-draft');
+    expect(reviewerUserPrompt).toContain('These deterministic tool outputs are the authoritative basis for review');
   });
 
   it('returns a deterministic final answer when swarm synthesis fails', async () => {

@@ -4,7 +4,7 @@ Last updated: 2026-05-18
 
 ## Current Work
 
-Preparing v0.4.60 locally on `strong-beta` after publishing v0.4.59; the v0.4.60 evidence-to-FEM draft bridge is implemented and locally verified. The current engineering track is provider-neutral evidence, standards-aware GroundModel readiness, GroundModel spatial and engineering visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, the PDF/page evidence benchmark foundation, and experimental deterministic FEM/WebGL contracts so future OCR/vision, BYOK-provider, and GroundModel-to-calculation changes can be measured and routed without asking LLMs to invent calculations.
+v0.4.61 on `strong-beta` follows the shipped v0.4.60 evidence-to-FEM draft bridge. This slice strengthens FEM agent/swarm wiring: general swarm reviewers receive deterministic FEM/calculation tool context from simulation runs, while preserving the boundary that LLMs plan and review FEM cases but do not run solvers, write WebGL artifacts, or invent FEM outputs. The wider engineering track remains provider-neutral evidence, standards-aware GroundModel readiness, GroundModel spatial and engineering visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, the PDF/page evidence benchmark foundation, and experimental deterministic FEM/WebGL contracts so future OCR/vision, BYOK-provider, and GroundModel-to-calculation changes can be measured and routed without asking LLMs to invent calculations.
 
 Current focus:
 
@@ -36,6 +36,7 @@ Current focus:
 - Keep `geotech fem agent` as a scoped FEM planning brain that can list, draft, and validate FEM cases but cannot run solvers or invent result manifests.
 - Allow FEM draft and scoped FEM agent flows to consume GroundModel readiness as evidence prefill while still requiring explicit user geometry, load, staging, and approval.
 - Preserve FEM evidence references from GroundModel readiness so future reviewers can trace material, groundwater, and assumption sources before any solver preview.
+- Thread FEM and calculation tool summaries from simulation agents into reviewer prompts so RiskReviewer can validate deterministic case data even when an LLM handoff summary is terse.
 - Keep the experimental FEM artifact screenshot-testable with Playwright; headless Chromium may use the deterministic Canvas fallback when WebGL exposes a zero-size drawing buffer.
 - Keep the bundled strong-beta skill catalog repairable on first use so direct skill commands and `--skills` agent sessions can see the complete approved catalog after partial installs.
 - Route optional swarm runs through a deterministic WorkspaceScout, DataEngineer, GroundModeler, StandardsChecker, DesignEngineer, RiskReviewer, and ReportEngineer plan over workspace evidence, standards readiness, calculation drafts, approved executable skills, and blocked review gates.
@@ -44,6 +45,14 @@ Current focus:
 - Keep the legacy Modal deploy workflow present but disabled by default.
 
 ## Done So Far
+
+### v0.4.61 FEM Swarm Reviewer Handoff
+
+- Added deterministic simulation-tool context to reviewer swarm prompts so FEM drafts and validation data remain visible even when a model handoff summary is terse.
+- Added compact per-tool summaries for FEM and calculation outputs before reviewer JSON context, keeping hosted GLM and future BYOK models aligned on the same evidence contract.
+- Added runtime swarm regressions proving simulation agents can prepare FEM cases, reviewer agents can validate FEM cases, and reviewer agents cannot prepare FEM cases.
+- Kept FEM safety boundaries unchanged: LLMs plan and review while geotechCLI deterministic contracts own case drafting, validation, and any future solver outputs.
+- Verified locally with targeted FEM/swarm/scoped-agent/CLI tests, full core and CLI Vitest suites using the thread pool, release consistency, monorepo build, web smoke, Cloudflare web build, and FEM WebGL smoke.
 
 ### v0.4.60 Evidence-to-FEM Draft Bridge
 

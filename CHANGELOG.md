@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.61] - 2026-05-18
+
+### FEM Swarm Reviewer Handoff
+
+- Added deterministic simulation-tool context to reviewer swarm prompts so FEM drafts and validation data remain visible even when a model handoff summary is terse.
+- Added compact per-tool summaries for FEM/calculation outputs before the reviewer JSON context, keeping BYOK and hosted models aligned on the same evidence contract.
+- Added runtime swarm regressions proving simulation agents can prepare FEM cases, reviewer agents can validate FEM cases, and reviewer agents cannot prepare FEM cases.
+- Kept FEM safety boundaries unchanged: LLMs plan and review while geotechCLI deterministic contracts own case drafting, validation, and any future solver outputs.
+
 ## [0.4.60] - 2026-05-18
 
 ### Evidence-to-FEM Draft Bridge

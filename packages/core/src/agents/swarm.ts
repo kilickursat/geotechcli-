@@ -315,6 +315,76 @@ Produce a comprehensive, professional engineering report with:
 - Final recommendations`;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function extractAgentToolSummary(toolData: unknown): string | null {
+  if (!isRecord(toolData)) {
+    return null;
+  }
+
+  const summary = toolData.agentEvidenceSummary;
+  if (typeof summary === 'string' && summary.trim()) {
+    return summary.trim();
+  }
+
+  const result = toolData.result;
+  if (isRecord(result) && typeof result.agentEvidenceSummary === 'string' && result.agentEvidenceSummary.trim()) {
+    return result.agentEvidenceSummary.trim();
+  }
+
+  return null;
+}
+
+function buildSimulationToolContextForReviewer(context: Record<string, unknown>): string {
+  const entries = Object.entries(context);
+  if (entries.length === 0) {
+    return '';
+  }
+
+  const femToolNames = new Set([
+    'list_fem_capabilities',
+    'prepare_fem_analysis_case',
+    'validate_fem_analysis_case',
+  ]);
+  const calculationToolNames = new Set([
+    'calculate_bearing_capacity',
+    'calculate_liquefaction',
+    'calculate_tunnel_settlement',
+    'calculate_consolidation',
+    'calculate_schmertmann_settlement',
+    'calculate_pile_capacity',
+    'calculate_slope_stability',
+    'calculate_lateral_earth_pressure',
+  ]);
+
+  const reviewableContext = Object.fromEntries(entries.filter(([toolName]) => (
+    femToolNames.has(toolName) ||
+    calculationToolNames.has(toolName) ||
+    toolName.startsWith('calculate_')
+  )));
+
+  if (Object.keys(reviewableContext).length === 0) {
+    return '';
+  }
+
+  const toolSummaries = Object.entries(reviewableContext)
+    .map(([toolName, toolData]) => {
+      const summary = extractAgentToolSummary(toolData);
+      return summary ? `- ${toolName}:\n${summary}` : null;
+    })
+    .filter((item): item is string => Boolean(item));
+
+  return [
+    'Simulation tool context:',
+    'These deterministic tool outputs are the authoritative basis for review. Use them when validating FEM cases or calculation artifacts, even if the simulation handoff summary is terse.',
+    toolSummaries.length > 0 ? `Tool summaries:\n${toolSummaries.join('\n')}` : '',
+    'Tool data JSON:',
+    serializeToolDataForPrompt(reviewableContext, 4500),
+  ].filter(Boolean).join('\n');
+}
+
 async function runAgentLoop(
   input: string,
   config: LLMConfig,
@@ -681,8 +751,15 @@ export async function runSwarm(
 
     trackStep({ agent: 'orchestrator', type: 'handoff', content: 'Routing to Reviewer Agent', timestamp: Date.now() });
 
+    const simulationToolContext = buildSimulationToolContextForReviewer(simResult.context);
     const reviewResult = await runAgentLoop(
-      `${promptContextBlock}Original task: ${task}\n\nInterpretation summary:\n${interpData}\n\nSimulation results:\n${simData}\n\nReview these results for safety, sanity, standards compliance, skill-selection appropriateness, and parse safety.`,
+      [
+        `${promptContextBlock}Original task: ${task}`,
+        `Interpretation summary:\n${interpData}`,
+        `Simulation results:\n${simData}`,
+        simulationToolContext,
+        'Review these results for safety, sanity, standards compliance, skill-selection appropriateness, parse safety, and FEM validation safety.',
+      ].filter(Boolean).join('\n\n'),
       config,
       reviewerPrompt(config),
       'reviewer',

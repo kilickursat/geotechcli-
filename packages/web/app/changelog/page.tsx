@@ -8,6 +8,17 @@ const releases = [
     date: '2026-05-18',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added deterministic simulation-tool context to reviewer swarm prompts so FEM drafts and validation data remain visible even when a model handoff summary is terse' },
+      { type: 'feat', text: 'Added compact per-tool summaries for FEM and calculation outputs before reviewer JSON context, keeping BYOK and hosted models aligned on the same evidence contract' },
+      { type: 'fix', text: 'Added runtime swarm regressions proving simulation agents can prepare FEM cases, reviewer agents can validate FEM cases, and reviewer agents cannot prepare FEM cases' },
+      { type: 'fix', text: 'Kept FEM safety boundaries unchanged: LLMs plan and review while geotechCLI deterministic contracts own case drafting, validation, and future solver outputs' },
+    ],
+  },
+  {
+    version: '0.4.60',
+    date: '2026-05-18',
+    tag: '0.4.60 Release',
+    changes: [
       { type: 'feat', text: 'Added a GroundModel-to-FEM draft adapter that converts FEM readiness drafts into provider-neutral prepare_fem_analysis_case inputs with retained evidence references' },
       { type: 'feat', text: 'Added geotech fem draft <objective> --workspace <dir> so workspace evidence can prefill material, groundwater, and source traceability before users provide geometry, loads, and staging' },
       { type: 'feat', text: 'Added geotech fem agent ... --workspace <dir> to give the scoped FEM brain FEM-only GroundModel readiness context without widening its tool allowlist' },
