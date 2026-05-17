@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.58] - 2026-05-17
+
+### FEM Agent Brain and Manifest Metadata
+
+- Added optional `resultFields`, `steps`, and `datasets` metadata to FEM result manifests so future shaft, tunnel, pile-group, embankment, seepage, and slope previews can share one viewer and validation contract.
+- Kept the existing `visualization.disp/color/frames` contract backward-compatible while validating malformed result metadata when present.
+- Added `geotech fem agent <task...>` as a scoped LLM FEM planning surface that can only list FEM capabilities, prepare analysis-case drafts, and validate cases.
+- Added `scripts/smoke-fem-webgl.mjs` and `npm run smoke:fem:webgl` for reusable desktop/mobile FEM artifact QA across raft, excavation, and future previews.
+
 ## [0.4.57] - 2026-05-17
 
 ### Experimental Excavation FEM Preview

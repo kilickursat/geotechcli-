@@ -165,6 +165,33 @@ export interface FemVisualizationFrame {
   color: number[];
 }
 
+export interface FemResultField {
+  id: string;
+  label: string;
+  unit: string;
+  location: 'surface_nodes' | 'outline_nodes' | 'envelope';
+  quantity: 'displacement' | 'reaction' | 'load' | 'stage_count';
+  component?: 'x' | 'y' | 'z' | 'magnitude';
+  signConvention?: string;
+}
+
+export interface FemResultStep {
+  id: string;
+  label: string;
+  index: number;
+  analysisStageId?: string;
+  depthM?: number;
+}
+
+export interface FemResultDataset {
+  id: string;
+  fieldId: string;
+  stepId?: string;
+  values: number[];
+  stride: 1 | 3;
+  source: 'visualization.disp' | 'visualization.frame' | 'envelope';
+}
+
 export interface FemResultEnvelope {
   maxSettlementMm: number;
   minSettlementMm: number;
@@ -205,6 +232,9 @@ export interface FemResultManifest {
   };
   envelope: FemResultEnvelope;
   visualization: FemVisualizationMesh;
+  resultFields?: FemResultField[];
+  steps?: FemResultStep[];
+  datasets?: FemResultDataset[];
   assumptions: FemAssumption[];
   limitations: string[];
 }

@@ -122,11 +122,13 @@ geotech fem demo raft --experimental --output raft-fem.manifest.json --json
 geotech fem demo excavation --experimental
 geotech fem demo excavation --experimental --save-html excavation-fem.html --no-open
 geotech fem demo excavation --experimental --output excavation-fem.manifest.json --json
+geotech fem agent "which FEM route fits a braced excavation beside an existing building?"
+geotech fem agent "draft a staged excavation FEM case" --objective excavation-deformation --json
 ```
 
-Current scope: foundation-settlement and staged-excavation deformation demos only, linear elastic screening behavior, fixed built-in case geometry, deterministic result manifests, and WebGL/Canvas visualization. The excavation preview adds staged field controls for surface settlement, horizontal displacement, and wall-deflection proxy. These commands are not production FEM solvers, wall-design checks, basal-heave checks, seepage analyses, or design calculations; they exist to validate the agentic contract, result schema, reviewer warnings, and browser artifact path before report-ingested GroundModel routing is expanded.
+Current scope: foundation-settlement and staged-excavation deformation demos only, linear elastic screening behavior, fixed built-in case geometry, deterministic result manifests, and WebGL/Canvas visualization. The excavation preview adds staged field controls for surface settlement, horizontal displacement, and wall-deflection proxy. FEM manifests also include optional `resultFields`, `steps`, and `datasets` metadata so future shaft, tunnel, pile-group, embankment, seepage, and slope previews can share the same validation and viewer contract. These commands are not production FEM solvers, wall-design checks, basal-heave checks, seepage analyses, or design calculations; they exist to validate the agentic contract, result schema, reviewer warnings, and browser artifact path before report-ingested GroundModel routing is expanded.
 
-Agents and swarm runs now see FEM through deterministic routing tools, not prompt-only instructions. The model may list FEM capabilities, prepare review-gated `foundation-settlement` or `excavation-deformation` case drafts, or validate a FEM case, but it must not invent solver outputs. Draft and planned routes include shaft deformation, tunnel volume-loss settlement, and pile-group interaction as contract-aware future targets until deterministic engines are added.
+Agents and swarm runs now see FEM through deterministic routing tools, not prompt-only instructions. `geotech fem agent` is a narrower LLM brain for FEM planning: it may only list FEM capabilities, prepare review-gated case drafts, and validate FEM cases. It cannot run solvers, write WebGL artifacts, or invent FEM displacement/reaction values. Draft and planned routes include shaft deformation, tunnel volume-loss settlement, and pile-group interaction as contract-aware future targets until deterministic engines are added.
 
 ## Interactive Visualization
 
@@ -187,6 +189,7 @@ These commands are the public strong-beta foundation and are available now.
 | `geotech analyze` | Local project manifest, CSV/XLSX schema inference, evidence-bound GroundModel, map, strip logs, verifier, and HTML report |
 | `geotech fem demo raft` | Experimental deterministic 3D FEM/WebGL raft settlement preview |
 | `geotech fem demo excavation` | Experimental deterministic staged excavation deformation WebGL preview |
+| `geotech fem agent` | Scoped LLM FEM planning brain for route selection, case drafts, and validation only |
 | `geotech viz` | Interactive browser visualization for saved JSON, GroundModel maps, SPT/lab/GWL charts, CSV, and Excel data |
 
 ### AI-Assisted

@@ -44,6 +44,11 @@ export interface AgentSession {
 
 export type AgentCallback = (step: AgentStep) => void;
 
+export interface AgentRunOptions {
+  allowedTools?: readonly string[];
+  systemPromptSuffix?: string;
+}
+
 interface ConversationMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
@@ -77,14 +82,24 @@ function hasActionableSoilData(query: string): boolean {
 // System prompt
 // ---------------------------------------------------------------------------
 
-function buildCompactSystemPrompt(config?: LLMConfig): string {
+function visibleTools(config?: LLMConfig, options: AgentRunOptions = {}) {
   const skillsEnabled = config?.skillsEnabled === true;
-  const tools = toolRegistry
+  const allowed = options.allowedTools ? new Set(options.allowedTools) : undefined;
+  return toolRegistry
     .list()
-    .filter((tool) => skillsEnabled || !isAgentSkillToolName(tool.name))
+    .filter((tool) => (skillsEnabled || !isAgentSkillToolName(tool.name)) && (!allowed || allowed.has(tool.name)));
+}
+
+function isToolAllowedByRunOptions(toolName: string, options: AgentRunOptions = {}): boolean {
+  return !options.allowedTools || options.allowedTools.includes(toolName);
+}
+
+function buildCompactSystemPrompt(config?: LLMConfig, options: AgentRunOptions = {}): string {
+  const tools = visibleTools(config, options)
     .map((tool) => `- ${tool.name}: ${tool.description}`)
     .join('\n');
   const proprietaryRules = getProprietaryInternalsPromptRules();
+  const suffix = options.systemPromptSuffix ? `\n${options.systemPromptSuffix}` : '';
 
   return `You are geotechCLI Agent, a geotechnical engineering assistant that must use real tools for calculations.
 
@@ -104,19 +119,16 @@ ${config ? buildProviderOperatingPrompt(config, { task: 'single-agent', compact:
 - Interpret tool outputs in engineering terms with units.
 - If a tool result is blocked, low confidence, or canAutoProceed=false, do not continue blindly.
 - When finished, provide a concise engineering answer in prose with key results, assumptions, and recommendations.
-- Do not output a tool call in the final answer.`;
+- Do not output a tool call in the final answer.${suffix}`;
 }
 
-function buildSystemPrompt(config?: LLMConfig): string {
+function buildSystemPrompt(config?: LLMConfig, options: AgentRunOptions = {}): string {
   if (config?.provider === 'hosted-beta') {
-    return buildCompactSystemPrompt(config);
+    return buildCompactSystemPrompt(config, options);
   }
 
-  const skillsEnabled = config?.skillsEnabled === true;
   const proprietaryRules = getProprietaryInternalsPromptRules();
-  const toolDescriptions = toolRegistry
-    .list()
-    .filter((tool) => skillsEnabled || !isAgentSkillToolName(tool.name))
+  const toolDescriptions = visibleTools(config, options)
     .map((tool) => {
       const params = Object.entries(
         (tool.parameters as any).properties ?? {},
@@ -129,6 +141,7 @@ function buildSystemPrompt(config?: LLMConfig): string {
       return `  ${tool.name}: ${tool.description}\n${params}`;
     })
     .join('\n\n');
+  const suffix = options.systemPromptSuffix ? `\n${options.systemPromptSuffix}` : '';
 
   return `You are geotechCLI Agent, an expert geotechnical engineering AI that solves problems by EXECUTING real calculations, not just describing them.
 
@@ -172,7 +185,7 @@ When you have completed all necessary calculations and reasoning, provide your f
 - Summary of all calculations performed (with key numbers)
 - Engineering interpretation
 - Recommendations with supporting evidence
-- Any limitations or assumptions made`;
+- Any limitations or assumptions made${suffix}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -238,6 +251,7 @@ export async function runAgent(
   config: LLMConfig,
   onStep: AgentCallback,
   sessionContext?: Record<string, unknown>,
+  options: AgentRunOptions = {},
 ): Promise<AgentSession> {
   const session: AgentSession = {
     steps: [],
@@ -270,7 +284,7 @@ export async function runAgent(
   }
 
   const messages: ConversationMessage[] = [
-    { role: 'system', content: buildSystemPrompt(config) },
+    { role: 'system', content: buildSystemPrompt(config, options) },
   ];
 
   const serializedContext = serializeContextForPrompt(sessionContext);
@@ -385,6 +399,23 @@ export async function runAgent(
     };
     session.steps.push(callStep);
     onStep(callStep);
+
+    if (!isToolAllowedByRunOptions(toolCall.tool, options)) {
+      const blockedStep: AgentStep = {
+        type: 'error',
+        content: `Tool blocked by this scoped agent: ${toolCall.tool}`,
+        toolName: toolCall.tool,
+        timestamp: Date.now(),
+      };
+      session.steps.push(blockedStep);
+      onStep(blockedStep);
+
+      messages.push({
+        role: 'user',
+        content: `[Tool Blocked: ${toolCall.tool}]\nThis scoped agent may only use: ${options.allowedTools?.join(', ') ?? 'the visible tool set'}. Continue with an allowed tool or explain the limitation.`,
+      });
+      continue;
+    }
 
     if (isAgentSkillToolName(toolCall.tool) && !config.skillsEnabled) {
       const blockedStep: AgentStep = {

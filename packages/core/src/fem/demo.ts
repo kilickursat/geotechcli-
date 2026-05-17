@@ -1,7 +1,10 @@
 import type {
   FemAnalysisCase,
   FemAssumption,
+  FemResultDataset,
+  FemResultField,
   FemResultManifest,
+  FemResultStep,
   FemVisualizationFrame,
   FemVisualizationMesh,
 } from './types.js';
@@ -504,6 +507,121 @@ function buildExcavationVisualizationMesh(
   };
 }
 
+function buildRaftResultFields(): FemResultField[] {
+  return [
+    {
+      id: 'vertical_settlement',
+      label: 'Vertical settlement',
+      unit: 'mm',
+      location: 'surface_nodes',
+      quantity: 'displacement',
+      component: 'z',
+      signConvention: 'Positive values represent downward settlement magnitude in the viewer color scale.',
+    },
+  ];
+}
+
+function buildRaftResultSteps(): FemResultStep[] {
+  return [
+    {
+      id: 'final',
+      label: 'Final load step',
+      index: 0,
+    },
+  ];
+}
+
+function buildRaftResultDatasets(visualization: FemVisualizationMesh): FemResultDataset[] {
+  return [
+    {
+      id: 'vertical_settlement-final',
+      fieldId: 'vertical_settlement',
+      stepId: 'final',
+      values: visualization.disp,
+      stride: 3,
+      source: 'visualization.disp',
+    },
+  ];
+}
+
+function buildExcavationResultFields(): FemResultField[] {
+  return [
+    {
+      id: 'surface_settlement',
+      label: 'Surface settlement',
+      unit: 'mm',
+      location: 'surface_nodes',
+      quantity: 'displacement',
+      component: 'z',
+      signConvention: 'Positive values represent downward settlement magnitude in the viewer color scale.',
+    },
+    {
+      id: 'horizontal_displacement',
+      label: 'Horizontal displacement',
+      unit: 'mm',
+      location: 'surface_nodes',
+      quantity: 'displacement',
+      component: 'magnitude',
+      signConvention: 'Magnitude of inward horizontal movement toward the excavation.',
+    },
+    {
+      id: 'wall_deflection_proxy',
+      label: 'Wall deflection proxy',
+      unit: 'mm',
+      location: 'surface_nodes',
+      quantity: 'displacement',
+      component: 'magnitude',
+      signConvention: 'Screening proxy for wall-adjacent lateral movement; not a wall design result.',
+    },
+    {
+      id: 'support_reaction',
+      label: 'Support reaction',
+      unit: 'kN',
+      location: 'envelope',
+      quantity: 'reaction',
+      signConvention: 'Total deterministic preview support reaction from the result envelope.',
+    },
+  ];
+}
+
+function buildExcavationResultSteps(caseFile: FemAnalysisCase): FemResultStep[] {
+  return (caseFile.geometry.excavation?.stages ?? []).map((stage, index) => ({
+    id: stage.id,
+    label: stage.label,
+    index,
+    analysisStageId: stage.id,
+    depthM: stage.depthM,
+  }));
+}
+
+function buildExcavationResultDatasets(
+  visualization: FemVisualizationMesh,
+  steps: FemResultStep[],
+  supportReactionKn: number,
+): FemResultDataset[] {
+  const stepByIndex = new Map(steps.map((step) => [step.index, step.id]));
+  const frameDatasets = (visualization.frames ?? []).map((frame) => ({
+    id: `${frame.field}-${stepByIndex.get(frame.stageIndex ?? 0) ?? 'final'}`,
+    fieldId: frame.field,
+    stepId: stepByIndex.get(frame.stageIndex ?? 0),
+    values: frame.disp,
+    stride: 3 as const,
+    source: 'visualization.frame' as const,
+  }));
+
+  return [
+    ...frameDatasets,
+    {
+      id: 'support_reaction-final',
+      fieldId: 'support_reaction',
+      stepId: steps[steps.length - 1]?.id,
+      values: [supportReactionKn],
+      stride: 1,
+      source: 'envelope',
+    },
+  ];
+}
+
 export function runBuiltinElasticRaftDemo(caseFile = buildRaftDemoAnalysisCase()): FemResultManifest {
   const validation = validateFemAnalysisCase(caseFile);
   const material = caseFile.materials[0];
@@ -561,6 +679,9 @@ export function runBuiltinElasticRaftDemo(caseFile = buildRaftDemoAnalysisCase()
       reactionBalanceRatio: 1,
     },
     visualization,
+    resultFields: buildRaftResultFields(),
+    steps: buildRaftResultSteps(),
+    datasets: buildRaftResultDatasets(visualization),
     assumptions: [
       ...caseFile.assumptions,
       ...caseFile.loads.flatMap((item) => item.assumptions),
@@ -598,6 +719,7 @@ export function runBuiltinElasticExcavationDemo(
     maxHorizontalDisplacementMm,
     maxWallDeflectionMm,
   );
+  const steps = buildExcavationResultSteps(caseFile);
 
   return {
     schemaVersion: 'fem-result-manifest.v0',
@@ -637,6 +759,9 @@ export function runBuiltinElasticExcavationDemo(
       stageCount: excavation.stages.length,
     },
     visualization,
+    resultFields: buildExcavationResultFields(),
+    steps,
+    datasets: buildExcavationResultDatasets(visualization, steps, supportReactionKn),
     assumptions: [
       ...caseFile.assumptions,
       ...caseFile.loads.flatMap((item) => item.assumptions),

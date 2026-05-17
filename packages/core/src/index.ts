@@ -57,6 +57,7 @@ export {
   type AgentStep,
   type AgentSession,
   type AgentCallback,
+  type AgentRunOptions,
 } from './agents/brain.js';
 export {
   runSwarm,

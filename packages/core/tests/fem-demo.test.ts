@@ -55,6 +55,14 @@ describe('experimental FEM raft demo', () => {
     expect(manifest.visualization.base.length).toBe(manifest.visualization.color.length);
     expect(manifest.visualization.tri.length).toBeGreaterThan(0);
     expect(manifest.visualization.edge.length).toBeGreaterThan(0);
+    expect(manifest.resultFields?.map((field) => field.id)).toEqual(['vertical_settlement']);
+    expect(manifest.steps?.map((step) => step.id)).toEqual(['final']);
+    expect(manifest.datasets?.[0]).toMatchObject({
+      fieldId: 'vertical_settlement',
+      stepId: 'final',
+      stride: 3,
+      source: 'visualization.disp',
+    });
     expect(validation.status).toBe('review');
     expect(validation.blockers).toBe(0);
   });
@@ -73,6 +81,30 @@ describe('experimental FEM raft demo', () => {
     expect(manifest.visualization.frames?.map((frame) => frame.field)).toContain('surface_settlement');
     expect(manifest.visualization.frames?.map((frame) => frame.field)).toContain('horizontal_displacement');
     expect(manifest.visualization.frames?.map((frame) => frame.fieldLabel)).toContain('Wall deflection proxy');
+    expect(manifest.resultFields?.map((field) => field.id)).toEqual([
+      'surface_settlement',
+      'horizontal_displacement',
+      'wall_deflection_proxy',
+      'support_reaction',
+    ]);
+    expect(manifest.steps?.map((step) => step.id)).toEqual(['stage-1', 'stage-2', 'stage-3']);
+    expect(manifest.datasets?.filter((dataset) => dataset.source === 'visualization.frame')).toHaveLength(9);
+    expect(manifest.datasets?.some((dataset) => dataset.fieldId === 'support_reaction' && dataset.source === 'envelope')).toBe(true);
+    expect(validation.status).toBe('review');
+    expect(validation.blockers).toBe(0);
+  });
+
+  it('keeps new result metadata optional for older v0 manifests', () => {
+    const manifest = runBuiltinElasticExcavationDemo();
+    const legacyCompatible: FemResultManifest = {
+      ...manifest,
+      resultFields: undefined,
+      steps: undefined,
+      datasets: undefined,
+    };
+
+    const validation = validateFemResultManifest(legacyCompatible);
+
     expect(validation.status).toBe('review');
     expect(validation.blockers).toBe(0);
   });
@@ -129,6 +161,59 @@ describe('experimental FEM raft demo', () => {
     expect(validateFemResultManifest(invalidFrameLength).status).toBe('blocked');
   });
 
+  it('blocks malformed result field, step, and dataset metadata', () => {
+    const manifest = runBuiltinElasticExcavationDemo();
+    const duplicateField: FemResultManifest = {
+      ...manifest,
+      resultFields: [
+        ...manifest.resultFields!,
+        { ...manifest.resultFields![0] },
+      ],
+    };
+    const unknownField: FemResultManifest = {
+      ...manifest,
+      datasets: [
+        {
+          ...manifest.datasets![0],
+          fieldId: 'unknown-field',
+        },
+      ],
+    };
+    const unknownStep: FemResultManifest = {
+      ...manifest,
+      datasets: [
+        {
+          ...manifest.datasets![0],
+          stepId: 'unknown-step',
+        },
+      ],
+    };
+    const nonFiniteDataset: FemResultManifest = {
+      ...manifest,
+      datasets: [
+        {
+          ...manifest.datasets![0],
+          values: [Number.NaN, ...manifest.datasets![0].values.slice(1)],
+        },
+      ],
+    };
+    const wrongCount: FemResultManifest = {
+      ...manifest,
+      datasets: [
+        {
+          ...manifest.datasets![0],
+          values: manifest.datasets![0].values.slice(3),
+        },
+      ],
+    };
+
+    expect(validateFemResultManifest(duplicateField).status).toBe('blocked');
+    expect(validateFemResultManifest(unknownField).status).toBe('blocked');
+    expect(validateFemResultManifest(unknownStep).status).toBe('blocked');
+    expect(validateFemResultManifest(nonFiniteDataset).status).toBe('blocked');
+    expect(validateFemResultManifest(wrongCount).status).toBe('blocked');
+  });
+
   it('returns blocked findings for malformed external FEM payloads', () => {
     expect(validateFemAnalysisCase({} as never).status).toBe('blocked');
     expect(validateFemResultManifest({ visualization: {} } as never).status).toBe('blocked');
@@ -157,6 +242,7 @@ describe('experimental FEM raft demo', () => {
     expect(html).toContain('Surface settlement');
     expect(html).toContain('Horizontal displacement');
     expect(html).toContain('Wall deflection proxy');
+    expect(html).toContain('id="legendTitle"');
     expect(html).toContain('Stage 1 - excavate to 2.5 m');
     expect(html).toContain('excavation-deformation-demo');
     expect(html).not.toContain('<script src=');

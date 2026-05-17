@@ -43,7 +43,7 @@ export function renderFemWebglHtml(manifest: FemResultManifest): string {
 <style>
 :root{color-scheme:dark;--bg:#07111f;--panel:#0f1b2d;--panel2:#142238;--text:#e8eef8;--muted:#a8b3c7;--line:#29405f;--accent:#38bdf8;--warn:#f59e0b;--good:#22c55e}
 *{box-sizing:border-box}html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
-#app{position:fixed;inset:0;display:grid;grid-template-columns:minmax(0,1fr) 380px}
+#app{position:fixed;inset:0;display:grid;grid-template-columns:minmax(0,1fr) clamp(300px,27vw,380px)}
 main{position:relative;min-width:0;background:radial-gradient(circle at 50% 34%,rgba(56,189,248,.14),transparent 36%),linear-gradient(180deg,#020617,#07111f 55%,#0b1220)}
 canvas{width:100%;height:100%;display:block;cursor:grab}canvas:active{cursor:grabbing}
 aside{border-left:1px solid var(--line);background:linear-gradient(180deg,rgba(15,27,45,.96),rgba(7,17,31,.98));padding:20px;overflow:auto;box-shadow:-18px 0 44px rgba(0,0,0,.34)}
@@ -82,7 +82,7 @@ ul{margin:0;padding-left:18px;color:#dbeafe;font-size:12.5px;line-height:1.45}li
     </div>
     <div class="card"><h2>Result envelope</h2><div class="kv" id="stats"></div></div>
     <div class="card"><h2>Validation status</h2><p class="sub"><strong class="${manifest.validation.status === 'blocked' ? 'warn' : ''}">${escapeHtml(status)}</strong> - ${manifest.validation.blockers} blockers, ${manifest.validation.reviewItems} review items</p><ul>${findingRows}</ul></div>
-    <div class="card"><h2>Vertical settlement color</h2><div class="legend"><span>low</span><div class="bar"></div><span>high</span></div><p class="small">Warm colors show greater downward settlement. Displayed deformation is exaggerated by the slider.</p></div>
+    <div class="card"><h2 id="legendTitle">Vertical settlement color</h2><div class="legend"><span id="legendMin">low</span><div class="bar"></div><span id="legendMax">high</span></div><p class="small" id="legendNote">Warm colors show greater downward settlement. Displayed deformation is exaggerated by the slider.</p></div>
     <div class="card"><h2>Assumptions</h2><ul>${assumptionRows}</ul></div>
     <div class="card"><h2>Limitations</h2><ul>${limitationRows}</ul></div>
   </aside>
@@ -91,8 +91,10 @@ ul{margin:0;padding-left:18px;color:#dbeafe;font-size:12.5px;line-height:1.45}li
 const MANIFEST = ${data};
 const DATA = MANIFEST.visualization;
 const FRAMES = Array.isArray(DATA.frames)&&DATA.frames.length?DATA.frames:[{field:'primary',fieldLabel:'Vertical displacement',stageIndex:0,stageLabel:'Final',disp:DATA.disp,color:DATA.color}];
-const FIELD_OPTIONS = Array.from(new Map(FRAMES.map(f=>[f.field,f.fieldLabel||f.field])).entries()).map(([field,label])=>({field,label}));
-const STAGE_OPTIONS = Array.from(new Map(FRAMES.filter(f=>Number.isFinite(f.stageIndex)).map(f=>[f.stageIndex,f.stageLabel||('Stage '+(Number(f.stageIndex)+1))])).entries()).sort((a,b)=>a[0]-b[0]).map(([stageIndex,label])=>({stageIndex,label}));
+const FIELD_META = new Map((Array.isArray(MANIFEST.resultFields)?MANIFEST.resultFields:[]).map(f=>[f.id,f]));
+const STEP_META = new Map((Array.isArray(MANIFEST.steps)?MANIFEST.steps:[]).map(s=>[s.index,s]));
+const FIELD_OPTIONS = Array.from(new Map(FRAMES.map(f=>[f.field,FIELD_META.get(f.field)?.label||f.fieldLabel||f.field])).entries()).map(([field,label])=>({field,label}));
+const STAGE_OPTIONS = Array.from(new Map(FRAMES.filter(f=>Number.isFinite(f.stageIndex)).map(f=>[f.stageIndex,STEP_META.get(Number(f.stageIndex))?.label||f.stageLabel||('Stage '+(Number(f.stageIndex)+1))])).entries()).sort((a,b)=>a[0]-b[0]).map(([stageIndex,label])=>({stageIndex,label}));
 let activeField = FIELD_OPTIONS[0]?.field || 'primary';
 let activeStage = STAGE_OPTIONS[STAGE_OPTIONS.length-1]?.stageIndex ?? 0;
 let canvas = document.getElementById('glcanvas');
@@ -108,6 +110,8 @@ function rotateZ(m,a){const c=Math.cos(a),s=Math.sin(a);return mul(m,[c,s,0,0,-s
 function scaleM(m,s){return mul(m,[s,0,0,0,0,s,0,0,0,0,s,0,0,0,0,1])}
 let rx=-0.92, rz=-0.72, zoom=0.052, deform=120, dragging=false, lx=0, ly=0;
 function activeFrame(){return FRAMES.find(f=>f.field===activeField&&((f.stageIndex??0)===activeStage))||FRAMES.find(f=>f.field===activeField)||FRAMES[0];}
+function activeFieldMeta(){return FIELD_META.get(activeField)||{label:activeFrame()?.fieldLabel||'Result field',unit:'',signConvention:'Displayed deformation is exaggerated by the slider.'};}
+function updateLegend(){const meta=activeFieldMeta();const title=document.getElementById('legendTitle'),min=document.getElementById('legendMin'),max=document.getElementById('legendMax'),note=document.getElementById('legendNote');if(title)title.textContent=(meta.label||'Result field')+' color';if(min)min.textContent=meta.unit?'low '+meta.unit:'low';if(max)max.textContent=meta.unit?'high '+meta.unit:'high';if(note)note.textContent=meta.signConvention||'Warm colors show greater result magnitude. Displayed deformation is exaggerated by the slider.';}
 function resizeCanvas(){const dpr=Math.min(window.devicePixelRatio||1,2);const rect=canvas.getBoundingClientRect();const w=Math.max(1,Math.floor((rect.width||canvas.clientWidth||window.innerWidth)*dpr)),h=Math.max(1,Math.floor((rect.height||canvas.clientHeight||window.innerHeight)*dpr));if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}}
 function markRenderer(name,message){document.body.dataset.renderer=name;if(message){fallback.textContent=message;fallback.style.display='block';}else{fallback.style.display='none';}}
 function shader(type, src){ const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s); if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){ throw new Error(gl.getShaderInfoLog(s)||'shader compile failed'); } return s; }
@@ -132,8 +136,9 @@ document.getElementById('scale').addEventListener('input',e=>updateScale(e.targe
 document.querySelectorAll('button[data-scale]').forEach(b=>b.addEventListener('click',()=>updateScale(b.dataset.scale)));
 document.getElementById('reset').addEventListener('click',()=>{rx=-0.92;rz=-0.72;zoom=0.052;updateScale(120);});
 document.getElementById('wire').addEventListener('change',draw);document.getElementById('patch').addEventListener('change',draw);window.addEventListener('resize',draw);
-function setupFrameControls(){const fieldBox=document.getElementById('fieldControls'),fieldSelect=document.getElementById('fieldSelect'),stageBox=document.getElementById('stageControls'),stageSlider=document.getElementById('stageSlider'),stageLabel=document.getElementById('stageLabel');if(fieldBox&&fieldSelect&&FIELD_OPTIONS.length>1){fieldBox.style.display='block';fieldSelect.innerHTML=FIELD_OPTIONS.map(f=>'<option value="'+f.field+'">'+f.label+'</option>').join('');fieldSelect.value=activeField;fieldSelect.addEventListener('change',e=>{activeField=e.target.value;draw();});}if(stageBox&&stageSlider&&stageLabel&&STAGE_OPTIONS.length>1){stageBox.style.display='block';stageSlider.max=String(STAGE_OPTIONS.length-1);stageSlider.value=String(STAGE_OPTIONS.findIndex(s=>s.stageIndex===activeStage));stageLabel.textContent=STAGE_OPTIONS.find(s=>s.stageIndex===activeStage)?.label||'Final';stageSlider.addEventListener('input',e=>{const selected=STAGE_OPTIONS[Number(e.target.value)]||STAGE_OPTIONS[0];activeStage=selected.stageIndex;stageLabel.textContent=selected.label;draw();});}}
+function setupFrameControls(){const fieldBox=document.getElementById('fieldControls'),fieldSelect=document.getElementById('fieldSelect'),stageBox=document.getElementById('stageControls'),stageSlider=document.getElementById('stageSlider'),stageLabel=document.getElementById('stageLabel');if(fieldBox&&fieldSelect&&FIELD_OPTIONS.length>1){fieldBox.style.display='block';fieldSelect.innerHTML=FIELD_OPTIONS.map(f=>'<option value="'+f.field+'">'+f.label+'</option>').join('');fieldSelect.value=activeField;fieldSelect.addEventListener('change',e=>{activeField=e.target.value;updateLegend();draw();});}if(stageBox&&stageSlider&&stageLabel&&STAGE_OPTIONS.length>1){stageBox.style.display='block';stageSlider.max=String(STAGE_OPTIONS.length-1);stageSlider.value=String(STAGE_OPTIONS.findIndex(s=>s.stageIndex===activeStage));stageLabel.textContent=STAGE_OPTIONS.find(s=>s.stageIndex===activeStage)?.label||'Final';stageSlider.addEventListener('input',e=>{const selected=STAGE_OPTIONS[Number(e.target.value)]||STAGE_OPTIONS[0];activeStage=selected.stageIndex;stageLabel.textContent=selected.label;updateLegend();draw();});}}
 setupFrameControls();
+updateLegend();
 const statRows=[['Max settlement',MANIFEST.envelope.maxSettlementMm.toFixed(2)+' mm']];if(Number.isFinite(MANIFEST.envelope.maxHorizontalDisplacementMm)){statRows.push(['Max horizontal displacement',MANIFEST.envelope.maxHorizontalDisplacementMm.toFixed(2)+' mm']);}if(Number.isFinite(MANIFEST.envelope.maxWallDeflectionMm)){statRows.push(['Max wall deflection proxy',MANIFEST.envelope.maxWallDeflectionMm.toFixed(2)+' mm']);}if(Number.isFinite(MANIFEST.envelope.stageCount)){statRows.push(['Stages',String(MANIFEST.envelope.stageCount)]);}statRows.push(['Total load / excavated weight',MANIFEST.envelope.totalLoadKn.toFixed(0)+' kN'],['Reaction',MANIFEST.envelope.reactionKn.toFixed(0)+' kN'],['Balance',MANIFEST.envelope.reactionBalanceRatio.toFixed(3)],['Mesh',MANIFEST.mesh.divisions.join(' x ')+' hex8'],['Nodes / elements',MANIFEST.mesh.nodes+' / '+MANIFEST.mesh.elements]);document.getElementById('stats').innerHTML=statRows.map(r=>'<span>'+r[0]+'</span><span>'+r[1]+'</span>').join('');
 requestAnimationFrame(draw);
 </script>

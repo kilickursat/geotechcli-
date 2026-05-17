@@ -29,6 +29,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
 function isFemAnalysisCaseShape(value: unknown): value is FemAnalysisCase {
   if (!isRecord(value)) return false;
   const geometry = value.geometry;
@@ -46,6 +50,148 @@ function isFemAnalysisCaseShape(value: unknown): value is FemAnalysisCase {
     Array.isArray(value.limitations) &&
     Array.isArray(value.evidenceRefs)
   );
+}
+
+function pushUniqueStringFinding(
+  findings: FemValidationFinding[],
+  seen: Set<string>,
+  value: unknown,
+  code: string,
+  label: string,
+): string | undefined {
+  if (!isNonEmptyString(value)) {
+    findings.push(finding('blocker', `${code}.missing`, `${label} must be a non-empty string.`));
+    return undefined;
+  }
+  if (seen.has(value)) {
+    findings.push(finding('blocker', `${code}.duplicate`, `${label} "${value}" is duplicated.`));
+  }
+  seen.add(value);
+  return value;
+}
+
+function validateOptionalResultMetadata(
+  findings: FemValidationFinding[],
+  manifest: FemResultManifest,
+  nodeCount: number,
+  outlineNodeCount: number,
+): void {
+  const { resultFields, steps, datasets } = manifest;
+  if (resultFields != null && !Array.isArray(resultFields)) {
+    findings.push(finding('blocker', 'result.fields.shape-invalid', 'resultFields must be an array when present.'));
+  }
+  if (steps != null && !Array.isArray(steps)) {
+    findings.push(finding('blocker', 'result.steps.shape-invalid', 'steps must be an array when present.'));
+  }
+  if (datasets != null && !Array.isArray(datasets)) {
+    findings.push(finding('blocker', 'result.datasets.shape-invalid', 'datasets must be an array when present.'));
+  }
+  if (!Array.isArray(resultFields) && !Array.isArray(steps) && !Array.isArray(datasets)) {
+    return;
+  }
+
+  const validFieldLocations = new Set(['surface_nodes', 'outline_nodes', 'envelope']);
+  const validFieldQuantities = new Set(['displacement', 'reaction', 'load', 'stage_count']);
+  const validDatasetSources = new Set(['visualization.disp', 'visualization.frame', 'envelope']);
+  const fieldIds = new Set<string>();
+  const stepIds = new Set<string>();
+  const datasetIds = new Set<string>();
+  const excavationStageIds = new Set(manifest.analysisCase.geometry.excavation?.stages.map((stage) => stage.id) ?? []);
+  const stepIdByIndex = new Map<number, string>();
+  const fieldLocations = new Map<string, string>();
+
+  if (Array.isArray(resultFields)) {
+    for (const [index, fieldInfo] of resultFields.entries()) {
+      const id = pushUniqueStringFinding(findings, fieldIds, fieldInfo.id, `result.fields.${index}.id`, 'Result field id');
+      if (!isNonEmptyString(fieldInfo.label)) {
+        findings.push(finding('blocker', `result.fields.${index}.label.missing`, 'Result field label must be a non-empty string.'));
+      }
+      if (!isNonEmptyString(fieldInfo.unit)) {
+        findings.push(finding('blocker', `result.fields.${index}.unit.missing`, 'Result field unit must be a non-empty string.'));
+      }
+      if (!validFieldLocations.has(fieldInfo.location)) {
+        findings.push(finding('blocker', `result.fields.${index}.location.invalid`, `Unsupported result field location: ${String(fieldInfo.location)}.`));
+      }
+      if (!validFieldQuantities.has(fieldInfo.quantity)) {
+        findings.push(finding('blocker', `result.fields.${index}.quantity.invalid`, `Unsupported result field quantity: ${String(fieldInfo.quantity)}.`));
+      }
+      if (id) fieldLocations.set(id, fieldInfo.location);
+    }
+  }
+
+  if (Array.isArray(steps)) {
+    for (const [index, step] of steps.entries()) {
+      const id = pushUniqueStringFinding(findings, stepIds, step.id, `result.steps.${index}.id`, 'Result step id');
+      if (!isNonEmptyString(step.label)) {
+        findings.push(finding('blocker', `result.steps.${index}.label.missing`, 'Result step label must be a non-empty string.'));
+      }
+      if (!Number.isInteger(step.index) || step.index < 0) {
+        findings.push(finding('blocker', `result.steps.${index}.index.invalid`, 'Result step index must be an integer greater than or equal to zero.'));
+      } else if (id) {
+        stepIdByIndex.set(step.index, id);
+      }
+      if (step.analysisStageId && !excavationStageIds.has(step.analysisStageId)) {
+        findings.push(finding('blocker', `result.steps.${index}.stage-unknown`, `Result step references unknown excavation stage ${step.analysisStageId}.`));
+      }
+      if (step.depthM != null && (!Number.isFinite(step.depthM) || step.depthM < 0)) {
+        findings.push(finding('blocker', `result.steps.${index}.depth-invalid`, 'Result step depth must be finite and non-negative when present.'));
+      }
+    }
+  }
+
+  if (Array.isArray(datasets)) {
+    for (const [index, dataset] of datasets.entries()) {
+      pushUniqueStringFinding(findings, datasetIds, dataset.id, `result.datasets.${index}.id`, 'Result dataset id');
+      if (!fieldIds.has(dataset.fieldId)) {
+        findings.push(finding('blocker', `result.datasets.${index}.field-unknown`, `Result dataset references unknown field ${String(dataset.fieldId)}.`));
+      }
+      if (dataset.stepId != null && !stepIds.has(dataset.stepId)) {
+        findings.push(finding('blocker', `result.datasets.${index}.step-unknown`, `Result dataset references unknown step ${String(dataset.stepId)}.`));
+      }
+      if (!Array.isArray(dataset.values) || dataset.values.length === 0) {
+        findings.push(finding('blocker', `result.datasets.${index}.values.empty`, 'Result dataset values must be a non-empty array.'));
+        continue;
+      }
+      if (dataset.values.some((value) => !Number.isFinite(value))) {
+        findings.push(finding('blocker', `result.datasets.${index}.values.non-finite`, 'Result dataset contains non-finite values.'));
+      }
+      if (dataset.stride !== 1 && dataset.stride !== 3) {
+        findings.push(finding('blocker', `result.datasets.${index}.stride.invalid`, 'Result dataset stride must be 1 or 3.'));
+        continue;
+      }
+      if (dataset.values.length % dataset.stride !== 0) {
+        findings.push(finding('blocker', `result.datasets.${index}.stride-count-invalid`, 'Result dataset value length must be divisible by stride.'));
+      }
+      if (!validDatasetSources.has(dataset.source)) {
+        findings.push(finding('blocker', `result.datasets.${index}.source.invalid`, `Unsupported result dataset source: ${String(dataset.source)}.`));
+      }
+
+      const location = fieldLocations.get(dataset.fieldId);
+      const valueCount = dataset.values.length / dataset.stride;
+      if (location === 'surface_nodes' && valueCount !== nodeCount) {
+        findings.push(finding('blocker', `result.datasets.${index}.surface-count-mismatch`, 'Surface-node dataset values must match visualization base node count.'));
+      }
+      if (location === 'outline_nodes' && valueCount !== outlineNodeCount) {
+        findings.push(finding('blocker', `result.datasets.${index}.outline-count-mismatch`, 'Outline-node dataset values must match outline node count.'));
+      }
+      if (dataset.source === 'envelope' && dataset.values.length !== 1) {
+        findings.push(finding('blocker', `result.datasets.${index}.envelope-count-invalid`, 'Envelope datasets must contain exactly one value.'));
+      }
+    }
+  }
+
+  if (Array.isArray(resultFields) && Array.isArray(steps) && Array.isArray(datasets) && Array.isArray(manifest.visualization.frames)) {
+    const datasetKeys = new Set(datasets.map((dataset) => `${dataset.fieldId}:${dataset.stepId ?? ''}`));
+    for (const [index, frame] of manifest.visualization.frames.entries()) {
+      if (!fieldIds.has(frame.field)) {
+        findings.push(finding('blocker', `result.frames.${index}.field-metadata-missing`, `Frame field ${frame.field} has no resultFields metadata.`));
+      }
+      const stepId = stepIdByIndex.get(frame.stageIndex ?? 0);
+      if (stepId && !datasetKeys.has(`${frame.field}:${stepId}`)) {
+        findings.push(finding('blocker', `result.frames.${index}.dataset-missing`, `Frame ${frame.field}/${stepId} has no matching dataset metadata.`));
+      }
+    }
+  }
 }
 
 function isFemResultManifestShape(value: unknown): value is FemResultManifest {
@@ -333,6 +479,8 @@ export function validateFemResultManifest(manifest: FemResultManifest): FemValid
       }
     }
   }
+
+  validateOptionalResultMetadata(findings, manifest, nodeCount, outlineNodeCount);
 
   const caseValidation = validateFemAnalysisCase(manifest.analysisCase);
   findings.push(...caseValidation.findings);

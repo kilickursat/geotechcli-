@@ -5,11 +5,18 @@ import { join } from 'node:path';
 import { Command } from 'commander';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+const coreMocks = vi.hoisted(() => ({
+  buildLLMConfig: vi.fn(),
+  runAgent: vi.fn(),
+}));
+
 vi.mock('@geotechcli/core', async () => {
   const fem = await vi.importActual<typeof import('../../core/src/fem/index.js')>('../../core/src/fem/index.js');
   return {
     ...fem,
-    GEOTECHCLI_VERSION: '0.4.55',
+    buildLLMConfig: coreMocks.buildLLMConfig,
+    runAgent: coreMocks.runAgent,
+    GEOTECHCLI_VERSION: '0.4.58',
     GLOBAL_FLAG_DEFINITIONS: [
       { key: 'json', option: '--json', description: 'json' },
       { key: 'plot', option: '--plot', description: 'plot' },
@@ -38,7 +45,62 @@ describe('registerFemCommand', () => {
 
   afterEach(async () => {
     vi.restoreAllMocks();
+    vi.clearAllMocks();
     await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+  });
+
+  it('runs a scoped FEM agent with only FEM planning tools', async () => {
+    coreMocks.buildLLMConfig.mockReturnValue({
+      provider: 'hosted-beta',
+      apiKey: '',
+      timeout: 60000,
+      skillsEnabled: true,
+    });
+    coreMocks.runAgent.mockResolvedValue({
+      steps: [{ type: 'answer', content: 'Use excavation-deformation and run the deterministic demo after review.', timestamp: Date.now() }],
+      context: {},
+      totalTokens: 5,
+      totalLatencyMs: 50,
+    });
+    const registerFemCommand = await loadRegisterFemCommand();
+    const program = new Command();
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    program.exitOverride();
+    registerFemCommand(program);
+
+    await program.parseAsync([
+      'fem',
+      'agent',
+      'draft',
+      'a',
+      'braced',
+      'excavation',
+      '--objective',
+      'excavation-deformation',
+      '--json',
+    ], { from: 'user' });
+
+    expect(coreMocks.runAgent).toHaveBeenCalledWith(
+      expect.stringContaining('Preferred FEM objective hint: excavation-deformation'),
+      expect.objectContaining({ skillsEnabled: false }),
+      expect.any(Function),
+      undefined,
+      expect.objectContaining({
+        allowedTools: [
+          'list_fem_capabilities',
+          'prepare_fem_analysis_case',
+          'validate_fem_analysis_case',
+        ],
+      }),
+    );
+    const payload = JSON.parse(collectLogText(logSpy).trim());
+    expect(payload.kind).toBe('geotech-fem-agent-result');
+    expect(payload.allowedTools).toEqual([
+      'list_fem_capabilities',
+      'prepare_fem_analysis_case',
+      'validate_fem_analysis_case',
+    ]);
+    expect(payload.answer).toContain('deterministic demo');
   });
 
   it('requires explicit experimental acknowledgement', async () => {
@@ -91,6 +153,9 @@ describe('registerFemCommand', () => {
     expect(payload.resultPath).toBe(resultPath);
     expect(payload.manifest.envelope.maxSettlementMm).toBeGreaterThan(0);
     expect(manifest.schemaVersion).toBe('fem-result-manifest.v0');
+    expect(manifest.resultFields.map((field: { id: string }) => field.id)).toEqual(['vertical_settlement']);
+    expect(manifest.steps.map((step: { id: string }) => step.id)).toEqual(['final']);
+    expect(manifest.datasets[0]).toMatchObject({ fieldId: 'vertical_settlement', source: 'visualization.disp' });
     expect(html).toContain('Experimental deterministic FEM preview');
     expect(html).toContain('const MANIFEST = ');
     expect(html).toContain('raft-settlement-demo');
@@ -135,6 +200,9 @@ describe('registerFemCommand', () => {
     expect(payload.manifest.analysisCase.objective).toBe('excavation_deformation');
     expect(payload.manifest.envelope.maxWallDeflectionMm).toBeGreaterThan(0);
     expect(manifest.schemaVersion).toBe('fem-result-manifest.v0');
+    expect(manifest.resultFields.map((field: { id: string }) => field.id)).toContain('wall_deflection_proxy');
+    expect(manifest.steps).toHaveLength(3);
+    expect(manifest.datasets.filter((dataset: { source: string }) => dataset.source === 'visualization.frame')).toHaveLength(9);
     expect(html).toContain('Experimental 3D FEM staged excavation deformation demo');
     expect(html).toContain('id="fieldSelect"');
     expect(html).toContain('id="stageSlider"');

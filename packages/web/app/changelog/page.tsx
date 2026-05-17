@@ -8,6 +8,17 @@ const releases = [
     date: '2026-05-17',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added optional resultFields, steps, and datasets metadata to FEM result manifests so future FEM previews can share one viewer and validation contract' },
+      { type: 'fix', text: 'Kept the existing visualization disp/color/frames contract backward-compatible while validating malformed result metadata when present' },
+      { type: 'feat', text: 'Added geotech fem agent as a scoped LLM FEM planning surface that can list FEM capabilities, prepare analysis-case drafts, and validate cases only' },
+      { type: 'feat', text: 'Added scripts/smoke-fem-webgl.mjs and npm run smoke:fem:webgl for reusable desktop/mobile FEM artifact QA' },
+    ],
+  },
+  {
+    version: '0.4.57',
+    date: '2026-05-17',
+    tag: '0.4.57 Release',
+    changes: [
       { type: 'feat', text: 'Added geotech fem demo excavation --experimental as the second deterministic 3D FEM/WebGL preview for staged excavation deformation screening' },
       { type: 'feat', text: 'Added an excavation analysis-case contract, staged elastic demo runner, finite-result validation, and manifest fields for surface settlement, horizontal displacement, wall-deflection proxy, support reaction, and stage count' },
       { type: 'feat', text: 'Extended the FEM WebGL artifact with optional field and stage controls for staged manifests while preserving the existing raft preview layout' },

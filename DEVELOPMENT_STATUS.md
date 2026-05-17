@@ -4,7 +4,7 @@ Last updated: 2026-05-17
 
 ## Current Work
 
-Preparing v0.4.57 locally on `strong-beta` after publishing v0.4.56. The current engineering track is provider-neutral evidence, standards-aware GroundModel readiness, GroundModel spatial and engineering visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, the PDF/page evidence benchmark foundation, and experimental deterministic FEM/WebGL contracts so future OCR/vision, BYOK-provider, and GroundModel-to-calculation changes can be measured and routed without asking LLMs to invent calculations.
+Preparing v0.4.58 locally on `strong-beta` after publishing v0.4.57; the v0.4.58 FEM agent brain and manifest metadata slice is implemented and locally verified. The current engineering track is provider-neutral evidence, standards-aware GroundModel readiness, GroundModel spatial and engineering visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, the PDF/page evidence benchmark foundation, and experimental deterministic FEM/WebGL contracts so future OCR/vision, BYOK-provider, and GroundModel-to-calculation changes can be measured and routed without asking LLMs to invent calculations.
 
 Current focus:
 
@@ -33,6 +33,7 @@ Current focus:
 - Attach standards-profile assumptions and opt-in non-executing calculation input drafts to GroundModel readiness so downstream calculations are prepared but still review-gated.
 - Keep experimental FEM previews deterministic, validation-gated, and clearly separated from production design calculations while the GroundModel-to-FEM routing contract is developed.
 - Expose FEM to agents as deterministic capability/routing/validation tools so LLMs and swarm roles plan and review FEM work instead of inventing solver math.
+- Keep `geotech fem agent` as a scoped FEM planning brain that can list, draft, and validate FEM cases but cannot run solvers or invent result manifests.
 - Keep the experimental FEM artifact screenshot-testable with Playwright; headless Chromium may use the deterministic Canvas fallback when WebGL exposes a zero-size drawing buffer.
 - Keep the bundled strong-beta skill catalog repairable on first use so direct skill commands and `--skills` agent sessions can see the complete approved catalog after partial installs.
 - Route optional swarm runs through a deterministic WorkspaceScout, DataEngineer, GroundModeler, StandardsChecker, DesignEngineer, RiskReviewer, and ReportEngineer plan over workspace evidence, standards readiness, calculation drafts, approved executable skills, and blocked review gates.
@@ -41,6 +42,15 @@ Current focus:
 - Keep the legacy Modal deploy workflow present but disabled by default.
 
 ## Done So Far
+
+### v0.4.58 FEM Agent Brain and Manifest Metadata
+
+- Published v0.4.57 to `strong-beta` with tag `v0.4.57` before opening the FEM manifest and scoped-agent slice.
+- Added optional `resultFields`, `steps`, and `datasets` metadata to FEM result manifests while keeping the existing `visualization.disp/color/frames` contract backward-compatible.
+- Added validation for malformed result metadata when present, including duplicate field IDs, unknown field/step references, non-finite values, stride errors, and node-count mismatches.
+- Added `geotech fem agent <task...>` as a scoped LLM FEM brain that can only call `list_fem_capabilities`, `prepare_fem_analysis_case`, and `validate_fem_analysis_case`.
+- Promoted FEM browser QA into `scripts/smoke-fem-webgl.mjs` with the root `npm run smoke:fem:webgl` script for desktop/mobile raft and excavation artifact checks.
+- Verified v0.4.58 locally with focused FEM manifest/scoped-agent/routing/CLI tests, full core and CLI Vitest suites using the thread pool, release consistency, monorepo build, web smoke, Cloudflare web build, and Playwright desktop/mobile FEM artifact smoke for raft and staged excavation previews.
 
 ### v0.4.57 Experimental Excavation FEM Preview
 
