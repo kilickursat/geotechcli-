@@ -2,6 +2,8 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { Command } from 'commander';
 import {
+  analyzeWorkspace,
+  buildFemDraftInputFromReadiness,
   buildExcavationDemoAnalysisCase,
   buildLLMConfig,
   buildRaftDemoAnalysisCase,
@@ -13,9 +15,11 @@ import {
   validateFemResultManifest,
   type AgentStep,
   type FemAnalysisCaseDraft,
+  type FemGroundModelDraftBridge,
   type FemResultManifest,
   type FemRouteObjective,
   type PrepareFemAnalysisCaseDraftInput,
+  type ProjectManifest,
 } from '@geotechcli/core';
 import {
   banner,
@@ -72,6 +76,10 @@ interface FemDraftJsonEnvelope {
   schemaVersion: 'fem-draft-command.v0';
   objective: FemRouteObjective;
   draft: FemAnalysisCaseDraft;
+  workspace?: {
+    rootPath: string;
+    bridge: FemGroundModelDraftBridge;
+  };
   draftPath?: string;
   casePath?: string;
   warnings: string[];
@@ -139,8 +147,96 @@ function parseFemDraftInput(value: unknown): Partial<PrepareFemAnalysisCaseDraft
   return parsed as Partial<PrepareFemAnalysisCaseDraftInput>;
 }
 
-function buildFemDraftInput(objective: FemRouteObjective, opts: Record<string, unknown>): PrepareFemAnalysisCaseDraftInput {
-  const parsed = parseFemDraftInput(opts.input);
+function mergeFemDraftInputs(
+  base: Partial<PrepareFemAnalysisCaseDraftInput>,
+  override: Partial<PrepareFemAnalysisCaseDraftInput>,
+): Partial<PrepareFemAnalysisCaseDraftInput> {
+  return {
+    ...base,
+    ...override,
+    geometry: {
+      ...(base.geometry ?? {}),
+      ...(override.geometry ?? {}),
+    },
+    excavation: {
+      ...(base.excavation ?? {}),
+      ...(override.excavation ?? {}),
+    },
+    load: {
+      ...(base.load ?? {}),
+      ...(override.load ?? {}),
+    },
+    material: {
+      ...(base.material ?? {}),
+      ...(override.material ?? {}),
+    },
+    groundwater: {
+      ...(base.groundwater ?? {}),
+      ...(override.groundwater ?? {}),
+    },
+    evidenceRefs: override.evidenceRefs ?? base.evidenceRefs ?? [],
+  };
+}
+
+function workflowForFemObjective(objective: FemRouteObjective): 'fem-foundation-settlement' | 'fem-excavation-deformation' | null {
+  if (objective === 'foundation-settlement') return 'fem-foundation-settlement';
+  if (objective === 'excavation-deformation') return 'fem-excavation-deformation';
+  return null;
+}
+
+async function loadFemWorkspaceBridge(
+  objective: FemRouteObjective,
+  workspace: unknown,
+): Promise<{ manifest: ProjectManifest; bridge: FemGroundModelDraftBridge } | undefined> {
+  if (typeof workspace !== 'string' || !workspace.trim()) return undefined;
+  const workflowName = workflowForFemObjective(objective);
+  if (!workflowName) {
+    throw new Error(`--workspace FEM prefill is only available for implemented routes: foundation-settlement and excavation-deformation.`);
+  }
+  const manifest = await analyzeWorkspace(workspace, { includeCalculationInputDrafts: true });
+  if (!manifest.groundModel || !manifest.verifier) {
+    throw new Error(`Workspace did not produce GroundModel readiness for FEM drafting: ${workspace}`);
+  }
+  const workflow = manifest.verifier.calculationReadiness.workflows.find((item) => item.workflow === workflowName);
+  if (!workflow) {
+    throw new Error(`Workspace readiness did not include ${workflowName}.`);
+  }
+  return {
+    manifest,
+    bridge: buildFemDraftInputFromReadiness(workflow, manifest.groundModel),
+  };
+}
+
+function summarizeFemWorkspaceForAgent(
+  manifest: ProjectManifest,
+  bridge?: FemGroundModelDraftBridge,
+): string {
+  const femWorkflows = manifest.verifier?.calculationReadiness.workflows
+    .filter((workflow) => workflow.workflow === 'fem-foundation-settlement' || workflow.workflow === 'fem-excavation-deformation')
+    ?? [];
+  const workflowLines = femWorkflows.map((workflow) => [
+    `- ${workflow.workflow}: ${workflow.status} (${workflow.score}/100)`,
+    `  missing: ${workflow.missing.join(', ') || 'none'}`,
+    `  draft inputs: ${workflow.inputDraft?.missingUserInputs.join(', ') || 'none'}`,
+    `  evidence: ${workflow.evidenceIds.join(', ') || 'none'}`,
+  ].join('\n'));
+
+  return [
+    'FEM workspace evidence context:',
+    `Root: ${manifest.rootPath}`,
+    manifest.groundModel ? `GroundModel: ${manifest.groundModel.stats.boreholes} boreholes, ${manifest.groundModel.stats.strata} strata, ${manifest.groundModel.stats.parameters} parameters, ${manifest.groundModel.stats.evidenceRefs} evidence refs` : 'GroundModel: unavailable',
+    workflowLines.length > 0 ? `FEM readiness:\n${workflowLines.join('\n')}` : 'FEM readiness: unavailable',
+    bridge ? `Prepared deterministic FEM draft prefill:\n${bridge.summary}\nInput JSON: ${JSON.stringify(bridge.input)}` : '',
+    'Rule: workspace evidence may prefill material, groundwater, and evidenceRefs only. Geometry, load, staging, mesh intent, and design approval require explicit user confirmation.',
+  ].filter(Boolean).join('\n\n');
+}
+
+function buildFemDraftInput(
+  objective: FemRouteObjective,
+  opts: Record<string, unknown>,
+  baseInput: Partial<PrepareFemAnalysisCaseDraftInput> = {},
+): PrepareFemAnalysisCaseDraftInput {
+  const parsed = mergeFemDraftInputs(baseInput, parseFemDraftInput(opts.input));
   const geometry = {
     ...(parsed.geometry ?? {}),
     raftLengthM: parseNumberOption(opts.raftLength, '--raft-length') ?? parsed.geometry?.raftLengthM,
@@ -206,11 +302,12 @@ function buildWarnings(manifest: FemResultManifest): string[] {
   ];
 }
 
-function buildFemAgentTask(task: string, objective?: string): string {
+function buildFemAgentTask(task: string, objective?: string, workspaceSummary?: string): string {
   return [
     'FEM planning task:',
     task,
     objective ? `Preferred FEM objective hint: ${objective}` : '',
+    workspaceSummary ? `\n${workspaceSummary}` : '',
     '',
     'Use only geotechCLI FEM capability, draft, and validation tools.',
     'Do not invent FEM displacement, reaction, mesh, stage, or result-envelope values.',
@@ -432,6 +529,7 @@ export function registerFemCommand(program: Command): void {
     .description('Prepare a validated experimental FEM analysis-case draft without running a solver')
     .argument('<objective>', 'FEM objective, such as foundation-settlement or excavation-deformation')
     .option('--input <jsonOrFile>', 'JSON object string or path containing prepare_fem_analysis_case-style inputs')
+    .option('--workspace <dir>', 'Analyze a workspace and prefill FEM draft inputs from GroundModel readiness evidence')
     .option('--demo-defaults', 'Use built-in demo defaults for implemented demo routes')
     .option('--case-output <file>', 'Write the analysis_case JSON only when the draft has a validated case')
     .option('--raft-length <m>', 'Foundation-settlement raft length in metres')
@@ -459,6 +557,7 @@ export function registerFemCommand(program: Command): void {
     geotech fem draft foundation-settlement --raft-length 10 --raft-width 8 --pressure 150 --json
     geotech fem draft excavation-deformation --excavation-length 22 --excavation-width 14 --excavation-depth 9 --stage-depths 3,6,9 --support-levels 0,2,5 --json
     geotech fem draft excavation-deformation --input fem-input.json --case-output analysis_case.json
+    geotech fem draft foundation-settlement --workspace ./site-data --raft-length 10 --raft-width 8 --pressure 150 --json
 
   This command prepares a review-gated FEM analysis-case draft only. It does not run a solver,
   does not create WebGL results, and never auto-approves FEM output for design use.
@@ -466,7 +565,8 @@ export function registerFemCommand(program: Command): void {
     .action(async (objectiveArg: string, opts) => {
       const flags = getGlobalFlags(opts);
       const objective = normalizeFemObjective(objectiveArg);
-      const draftInput = buildFemDraftInput(objective, opts as Record<string, unknown>);
+      const workspaceBridge = await loadFemWorkspaceBridge(objective, opts.workspace);
+      const draftInput = buildFemDraftInput(objective, opts as Record<string, unknown>, workspaceBridge?.bridge.input);
       const femDraft = prepareFemAnalysisCaseDraft(draftInput);
 
       let casePath: string | undefined;
@@ -479,6 +579,7 @@ export function registerFemCommand(program: Command): void {
 
       const warnings = [
         'FEM draft only; no solver or WebGL artifact was executed.',
+        ...(workspaceBridge ? ['Workspace GroundModel prefilled material, groundwater, and evidenceRefs only; geometry/load/staging still require user review.'] : []),
         ...femDraft.reviewGates.map((gate) => `Review gate: ${gate}`),
       ];
       let draftPath: string | undefined = typeof flags.output === 'string' && flags.output.trim()
@@ -489,6 +590,10 @@ export function registerFemCommand(program: Command): void {
         schemaVersion: 'fem-draft-command.v0',
         objective,
         draft: femDraft,
+        workspace: workspaceBridge ? {
+          rootPath: workspaceBridge.manifest.rootPath,
+          bridge: workspaceBridge.bridge,
+        } : undefined,
         draftPath,
         casePath,
         warnings,
@@ -517,10 +622,12 @@ export function registerFemCommand(program: Command): void {
     .description('Scoped FEM planning agent that can list, draft, and validate FEM cases without running solvers')
     .argument('<task...>', 'FEM planning or review task in natural language')
     .option('--objective <objective>', 'Optional FEM objective hint, such as foundation-settlement or excavation-deformation')
+    .option('--workspace <dir>', 'Analyze a workspace and attach FEM GroundModel readiness context to the scoped agent')
     .addHelpText('after', `
   Examples:
     geotech fem agent "which FEM route fits a braced excavation near an existing building?"
     geotech fem agent "draft a staged excavation FEM case" --objective excavation-deformation --json
+    geotech fem agent "review FEM readiness for this site" --workspace ./site-data --objective foundation-settlement
 
   This command gives the LLM a narrow FEM brain. It may call only list_fem_capabilities,
   prepare_fem_analysis_case, and validate_fem_analysis_case. It does not run FEM solvers,
@@ -532,12 +639,22 @@ export function registerFemCommand(program: Command): void {
       const objective = typeof opts.objective === 'string' && opts.objective.trim()
         ? opts.objective.trim()
         : undefined;
+      const normalizedObjective = objective ? normalizeFemObjective(objective) : undefined;
+      const workspaceBridge = normalizedObjective
+        ? await loadFemWorkspaceBridge(normalizedObjective, opts.workspace)
+        : undefined;
+      const workspaceSummary = typeof opts.workspace === 'string' && opts.workspace.trim()
+        ? summarizeFemWorkspaceForAgent(
+            workspaceBridge?.manifest ?? await analyzeWorkspace(opts.workspace, { includeCalculationInputDrafts: true }),
+            workspaceBridge?.bridge,
+          )
+        : undefined;
       const config = {
         ...buildLLMConfig(),
         skillsEnabled: false,
       };
 
-      const scopedTask = buildFemAgentTask(task, objective);
+      const scopedTask = buildFemAgentTask(task, objective, workspaceSummary);
       const session = await runAgent(
         scopedTask,
         config,
@@ -546,7 +663,7 @@ export function registerFemCommand(program: Command): void {
         {
           allowedTools: FEM_AGENT_TOOLS,
           systemPromptSuffix:
-            'FEM scoped-agent rule: use only FEM routing, drafting, and validation tools. Never claim to run a solver or produce FEM numerical results unless they came from a deterministic geotechCLI FEM manifest. Recommend `geotech fem demo ... --experimental` when execution or visualization is needed.',
+            'FEM scoped-agent rule: use only FEM routing, drafting, and validation tools. Never claim to run a solver or produce FEM numerical results unless they came from a deterministic geotechCLI FEM manifest. Workspace evidence may prefill material, groundwater, and evidenceRefs only; geometry, load, staging, mesh intent, and design approval require explicit user confirmation. Recommend `geotech fem demo ... --experimental` when execution or visualization is needed.',
         },
       );
       const answer = session.steps.find((step) => step.type === 'answer')?.content ?? '';

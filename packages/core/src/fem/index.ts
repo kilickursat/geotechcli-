@@ -15,5 +15,11 @@ export {
   type FemRouteObjective,
   type PrepareFemAnalysisCaseDraftInput,
 } from './routing.js';
+export {
+  buildFemDraftInputFromReadiness,
+  mapGroundModelEvidenceRefs,
+  stripPlaceholderFemValues,
+  type FemGroundModelDraftBridge,
+} from './ground-model-draft.js';
 export { validateFemAnalysisCase, validateFemResultManifest } from './validation.js';
 export { renderFemWebglHtml } from './webgl.js';

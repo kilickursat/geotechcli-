@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.60] - 2026-05-18
+
+### Evidence-to-FEM Draft Bridge
+
+- Added a GroundModel-to-FEM draft adapter that converts FEM readiness drafts into provider-neutral `prepare_fem_analysis_case` inputs with retained evidence references.
+- Added `geotech fem draft <objective> --workspace <dir>` so workspace evidence can prefill material, groundwater, and source traceability before users provide geometry, loads, and staging.
+- Added `geotech fem agent ... --workspace <dir>` to give the scoped FEM brain FEM-only GroundModel readiness context without widening its tool allowlist.
+- Kept FEM safety boundaries unchanged: no solver auto-run, no design approval, and no LLM-invented displacement, reaction, mesh, or stage values.
+
 ## [0.4.59] - 2026-05-17
 
 ### FEM Case Drafting and Agent Review Hardening

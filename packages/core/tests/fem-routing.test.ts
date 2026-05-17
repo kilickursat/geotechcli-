@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildFemDraftInputFromReadiness,
   listFemCapabilities,
+  mapGroundModelEvidenceRefs,
   prepareFemAnalysisCaseDraft,
+  stripPlaceholderFemValues,
 } from '../src/fem/index.js';
 import { buildProviderOperatingPrompt } from '../src/agents/provider-operating-contract.js';
 import { getAllowedToolsForAgent, isToolAllowedForAgent } from '../src/agents/swarm.js';
 import { toolRegistry } from '../src/agents/tools.js';
+import type { GroundModel, GroundModelCalculationReadiness } from '../src/index.js';
 
 import '../src/agents/runtime-bootstrap.js';
 
@@ -114,6 +118,166 @@ describe('FEM routing contract', () => {
     expect(draft.analysisCase).toBeUndefined();
     expect(draft.missingUserInputs).toContain('shaft diameter/shape');
     expect(draft.reviewGates).toContain('planned-only');
+  });
+
+  it('bridges GroundModel readiness into FEM draft inputs without converting placeholders into values', () => {
+    const groundModel: GroundModel = {
+      schemaVersion: 'ground-model.v1',
+      generatedAt: '2026-05-18T00:00:00.000Z',
+      project: { rootPath: 'C:/site' },
+      coordinateSystem: { kind: 'unknown', warnings: [] },
+      boreholes: [],
+      strata: [],
+      groundwater: [],
+      labTests: [],
+      parameters: [],
+      monitoringSeries: [],
+      rejectedObservations: [],
+      warnings: [],
+      stats: {
+        boreholes: 1,
+        sptTests: 1,
+        strata: 1,
+        groundwaterObservations: 1,
+        labTests: 0,
+        parameters: 2,
+        monitoringSeries: 0,
+        evidenceRefs: 2,
+        rejectedObservations: 0,
+      },
+      evidence: [
+        {
+          id: 'ev-es-1',
+          sourceType: 'tabular-cell',
+          sourcePath: 'lab.csv',
+          location: { filePath: 'lab.csv', rowNumber: 3, columnName: 'Es', cellRef: 'C3' },
+          method: 'csv-sample',
+          confidence: 0.88,
+          normalizedValue: 18000,
+          unit: 'kPa',
+          warnings: [],
+        },
+        {
+          id: 'ev-gw-1',
+          sourceType: 'pdf-page',
+          sourcePath: 'report.pdf',
+          location: { filePath: 'report.pdf', pageNumber: 12 },
+          method: 'pdf-text',
+          confidence: 0.82,
+          normalizedValue: 1.8,
+          unit: 'm',
+          warnings: [],
+        },
+      ],
+    };
+    const workflow: GroundModelCalculationReadiness = {
+      workflow: 'fem-excavation-deformation',
+      label: 'Experimental FEM staged excavation deformation draft',
+      status: 'ready',
+      score: 100,
+      toolName: 'prepare_fem_analysis_case',
+      commandTemplate: 'geotech fem draft excavation-deformation --input <json> --case-output <analysis_case.json>',
+      present: ['strata profile'],
+      missing: [],
+      assumptions: [],
+      evidenceIds: ['ev-es-1', 'ev-gw-1'],
+      recommendation: 'Prepare an experimental staged-excavation FEM draft.',
+      inputDraft: {
+        workflow: 'fem-excavation-deformation',
+        toolName: 'prepare_fem_analysis_case',
+        command: 'geotech fem draft excavation-deformation --input <json> --case-output <analysis_case.json>',
+        input: {
+          objective: 'excavation-deformation',
+          useDemoDefaults: false,
+          geometry: {
+            excavationLengthM: '<m>',
+            excavationWidthM: '<m>',
+            excavationFinalDepthM: '<m>',
+          },
+          excavation: {
+            stageDepthsM: ['<stage depths m>'],
+            supportLevelsM: ['<support level depths m>'],
+            wallType: 'diaphragm_wall',
+          },
+          load: {
+            pressureKpa: '<surcharge kPa>',
+          },
+          material: {
+            elasticModulusKpa: 18_000,
+            unitWeightKnM3: 18.5,
+            poissonRatio: 0.3,
+          },
+          groundwater: {
+            condition: 'specified',
+            depthM: 1.8,
+            note: 'Groundwater from evidence.',
+          },
+        },
+        missingUserInputs: ['excavation length'],
+        assumptions: ['review groundwater'],
+        evidenceIds: ['ev-es-1', 'ev-gw-1'],
+        readyToRun: false,
+      },
+    };
+
+    const bridge = buildFemDraftInputFromReadiness(workflow, groundModel);
+    expect(bridge.schemaVersion).toBe('fem-ground-model-draft-bridge.v1');
+    expect(bridge.input.objective).toBe('excavation-deformation');
+    expect(bridge.input.geometry?.excavationLengthM).toBeUndefined();
+    expect(bridge.input.excavation?.stageDepthsM).toBeUndefined();
+    expect(bridge.input.excavation?.wallType).toBe('diaphragm_wall');
+    expect(bridge.input.load?.pressureKpa).toBeUndefined();
+    expect(bridge.input.material?.elasticModulusKpa).toBe(18_000);
+    expect(bridge.input.groundwater?.depthM).toBe(1.8);
+    expect(bridge.input.evidenceRefs).toEqual([
+      { id: 'ev-es-1', source: 'lab.csv', note: 'csv-sample; cell C3; unit kPa' },
+      { id: 'ev-gw-1', source: 'report.pdf', page: 12, note: 'pdf-text; unit m' },
+    ]);
+
+    const draft = prepareFemAnalysisCaseDraft(bridge.input);
+    expect(draft.recommendedAction).toBe('collect-inputs');
+    expect(draft.missingUserInputs).toEqual(['excavation length', 'excavation width', 'final excavation depth']);
+    expect(draft.evidenceRefs.map((item) => item.id)).toEqual(['ev-es-1', 'ev-gw-1']);
+  });
+
+  it('maps missing GroundModel evidence ids into traceable FEM placeholders', () => {
+    const refs = mapGroundModelEvidenceRefs({
+      schemaVersion: 'ground-model.v1',
+      generatedAt: '2026-05-18T00:00:00.000Z',
+      project: { rootPath: 'C:/site' },
+      coordinateSystem: { kind: 'unknown', warnings: [] },
+      boreholes: [],
+      strata: [],
+      groundwater: [],
+      labTests: [],
+      parameters: [],
+      monitoringSeries: [],
+      evidence: [],
+      rejectedObservations: [],
+      warnings: [],
+      stats: {
+        boreholes: 0,
+        sptTests: 0,
+        strata: 0,
+        groundwaterObservations: 0,
+        labTests: 0,
+        parameters: 0,
+        monitoringSeries: 0,
+        evidenceRefs: 0,
+        rejectedObservations: 0,
+      },
+    }, ['ev-missing']);
+
+    expect(refs[0]).toMatchObject({ id: 'ev-missing', source: 'GroundModel' });
+    expect(stripPlaceholderFemValues({
+      objective: 'foundation-settlement',
+      geometry: { raftLengthM: '<m>' as unknown as number, raftWidthM: 8 },
+      load: { pressureKpa: '<kPa>' as unknown as number },
+    })).toMatchObject({
+      objective: 'foundation-settlement',
+      geometry: { raftWidthM: 8 },
+      load: {},
+    });
   });
 
   it('wires FEM tools into single-agent registry and swarm role allowlists', async () => {

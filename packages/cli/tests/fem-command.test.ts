@@ -6,6 +6,7 @@ import { Command } from 'commander';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const coreMocks = vi.hoisted(() => ({
+  analyzeWorkspace: vi.fn(),
   buildLLMConfig: vi.fn(),
   runAgent: vi.fn(),
 }));
@@ -14,9 +15,10 @@ vi.mock('@geotechcli/core', async () => {
   const fem = await vi.importActual<typeof import('../../core/src/fem/index.js')>('../../core/src/fem/index.js');
   return {
     ...fem,
+    analyzeWorkspace: coreMocks.analyzeWorkspace,
     buildLLMConfig: coreMocks.buildLLMConfig,
     runAgent: coreMocks.runAgent,
-    GEOTECHCLI_VERSION: '0.4.59',
+    GEOTECHCLI_VERSION: '0.4.60',
     GLOBAL_FLAG_DEFINITIONS: [
       { key: 'json', option: '--json', description: 'json' },
       { key: 'plot', option: '--plot', description: 'plot' },
@@ -38,6 +40,126 @@ async function loadRegisterFemCommand(): Promise<(program: Command) => void> {
 
 function collectLogText(logSpy: ReturnType<typeof vi.spyOn>): string {
   return logSpy.mock.calls.map((call) => call.map((item) => String(item)).join(' ')).join('\n');
+}
+
+function makeFemWorkspaceManifest() {
+  return {
+    schemaVersion: 'workspace-manifest.v1',
+    generatedAt: '2026-05-18T00:00:00.000Z',
+    rootPath: 'C:/site-data',
+    files: [],
+    summary: {
+      totalFiles: 1,
+      supportedFiles: 1,
+      tabularFiles: 1,
+      pdfFiles: 0,
+      imageFiles: 0,
+      skippedFiles: 0,
+      kinds: { csv: 1 },
+      datasetTypes: { 'lab-test-summary': 1 },
+      branches: ['foundation'],
+      recommendations: [],
+    },
+    groundModel: {
+      schemaVersion: 'ground-model.v1',
+      generatedAt: '2026-05-18T00:00:00.000Z',
+      project: { rootPath: 'C:/site-data' },
+      coordinateSystem: { kind: 'unknown', warnings: [] },
+      boreholes: [],
+      strata: [],
+      groundwater: [],
+      labTests: [],
+      parameters: [],
+      monitoringSeries: [],
+      rejectedObservations: [],
+      warnings: [],
+      stats: {
+        boreholes: 1,
+        sptTests: 1,
+        strata: 1,
+        groundwaterObservations: 1,
+        labTests: 0,
+        parameters: 2,
+        monitoringSeries: 0,
+        evidenceRefs: 2,
+        rejectedObservations: 0,
+      },
+      evidence: [
+        {
+          id: 'ev-es-1',
+          sourceType: 'tabular-cell',
+          sourcePath: 'lab.csv',
+          location: { filePath: 'lab.csv', cellRef: 'C3' },
+          method: 'csv-sample',
+          confidence: 0.88,
+          normalizedValue: 25000,
+          unit: 'kPa',
+          warnings: [],
+        },
+        {
+          id: 'ev-gw-1',
+          sourceType: 'pdf-page',
+          sourcePath: 'report.pdf',
+          location: { filePath: 'report.pdf', pageNumber: 9 },
+          method: 'pdf-text',
+          confidence: 0.82,
+          normalizedValue: 2.1,
+          unit: 'm',
+          warnings: [],
+        },
+      ],
+    },
+    verifier: {
+      schemaVersion: 'ground-model-verifier.v1',
+      generatedAt: '2026-05-18T00:00:00.000Z',
+      status: 'pass',
+      summary: { blocking: 0, review: 0, info: 0 },
+      findings: [],
+      calculationReadiness: {
+        schemaVersion: 'ground-model-calculation-readiness.v1',
+        summary: { ready: 2, readyWithAssumptions: 0, blocked: 0 },
+        workflows: [
+          {
+            workflow: 'fem-foundation-settlement',
+            label: 'Experimental FEM foundation settlement draft',
+            status: 'ready',
+            score: 100,
+            toolName: 'prepare_fem_analysis_case',
+            commandTemplate: 'geotech fem draft foundation-settlement --input <json> --case-output <analysis_case.json>',
+            present: ['strata profile'],
+            missing: [],
+            assumptions: [],
+            evidenceIds: ['ev-es-1', 'ev-gw-1'],
+            recommendation: 'Prepare an experimental FEM draft.',
+            inputDraft: {
+              workflow: 'fem-foundation-settlement',
+              toolName: 'prepare_fem_analysis_case',
+              command: 'geotech fem draft foundation-settlement --input <json> --case-output <analysis_case.json>',
+              input: {
+                objective: 'foundation-settlement',
+                useDemoDefaults: false,
+                material: {
+                  elasticModulusKpa: 25_000,
+                  unitWeightKnM3: 18.7,
+                  poissonRatio: 0.3,
+                },
+                groundwater: {
+                  condition: 'specified',
+                  depthM: 2.1,
+                  note: 'Groundwater from GroundModel evidence.',
+                },
+              },
+              missingUserInputs: ['raft length', 'raft width', 'service pressure'],
+              assumptions: [],
+              evidenceIds: ['ev-es-1', 'ev-gw-1'],
+              readyToRun: false,
+            },
+          },
+        ],
+      },
+    },
+    warnings: [],
+  };
 }
 
 describe('registerFemCommand', () => {
@@ -126,6 +248,73 @@ describe('registerFemCommand', () => {
     expect(payload.draft.analysisCase).toBeUndefined();
     expect(payload.draft.missingUserInputs).toEqual(['raft length', 'raft width', 'service pressure']);
     expect(payload.warnings.join(' ')).toMatch(/no solver/i);
+  });
+
+  it('prefills FEM draft inputs from workspace GroundModel readiness without auto-running', async () => {
+    coreMocks.analyzeWorkspace.mockResolvedValue(makeFemWorkspaceManifest());
+    const registerFemCommand = await loadRegisterFemCommand();
+    const program = new Command();
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    program.exitOverride();
+    registerFemCommand(program);
+
+    await program.parseAsync([
+      'fem',
+      'draft',
+      'foundation-settlement',
+      '--workspace',
+      'C:/site-data',
+      '--json',
+    ], { from: 'user' });
+
+    expect(coreMocks.analyzeWorkspace).toHaveBeenCalledWith('C:/site-data', { includeCalculationInputDrafts: true });
+    const payload = JSON.parse(collectLogText(logSpy).trim());
+    expect(payload.workspace.rootPath).toBe('C:/site-data');
+    expect(payload.workspace.bridge.schemaVersion).toBe('fem-ground-model-draft-bridge.v1');
+    expect(payload.draft.recommendedAction).toBe('collect-inputs');
+    expect(payload.draft.canAutoProceed).toBe(false);
+    expect(payload.draft.missingUserInputs).toEqual(['raft length', 'raft width', 'service pressure']);
+    expect(payload.draft.evidenceRefs.map((item: { id: string }) => item.id)).toEqual(['ev-es-1', 'ev-gw-1']);
+    expect(payload.workspace.bridge.input.material.elasticModulusKpa).toBe(25_000);
+    expect(payload.workspace.bridge.input.groundwater.depthM).toBe(2.1);
+    expect(payload.warnings.join(' ')).toMatch(/GroundModel prefilled material/i);
+  });
+
+  it('lets explicit FEM draft flags override workspace prefill and write the analysis case', async () => {
+    coreMocks.analyzeWorkspace.mockResolvedValue(makeFemWorkspaceManifest());
+    const registerFemCommand = await loadRegisterFemCommand();
+    const program = new Command();
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-fem-workspace-draft-'));
+    tempDirs.push(dir);
+    const casePath = join(dir, 'analysis_case.json');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    program.exitOverride();
+    registerFemCommand(program);
+
+    await program.parseAsync([
+      'fem',
+      'draft',
+      'foundation-settlement',
+      '--workspace',
+      'C:/site-data',
+      '--raft-length',
+      '11',
+      '--raft-width',
+      '9',
+      '--pressure',
+      '175',
+      '--case-output',
+      casePath,
+      '--json',
+    ], { from: 'user' });
+
+    const payload = JSON.parse(collectLogText(logSpy).trim());
+    const caseFile = JSON.parse(await readFile(casePath, 'utf-8'));
+    expect(payload.draft.recommendedAction).toBe('run-experimental-demo');
+    expect(payload.draft.analysisCase.geometry.raft.lengthM).toBe(11);
+    expect(payload.draft.analysisCase.materials[0].elasticModulusKpa).toBe(25_000);
+    expect(payload.draft.analysisCase.groundwater.depthM).toBe(2.1);
+    expect(caseFile.evidenceRefs.map((item: { id: string }) => item.id)).toEqual(['ev-es-1', 'ev-gw-1']);
   });
 
   it('writes a validated foundation FEM case draft from explicit CLI inputs', async () => {
@@ -222,6 +411,64 @@ describe('registerFemCommand', () => {
     expect(payload.draft.analysisCase.objective).toBe('excavation_deformation');
     expect(payload.draft.analysisCase.geometry.excavation.finalDepthM).toBe(9);
     expect(payload.draft.validation.status).toBe('review');
+  });
+
+  it('attaches FEM workspace readiness context to the scoped FEM agent without widening tools', async () => {
+    coreMocks.analyzeWorkspace.mockResolvedValue(makeFemWorkspaceManifest());
+    coreMocks.buildLLMConfig.mockReturnValue({
+      provider: 'hosted-beta',
+      apiKey: '',
+      timeout: 60000,
+      skillsEnabled: true,
+    });
+    coreMocks.runAgent.mockResolvedValue({
+      steps: [{ type: 'answer', content: 'Collect raft geometry, pressure, and review the prefilled evidence.', timestamp: Date.now() }],
+      context: {},
+      totalTokens: 7,
+      totalLatencyMs: 60,
+    });
+    const registerFemCommand = await loadRegisterFemCommand();
+    const program = new Command();
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    program.exitOverride();
+    registerFemCommand(program);
+
+    await program.parseAsync([
+      'fem',
+      'agent',
+      'review',
+      'FEM',
+      'readiness',
+      '--workspace',
+      'C:/site-data',
+      '--objective',
+      'foundation-settlement',
+      '--json',
+    ], { from: 'user' });
+
+    expect(coreMocks.runAgent).toHaveBeenCalledWith(
+      expect.stringContaining('FEM workspace evidence context:'),
+      expect.objectContaining({ skillsEnabled: false }),
+      expect.any(Function),
+      undefined,
+      expect.objectContaining({
+        allowedTools: [
+          'list_fem_capabilities',
+          'prepare_fem_analysis_case',
+          'validate_fem_analysis_case',
+        ],
+        systemPromptSuffix: expect.stringContaining('Workspace evidence may prefill material'),
+      }),
+    );
+    const scopedTask = coreMocks.runAgent.mock.calls[0][0] as string;
+    expect(scopedTask).toContain('Prepared deterministic FEM draft prefill');
+    expect(scopedTask).toContain('"elasticModulusKpa":25000');
+    const payload = JSON.parse(collectLogText(logSpy).trim());
+    expect(payload.allowedTools).toEqual([
+      'list_fem_capabilities',
+      'prepare_fem_analysis_case',
+      'validate_fem_analysis_case',
+    ]);
   });
 
   it('requires explicit experimental acknowledgement', async () => {

@@ -5,8 +5,19 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 const releases = [
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-05-17',
+    date: '2026-05-18',
     tag: `${GEOTECHCLI_VERSION} Release`,
+    changes: [
+      { type: 'feat', text: 'Added a GroundModel-to-FEM draft adapter that converts FEM readiness drafts into provider-neutral prepare_fem_analysis_case inputs with retained evidence references' },
+      { type: 'feat', text: 'Added geotech fem draft <objective> --workspace <dir> so workspace evidence can prefill material, groundwater, and source traceability before users provide geometry, loads, and staging' },
+      { type: 'feat', text: 'Added geotech fem agent ... --workspace <dir> to give the scoped FEM brain FEM-only GroundModel readiness context without widening its tool allowlist' },
+      { type: 'fix', text: 'Kept FEM safety boundaries unchanged: no solver auto-run, no design approval, and no LLM-invented displacement, reaction, mesh, or stage values' },
+    ],
+  },
+  {
+    version: '0.4.59',
+    date: '2026-05-17',
+    tag: '0.4.59 Release',
     changes: [
       { type: 'feat', text: 'Added geotech fem draft <objective> for deterministic review-gated FEM analysis-case drafts without running a solver or creating WebGL results' },
       { type: 'fix', text: 'Wired FEM GroundModel readiness command templates to draft analysis_case.json inputs before experimental demos' },
