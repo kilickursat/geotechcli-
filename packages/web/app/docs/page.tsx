@@ -277,7 +277,9 @@ geotech fem demo raft --experimental --save-html raft-fem.html --no-open
 geotech fem demo raft --experimental --output raft-fem.manifest.json --json
 \`\`\`
 
-Current scope: foundation-settlement demo only, linear elastic small-strain screening behavior, fixed built-in geometry, deterministic result envelope, validation warnings, and browser artifact export. It is deliberately gated behind --experimental and is not a production FEM solver or design calculation. The purpose is to stabilize the provider-neutral FEM case/result contract before future GroundModel-to-calculation routing, report-derived input drafting, and agent review workflows use the same deterministic boundary.`,
+Current scope: foundation-settlement demo only, linear elastic small-strain screening behavior, fixed built-in geometry, deterministic result envelope, validation warnings, and browser artifact export. It is deliberately gated behind --experimental and is not a production FEM solver or design calculation.
+
+Agent and swarm mode see FEM through deterministic routing tools rather than prompt-only claims. The model may list FEM capabilities, prepare a review-gated foundation-settlement case draft, or validate a FEM case, but FEM result fields must come from geotechCLI contracts and validators. Excavation deformation, shaft deformation, tunnel volume-loss settlement, and pile-group interaction are represented as draft/planned routes until deterministic engines are added. The purpose is to stabilize the provider-neutral FEM case/result contract before future GroundModel-to-calculation routing, report-derived input drafting, and agent review workflows use the same deterministic boundary.`,
   },
   {
     id: 'ingest',

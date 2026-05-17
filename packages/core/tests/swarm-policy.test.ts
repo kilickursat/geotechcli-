@@ -39,6 +39,8 @@ describe('Swarm tool policy', () => {
     expect(isToolAllowedForAgent('reviewer', 'approve_persisted_ingest_review')).toBe(true);
     expect(isToolAllowedForAgent('reviewer', 'promote_persisted_ingest_review')).toBe(true);
     expect(isToolAllowedForAgent('reviewer', 'calculate_bearing_capacity')).toBe(false);
+    expect(isToolAllowedForAgent('reviewer', 'prepare_fem_analysis_case')).toBe(false);
+    expect(isToolAllowedForAgent('reviewer', 'validate_fem_analysis_case')).toBe(true);
     expect(isToolAllowedForAgent('reviewer', 'run_skill')).toBe(false);
     expect(isToolAllowedForAgent('interpretation', 'calculate_bearing_capacity')).toBe(false);
     expect(isToolAllowedForAgent('interpretation', 'ingest_geotech_document')).toBe(true);
@@ -51,6 +53,8 @@ describe('Swarm tool policy', () => {
     expect(isToolAllowedForAgent('interpretation', 'list_skills')).toBe(false);
     expect(isToolAllowedForAgent('interpretation', 'list_skills', true)).toBe(true);
     expect(isToolAllowedForAgent('simulation', 'calculate_bearing_capacity')).toBe(true);
+    expect(isToolAllowedForAgent('simulation', 'prepare_fem_analysis_case')).toBe(true);
+    expect(isToolAllowedForAgent('simulation', 'validate_fem_analysis_case')).toBe(true);
     expect(isToolAllowedForAgent('simulation', 'ingest_geotech_document')).toBe(false);
     expect(isToolAllowedForAgent('simulation', 'list_persisted_ingest_review_approvals')).toBe(false);
     expect(isToolAllowedForAgent('simulation', 'load_persisted_ingest_review_approval')).toBe(false);

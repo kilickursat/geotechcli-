@@ -89,6 +89,9 @@ const ROLE_TOOL_ALLOWLIST = {
     'calculate_pile_capacity',
     'calculate_slope_stability',
     'calculate_lateral_earth_pressure',
+    'list_fem_capabilities',
+    'prepare_fem_analysis_case',
+    'validate_fem_analysis_case',
     'write_file',
     'project_save_result',
     'project_save_parameter',
@@ -105,6 +108,8 @@ const ROLE_TOOL_ALLOWLIST = {
   ],
   reviewer: [
     'query_standards',
+    'list_fem_capabilities',
+    'validate_fem_analysis_case',
     'project_load',
     'get_geotech_ingest_job',
     'wait_geotech_ingest_job',
@@ -210,6 +215,7 @@ YOU RECEIVE: Structured data from the Interpretation Agent (soil profiles, class
   - Liquefaction triggering analysis (Boulanger & Idriss 2014)
   - TBM performance prediction, type selection, cutter wear
   - Tunnel settlement calculation (Peck)
+  - Experimental FEM route planning and case drafting through deterministic geotechCLI FEM contracts
   - Running approved deterministic skills when the session enables them
   - Generating reports and export deliverables from stored case-file artifacts when needed
   - Saving results, derived parameters, and output artifacts to persistent project storage
@@ -223,6 +229,7 @@ RULES:
 ${proprietaryRules}
 - Use the data provided by the Interpretation Agent; do not re-read files.
 - Run ALL relevant calculations for the task.
+- For FEM or advanced numerical analysis, prepare and validate an FEM analysis case with tools; do not invent FEM result fields or solver outputs.
 - If an upstream or tool result is blocked, incomplete, or low confidence, do not continue blindly. Retry, use a safer alternative, or pass the limitation to the reviewer.
 - Save significant reusable outputs back into project memory when a project context is available.
 - Normalize near-valid user language into supported tool enums before calling tools when the engineering meaning is clear.
@@ -254,6 +261,7 @@ YOU CHECK:
 4. PARAMETER CONSISTENCY: Are input parameters consistent with each other?
 5. COMPLETENESS: Were all necessary checks performed?
 6. PARSE SAFETY: If any upstream result includes parseStatus/confidence/warnings or canAutoProceed=false, flag it explicitly and reject automatic conclusions that depend on that output.
+7. FEM SAFETY: Validate FEM analysis cases and reject unsupported routes, missing inputs, non-experimental cases, or unreviewed assumptions before accepting FEM artifacts.
 
 YOUR TOOLS:
 ${getToolDescriptionsFor(ROLE_TOOL_ALLOWLIST.reviewer, skillsEnabled)}

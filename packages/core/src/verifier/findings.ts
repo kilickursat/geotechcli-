@@ -11,6 +11,7 @@ export type GroundModelFindingSeverity = 'blocking' | 'review' | 'info';
 export type GroundModelCalculationWorkflow =
   | 'bearing-capacity'
   | 'settlement'
+  | 'fem-foundation-settlement'
   | 'pile-capacity'
   | 'liquefaction'
   | 'slope-stability';
@@ -200,6 +201,7 @@ function assessCalculationReadiness(
   const workflows = [
     assessBearingReadiness(model, context, profile, options),
     assessSettlementReadiness(model, context, profile, options),
+    assessFemFoundationSettlementReadiness(model, context, profile, options),
     assessPileReadiness(model, context, profile, options),
     assessLiquefactionReadiness(model, context, profile, options),
     assessSlopeReadiness(model, context, profile, options),
@@ -213,6 +215,47 @@ function assessCalculationReadiness(
     },
     workflows,
   };
+}
+
+function assessFemFoundationSettlementReadiness(
+  model: GroundModel,
+  context: EvidenceContext,
+  profile: StandardProfileAssumptions | null,
+  options: VerifyGroundModelOptions,
+): GroundModelCalculationReadiness {
+  return buildWorkflowReadiness({
+    workflow: 'fem-foundation-settlement',
+    label: 'Experimental FEM foundation settlement draft',
+    toolName: 'prepare_fem_analysis_case',
+    commandTemplate: 'geotech fem demo raft --experimental --save-html <html> --no-open',
+    coreMissing: [
+      ...missingWhen(!context.hasStrata, '3D ground profile / strata model'),
+      ...missingWhen(!context.hasSettlementBasis, 'elastic modulus, compressibility, lab index, or SPT correlation evidence'),
+    ],
+    assumptionMissing: [
+      ...missingWhen(!context.hasUnitWeight, 'unit weight'),
+      ...missingWhen(!context.hasGroundwater, 'groundwater condition'),
+    ],
+    present: [
+      ...presentWhen(context.hasStrata, 'strata profile'),
+      ...presentWhen(context.hasCompressibility, 'compressibility or modulus parameters'),
+      ...presentWhen(!context.hasCompressibility && context.hasLabIndex, 'lab index parameters for correlations'),
+      ...presentWhen(!context.hasCompressibility && !context.hasLabIndex && context.hasSpt, 'SPT profile for stiffness correlations'),
+      ...presentWhen(context.hasUnitWeight, 'unit weight'),
+      ...presentWhen(context.hasGroundwater, 'groundwater condition'),
+    ],
+    evidenceIds: collectEvidenceIds(
+      context.strataEvidenceIds,
+      context.compressibilityEvidenceIds,
+      context.labIndexEvidenceIds,
+      context.sptEvidenceIds,
+      context.unitWeightEvidenceIds,
+      context.groundwaterEvidenceIds,
+    ),
+    recommendation: context.hasStrata && context.hasSettlementBasis
+      ? 'Prepare an experimental FEM analysis-case draft only after the user declares raft geometry, service pressure, mesh intent, and groundwater handling. Do not run production FEM from inferred values.'
+      : 'Add strata plus stiffness/compressibility, lab index, or SPT evidence before preparing an FEM settlement case.',
+  }, model, context, profile, options);
 }
 
 function assessBearingReadiness(
@@ -518,6 +561,23 @@ function buildCalculationInputDraft(
         timeFactor: 1,
       };
       command = `geotech settlement immediate --stress <kPa> --width <m> --layers '${JSON.stringify(settlementLayers)}'`;
+      break;
+    }
+    case 'fem-foundation-settlement': {
+      missingUserInputs.push('raft length', 'raft width', 'service pressure', 'foundation level / embedment');
+      draftInput = {
+        objective: 'foundation-settlement',
+        useDemoDefaults: false,
+        material: {
+          elasticModulusKpa: findNumericParameter(model, /elastic|modulus|\bes\b/i) ?? estimateElasticModulusFromSpt(model),
+          unitWeightKnM3: unitWeight,
+          poissonRatio: 0.3,
+        },
+        groundwater: groundwaterDepth != null
+          ? { condition: 'specified', depthM: groundwaterDepth, note: 'Groundwater depth from GroundModel evidence; FEM coupling still requires review.' }
+          : { condition: 'not_modelled', note: 'Groundwater not present in GroundModel; explicit review required.' },
+      };
+      command = 'geotech fem demo raft --experimental --save-html <html> --no-open';
       break;
     }
     case 'pile-capacity':

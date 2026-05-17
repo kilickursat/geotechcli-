@@ -122,6 +122,8 @@ geotech fem demo raft --experimental --output raft-fem.manifest.json --json
 
 Current scope: foundation-settlement demo only, linear elastic small-strain screening behavior, fixed built-in case geometry, deterministic result manifest, and WebGL visualization. It is not a production FEM solver or design calculation; it exists to validate the agentic contract, result schema, reviewer warnings, and browser artifact path before report-ingested GroundModel routing is added.
 
+Agents and swarm runs now see FEM through deterministic routing tools, not prompt-only instructions. The model may list FEM capabilities, prepare a review-gated `foundation-settlement` case draft, or validate a FEM case, but it must not invent solver outputs. Draft and planned routes include excavation deformation, shaft deformation, tunnel volume-loss settlement, and pile-group interaction as contract-aware future targets until deterministic engines are added.
+
 ## Interactive Visualization
 
 Use `geotech viz` to open browser-grade interactive engineering plots from saved analysis data, including GroundModel coordinate maps, SPT-depth charts, lab-depth charts, and groundwater plots, with terminal ASCII fallback available when needed.

@@ -133,10 +133,12 @@ describe('GroundModel calculation readiness', () => {
       verification.calculationReadiness.workflows.map((workflow) => [workflow.workflow, workflow]),
     );
 
-    expect(verification.calculationReadiness.summary.ready).toBe(5);
+    expect(verification.calculationReadiness.summary.ready).toBe(6);
     expect(workflows['bearing-capacity']?.status).toBe('ready');
     expect(workflows['bearing-capacity']?.toolName).toBe('calculate_bearing_capacity');
     expect(workflows['settlement']?.toolName).toBe('calculate_schmertmann_settlement');
+    expect(workflows['fem-foundation-settlement']?.toolName).toBe('prepare_fem_analysis_case');
+    expect(workflows['fem-foundation-settlement']?.recommendation).toMatch(/experimental FEM/i);
     expect(workflows['pile-capacity']?.status).toBe('ready');
     expect(workflows['liquefaction']?.present).toContain('SPT N-values');
     expect(workflows['slope-stability']?.evidenceIds).toContain('ev-phi-1');
@@ -153,6 +155,12 @@ describe('GroundModel calculation readiness', () => {
     expect(verification.calculationReadiness.workflows.every((workflow) => workflow.inputDraft)).toBe(true);
     expect(workflows['bearing-capacity']?.inputDraft?.missingUserInputs).toEqual(['foundation width', 'embedment depth']);
     expect(workflows['settlement']?.inputDraft?.missingUserInputs).toEqual(['applied stress', 'foundation width']);
+    expect(workflows['fem-foundation-settlement']?.inputDraft?.missingUserInputs).toEqual(['raft length', 'raft width', 'service pressure', 'foundation level / embedment']);
+    expect(workflows['fem-foundation-settlement']?.inputDraft?.toolName).toBe('prepare_fem_analysis_case');
+    expect(workflows['fem-foundation-settlement']?.inputDraft?.input).toMatchObject({
+      objective: 'foundation-settlement',
+      useDemoDefaults: false,
+    });
     expect(workflows['pile-capacity']?.inputDraft?.missingUserInputs).toEqual(['pile diameter', 'pile length']);
     expect(workflows['liquefaction']?.inputDraft?.missingUserInputs).toEqual(['PGA', 'earthquake magnitude']);
     expect(workflows['slope-stability']?.inputDraft?.missingUserInputs).toEqual(['slope height', 'slope angle']);
@@ -187,9 +195,10 @@ describe('GroundModel calculation readiness', () => {
       verification.calculationReadiness.workflows.map((workflow) => [workflow.workflow, workflow]),
     );
 
-    expect(verification.calculationReadiness.summary.blocked).toBe(5);
+    expect(verification.calculationReadiness.summary.blocked).toBe(6);
     expect(workflows['bearing-capacity']?.missing).toContain('stratigraphy / bearing stratum');
     expect(workflows['liquefaction']?.missing).toContain('SPT N-values by depth');
     expect(workflows['settlement']?.recommendation).toMatch(/compressibility/i);
+    expect(workflows['fem-foundation-settlement']?.missing).toContain('3D ground profile / strata model');
   });
 });

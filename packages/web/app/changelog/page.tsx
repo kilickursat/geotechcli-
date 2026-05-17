@@ -5,8 +5,20 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 const releases = [
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-05-16',
+    date: '2026-05-17',
     tag: `${GEOTECHCLI_VERSION} Release`,
+    changes: [
+      { type: 'feat', text: 'Added provider-neutral FEM capability routing so agents can list implemented, draft, and planned FEM routes before attempting numerical work' },
+      { type: 'feat', text: 'Added list_fem_capabilities, prepare_fem_analysis_case, and validate_fem_analysis_case agent tools for deterministic FEM planning, case drafting, and review-gated validation' },
+      { type: 'feat', text: 'Wired FEM planning into the simulation swarm allowlist and FEM validation into the reviewer allowlist so LLMs route and review while geotechCLI owns contracts and validators' },
+      { type: 'feat', text: 'Added an experimental fem-foundation-settlement GroundModel readiness workflow with non-executing input drafts and review gates' },
+      { type: 'fix', text: 'Fixed swarm planner readiness extraction for ready_with_assumptions workflows and threaded FEM route/validation tools into DesignEngineer and RiskReviewer plans' },
+    ],
+  },
+  {
+    version: '0.4.55',
+    date: '2026-05-16',
+    tag: '0.4.55 Release',
     changes: [
       { type: 'feat', text: 'Added geotech fem demo raft --experimental as an opt-in deterministic 3D FEM/WebGL preview for raft settlement workflow development' },
       { type: 'feat', text: 'Added a provider-neutral FEM analysis-case and result-manifest contract in core with validation for assumptions, finite result arrays, mesh references, and reaction-balance review' },

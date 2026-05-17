@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.56] - 2026-05-17
+
+### Agentic FEM Routing Foundation
+
+- Added provider-neutral FEM capability routing so agents can list implemented, draft, and planned FEM routes before attempting numerical work.
+- Added `list_fem_capabilities`, `prepare_fem_analysis_case`, and `validate_fem_analysis_case` agent tools for deterministic FEM planning, case drafting, and review-gated validation.
+- Wired FEM planning into the simulation swarm allowlist and FEM validation into the reviewer allowlist, keeping LLMs responsible for routing/review while geotechCLI owns FEM contracts and validators.
+- Added an experimental `fem-foundation-settlement` GroundModel readiness workflow with non-executing input drafts for raft geometry, pressure, material stiffness, groundwater, evidence IDs, and review gates.
+- Fixed swarm planner readiness extraction for `ready_with_assumptions` workflows and threaded FEM route/validation tools into DesignEngineer and RiskReviewer plans.
+
 ## [0.4.55] - 2026-05-16
 
 ### Experimental FEM WebGL Preview

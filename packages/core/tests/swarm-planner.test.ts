@@ -60,7 +60,7 @@ const workspaceContext = {
         workflows: [
           {
             workflow: 'bearing-capacity',
-            status: 'ready-with-assumptions',
+            status: 'ready_with_assumptions',
             standardProfile: 'eurocode7',
             missing: ['foundation width'],
           },
@@ -99,6 +99,10 @@ describe('skill-aware swarm planner', () => {
     const design = plan.roles.find((role) => role.role === 'DesignEngineer');
     expect(design?.recommendedSkills).toContain('shallow-foundation-option-screening');
     expect(design?.blockedSkills).not.toContain('tunnel-engineering-reviewer');
+    expect(design?.toolStrategy).toContain('prepare_fem_analysis_case');
+
+    const risk = plan.roles.find((role) => role.role === 'RiskReviewer');
+    expect(risk?.toolStrategy).toContain('validate_fem_analysis_case');
 
     const standards = plan.roles.find((role) => role.role === 'StandardsChecker');
     expect(standards?.recommendedSkills).toContain('standards-and-safety-factor-audit');

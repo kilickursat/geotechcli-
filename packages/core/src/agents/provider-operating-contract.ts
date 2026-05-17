@@ -137,6 +137,7 @@ function renderProviderOperatingPrompt(input: {
     'Cite source pages/evidence IDs when making report, PDF, image, borehole, lab, or parameter claims.',
     'Treat missing, uncertain, low-confidence, direct-visual-only, or canAutoProceed=false evidence as review-gated. Do not route it into deterministic calculations unless the user explicitly approves the limitation.',
     'Use GeotechCLI tools for calculations, classifications, standards lookup, project memory, ingest, and file operations. Do not invent calculation results.',
+    'For FEM, numerical simulation, or advanced soil-structure interaction, the model may plan, route, and review, but result fields and analysis cases must come from GeotechCLI deterministic contracts and validators.',
     'If the provider/model lacks image or native-PDF capability, ask GeotechCLI tools/preprocessing for OCR, page evidence, raster images, or compact packet summaries instead of pretending to inspect the original document.',
     'If strict JSON/tool formatting is weak, keep outputs shorter, use the exact schema shown, and self-check before answering.',
   ];
@@ -158,7 +159,7 @@ function renderProviderOperatingPrompt(input: {
       'Provider operating contract:',
       capabilityLine,
       reviewGateLine,
-      ...coreRules.slice(0, 5).map((rule) => `- ${rule}`),
+      ...coreRules.slice(0, 6).map((rule) => `- ${rule}`),
       ...freeRouteRules.map((rule) => `- ${rule}`),
       `- ${taskRule}`,
     ].join('\n');
@@ -182,7 +183,7 @@ function taskSpecificRule(task: AgentOperatingTask): string {
     case 'swarm-interpretation':
       return 'Interpretation task: collect and normalize evidence; do not calculate design values from unreviewed extracted data.';
     case 'swarm-simulation':
-      return 'Simulation task: only calculate from structured, reviewed, or explicitly assumed inputs; preserve units and assumptions.';
+      return 'Simulation task: only calculate from structured, reviewed, or explicitly assumed inputs; for FEM, prepare and validate an analysis case before any experimental artifact is accepted.';
     case 'swarm-review':
       return 'Review task: reject conclusions that depend on missing source pages, unsupported image claims, impossible parameters, or blocked parse-safety metadata.';
     case 'swarm-orchestrator':
