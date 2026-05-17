@@ -22,7 +22,8 @@ describe('FEM routing contract', () => {
       'pile-group-elastic-interaction',
     ]);
     expect(capabilities.find((capability) => capability.objective === 'foundation-settlement')?.status).toBe('implemented-demo');
-    expect(capabilities.find((capability) => capability.objective === 'excavation-deformation')?.status).toBe('contract-draft');
+    expect(capabilities.find((capability) => capability.objective === 'excavation-deformation')?.status).toBe('implemented-demo');
+    expect(capabilities.find((capability) => capability.objective === 'excavation-deformation')?.command).toBe('geotech fem demo excavation --experimental');
     expect(capabilities.find((capability) => capability.objective === 'tunnel-volume-loss-settlement')?.reviewGates).toContain('not-fem-solver');
   });
 
@@ -64,14 +65,55 @@ describe('FEM routing contract', () => {
     expect(draft.reviewGates).toContain('not-design-calculation');
   });
 
+  it('prepares excavation deformation drafts without allowing auto-proceed', () => {
+    const missing = prepareFemAnalysisCaseDraft({ objective: 'excavation-deformation' });
+
+    expect(missing.implemented).toBe(true);
+    expect(missing.canAutoProceed).toBe(false);
+    expect(missing.recommendedAction).toBe('collect-inputs');
+    expect(missing.missingUserInputs).toEqual(['excavation length', 'excavation width', 'final excavation depth']);
+    expect(missing.analysisCase).toBeUndefined();
+
+    const draft = prepareFemAnalysisCaseDraft({
+      objective: 'excavation-deformation',
+      geometry: {
+        excavationLengthM: 22,
+        excavationWidthM: 14,
+        excavationFinalDepthM: 9,
+        wallToeDepthM: 15,
+      },
+      excavation: {
+        stageDepthsM: [3, 6, 9],
+        supportLevelsM: [0, 2, 5],
+        wallType: 'secant_pile_wall',
+      },
+      load: { pressureKpa: 25 },
+      material: {
+        elasticModulusKpa: 36_000,
+        poissonRatio: 0.31,
+        unitWeightKnM3: 18.8,
+      },
+      evidenceRefs: [{ id: 'ev-ex-1', source: 'GroundModel', page: 18 }],
+    });
+
+    expect(draft.implemented).toBe(true);
+    expect(draft.recommendedAction).toBe('run-experimental-demo');
+    expect(draft.canAutoProceed).toBe(false);
+    expect(draft.analysisCase?.objective).toBe('excavation_deformation');
+    expect(draft.analysisCase?.geometry.excavation?.finalDepthM).toBe(9);
+    expect(draft.analysisCase?.loads[0]?.target).toBe('excavation_surcharge');
+    expect(draft.validation?.status).toBe('review');
+    expect(draft.reviewGates).toContain('not-design-calculation');
+  });
+
   it('keeps non-implemented FEM objectives as contract-only routes', () => {
-    const draft = prepareFemAnalysisCaseDraft({ objective: 'excavation-deformation' });
+    const draft = prepareFemAnalysisCaseDraft({ objective: 'shaft-deformation' });
 
     expect(draft.implemented).toBe(false);
     expect(draft.recommendedAction).toBe('contract-only');
     expect(draft.analysisCase).toBeUndefined();
-    expect(draft.missingUserInputs).toContain('excavation length');
-    expect(draft.reviewGates).toContain('contract-only');
+    expect(draft.missingUserInputs).toContain('shaft diameter/shape');
+    expect(draft.reviewGates).toContain('planned-only');
   });
 
   it('wires FEM tools into single-agent registry and swarm role allowlists', async () => {

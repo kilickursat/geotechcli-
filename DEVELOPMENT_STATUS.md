@@ -4,7 +4,7 @@ Last updated: 2026-05-17
 
 ## Current Work
 
-Preparing v0.4.56 locally on `strong-beta` after publishing v0.4.55. The current engineering track is provider-neutral evidence, standards-aware GroundModel readiness, GroundModel spatial and engineering visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, the PDF/page evidence benchmark foundation, and an experimental deterministic FEM/WebGL contract so future OCR/vision, BYOK-provider, and GroundModel-to-calculation changes can be measured and routed without asking LLMs to invent calculations.
+Preparing v0.4.57 locally on `strong-beta` after publishing v0.4.56. The current engineering track is provider-neutral evidence, standards-aware GroundModel readiness, GroundModel spatial and engineering visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, the PDF/page evidence benchmark foundation, and experimental deterministic FEM/WebGL contracts so future OCR/vision, BYOK-provider, and GroundModel-to-calculation changes can be measured and routed without asking LLMs to invent calculations.
 
 Current focus:
 
@@ -28,7 +28,7 @@ Current focus:
 - Keep the agentic document evidence contract provider-neutral so hosted GLM is only the strong-beta default; future BYOK LLMs should plug into the same page evidence, cache, traceability, and GroundModel readiness space.
 - Reconcile extracted report parameters against retained page evidence before visualization, so SPT/lab/groundwater rows are either source-bound to a borehole/depth context or kept out of engineering plots.
 - Split report confidence into provider-neutral workflow trust components covering extraction quality, page evidence, source traceability, cross-method corroboration, engineering completeness, readiness, missing critical data, and review gates.
-- Extend GroundModel verification with calculation-readiness routing for bearing, settlement, pile, liquefaction, and slope workflows before any deterministic calculation is auto-run.
+- Extend GroundModel verification with calculation-readiness routing for bearing, settlement, experimental FEM foundation/excavation drafts, pile, liquefaction, and slope workflows before any deterministic calculation is auto-run.
 - Render GroundModel coordinate evidence, strip logs, SPT-depth plots, lab-depth charts, and groundwater/monitoring summaries in `geotech analyze --format html` and `geotech viz`, while keeping CRS/local-grid assumptions and evidence IDs visible.
 - Attach standards-profile assumptions and opt-in non-executing calculation input drafts to GroundModel readiness so downstream calculations are prepared but still review-gated.
 - Keep experimental FEM previews deterministic, validation-gated, and clearly separated from production design calculations while the GroundModel-to-FEM routing contract is developed.
@@ -41,6 +41,17 @@ Current focus:
 - Keep the legacy Modal deploy workflow present but disabled by default.
 
 ## Done So Far
+
+### v0.4.57 Experimental Excavation FEM Preview
+
+- Published v0.4.56 to `strong-beta` with tag `v0.4.56` before opening the staged excavation FEM slice.
+- Added `geotech fem demo excavation --experimental` as the second opt-in deterministic 3D FEM/WebGL preview.
+- Added an excavation analysis-case contract, staged elastic demo runner, finite-result validation, and manifest envelope fields for surface settlement, horizontal displacement, wall-deflection proxy, support reaction, and stage count.
+- Extended the FEM artifact renderer with optional field and stage controls for staged manifests while preserving the existing raft preview controls.
+- Updated FEM routing so `excavation-deformation` is an implemented demo route for agents and swarm roles, with review-gated drafts and `canAutoProceed: false`.
+- Added GroundModel readiness and non-executing input drafts for `fem-excavation-deformation` so workspace analysis no longer presents FEM as foundation-only.
+- Kept the FEM operating boundary unchanged: LLMs may route, prepare, and review cases, but displacement, reaction, mesh, stage, and envelope values must come from geotechCLI deterministic execution and validators.
+- Verified v0.4.57 locally with focused FEM/readiness tests, full core and CLI Vitest suites, release consistency, monorepo build, Cloudflare web build, web smoke, and Playwright desktop/mobile smoke for the staged excavation artifact.
 
 ### v0.4.56 Agentic FEM Routing Foundation
 

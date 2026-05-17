@@ -12,6 +12,7 @@ export type GroundModelCalculationWorkflow =
   | 'bearing-capacity'
   | 'settlement'
   | 'fem-foundation-settlement'
+  | 'fem-excavation-deformation'
   | 'pile-capacity'
   | 'liquefaction'
   | 'slope-stability';
@@ -202,6 +203,7 @@ function assessCalculationReadiness(
     assessBearingReadiness(model, context, profile, options),
     assessSettlementReadiness(model, context, profile, options),
     assessFemFoundationSettlementReadiness(model, context, profile, options),
+    assessFemExcavationDeformationReadiness(model, context, profile, options),
     assessPileReadiness(model, context, profile, options),
     assessLiquefactionReadiness(model, context, profile, options),
     assessSlopeReadiness(model, context, profile, options),
@@ -255,6 +257,50 @@ function assessFemFoundationSettlementReadiness(
     recommendation: context.hasStrata && context.hasSettlementBasis
       ? 'Prepare an experimental FEM analysis-case draft only after the user declares raft geometry, service pressure, mesh intent, and groundwater handling. Do not run production FEM from inferred values.'
       : 'Add strata plus stiffness/compressibility, lab index, or SPT evidence before preparing an FEM settlement case.',
+  }, model, context, profile, options);
+}
+
+function assessFemExcavationDeformationReadiness(
+  model: GroundModel,
+  context: EvidenceContext,
+  profile: StandardProfileAssumptions | null,
+  options: VerifyGroundModelOptions,
+): GroundModelCalculationReadiness {
+  return buildWorkflowReadiness({
+    workflow: 'fem-excavation-deformation',
+    label: 'Experimental FEM staged excavation deformation draft',
+    toolName: 'prepare_fem_analysis_case',
+    commandTemplate: 'geotech fem demo excavation --experimental --save-html <html> --no-open',
+    coreMissing: [
+      ...missingWhen(!context.hasStrata, '3D ground profile / excavation strata model'),
+      ...missingWhen(!context.hasDepthCoverage, 'layer depth coverage for excavation influence zone'),
+      ...missingWhen(!context.hasStrengthOrSpt, 'shear strength, SPT, or stiffness evidence for excavation review'),
+    ],
+    assumptionMissing: [
+      ...missingWhen(!context.hasUnitWeight, 'unit weight'),
+      ...missingWhen(!context.hasGroundwater, 'groundwater condition'),
+    ],
+    present: [
+      ...presentWhen(context.hasStrata, 'strata profile'),
+      ...presentWhen(context.hasDepthCoverage, 'depth coverage'),
+      ...presentWhen(context.hasStrength, 'direct shear-strength parameters'),
+      ...presentWhen(!context.hasStrength && context.hasSpt, 'SPT profile for deformation correlations'),
+      ...presentWhen(context.hasSettlementBasis, 'stiffness/compressibility basis'),
+      ...presentWhen(context.hasUnitWeight, 'unit weight'),
+      ...presentWhen(context.hasGroundwater, 'groundwater condition'),
+    ],
+    evidenceIds: collectEvidenceIds(
+      context.strataEvidenceIds,
+      context.strengthEvidenceIds,
+      context.sptEvidenceIds,
+      context.compressibilityEvidenceIds,
+      context.labIndexEvidenceIds,
+      context.unitWeightEvidenceIds,
+      context.groundwaterEvidenceIds,
+    ),
+    recommendation: context.hasStrata && context.hasDepthCoverage && context.hasStrengthOrSpt
+      ? 'Prepare an experimental staged-excavation FEM draft only after the user declares excavation geometry, construction stages, support levels, surcharge, and groundwater handling. Do not run production excavation design from inferred values.'
+      : 'Add excavation-relevant strata depth coverage plus strength, SPT, or stiffness evidence before preparing an FEM staged-excavation case.',
   }, model, context, profile, options);
 }
 
@@ -578,6 +624,42 @@ function buildCalculationInputDraft(
           : { condition: 'not_modelled', note: 'Groundwater not present in GroundModel; explicit review required.' },
       };
       command = 'geotech fem demo raft --experimental --save-html <html> --no-open';
+      break;
+    }
+    case 'fem-excavation-deformation': {
+      missingUserInputs.push(
+        'excavation length',
+        'excavation width',
+        'final excavation depth',
+        'support levels / construction sequence',
+      );
+      draftInput = {
+        objective: 'excavation-deformation',
+        useDemoDefaults: false,
+        material: {
+          elasticModulusKpa: findNumericParameter(model, /elastic|modulus|\bes\b/i) ?? estimateElasticModulusFromSpt(model),
+          unitWeightKnM3: unitWeight,
+          poissonRatio: 0.3,
+        },
+        geometry: {
+          excavationLengthM: '<m>',
+          excavationWidthM: '<m>',
+          excavationFinalDepthM: '<m>',
+          wallToeDepthM: '<m>',
+        },
+        excavation: {
+          stageDepthsM: ['<stage depths m>'],
+          supportLevelsM: ['<support level depths m>'],
+          wallType: 'diaphragm_wall',
+        },
+        load: {
+          pressureKpa: '<surcharge kPa>',
+        },
+        groundwater: groundwaterDepth != null
+          ? { condition: 'specified', depthM: groundwaterDepth, note: 'Groundwater depth from GroundModel evidence; excavation seepage and dewatering coupling still require review.' }
+          : { condition: 'not_modelled', note: 'Groundwater not present in GroundModel; explicit excavation groundwater review required.' },
+      };
+      command = 'geotech fem demo excavation --experimental --save-html <html> --no-open';
       break;
     }
     case 'pile-capacity':

@@ -133,12 +133,15 @@ describe('GroundModel calculation readiness', () => {
       verification.calculationReadiness.workflows.map((workflow) => [workflow.workflow, workflow]),
     );
 
-    expect(verification.calculationReadiness.summary.ready).toBe(6);
+    expect(verification.calculationReadiness.summary.ready).toBe(7);
     expect(workflows['bearing-capacity']?.status).toBe('ready');
     expect(workflows['bearing-capacity']?.toolName).toBe('calculate_bearing_capacity');
     expect(workflows['settlement']?.toolName).toBe('calculate_schmertmann_settlement');
     expect(workflows['fem-foundation-settlement']?.toolName).toBe('prepare_fem_analysis_case');
     expect(workflows['fem-foundation-settlement']?.recommendation).toMatch(/experimental FEM/i);
+    expect(workflows['fem-excavation-deformation']?.toolName).toBe('prepare_fem_analysis_case');
+    expect(workflows['fem-excavation-deformation']?.commandTemplate).toContain('geotech fem demo excavation --experimental');
+    expect(workflows['fem-excavation-deformation']?.recommendation).toMatch(/staged-excavation FEM/i);
     expect(workflows['pile-capacity']?.status).toBe('ready');
     expect(workflows['liquefaction']?.present).toContain('SPT N-values');
     expect(workflows['slope-stability']?.evidenceIds).toContain('ev-phi-1');
@@ -160,6 +163,19 @@ describe('GroundModel calculation readiness', () => {
     expect(workflows['fem-foundation-settlement']?.inputDraft?.input).toMatchObject({
       objective: 'foundation-settlement',
       useDemoDefaults: false,
+    });
+    expect(workflows['fem-excavation-deformation']?.inputDraft?.missingUserInputs).toEqual([
+      'excavation length',
+      'excavation width',
+      'final excavation depth',
+      'support levels / construction sequence',
+    ]);
+    expect(workflows['fem-excavation-deformation']?.inputDraft?.input).toMatchObject({
+      objective: 'excavation-deformation',
+      useDemoDefaults: false,
+      excavation: {
+        wallType: 'diaphragm_wall',
+      },
     });
     expect(workflows['pile-capacity']?.inputDraft?.missingUserInputs).toEqual(['pile diameter', 'pile length']);
     expect(workflows['liquefaction']?.inputDraft?.missingUserInputs).toEqual(['PGA', 'earthquake magnitude']);
@@ -195,10 +211,11 @@ describe('GroundModel calculation readiness', () => {
       verification.calculationReadiness.workflows.map((workflow) => [workflow.workflow, workflow]),
     );
 
-    expect(verification.calculationReadiness.summary.blocked).toBe(6);
+    expect(verification.calculationReadiness.summary.blocked).toBe(7);
     expect(workflows['bearing-capacity']?.missing).toContain('stratigraphy / bearing stratum');
     expect(workflows['liquefaction']?.missing).toContain('SPT N-values by depth');
     expect(workflows['settlement']?.recommendation).toMatch(/compressibility/i);
     expect(workflows['fem-foundation-settlement']?.missing).toContain('3D ground profile / strata model');
+    expect(workflows['fem-excavation-deformation']?.missing).toContain('3D ground profile / excavation strata model');
   });
 });

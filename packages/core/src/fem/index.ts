@@ -1,5 +1,10 @@
 export * from './types.js';
-export { buildRaftDemoAnalysisCase, runBuiltinElasticRaftDemo } from './demo.js';
+export {
+  buildExcavationDemoAnalysisCase,
+  buildRaftDemoAnalysisCase,
+  runBuiltinElasticExcavationDemo,
+  runBuiltinElasticRaftDemo,
+} from './demo.js';
 export {
   getFemCapability,
   listFemCapabilities,

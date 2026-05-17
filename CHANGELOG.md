@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.57] - 2026-05-17
+
+### Experimental Excavation FEM Preview
+
+- Added `geotech fem demo excavation --experimental` as the second deterministic 3D FEM/WebGL preview, covering staged excavation deformation screening.
+- Added an excavation analysis-case contract, staged elastic demo runner, finite-result validation, and manifest fields for surface settlement, horizontal displacement, wall-deflection proxy, support reaction, and stage count.
+- Extended the FEM WebGL artifact with optional field and stage controls for staged manifests while preserving the existing raft preview layout.
+- Updated FEM routing so agents and swarm roles can prepare review-gated `excavation-deformation` drafts without inventing FEM result values.
+- Added GroundModel readiness and non-executing input drafts for experimental staged excavation FEM so workspace analysis no longer exposes FEM as foundation-only.
+
 ## [0.4.56] - 2026-05-17
 
 ### Agentic FEM Routing Foundation

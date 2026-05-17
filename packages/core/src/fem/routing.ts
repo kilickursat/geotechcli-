@@ -1,4 +1,5 @@
 import {
+  buildExcavationDemoAnalysisCase,
   buildRaftDemoAnalysisCase,
 } from './demo.js';
 import type {
@@ -43,6 +44,15 @@ export interface PrepareFemAnalysisCaseDraftInput {
     domainLengthM?: number;
     domainWidthM?: number;
     domainDepthM?: number;
+    excavationLengthM?: number;
+    excavationWidthM?: number;
+    excavationFinalDepthM?: number;
+    wallToeDepthM?: number;
+  };
+  excavation?: {
+    stageDepthsM?: number[];
+    supportLevelsM?: number[];
+    wallType?: 'diaphragm_wall' | 'secant_pile_wall' | 'soldier_pile_lagging' | 'unsupported_screening';
   };
   load?: {
     pressureKpa?: number;
@@ -94,15 +104,16 @@ const CAPABILITIES: FemCapability[] = [
   {
     objective: 'excavation-deformation',
     label: 'Staged excavation deformation preview',
-    status: 'contract-draft',
+    status: 'implemented-demo',
     analysisType: 'static_3d_staged_elastic',
-    deterministicBackend: null,
-    description: 'Planned staged excavation preview for settlement trough, wall deflection proxy, and support reaction review.',
+    deterministicBackend: 'builtin-staged-excavation-demo',
+    description: 'Experimental deterministic staged excavation deformation preview for settlement trough, wall deflection proxy, and support reaction review.',
     requiredEvidence: ['stratigraphy', 'groundwater condition', 'wall geometry', 'support levels', 'elastic stiffness basis'],
     requiredUserInputs: ['excavation length', 'excavation width', 'final depth', 'stage depths', 'wall/support assumptions'],
     visualizationFields: ['surface settlement', 'horizontal displacement', 'wall deflection proxy', 'stage slider', 'support overlays'],
-    reviewGates: ['contract-only', 'unsupported-wall-design', 'groundwater-coupling-required-review', 'not-basal-heave-verification'],
+    reviewGates: ['experimental-only', 'unsupported-wall-design', 'groundwater-coupling-required-review', 'not-basal-heave-verification', 'not-design-calculation'],
     limitations: ['No wall design, basal heave design, seepage, consolidation, or nonlinear soil response.'],
+    command: 'geotech fem demo excavation --experimental',
   },
   {
     objective: 'shaft-deformation',
@@ -155,6 +166,10 @@ function requirePositive(value: unknown, label: string, missing: string[]): numb
   return undefined;
 }
 
+function roundStageDepth(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
 export function listFemCapabilities(objective?: FemRouteObjective): FemCapability[] {
   return CAPABILITIES.filter((capability) => objective == null || capability.objective === objective);
 }
@@ -192,7 +207,7 @@ export function prepareFemAnalysisCaseDraft(input: PrepareFemAnalysisCaseDraftIn
     };
   }
 
-  if (capability.objective !== 'foundation-settlement') {
+  if (capability.objective !== 'foundation-settlement' && capability.objective !== 'excavation-deformation') {
     return {
       schemaVersion: 'fem-analysis-case-draft.v1',
       objective: capability.objective,
@@ -204,6 +219,105 @@ export function prepareFemAnalysisCaseDraft(input: PrepareFemAnalysisCaseDraftIn
       assumptions: [],
       reviewGates: capability.reviewGates,
       evidenceRefs: input.evidenceRefs ?? [],
+    };
+  }
+
+  if (capability.objective === 'excavation-deformation') {
+    const missing: string[] = [];
+    const useDemoDefaults = input.useDemoDefaults === true;
+    const lengthM = input.geometry?.excavationLengthM ?? (useDemoDefaults ? 18 : undefined);
+    const widthM = input.geometry?.excavationWidthM ?? (useDemoDefaults ? 12 : undefined);
+    const finalDepthM = input.geometry?.excavationFinalDepthM ?? (useDemoDefaults ? 8 : undefined);
+    const checkedLengthM = requirePositive(lengthM, 'excavation length', missing);
+    const checkedWidthM = requirePositive(widthM, 'excavation width', missing);
+    const checkedFinalDepthM = requirePositive(finalDepthM, 'final excavation depth', missing);
+
+    if (!checkedLengthM || !checkedWidthM || !checkedFinalDepthM) {
+      return {
+        schemaVersion: 'fem-analysis-case-draft.v1',
+        objective: capability.objective,
+        capability,
+        implemented: true,
+        canAutoProceed: false,
+        recommendedAction: 'collect-inputs',
+        missingUserInputs: missing,
+        assumptions: [],
+        reviewGates: ['missing-user-inputs', ...capability.reviewGates],
+        evidenceRefs: input.evidenceRefs ?? [],
+        recommendedCommand: capability.command,
+      };
+    }
+
+    const analysisCase = buildExcavationDemoAnalysisCase();
+    analysisCase.caseId = 'excavation-deformation-draft';
+    analysisCase.title = 'Experimental 3D FEM staged excavation deformation draft';
+    analysisCase.createdBy = 'geotechcli-fem-routing';
+    analysisCase.evidenceRefs = input.evidenceRefs ?? [];
+    analysisCase.materials.forEach((material) => {
+      material.evidenceRefs = input.evidenceRefs ?? [];
+    });
+    if (analysisCase.geometry.excavation) {
+      analysisCase.geometry.excavation.lengthM = checkedLengthM;
+      analysisCase.geometry.excavation.widthM = checkedWidthM;
+      analysisCase.geometry.excavation.finalDepthM = checkedFinalDepthM;
+      analysisCase.geometry.excavation.wallToeDepthM = input.geometry?.wallToeDepthM ?? Math.max(checkedFinalDepthM * 1.55, analysisCase.geometry.excavation.wallToeDepthM);
+      analysisCase.geometry.excavation.wallType = input.excavation?.wallType ?? analysisCase.geometry.excavation.wallType;
+      if (Array.isArray(input.excavation?.stageDepthsM) && input.excavation.stageDepthsM.length > 0) {
+        const supportLevels = input.excavation.supportLevelsM ?? [];
+        analysisCase.geometry.excavation.stages = input.excavation.stageDepthsM.map((depthM, index) => ({
+          id: `stage-${index + 1}`,
+          label: `Stage ${index + 1} - excavate to ${depthM.toFixed(1)} m`,
+          depthM,
+          supportLevelM: supportLevels[index],
+        }));
+      } else {
+        analysisCase.geometry.excavation.stages = analysisCase.geometry.excavation.stages.map((stage, index, stages) => ({
+          ...stage,
+          depthM: index === stages.length - 1
+            ? checkedFinalDepthM
+            : Math.min(checkedFinalDepthM, roundStageDepth(checkedFinalDepthM * ((index + 1) / stages.length))),
+        }));
+      }
+    }
+    analysisCase.geometry.domain.lengthM = input.geometry?.domainLengthM ?? Math.max(checkedLengthM * 2.8, analysisCase.geometry.domain.lengthM);
+    analysisCase.geometry.domain.widthM = input.geometry?.domainWidthM ?? Math.max(checkedWidthM * 2.8, analysisCase.geometry.domain.widthM);
+    analysisCase.geometry.domain.depthM = input.geometry?.domainDepthM ?? Math.max(checkedFinalDepthM * 2.75, analysisCase.geometry.domain.depthM);
+    if (finitePositive(input.load?.pressureKpa)) analysisCase.loads[0].pressureKpa = input.load.pressureKpa;
+    if (finitePositive(input.material?.elasticModulusKpa)) analysisCase.materials[0].elasticModulusKpa = input.material.elasticModulusKpa;
+    if (typeof input.material?.poissonRatio === 'number') analysisCase.materials[0].poissonRatio = input.material.poissonRatio;
+    if (finitePositive(input.material?.unitWeightKnM3)) analysisCase.materials[0].unitWeightKnM3 = input.material.unitWeightKnM3;
+    if (input.groundwater?.condition) {
+      analysisCase.groundwater.condition = input.groundwater.condition;
+    }
+    if (typeof input.groundwater?.depthM === 'number') {
+      analysisCase.groundwater.depthM = input.groundwater.depthM;
+    }
+    if (input.groundwater?.note) {
+      analysisCase.groundwater.note = input.groundwater.note;
+    }
+
+    const validation = validateFemAnalysisCase(analysisCase);
+    const reviewGates = [
+      ...capability.reviewGates,
+      ...validation.findings
+        .filter((finding) => finding.severity !== 'info')
+        .map((finding) => finding.code),
+    ];
+
+    return {
+      schemaVersion: 'fem-analysis-case-draft.v1',
+      objective: capability.objective,
+      capability,
+      implemented: true,
+      canAutoProceed: false,
+      recommendedAction: 'run-experimental-demo',
+      missingUserInputs: [],
+      assumptions: analysisCase.assumptions,
+      reviewGates: [...new Set(reviewGates)],
+      evidenceRefs: analysisCase.evidenceRefs,
+      analysisCase,
+      validation,
+      recommendedCommand: capability.command,
     };
   }
 
@@ -236,9 +350,13 @@ export function prepareFemAnalysisCaseDraft(input: PrepareFemAnalysisCaseDraftIn
   analysisCase.caseId = 'raft-settlement-draft';
   analysisCase.title = 'Experimental 3D FEM raft settlement draft';
   analysisCase.createdBy = 'geotechcli-fem-routing';
-  analysisCase.geometry.raft.lengthM = checkedRaftLengthM;
-  analysisCase.geometry.raft.widthM = checkedRaftWidthM;
-  analysisCase.geometry.raft.thicknessM = input.geometry?.raftThicknessM ?? analysisCase.geometry.raft.thicknessM;
+  const raft = analysisCase.geometry.raft;
+  if (!raft) {
+    throw new Error('Built-in raft draft is missing raft geometry.');
+  }
+  raft.lengthM = checkedRaftLengthM;
+  raft.widthM = checkedRaftWidthM;
+  raft.thicknessM = input.geometry?.raftThicknessM ?? raft.thicknessM;
   analysisCase.geometry.domain.lengthM = input.geometry?.domainLengthM ?? Math.max(checkedRaftLengthM * 3, analysisCase.geometry.domain.lengthM);
   analysisCase.geometry.domain.widthM = input.geometry?.domainWidthM ?? Math.max(checkedRaftWidthM * 3, analysisCase.geometry.domain.widthM);
   analysisCase.geometry.domain.depthM = input.geometry?.domainDepthM ?? Math.max(checkedRaftLengthM, checkedRaftWidthM, analysisCase.geometry.domain.depthM);

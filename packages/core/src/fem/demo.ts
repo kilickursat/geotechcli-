@@ -2,6 +2,7 @@ import type {
   FemAnalysisCase,
   FemAssumption,
   FemResultManifest,
+  FemVisualizationFrame,
   FemVisualizationMesh,
 } from './types.js';
 import { validateFemAnalysisCase } from './validation.js';
@@ -28,6 +29,25 @@ function settlementColor(t: number): [number, number, number] {
     [235, 210, 75],
     [220, 83, 44],
     [170, 25, 55],
+  ];
+  const scaled = Math.min(Math.max(t, 0), 1) * (stops.length - 1);
+  const left = Math.floor(scaled);
+  const right = Math.min(left + 1, stops.length - 1);
+  const local = scaled - left;
+  return [0, 1, 2].map((index) => {
+    const value = stops[left][index] + (stops[right][index] - stops[left][index]) * local;
+    return round(value / 255, 4);
+  }) as [number, number, number];
+}
+
+function movementColor(t: number): [number, number, number] {
+  const stops: Array<[number, number, number]> = [
+    [30, 64, 175],
+    [56, 189, 248],
+    [34, 197, 94],
+    [250, 204, 21],
+    [249, 115, 22],
+    [239, 68, 68],
   ];
   const scaled = Math.min(Math.max(t, 0), 1) * (stops.length - 1);
   const left = Math.floor(scaled);
@@ -160,8 +180,148 @@ export function buildRaftDemoAnalysisCase(now = new Date('2026-05-16T00:00:00.00
   };
 }
 
+export function buildExcavationDemoAnalysisCase(now = new Date('2026-05-17T00:00:00.000Z')): FemAnalysisCase {
+  const assumptions: FemAssumption[] = [
+    {
+      id: 'staged-elastic-screening',
+      parameter: 'soil-structure response',
+      value: 'linear elastic staged excavation preview',
+      basis: 'Experimental offline demonstration for FEM routing, staged-result visualization, and review workflow validation.',
+      confidence: 'review',
+      reviewRequired: true,
+    },
+    {
+      id: 'wall-support-proxy',
+      parameter: 'retaining wall and support behavior',
+      value: 'elastic proxy, not wall design',
+      basis: 'Phase 0 excavation demo uses a deterministic displacement field and support reaction envelope only.',
+      confidence: 'review',
+      reviewRequired: true,
+    },
+    {
+      id: 'groundwater-not-coupled',
+      parameter: 'groundwater',
+      value: 'not coupled',
+      basis: 'Pore pressure, seepage, basal heave, and consolidation are outside this experimental preview.',
+      confidence: 'review',
+      reviewRequired: true,
+    },
+  ];
+
+  return {
+    schemaVersion: 'fem-analysis-case.v0',
+    caseId: 'excavation-deformation-demo',
+    title: 'Experimental 3D FEM staged excavation deformation demo',
+    createdBy: 'geotechcli-fem-demo',
+    createdAt: now.toISOString(),
+    experimental: true,
+    objective: 'excavation_deformation',
+    analysisType: 'static_3d_staged_elastic',
+    units: DEFAULT_UNITS,
+    geometry: {
+      domain: {
+        type: 'box',
+        lengthM: 48,
+        widthM: 36,
+        depthM: 22,
+      },
+      excavation: {
+        type: 'braced_excavation',
+        lengthM: 18,
+        widthM: 12,
+        finalDepthM: 8,
+        centerXM: 0,
+        centerYM: 0,
+        wallToeDepthM: 13,
+        wallType: 'diaphragm_wall',
+        stages: [
+          { id: 'stage-1', label: 'Stage 1 - excavate to 2.5 m', depthM: 2.5 },
+          { id: 'stage-2', label: 'Stage 2 - excavate to 5.0 m, first support active', depthM: 5, supportLevelM: 1.5 },
+          { id: 'stage-3', label: 'Stage 3 - excavate to 8.0 m, two support levels active', depthM: 8, supportLevelM: 4.5 },
+        ],
+      },
+    },
+    materials: [
+      {
+        id: 'upper-fill-clay',
+        name: 'Upper fill and clay equivalent elastic layer',
+        model: 'linear_elastic',
+        elasticModulusKpa: 28000,
+        poissonRatio: 0.32,
+        unitWeightKnM3: 18.5,
+        evidenceRefs: [],
+        assumptions,
+      },
+      {
+        id: 'dense-sand-weathered-rock',
+        name: 'Lower dense granular / weathered rock equivalent layer',
+        model: 'linear_elastic',
+        elasticModulusKpa: 85000,
+        poissonRatio: 0.28,
+        unitWeightKnM3: 20,
+        evidenceRefs: [],
+        assumptions,
+      },
+    ],
+    loads: [
+      {
+        id: 'construction-surcharge',
+        type: 'uniform_pressure',
+        target: 'excavation_surcharge',
+        pressureKpa: 20,
+        evidenceRefs: [],
+        assumptions: [
+          {
+            id: 'surface-surcharge',
+            parameter: 'construction surcharge',
+            value: 20,
+            unit: 'kPa',
+            basis: 'Representative construction surcharge for the experimental excavation demo.',
+            confidence: 'review',
+            reviewRequired: true,
+          },
+        ],
+      },
+    ],
+    boundaryConditions: [
+      {
+        id: 'base-fixed',
+        type: 'fixed_base',
+        description: 'Base nodes fixed in all translations.',
+      },
+      {
+        id: 'side-rollers',
+        type: 'side_rollers',
+        description: 'Side boundaries use normal-displacement rollers.',
+      },
+    ],
+    mesh: {
+      elementType: 'hex8',
+      divisionsX: 16,
+      divisionsY: 12,
+      divisionsZ: 8,
+    },
+    groundwater: {
+      condition: 'not_modelled',
+      note: 'Groundwater, pore pressure, seepage, and basal-heave checks are not included in this experimental excavation preview.',
+      reviewRequired: true,
+    },
+    assumptions,
+    evidenceRefs: [],
+    limitations: [
+      'Experimental staged excavation deformation preview only; not a design model.',
+      'Linear elastic small-strain response only.',
+      'No retaining wall design, basal heave verification, seepage, consolidation, plasticity, or construction risk acceptance check.',
+      'Displacement and reaction fields are generated by a deterministic built-in screening approximation for agentic workflow and visualization validation.',
+    ],
+  };
+}
+
 function buildVisualizationMesh(caseFile: FemAnalysisCase, maxSettlementMm: number): FemVisualizationMesh {
   const { domain, raft } = caseFile.geometry;
+  if (!raft) {
+    throw new Error('Raft visualization mesh requires raft geometry.');
+  }
   const nx = caseFile.mesh.divisionsX;
   const ny = caseFile.mesh.divisionsY;
   const base: number[] = [];
@@ -229,6 +389,121 @@ function buildVisualizationMesh(caseFile: FemAnalysisCase, maxSettlementMm: numb
   };
 }
 
+function buildExcavationVisualizationMesh(
+  caseFile: FemAnalysisCase,
+  maxSurfaceSettlementMm: number,
+  maxHorizontalDisplacementMm: number,
+  maxWallDeflectionMm: number,
+): FemVisualizationMesh {
+  const { domain, excavation } = caseFile.geometry;
+  if (!excavation) {
+    throw new Error('Excavation visualization mesh requires excavation geometry.');
+  }
+  const excavationGeometry = excavation;
+  const nx = caseFile.mesh.divisionsX;
+  const ny = caseFile.mesh.divisionsY;
+  const base: number[] = [];
+  const tri: number[] = [];
+  const edge: number[] = [];
+  const sigma = Math.max(excavation.lengthM, excavation.widthM) * 0.72;
+  const halfL = excavation.lengthM / 2;
+  const halfW = excavation.widthM / 2;
+
+  const idx = (ix: number, iy: number) => iy * (nx + 1) + ix;
+  for (let iy = 0; iy <= ny; iy += 1) {
+    const y = -domain.widthM / 2 + (domain.widthM * iy) / ny;
+    for (let ix = 0; ix <= nx; ix += 1) {
+      const x = -domain.lengthM / 2 + (domain.lengthM * ix) / nx;
+      base.push(round(x), round(y), 0);
+    }
+  }
+  for (let iy = 0; iy < ny; iy += 1) {
+    for (let ix = 0; ix < nx; ix += 1) {
+      const a = idx(ix, iy);
+      const b = idx(ix + 1, iy);
+      const c = idx(ix + 1, iy + 1);
+      const d = idx(ix, iy + 1);
+      tri.push(a, b, c, a, c, d);
+    }
+  }
+  for (let iy = 0; iy <= ny; iy += 1) {
+    for (let ix = 0; ix < nx; ix += 1) {
+      edge.push(idx(ix, iy), idx(ix + 1, iy));
+    }
+  }
+  for (let ix = 0; ix <= nx; ix += 1) {
+    for (let iy = 0; iy < ny; iy += 1) {
+      edge.push(idx(ix, iy), idx(ix, iy + 1));
+    }
+  }
+
+  function distanceFromExcavation(x: number, y: number): number {
+    const dx = Math.max(Math.abs(x) - halfL, 0);
+    const dy = Math.max(Math.abs(y) - halfW, 0);
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  function buildFrame(
+    stageIndex: number,
+    stageLabel: string,
+    field: string,
+    fieldLabel: string,
+  ): FemVisualizationFrame {
+    const stage = excavationGeometry.stages[stageIndex];
+    const stageRatio = stage.depthM / excavationGeometry.finalDepthM;
+    const disp: number[] = [];
+    const color: number[] = [];
+    for (let index = 0; index < base.length; index += 3) {
+      const x = base[index];
+      const y = base[index + 1];
+      const dist = distanceFromExcavation(x, y);
+      const influence = Math.exp(-(dist * dist) / (2 * sigma * sigma));
+      const inside = Math.abs(x) <= halfL && Math.abs(y) <= halfW;
+      const nearWall = dist <= Math.max(1.5, Math.min(halfL, halfW) * 0.22);
+      const radial = Math.max(Math.sqrt(x * x + y * y), 1e-6);
+      const wallFactor = nearWall ? 1 : 0.38;
+      const settlementMm = maxSurfaceSettlementMm * stageRatio * influence * (inside ? 0.72 : 1);
+      const horizontalMm = maxHorizontalDisplacementMm * stageRatio * influence * wallFactor;
+      const wallMm = maxWallDeflectionMm * stageRatio * influence * (nearWall ? 1 : 0.2);
+      if (field === 'horizontal_displacement') {
+        disp.push(round((-x / radial * horizontalMm) / 1000, 6), round((-y / radial * horizontalMm) / 1000, 6), round(-settlementMm / 1000 * 0.18, 6));
+        color.push(...movementColor(horizontalMm / Math.max(maxHorizontalDisplacementMm, 1)));
+      } else if (field === 'wall_deflection_proxy') {
+        disp.push(round((-x / radial * wallMm) / 1000, 6), round((-y / radial * wallMm) / 1000, 6), 0);
+        color.push(...movementColor(wallMm / Math.max(maxWallDeflectionMm, 1)));
+      } else {
+        disp.push(0, 0, round(-settlementMm / 1000, 6));
+        color.push(...settlementColor(settlementMm / Math.max(maxSurfaceSettlementMm, 1)));
+      }
+    }
+    return { field, fieldLabel, stageIndex, stageLabel, disp, color };
+  }
+
+  const frames: FemVisualizationFrame[] = excavation.stages.flatMap((stage, stageIndex) => [
+    buildFrame(stageIndex, stage.label, 'surface_settlement', 'Surface settlement'),
+    buildFrame(stageIndex, stage.label, 'horizontal_displacement', 'Horizontal displacement'),
+    buildFrame(stageIndex, stage.label, 'wall_deflection_proxy', 'Wall deflection proxy'),
+  ]);
+  const primary = frames.find((frame) => frame.field === 'surface_settlement' && frame.stageIndex === excavation.stages.length - 1) ?? frames[0];
+  const z = 0.04;
+  return {
+    base,
+    disp: primary.disp,
+    color: primary.color,
+    tri,
+    edge,
+    outlineBase: [
+      -halfL, -halfW, z,
+      halfL, -halfW, z,
+      halfL, halfW, z,
+      -halfL, halfW, z,
+    ],
+    outlineDisp: new Array(12).fill(0),
+    outlineIdx: [0, 1, 1, 2, 2, 3, 3, 0],
+    frames,
+  };
+}
+
 export function runBuiltinElasticRaftDemo(caseFile = buildRaftDemoAnalysisCase()): FemResultManifest {
   const validation = validateFemAnalysisCase(caseFile);
   const material = caseFile.materials[0];
@@ -241,6 +516,9 @@ export function runBuiltinElasticRaftDemo(caseFile = buildRaftDemoAnalysisCase()
   }
 
   const raft = caseFile.geometry.raft;
+  if (!raft) {
+    throw new Error('Raft demo requires raft geometry.');
+  }
   const loadedArea = raft.lengthM * raft.widthM;
   const totalLoadKn = load.pressureKpa * loadedArea;
   const stiffnessSettlementM =
@@ -281,6 +559,82 @@ export function runBuiltinElasticRaftDemo(caseFile = buildRaftDemoAnalysisCase()
       totalLoadKn: round(totalLoadKn, 3),
       reactionKn: round(totalLoadKn, 3),
       reactionBalanceRatio: 1,
+    },
+    visualization,
+    assumptions: [
+      ...caseFile.assumptions,
+      ...caseFile.loads.flatMap((item) => item.assumptions),
+    ],
+    limitations: caseFile.limitations,
+  };
+}
+
+export function runBuiltinElasticExcavationDemo(
+  caseFile = buildExcavationDemoAnalysisCase(),
+): FemResultManifest {
+  const validation = validateFemAnalysisCase(caseFile);
+  const excavation = caseFile.geometry.excavation;
+  const upperMaterial = caseFile.materials[0];
+  if (!excavation || !upperMaterial) {
+    throw new Error('Excavation demo requires excavation geometry and at least one material.');
+  }
+  if (validation.status === 'blocked') {
+    throw new Error(`FEM case is blocked: ${validation.findings.map((item) => item.message).join('; ')}`);
+  }
+
+  const excavationVolumeM3 = excavation.lengthM * excavation.widthM * excavation.finalDepthM;
+  const totalExcavatedWeightKn = excavationVolumeM3 * upperMaterial.unitWeightKnM3;
+  const depthRatio = excavation.finalDepthM / Math.max(excavation.wallToeDepthM, excavation.finalDepthM);
+  const stiffnessFactor = Math.max(0.35, Math.min(1.8, 45_000 / upperMaterial.elasticModulusKpa));
+  const maxSurfaceSettlementMm = round(excavation.finalDepthM * 1.72 * stiffnessFactor, 3);
+  const maxHorizontalDisplacementMm = round(maxSurfaceSettlementMm * (0.7 + depthRatio * 0.35), 3);
+  const maxWallDeflectionMm = round(maxHorizontalDisplacementMm * 0.82, 3);
+  const maxBasalHeaveMm = round(excavation.finalDepthM * 0.55 * stiffnessFactor, 3);
+  const supportReactionKn = round(totalExcavatedWeightKn * 0.28, 3);
+  const boundaryReactionKn = round(totalExcavatedWeightKn - supportReactionKn, 3);
+  const visualization = buildExcavationVisualizationMesh(
+    caseFile,
+    maxSurfaceSettlementMm,
+    maxHorizontalDisplacementMm,
+    maxWallDeflectionMm,
+  );
+
+  return {
+    schemaVersion: 'fem-result-manifest.v0',
+    caseId: caseFile.caseId,
+    title: caseFile.title,
+    generatedAt: new Date().toISOString(),
+    backend: {
+      id: 'builtin-staged-excavation-demo',
+      label: 'Built-in experimental staged excavation deformation preview',
+      deterministic: true,
+      version: '0.1.0',
+    },
+    analysisCase: caseFile,
+    validation,
+    mesh: {
+      nodes: (caseFile.mesh.divisionsX + 1) * (caseFile.mesh.divisionsY + 1) * (caseFile.mesh.divisionsZ + 1),
+      elements: caseFile.mesh.divisionsX * caseFile.mesh.divisionsY * caseFile.mesh.divisionsZ,
+      elementType: caseFile.mesh.elementType,
+      divisions: [caseFile.mesh.divisionsX, caseFile.mesh.divisionsY, caseFile.mesh.divisionsZ],
+      visualizationNodes: visualization.base.length / 3,
+      visualizationTriangles: visualization.tri.length / 3,
+      visualizationEdges: visualization.edge.length / 2,
+    },
+    envelope: {
+      maxSettlementMm: maxSurfaceSettlementMm,
+      minSettlementMm: 0,
+      totalLoadKn: round(totalExcavatedWeightKn, 3),
+      reactionKn: round(totalExcavatedWeightKn, 3),
+      reactionBalanceRatio: 1,
+      maxSurfaceSettlementMm,
+      maxHorizontalDisplacementMm,
+      maxWallDeflectionMm,
+      maxBasalHeaveMm,
+      totalExcavatedWeightKn: round(totalExcavatedWeightKn, 3),
+      supportReactionKn,
+      boundaryReactionKn,
+      stageCount: excavation.stages.length,
     },
     visualization,
     assumptions: [

@@ -1,6 +1,6 @@
-export type FemObjective = 'foundation_settlement';
+export type FemObjective = 'foundation_settlement' | 'excavation_deformation';
 
-export type FemAnalysisType = 'static_3d_small_strain';
+export type FemAnalysisType = 'static_3d_small_strain' | 'static_3d_staged_elastic';
 
 export type FemAssumptionConfidence = 'measured' | 'inferred' | 'review';
 
@@ -58,10 +58,29 @@ export interface FemRaftGeometry {
   centerYM: number;
 }
 
+export interface FemExcavationStage {
+  id: string;
+  label: string;
+  depthM: number;
+  supportLevelM?: number;
+}
+
+export interface FemExcavationGeometry {
+  type: 'braced_excavation';
+  lengthM: number;
+  widthM: number;
+  finalDepthM: number;
+  centerXM: number;
+  centerYM: number;
+  wallToeDepthM: number;
+  wallType: 'diaphragm_wall' | 'secant_pile_wall' | 'soldier_pile_lagging' | 'unsupported_screening';
+  stages: FemExcavationStage[];
+}
+
 export interface FemPressureLoad {
   id: string;
   type: 'uniform_pressure';
-  target: 'raft';
+  target: 'raft' | 'excavation_surcharge';
   pressureKpa: number;
   evidenceRefs: FemEvidenceRef[];
   assumptions: FemAssumption[];
@@ -99,7 +118,8 @@ export interface FemAnalysisCase {
   units: FemUnits;
   geometry: {
     domain: FemBoxDomain;
-    raft: FemRaftGeometry;
+    raft?: FemRaftGeometry;
+    excavation?: FemExcavationGeometry;
   };
   materials: FemMaterial[];
   loads: FemPressureLoad[];
@@ -133,6 +153,16 @@ export interface FemVisualizationMesh {
   outlineBase: number[];
   outlineDisp: number[];
   outlineIdx: number[];
+  frames?: FemVisualizationFrame[];
+}
+
+export interface FemVisualizationFrame {
+  field: string;
+  fieldLabel: string;
+  stageIndex?: number;
+  stageLabel?: string;
+  disp: number[];
+  color: number[];
 }
 
 export interface FemResultEnvelope {
@@ -141,6 +171,14 @@ export interface FemResultEnvelope {
   totalLoadKn: number;
   reactionKn: number;
   reactionBalanceRatio: number;
+  maxSurfaceSettlementMm?: number;
+  maxHorizontalDisplacementMm?: number;
+  maxWallDeflectionMm?: number;
+  maxBasalHeaveMm?: number;
+  totalExcavatedWeightKn?: number;
+  supportReactionKn?: number;
+  boundaryReactionKn?: number;
+  stageCount?: number;
 }
 
 export interface FemResultManifest {
@@ -149,7 +187,7 @@ export interface FemResultManifest {
   title: string;
   generatedAt: string;
   backend: {
-    id: 'builtin-elastic3d-demo';
+    id: 'builtin-elastic3d-demo' | 'builtin-staged-excavation-demo';
     label: string;
     deterministic: true;
     version: string;

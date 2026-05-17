@@ -264,22 +264,25 @@ geotech analyze . --standard eurocode7
 geotech analyze . --standard eurocode7 --draft-inputs --json
 \`\`\`
 
-Current strong-beta scope: file discovery, AGS/PDF/image/GIS/CAD classification, context-aware CSV/XLSX schema inference for common borehole IDs and groundwater-depth tables, evidence references, canonical GroundModel construction, GroundModel coordinate maps with CRS/local-grid warnings, compact borehole strip logs, SPT-depth plots, lab-parameter depth charts, groundwater/monitoring summaries, standards-profile assumptions, verifier findings, detected branches, calculation readiness for bearing, settlement, pile, liquefaction, and slope workflows, optional non-executing calculation input drafts, warnings, and recommended next steps. Analyze does not yet auto-run design calculations from the folder; it reports which deterministic workflow is ready, blocked, or needs explicit assumptions before routing. The optional agent swarm planner can consume this workspace evidence with --workspace --swarm.`,
+Current strong-beta scope: file discovery, AGS/PDF/image/GIS/CAD classification, context-aware CSV/XLSX schema inference for common borehole IDs and groundwater-depth tables, evidence references, canonical GroundModel construction, GroundModel coordinate maps with CRS/local-grid warnings, compact borehole strip logs, SPT-depth plots, lab-parameter depth charts, groundwater/monitoring summaries, standards-profile assumptions, verifier findings, detected branches, calculation readiness for bearing, settlement, experimental FEM foundation/excavation drafts, pile, liquefaction, and slope workflows, optional non-executing calculation input drafts, warnings, and recommended next steps. Analyze does not yet auto-run design calculations from the folder; it reports which deterministic workflow is ready, blocked, or needs explicit assumptions before routing. The optional agent swarm planner can consume this workspace evidence with --workspace --swarm.`,
   },
   {
     id: 'fem',
     title: 'geotech fem',
-    content: `Experimental deterministic 3D FEM/WebGL previews. The first strong-beta surface is a built-in raft settlement demo that validates an FEM analysis case, produces a deterministic result manifest, and exports a self-contained WebGL artifact without spending hosted-beta model calls.
+    content: `Experimental deterministic 3D FEM/WebGL previews. The current strong-beta surfaces are built-in raft settlement and staged excavation deformation demos that validate FEM analysis cases, produce deterministic result manifests, and export self-contained WebGL artifacts without spending hosted-beta model calls.
 
 \`\`\`bash
 geotech fem demo raft --experimental
 geotech fem demo raft --experimental --save-html raft-fem.html --no-open
 geotech fem demo raft --experimental --output raft-fem.manifest.json --json
+geotech fem demo excavation --experimental
+geotech fem demo excavation --experimental --save-html excavation-fem.html --no-open
+geotech fem demo excavation --experimental --output excavation-fem.manifest.json --json
 \`\`\`
 
-Current scope: foundation-settlement demo only, linear elastic small-strain screening behavior, fixed built-in geometry, deterministic result envelope, validation warnings, and browser artifact export. It is deliberately gated behind --experimental and is not a production FEM solver or design calculation.
+Current scope: foundation-settlement and staged-excavation deformation demos only, linear elastic screening behavior, fixed built-in geometry, deterministic result envelopes, validation warnings, and browser artifact export. The excavation preview adds staged field controls for surface settlement, horizontal displacement, and wall-deflection proxy. It is deliberately gated behind --experimental and is not a production FEM solver, wall-design check, basal-heave check, seepage analysis, or design calculation.
 
-Agent and swarm mode see FEM through deterministic routing tools rather than prompt-only claims. The model may list FEM capabilities, prepare a review-gated foundation-settlement case draft, or validate a FEM case, but FEM result fields must come from geotechCLI contracts and validators. Excavation deformation, shaft deformation, tunnel volume-loss settlement, and pile-group interaction are represented as draft/planned routes until deterministic engines are added. The purpose is to stabilize the provider-neutral FEM case/result contract before future GroundModel-to-calculation routing, report-derived input drafting, and agent review workflows use the same deterministic boundary.`,
+Agent and swarm mode see FEM through deterministic routing tools rather than prompt-only claims. The model may list FEM capabilities, prepare review-gated foundation-settlement or excavation-deformation case drafts, or validate a FEM case, but FEM result fields must come from geotechCLI contracts and validators. Shaft deformation, tunnel volume-loss settlement, and pile-group interaction remain draft/planned routes until deterministic engines are added. The purpose is to stabilize the provider-neutral FEM case/result contract before future GroundModel-to-calculation routing, report-derived input drafting, and agent review workflows use the same deterministic boundary.`,
   },
   {
     id: 'ingest',

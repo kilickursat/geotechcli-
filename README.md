@@ -59,6 +59,7 @@ geotech viz workspace.json --save-html ground-model-review.html --no-open
 
 # Experimental deterministic 3D FEM/WebGL preview
 geotech fem demo raft --experimental --save-html raft-fem.html --no-open
+geotech fem demo excavation --experimental --save-html excavation-fem.html --no-open
 
 # Bearing capacity (Meyerhof)
 geotech bearing --depth 5 --phi 30 --cohesion 25 --width 2.5
@@ -108,21 +109,24 @@ geotech analyze . --standard eurocode7
 geotech analyze . --standard eurocode7 --draft-inputs --json
 ```
 
-Current strong-beta scope: workspace awareness, context-aware CSV/XLSX schema inference for common borehole IDs and groundwater-depth tables, AGS/PDF/image/GIS/CAD classification, evidence references, canonical GroundModel construction, GroundModel coordinate maps with CRS/local-grid warnings, compact borehole strip logs, SPT-depth plots, lab-parameter depth charts, groundwater/monitoring summaries, standards-profile assumptions, deterministic verifier findings, calculation readiness for bearing, settlement, pile, liquefaction, and slope workflows, optional non-executing calculation input drafts, recommendations, and a self-contained HTML report. It does not yet auto-run branch-specific design calculations from the folder; it tells you which calculation route is ready, blocked, or needs explicit assumptions.
+Current strong-beta scope: workspace awareness, context-aware CSV/XLSX schema inference for common borehole IDs and groundwater-depth tables, AGS/PDF/image/GIS/CAD classification, evidence references, canonical GroundModel construction, GroundModel coordinate maps with CRS/local-grid warnings, compact borehole strip logs, SPT-depth plots, lab-parameter depth charts, groundwater/monitoring summaries, standards-profile assumptions, deterministic verifier findings, calculation readiness for bearing, settlement, experimental FEM foundation/excavation drafts, pile, liquefaction, and slope workflows, optional non-executing calculation input drafts, recommendations, and a self-contained HTML report. It does not yet auto-run branch-specific design calculations from the folder; it tells you which calculation route is ready, blocked, or needs explicit assumptions.
 
 ## Experimental FEM Preview
 
-`geotech fem demo raft` is an opt-in experimental 3D FEM/WebGL preview for the future finite-element workflow. It builds a deterministic elastic raft settlement case in core, validates assumptions and result arrays, then exports a self-contained WebGL artifact that can be inspected without a hosted model call.
+`geotech fem demo raft` and `geotech fem demo excavation` are opt-in experimental 3D FEM/WebGL previews for the future finite-element workflow. They build deterministic elastic analysis cases in core, validate assumptions and result arrays, then export self-contained WebGL artifacts that can be inspected without a hosted model call.
 
 ```bash
 geotech fem demo raft --experimental
 geotech fem demo raft --experimental --save-html raft-fem.html --no-open
 geotech fem demo raft --experimental --output raft-fem.manifest.json --json
+geotech fem demo excavation --experimental
+geotech fem demo excavation --experimental --save-html excavation-fem.html --no-open
+geotech fem demo excavation --experimental --output excavation-fem.manifest.json --json
 ```
 
-Current scope: foundation-settlement demo only, linear elastic small-strain screening behavior, fixed built-in case geometry, deterministic result manifest, and WebGL visualization. It is not a production FEM solver or design calculation; it exists to validate the agentic contract, result schema, reviewer warnings, and browser artifact path before report-ingested GroundModel routing is added.
+Current scope: foundation-settlement and staged-excavation deformation demos only, linear elastic screening behavior, fixed built-in case geometry, deterministic result manifests, and WebGL/Canvas visualization. The excavation preview adds staged field controls for surface settlement, horizontal displacement, and wall-deflection proxy. These commands are not production FEM solvers, wall-design checks, basal-heave checks, seepage analyses, or design calculations; they exist to validate the agentic contract, result schema, reviewer warnings, and browser artifact path before report-ingested GroundModel routing is expanded.
 
-Agents and swarm runs now see FEM through deterministic routing tools, not prompt-only instructions. The model may list FEM capabilities, prepare a review-gated `foundation-settlement` case draft, or validate a FEM case, but it must not invent solver outputs. Draft and planned routes include excavation deformation, shaft deformation, tunnel volume-loss settlement, and pile-group interaction as contract-aware future targets until deterministic engines are added.
+Agents and swarm runs now see FEM through deterministic routing tools, not prompt-only instructions. The model may list FEM capabilities, prepare review-gated `foundation-settlement` or `excavation-deformation` case drafts, or validate a FEM case, but it must not invent solver outputs. Draft and planned routes include shaft deformation, tunnel volume-loss settlement, and pile-group interaction as contract-aware future targets until deterministic engines are added.
 
 ## Interactive Visualization
 
@@ -182,6 +186,7 @@ These commands are the public strong-beta foundation and are available now.
 | `geotech retaining` | Lateral earth pressure using Rankine and Coulomb |
 | `geotech analyze` | Local project manifest, CSV/XLSX schema inference, evidence-bound GroundModel, map, strip logs, verifier, and HTML report |
 | `geotech fem demo raft` | Experimental deterministic 3D FEM/WebGL raft settlement preview |
+| `geotech fem demo excavation` | Experimental deterministic staged excavation deformation WebGL preview |
 | `geotech viz` | Interactive browser visualization for saved JSON, GroundModel maps, SPT/lab/GWL charts, CSV, and Excel data |
 
 ### AI-Assisted

@@ -37,7 +37,7 @@ function isFemAnalysisCaseShape(value: unknown): value is FemAnalysisCase {
   return (
     isRecord(geometry) &&
     isRecord(geometry.domain) &&
-    isRecord(geometry.raft) &&
+    (isRecord(geometry.raft) || isRecord(geometry.excavation)) &&
     isRecord(mesh) &&
     isRecord(groundwater) &&
     Array.isArray(value.materials) &&
@@ -79,7 +79,7 @@ export function validateFemAnalysisCase(caseFile: FemAnalysisCase): FemValidatio
     ]);
   }
 
-  const { domain, raft } = caseFile.geometry;
+  const { domain, raft, excavation } = caseFile.geometry;
   const material = caseFile.materials[0];
   const load = caseFile.loads[0];
 
@@ -89,31 +89,91 @@ export function validateFemAnalysisCase(caseFile: FemAnalysisCase): FemValidatio
   if (!caseFile.experimental) {
     findings.push(finding('blocker', 'mode.experimental-required', 'FEM cases must be explicitly marked experimental.'));
   }
-  if (caseFile.objective !== 'foundation_settlement') {
+  if (!['foundation_settlement', 'excavation_deformation'].includes(caseFile.objective)) {
     findings.push(finding('blocker', 'objective.unsupported', `Unsupported FEM objective: ${caseFile.objective}.`));
   }
-  if (caseFile.analysisType !== 'static_3d_small_strain') {
+  if (caseFile.objective === 'foundation_settlement' && caseFile.analysisType !== 'static_3d_small_strain') {
+    findings.push(finding('blocker', 'analysis.unsupported', `Unsupported analysis type: ${caseFile.analysisType}.`));
+  }
+  if (caseFile.objective === 'excavation_deformation' && caseFile.analysisType !== 'static_3d_staged_elastic') {
     findings.push(finding('blocker', 'analysis.unsupported', `Unsupported analysis type: ${caseFile.analysisType}.`));
   }
   if (domain.lengthM <= 0 || domain.widthM <= 0 || domain.depthM <= 0) {
     findings.push(finding('blocker', 'geometry.domain-invalid', 'Domain dimensions must be positive.'));
   }
-  if (raft.lengthM <= 0 || raft.widthM <= 0 || raft.thicknessM <= 0) {
-    findings.push(finding('blocker', 'geometry.raft-invalid', 'Raft dimensions must be positive.'));
+  if (caseFile.objective === 'foundation_settlement') {
+    if (!raft) {
+      findings.push(finding('blocker', 'geometry.raft-missing', 'Foundation-settlement cases require raft geometry.'));
+    } else {
+      if (raft.lengthM <= 0 || raft.widthM <= 0 || raft.thicknessM <= 0) {
+        findings.push(finding('blocker', 'geometry.raft-invalid', 'Raft dimensions must be positive.'));
+      }
+      if (domain.lengthM < raft.lengthM * 3 || domain.widthM < raft.widthM * 3) {
+        findings.push(finding(
+          'review',
+          'geometry.domain-small',
+          'Domain is less than three raft widths in plan; boundary influence should be reviewed.',
+        ));
+      }
+      if (domain.depthM < Math.max(raft.lengthM, raft.widthM)) {
+        findings.push(finding(
+          'review',
+          'geometry.depth-shallow',
+          'Domain depth is less than the controlling raft dimension; settlement influence depth should be reviewed.',
+        ));
+      }
+    }
   }
-  if (domain.lengthM < raft.lengthM * 3 || domain.widthM < raft.widthM * 3) {
-    findings.push(finding(
-      'review',
-      'geometry.domain-small',
-      'Domain is less than three raft widths in plan; boundary influence should be reviewed.',
-    ));
-  }
-  if (domain.depthM < Math.max(raft.lengthM, raft.widthM)) {
-    findings.push(finding(
-      'review',
-      'geometry.depth-shallow',
-      'Domain depth is less than the controlling raft dimension; settlement influence depth should be reviewed.',
-    ));
+  if (caseFile.objective === 'excavation_deformation') {
+    if (!excavation) {
+      findings.push(finding('blocker', 'geometry.excavation-missing', 'Excavation-deformation cases require excavation geometry.'));
+    } else {
+      if (
+        excavation.lengthM <= 0 ||
+        excavation.widthM <= 0 ||
+        excavation.finalDepthM <= 0 ||
+        excavation.wallToeDepthM <= excavation.finalDepthM
+      ) {
+        findings.push(finding('blocker', 'geometry.excavation-invalid', 'Excavation dimensions and wall toe depth must be positive and physically ordered.'));
+      }
+      if (domain.lengthM < excavation.lengthM * 2.5 || domain.widthM < excavation.widthM * 2.5) {
+        findings.push(finding(
+          'review',
+          'geometry.excavation-domain-small',
+          'Domain is less than 2.5 excavation widths in plan; boundary influence should be reviewed.',
+        ));
+      }
+      if (domain.depthM < excavation.wallToeDepthM * 1.35) {
+        findings.push(finding(
+          'review',
+          'geometry.excavation-depth-shallow',
+          'Domain depth is close to the wall toe; excavation influence depth should be reviewed.',
+        ));
+      }
+      if (excavation.stages.length === 0) {
+        findings.push(finding('blocker', 'stages.missing', 'Excavation cases require at least one construction stage.'));
+      }
+      let previousDepth = 0;
+      for (const stage of excavation.stages) {
+        if (!Number.isFinite(stage.depthM) || stage.depthM <= previousDepth || stage.depthM > excavation.finalDepthM) {
+          findings.push(finding('blocker', 'stages.depth-invalid', 'Excavation stage depths must increase and stay within the final excavation depth.'));
+          break;
+        }
+        if (stage.supportLevelM != null && (!Number.isFinite(stage.supportLevelM) || stage.supportLevelM < 0 || stage.supportLevelM > stage.depthM)) {
+          findings.push(finding('blocker', 'stages.support-invalid', 'Support levels must be finite and no deeper than the active excavation stage.'));
+          break;
+        }
+        previousDepth = stage.depthM;
+      }
+      if (previousDepth !== excavation.finalDepthM) {
+        findings.push(finding('review', 'stages.final-depth-review', 'Last excavation stage does not exactly match the final depth; staging requires review.'));
+      }
+      findings.push(finding(
+        'review',
+        'excavation.design-excluded',
+        'Excavation preview excludes retaining wall design, basal heave, seepage, consolidation, and nonlinear soil response.',
+      ));
+    }
   }
   if (!material) {
     findings.push(finding('blocker', 'material.missing', 'At least one material is required.'));
@@ -129,9 +189,13 @@ export function validateFemAnalysisCase(caseFile: FemAnalysisCase): FemValidatio
     }
   }
   if (!load) {
-    findings.push(finding('blocker', 'load.missing', 'A raft pressure load is required.'));
+    findings.push(finding('blocker', 'load.missing', caseFile.objective === 'foundation_settlement' ? 'A raft pressure load is required.' : 'An excavation surcharge/load assumption is required.'));
   } else if (!Number.isFinite(load.pressureKpa) || load.pressureKpa <= 0) {
     findings.push(finding('blocker', 'load.pressure-invalid', 'Uniform pressure must be positive.'));
+  } else if (caseFile.objective === 'foundation_settlement' && load.target !== 'raft') {
+    findings.push(finding('blocker', 'load.target-invalid', 'Foundation-settlement load must target the raft.'));
+  } else if (caseFile.objective === 'excavation_deformation' && load.target !== 'excavation_surcharge') {
+    findings.push(finding('blocker', 'load.target-invalid', 'Excavation-deformation load must target excavation_surcharge.'));
   }
 
   const { divisionsX, divisionsY, divisionsZ } = caseFile.mesh;
@@ -256,6 +320,19 @@ export function validateFemResultManifest(manifest: FemResultManifest): FemValid
     findings.push(finding('blocker', 'result.outline.node-count-mismatch', 'Outline displacement vectors must match outline nodes.'));
   }
   pushIndexArrayFindings(findings, 'outlineIdx', visualization.outlineIdx, outlineNodeCount, 2);
+
+  if (Array.isArray(visualization.frames)) {
+    for (const [index, frame] of visualization.frames.entries()) {
+      pushFiniteArrayFindings(findings, `frames.${index}.disp`, frame.disp, 3);
+      pushFiniteArrayFindings(findings, `frames.${index}.color`, frame.color, 3);
+      if (frame.disp.length / 3 !== nodeCount) {
+        findings.push(finding('blocker', `result.frames.${index}.disp.node-count-mismatch`, 'Frame displacement vectors must match base nodes.'));
+      }
+      if (frame.color.length / 3 !== nodeCount) {
+        findings.push(finding('blocker', `result.frames.${index}.color.node-count-mismatch`, 'Frame color vectors must match base nodes.'));
+      }
+    }
+  }
 
   const caseValidation = validateFemAnalysisCase(manifest.analysisCase);
   findings.push(...caseValidation.findings);

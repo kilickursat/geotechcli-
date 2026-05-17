@@ -94,6 +94,51 @@ describe('registerFemCommand', () => {
     expect(html).toContain('Experimental deterministic FEM preview');
     expect(html).toContain('const MANIFEST = ');
     expect(html).toContain('raft-settlement-demo');
+    expect(html).not.toContain('id="fieldSelect"');
+    expect(html).not.toContain('id="stageSlider"');
+  });
+
+  it('writes a staged excavation WebGL artifact and JSON command envelope', async () => {
+    const registerFemCommand = await loadRegisterFemCommand();
+    const program = new Command();
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-fem-cli-'));
+    tempDirs.push(dir);
+    const htmlPath = join(dir, 'excavation-demo.html');
+    const resultPath = join(dir, 'excavation-demo.manifest.json');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    program.exitOverride();
+    registerFemCommand(program);
+
+    await program.parseAsync([
+      'fem',
+      'demo',
+      'excavation',
+      '--experimental',
+      '--save-html',
+      htmlPath,
+      '--output',
+      resultPath,
+      '--no-open',
+      '--json',
+    ], { from: 'user' });
+
+    const output = collectLogText(logSpy).trim();
+    const payload = JSON.parse(output);
+    const html = await readFile(htmlPath, 'utf-8');
+    const manifest = JSON.parse(await readFile(resultPath, 'utf-8'));
+
+    expect(payload.kind).toBe('geotech-fem-demo-result');
+    expect(payload.demo).toBe('excavation');
+    expect(payload.opened).toBe(false);
+    expect(payload.htmlPath).toBe(htmlPath);
+    expect(payload.resultPath).toBe(resultPath);
+    expect(payload.manifest.analysisCase.objective).toBe('excavation_deformation');
+    expect(payload.manifest.envelope.maxWallDeflectionMm).toBeGreaterThan(0);
+    expect(manifest.schemaVersion).toBe('fem-result-manifest.v0');
+    expect(html).toContain('Experimental 3D FEM staged excavation deformation demo');
+    expect(html).toContain('id="fieldSelect"');
+    expect(html).toContain('id="stageSlider"');
+    expect(html).toContain('excavation-deformation-demo');
   });
 
   it('prints a quiet settlement value without creating the default HTML artifact', async () => {
@@ -115,5 +160,16 @@ describe('registerFemCommand', () => {
     const output = collectLogText(logSpy).trim();
     expect(output).toMatch(/^\d+\.\d{2} mm$/);
     expect(existsSync('geotech-fem-raft-demo.html')).toBe(false);
+  });
+
+  it('requires explicit experimental acknowledgement for the excavation demo', async () => {
+    const registerFemCommand = await loadRegisterFemCommand();
+    const program = new Command();
+    program.exitOverride();
+    registerFemCommand(program);
+
+    await expect(
+      program.parseAsync(['fem', 'demo', 'excavation', '--json'], { from: 'user' }),
+    ).rejects.toThrow(/--experimental/i);
   });
 });

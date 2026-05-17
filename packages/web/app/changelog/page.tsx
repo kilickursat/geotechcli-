@@ -8,6 +8,18 @@ const releases = [
     date: '2026-05-17',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added geotech fem demo excavation --experimental as the second deterministic 3D FEM/WebGL preview for staged excavation deformation screening' },
+      { type: 'feat', text: 'Added an excavation analysis-case contract, staged elastic demo runner, finite-result validation, and manifest fields for surface settlement, horizontal displacement, wall-deflection proxy, support reaction, and stage count' },
+      { type: 'feat', text: 'Extended the FEM WebGL artifact with optional field and stage controls for staged manifests while preserving the existing raft preview layout' },
+      { type: 'fix', text: 'Updated FEM routing so agents and swarm roles can prepare review-gated excavation-deformation drafts without inventing FEM result values' },
+      { type: 'fix', text: 'Added GroundModel readiness and non-executing input drafts for experimental staged excavation FEM so workspace analysis no longer exposes FEM as foundation-only' },
+    ],
+  },
+  {
+    version: '0.4.56',
+    date: '2026-05-17',
+    tag: '0.4.56 Release',
+    changes: [
       { type: 'feat', text: 'Added provider-neutral FEM capability routing so agents can list implemented, draft, and planned FEM routes before attempting numerical work' },
       { type: 'feat', text: 'Added list_fem_capabilities, prepare_fem_analysis_case, and validate_fem_analysis_case agent tools for deterministic FEM planning, case drafting, and review-gated validation' },
       { type: 'feat', text: 'Wired FEM planning into the simulation swarm allowlist and FEM validation into the reviewer allowlist so LLMs route and review while geotechCLI owns contracts and validators' },

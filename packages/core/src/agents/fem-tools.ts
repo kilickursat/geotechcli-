@@ -94,16 +94,20 @@ toolRegistry.register(
         },
         useDemoDefaults: {
           type: 'boolean',
-          description: 'Use built-in demo defaults for the implemented foundation-settlement preview. Keep false for user/project evidence routing.',
+          description: 'Use built-in demo defaults for implemented foundation-settlement and excavation-deformation previews. Keep false for user/project evidence routing.',
           default: false,
         },
         geometry: {
           type: 'object',
-          description: 'Explicit geometry inputs. For foundation-settlement: raftLengthM, raftWidthM, raftThicknessM, domainLengthM, domainWidthM, domainDepthM.',
+          description: 'Explicit geometry inputs. For foundation-settlement: raftLengthM, raftWidthM, raftThicknessM, domainLengthM, domainWidthM, domainDepthM. For excavation-deformation: excavationLengthM, excavationWidthM, excavationFinalDepthM, wallToeDepthM, plus optional domain dimensions.',
         },
         load: {
           type: 'object',
-          description: 'Explicit load inputs. For foundation-settlement: pressureKpa.',
+          description: 'Explicit load inputs. For foundation-settlement: raft pressureKpa. For excavation-deformation: surcharge pressureKpa.',
+        },
+        excavation: {
+          type: 'object',
+          description: 'Excavation staging inputs: stageDepthsM, supportLevelsM, wallType.',
         },
         material: {
           type: 'object',
@@ -136,6 +140,7 @@ toolRegistry.register(
       objective,
       useDemoDefaults: args.useDemoDefaults === true,
       geometry: args.geometry as any,
+      excavation: args.excavation as any,
       load: args.load as any,
       material: args.material as any,
       groundwater: args.groundwater as any,
