@@ -229,7 +229,7 @@ function assessFemFoundationSettlementReadiness(
     workflow: 'fem-foundation-settlement',
     label: 'Experimental FEM foundation settlement draft',
     toolName: 'prepare_fem_analysis_case',
-    commandTemplate: 'geotech fem demo raft --experimental --save-html <html> --no-open',
+    commandTemplate: 'geotech fem draft foundation-settlement --input <json> --case-output <analysis_case.json>',
     coreMissing: [
       ...missingWhen(!context.hasStrata, '3D ground profile / strata model'),
       ...missingWhen(!context.hasSettlementBasis, 'elastic modulus, compressibility, lab index, or SPT correlation evidence'),
@@ -270,7 +270,7 @@ function assessFemExcavationDeformationReadiness(
     workflow: 'fem-excavation-deformation',
     label: 'Experimental FEM staged excavation deformation draft',
     toolName: 'prepare_fem_analysis_case',
-    commandTemplate: 'geotech fem demo excavation --experimental --save-html <html> --no-open',
+    commandTemplate: 'geotech fem draft excavation-deformation --input <json> --case-output <analysis_case.json>',
     coreMissing: [
       ...missingWhen(!context.hasStrata, '3D ground profile / excavation strata model'),
       ...missingWhen(!context.hasDepthCoverage, 'layer depth coverage for excavation influence zone'),
@@ -623,7 +623,7 @@ function buildCalculationInputDraft(
           ? { condition: 'specified', depthM: groundwaterDepth, note: 'Groundwater depth from GroundModel evidence; FEM coupling still requires review.' }
           : { condition: 'not_modelled', note: 'Groundwater not present in GroundModel; explicit review required.' },
       };
-      command = 'geotech fem demo raft --experimental --save-html <html> --no-open';
+      command = 'geotech fem draft foundation-settlement --input <json> --case-output <analysis_case.json>';
       break;
     }
     case 'fem-excavation-deformation': {
@@ -659,7 +659,7 @@ function buildCalculationInputDraft(
           ? { condition: 'specified', depthM: groundwaterDepth, note: 'Groundwater depth from GroundModel evidence; excavation seepage and dewatering coupling still require review.' }
           : { condition: 'not_modelled', note: 'Groundwater not present in GroundModel; explicit excavation groundwater review required.' },
       };
-      command = 'geotech fem demo excavation --experimental --save-html <html> --no-open';
+      command = 'geotech fem draft excavation-deformation --input <json> --case-output <analysis_case.json>';
       break;
     }
     case 'pile-capacity':

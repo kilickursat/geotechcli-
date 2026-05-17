@@ -136,6 +136,14 @@ describe('FEM routing contract', () => {
     });
     expect(draftResult.success).toBe(true);
     expect(draftResult.summary).toContain('auto-proceed: no');
+    expect((draftResult.data as any).agentEvidenceSummary).toContain('canAutoProceed: no');
+
+    const validationResult = await toolRegistry.execute('validate_fem_analysis_case', {
+      caseFile: { schemaVersion: 'fem-analysis-case.v0' },
+    });
+    expect(validationResult.success).toBe(true);
+    expect((validationResult.data as any).status).toBe('blocked');
+    expect((validationResult.data as any).agentEvidenceSummary).toContain('FEM validation: blocked');
   });
 
   it('keeps provider prompts explicit that LLMs route FEM but do not invent FEM math', () => {

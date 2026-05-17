@@ -1,10 +1,10 @@
 # geotechCLI Development Status
 
-Last updated: 2026-05-17
+Last updated: 2026-05-18
 
 ## Current Work
 
-Preparing v0.4.58 locally on `strong-beta` after publishing v0.4.57; the v0.4.58 FEM agent brain and manifest metadata slice is implemented and locally verified. The current engineering track is provider-neutral evidence, standards-aware GroundModel readiness, GroundModel spatial and engineering visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, the PDF/page evidence benchmark foundation, and experimental deterministic FEM/WebGL contracts so future OCR/vision, BYOK-provider, and GroundModel-to-calculation changes can be measured and routed without asking LLMs to invent calculations.
+Preparing v0.4.59 locally on `strong-beta` after publishing v0.4.58; the v0.4.59 FEM case-drafting and agent-review hardening slice is implemented and locally verified. The current engineering track is provider-neutral evidence, standards-aware GroundModel readiness, GroundModel spatial and engineering visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, the PDF/page evidence benchmark foundation, and experimental deterministic FEM/WebGL contracts so future OCR/vision, BYOK-provider, and GroundModel-to-calculation changes can be measured and routed without asking LLMs to invent calculations.
 
 Current focus:
 
@@ -42,6 +42,15 @@ Current focus:
 - Keep the legacy Modal deploy workflow present but disabled by default.
 
 ## Done So Far
+
+### v0.4.59 FEM Case Drafting and Agent Review Hardening
+
+- Added `geotech fem draft <objective>` for deterministic, review-gated FEM analysis-case drafts without running a solver or creating WebGL result artifacts.
+- Added explicit foundation-settlement and excavation-deformation draft inputs plus `--case-output` so users and agents can prepare editable `analysis_case.json` files before experimental demos.
+- Wired GroundModel readiness command templates for experimental FEM foundation/excavation routes to `geotech fem draft ... --case-output <analysis_case.json>` instead of jumping straight to demo previews.
+- Hardened `validate_fem_analysis_case` so blocked FEM cases return inspectable validation data for reviewer agents and swarm roles instead of hiding blocker findings behind tool transport failure.
+- Added compact FEM draft and validation summaries for LLM/swarm handoff, preserving the rule that LLMs plan and review while deterministic geotechCLI contracts own FEM math.
+- Verified locally with targeted FEM routing/readiness/CLI tests, full core and CLI Vitest suites using the thread pool, release consistency, monorepo build, web smoke, Cloudflare web build, and FEM WebGL smoke.
 
 ### v0.4.58 FEM Agent Brain and Manifest Metadata
 

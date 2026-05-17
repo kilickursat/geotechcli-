@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.59] - 2026-05-17
+
+### FEM Case Drafting and Agent Review Hardening
+
+- Added `geotech fem draft <objective>` for deterministic, review-gated FEM analysis-case drafts without running a solver or creating WebGL results.
+- Wired FEM GroundModel readiness command templates to the new draft workflow so workspace evidence routes into editable `analysis_case.json` inputs before experimental demos.
+- Hardened FEM agent validation so blocked FEM cases return inspectable validation data for reviewer agents instead of hiding blocker findings behind tool transport failures.
+- Added compact FEM draft and validation summaries for LLM/swarm handoff, keeping LLMs as planners/reviewers while deterministic geotechCLI contracts own FEM math.
+
 ## [0.4.58] - 2026-05-17
 
 ### FEM Agent Brain and Manifest Metadata

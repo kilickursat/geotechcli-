@@ -8,6 +8,17 @@ const releases = [
     date: '2026-05-17',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added geotech fem draft <objective> for deterministic review-gated FEM analysis-case drafts without running a solver or creating WebGL results' },
+      { type: 'fix', text: 'Wired FEM GroundModel readiness command templates to draft analysis_case.json inputs before experimental demos' },
+      { type: 'fix', text: 'Hardened FEM agent validation so blocked cases return inspectable reviewer data instead of tool transport failures' },
+      { type: 'feat', text: 'Added compact FEM draft and validation summaries for LLM and swarm handoff while keeping FEM math deterministic' },
+    ],
+  },
+  {
+    version: '0.4.58',
+    date: '2026-05-17',
+    tag: '0.4.58 Release',
+    changes: [
       { type: 'feat', text: 'Added optional resultFields, steps, and datasets metadata to FEM result manifests so future FEM previews can share one viewer and validation contract' },
       { type: 'fix', text: 'Kept the existing visualization disp/color/frames contract backward-compatible while validating malformed result metadata when present' },
       { type: 'feat', text: 'Added geotech fem agent as a scoped LLM FEM planning surface that can list FEM capabilities, prepare analysis-case drafts, and validate cases only' },

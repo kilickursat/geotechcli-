@@ -58,6 +58,7 @@ geotech analyze . --json --output workspace.json
 geotech viz workspace.json --save-html ground-model-review.html --no-open
 
 # Experimental deterministic 3D FEM/WebGL preview
+geotech fem draft foundation-settlement --raft-length 10 --raft-width 8 --pressure 150 --case-output analysis_case.json
 geotech fem demo raft --experimental --save-html raft-fem.html --no-open
 geotech fem demo excavation --experimental --save-html excavation-fem.html --no-open
 
@@ -113,12 +114,14 @@ Current strong-beta scope: workspace awareness, context-aware CSV/XLSX schema in
 
 ## Experimental FEM Preview
 
-`geotech fem demo raft` and `geotech fem demo excavation` are opt-in experimental 3D FEM/WebGL previews for the future finite-element workflow. They build deterministic elastic analysis cases in core, validate assumptions and result arrays, then export self-contained WebGL artifacts that can be inspected without a hosted model call.
+`geotech fem draft` prepares editable, review-gated FEM `analysis_case.json` inputs from explicit user values without running a solver. `geotech fem demo raft` and `geotech fem demo excavation` are opt-in experimental 3D FEM/WebGL previews for the future finite-element workflow. They build deterministic elastic analysis cases in core, validate assumptions and result arrays, then export self-contained WebGL artifacts that can be inspected without a hosted model call.
 
 ```bash
 geotech fem demo raft --experimental
 geotech fem demo raft --experimental --save-html raft-fem.html --no-open
 geotech fem demo raft --experimental --output raft-fem.manifest.json --json
+geotech fem draft foundation-settlement --raft-length 10 --raft-width 8 --pressure 150 --case-output analysis_case.json
+geotech fem draft excavation-deformation --excavation-length 22 --excavation-width 14 --excavation-depth 9 --stage-depths 3,6,9 --support-levels 0,2,5 --json
 geotech fem demo excavation --experimental
 geotech fem demo excavation --experimental --save-html excavation-fem.html --no-open
 geotech fem demo excavation --experimental --output excavation-fem.manifest.json --json
@@ -126,9 +129,9 @@ geotech fem agent "which FEM route fits a braced excavation beside an existing b
 geotech fem agent "draft a staged excavation FEM case" --objective excavation-deformation --json
 ```
 
-Current scope: foundation-settlement and staged-excavation deformation demos only, linear elastic screening behavior, fixed built-in case geometry, deterministic result manifests, and WebGL/Canvas visualization. The excavation preview adds staged field controls for surface settlement, horizontal displacement, and wall-deflection proxy. FEM manifests also include optional `resultFields`, `steps`, and `datasets` metadata so future shaft, tunnel, pile-group, embankment, seepage, and slope previews can share the same validation and viewer contract. These commands are not production FEM solvers, wall-design checks, basal-heave checks, seepage analyses, or design calculations; they exist to validate the agentic contract, result schema, reviewer warnings, and browser artifact path before report-ingested GroundModel routing is expanded.
+Current scope: foundation-settlement and staged-excavation deformation drafts/demos only, linear elastic screening behavior, explicit draft inputs or fixed built-in demo geometry, deterministic result manifests, and WebGL/Canvas visualization. The draft command emits editable analysis cases; the demo commands execute only the built-in experimental previews. The excavation preview adds staged field controls for surface settlement, horizontal displacement, and wall-deflection proxy. FEM manifests also include optional `resultFields`, `steps`, and `datasets` metadata so future shaft, tunnel, pile-group, embankment, seepage, and slope previews can share the same validation and viewer contract. These commands are not production FEM solvers, wall-design checks, basal-heave checks, seepage analyses, or design calculations; they exist to validate the agentic contract, result schema, reviewer warnings, and browser artifact path before report-ingested GroundModel routing is expanded.
 
-Agents and swarm runs now see FEM through deterministic routing tools, not prompt-only instructions. `geotech fem agent` is a narrower LLM brain for FEM planning: it may only list FEM capabilities, prepare review-gated case drafts, and validate FEM cases. It cannot run solvers, write WebGL artifacts, or invent FEM displacement/reaction values. Draft and planned routes include shaft deformation, tunnel volume-loss settlement, and pile-group interaction as contract-aware future targets until deterministic engines are added.
+Agents and swarm runs now see FEM through deterministic routing tools, not prompt-only instructions. `geotech fem agent` is a narrower LLM brain for FEM planning: it may only list FEM capabilities, prepare review-gated case drafts, and validate FEM cases. It cannot run solvers, write WebGL artifacts, or invent FEM displacement/reaction values. Blocked validation is returned as inspectable review data so reviewer agents can reject unsafe cases with specific blocker codes. Draft and planned routes include shaft deformation, tunnel volume-loss settlement, and pile-group interaction as contract-aware future targets until deterministic engines are added.
 
 ## Interactive Visualization
 
@@ -187,6 +190,7 @@ These commands are the public strong-beta foundation and are available now.
 | `geotech pile` | Pile capacity using alpha, beta, and SPT methods |
 | `geotech retaining` | Lateral earth pressure using Rankine and Coulomb |
 | `geotech analyze` | Local project manifest, CSV/XLSX schema inference, evidence-bound GroundModel, map, strip logs, verifier, and HTML report |
+| `geotech fem draft` | Deterministic review-gated FEM analysis-case drafting without solver execution |
 | `geotech fem demo raft` | Experimental deterministic 3D FEM/WebGL raft settlement preview |
 | `geotech fem demo excavation` | Experimental deterministic staged excavation deformation WebGL preview |
 | `geotech fem agent` | Scoped LLM FEM planning brain for route selection, case drafts, and validation only |

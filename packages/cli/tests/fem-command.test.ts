@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -16,7 +16,7 @@ vi.mock('@geotechcli/core', async () => {
     ...fem,
     buildLLMConfig: coreMocks.buildLLMConfig,
     runAgent: coreMocks.runAgent,
-    GEOTECHCLI_VERSION: '0.4.58',
+    GEOTECHCLI_VERSION: '0.4.59',
     GLOBAL_FLAG_DEFINITIONS: [
       { key: 'json', option: '--json', description: 'json' },
       { key: 'plot', option: '--plot', description: 'plot' },
@@ -101,6 +101,127 @@ describe('registerFemCommand', () => {
       'validate_fem_analysis_case',
     ]);
     expect(payload.answer).toContain('deterministic demo');
+  });
+
+  it('prepares a missing-input FEM draft without running a solver', async () => {
+    const registerFemCommand = await loadRegisterFemCommand();
+    const program = new Command();
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    program.exitOverride();
+    registerFemCommand(program);
+
+    await program.parseAsync([
+      'fem',
+      'draft',
+      'foundation-settlement',
+      '--json',
+    ], { from: 'user' });
+
+    const payload = JSON.parse(collectLogText(logSpy).trim());
+    expect(payload.kind).toBe('geotech-fem-draft-result');
+    expect(payload.schemaVersion).toBe('fem-draft-command.v0');
+    expect(payload.objective).toBe('foundation-settlement');
+    expect(payload.draft.recommendedAction).toBe('collect-inputs');
+    expect(payload.draft.canAutoProceed).toBe(false);
+    expect(payload.draft.analysisCase).toBeUndefined();
+    expect(payload.draft.missingUserInputs).toEqual(['raft length', 'raft width', 'service pressure']);
+    expect(payload.warnings.join(' ')).toMatch(/no solver/i);
+  });
+
+  it('writes a validated foundation FEM case draft from explicit CLI inputs', async () => {
+    const registerFemCommand = await loadRegisterFemCommand();
+    const program = new Command();
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-fem-draft-'));
+    tempDirs.push(dir);
+    const draftPath = join(dir, 'draft.json');
+    const casePath = join(dir, 'analysis_case.json');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    program.exitOverride();
+    registerFemCommand(program);
+
+    await program.parseAsync([
+      'fem',
+      'draft',
+      'foundation-settlement',
+      '--raft-length',
+      '10',
+      '--raft-width',
+      '8',
+      '--pressure',
+      '160',
+      '--elastic-modulus',
+      '30000',
+      '--poisson-ratio',
+      '0.29',
+      '--unit-weight',
+      '18.5',
+      '--case-output',
+      casePath,
+      '--output',
+      draftPath,
+      '--json',
+    ], { from: 'user' });
+
+    const payload = JSON.parse(collectLogText(logSpy).trim());
+    const draftEnvelope = JSON.parse(await readFile(draftPath, 'utf-8'));
+    const caseFile = JSON.parse(await readFile(casePath, 'utf-8'));
+
+    expect(payload.draft.recommendedAction).toBe('run-experimental-demo');
+    expect(payload.draft.canAutoProceed).toBe(false);
+    expect(payload.draft.analysisCase.geometry.raft.lengthM).toBe(10);
+    expect(payload.draft.analysisCase.loads[0].pressureKpa).toBe(160);
+    expect(payload.casePath).toBe(casePath);
+    expect(payload.draftPath).toBe(draftPath);
+    expect(draftEnvelope.kind).toBe('geotech-fem-draft-result');
+    expect(caseFile.schemaVersion).toBe('fem-analysis-case.v0');
+    expect(caseFile.objective).toBe('foundation_settlement');
+  });
+
+  it('prepares an excavation FEM case draft from an input JSON file', async () => {
+    const registerFemCommand = await loadRegisterFemCommand();
+    const program = new Command();
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-fem-draft-'));
+    tempDirs.push(dir);
+    const inputPath = join(dir, 'input.json');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    program.exitOverride();
+    registerFemCommand(program);
+    await writeFile(inputPath, JSON.stringify({
+      geometry: {
+        excavationLengthM: 24,
+        excavationWidthM: 16,
+        excavationFinalDepthM: 9,
+        wallToeDepthM: 15,
+      },
+      excavation: {
+        stageDepthsM: [3, 6, 9],
+        supportLevelsM: [0, 2, 5],
+        wallType: 'secant_pile_wall',
+      },
+      load: { pressureKpa: 20 },
+      material: {
+        elasticModulusKpa: 36_000,
+        poissonRatio: 0.31,
+        unitWeightKnM3: 18.8,
+      },
+    }), 'utf-8');
+
+    await program.parseAsync([
+      'fem',
+      'draft',
+      'excavation-deformation',
+      '--input',
+      inputPath,
+      '--json',
+    ], { from: 'user' });
+
+    const payload = JSON.parse(collectLogText(logSpy).trim());
+    expect(payload.objective).toBe('excavation-deformation');
+    expect(payload.draft.recommendedAction).toBe('run-experimental-demo');
+    expect(payload.draft.canAutoProceed).toBe(false);
+    expect(payload.draft.analysisCase.objective).toBe('excavation_deformation');
+    expect(payload.draft.analysisCase.geometry.excavation.finalDepthM).toBe(9);
+    expect(payload.draft.validation.status).toBe('review');
   });
 
   it('requires explicit experimental acknowledgement', async () => {

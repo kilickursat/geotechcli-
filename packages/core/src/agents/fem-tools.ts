@@ -2,6 +2,8 @@ import {
   listFemCapabilities,
   prepareFemAnalysisCaseDraft,
   validateFemAnalysisCase,
+  type FemAnalysisCaseDraft,
+  type FemValidationSummary,
   type FemRouteObjective,
 } from '../fem/index.js';
 import { toolRegistry } from './tools.js';
@@ -33,6 +35,29 @@ function normalizeObjective(value: unknown): FemRouteObjective | undefined {
     default:
       return undefined;
   }
+}
+
+function summarizeFemDraftForAgent(draft: FemAnalysisCaseDraft): string {
+  return [
+    `FEM objective: ${draft.objective}`,
+    `implemented: ${draft.implemented ? 'yes' : 'no'}`,
+    `recommended action: ${draft.recommendedAction}`,
+    `canAutoProceed: ${draft.canAutoProceed ? 'yes' : 'no'}`,
+    `missing inputs: ${draft.missingUserInputs.join(', ') || 'none'}`,
+    `review gates: ${draft.reviewGates.join(', ') || 'none'}`,
+    draft.analysisCase ? `analysisCase.caseId: ${draft.analysisCase.caseId}` : 'analysisCase: not prepared',
+    draft.validation ? `validation: ${draft.validation.status} (${draft.validation.blockers} blockers, ${draft.validation.reviewItems} review)` : 'validation: not run',
+    draft.recommendedCommand ? `recommended command: ${draft.recommendedCommand}` : '',
+  ].filter(Boolean).join('\n');
+}
+
+function summarizeFemValidationForAgent(validation: FemValidationSummary): string {
+  return [
+    `FEM validation: ${validation.status}`,
+    `blockers: ${validation.blockers}`,
+    `review items: ${validation.reviewItems}`,
+    `finding codes: ${validation.findings.map((finding) => finding.code).join(', ') || 'none'}`,
+  ].join('\n');
 }
 
 toolRegistry.register(
@@ -149,7 +174,10 @@ toolRegistry.register(
 
     return {
       success: true,
-      data: draft,
+      data: {
+        ...draft,
+        agentEvidenceSummary: summarizeFemDraftForAgent(draft),
+      },
       summary: `FEM route ${draft.objective}: ${draft.implemented ? 'draft prepared' : 'contract only'}; missing inputs: ${draft.missingUserInputs.join(', ') || 'none'}; auto-proceed: no.`,
     };
   },
@@ -174,10 +202,12 @@ toolRegistry.register(
   (args) => {
     const validation = validateFemAnalysisCase(args.caseFile as any);
     return {
-      success: validation.blockers === 0,
-      data: validation,
+      success: true,
+      data: {
+        ...validation,
+        agentEvidenceSummary: summarizeFemValidationForAgent(validation),
+      },
       summary: `FEM validation ${validation.status}: ${validation.blockers} blocker(s), ${validation.reviewItems} review item(s).`,
-      error: validation.blockers > 0 ? 'FEM analysis case has blocking validation findings.' : undefined,
     };
   },
 );

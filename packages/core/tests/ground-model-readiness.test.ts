@@ -138,9 +138,10 @@ describe('GroundModel calculation readiness', () => {
     expect(workflows['bearing-capacity']?.toolName).toBe('calculate_bearing_capacity');
     expect(workflows['settlement']?.toolName).toBe('calculate_schmertmann_settlement');
     expect(workflows['fem-foundation-settlement']?.toolName).toBe('prepare_fem_analysis_case');
+    expect(workflows['fem-foundation-settlement']?.commandTemplate).toContain('geotech fem draft foundation-settlement');
     expect(workflows['fem-foundation-settlement']?.recommendation).toMatch(/experimental FEM/i);
     expect(workflows['fem-excavation-deformation']?.toolName).toBe('prepare_fem_analysis_case');
-    expect(workflows['fem-excavation-deformation']?.commandTemplate).toContain('geotech fem demo excavation --experimental');
+    expect(workflows['fem-excavation-deformation']?.commandTemplate).toContain('geotech fem draft excavation-deformation');
     expect(workflows['fem-excavation-deformation']?.recommendation).toMatch(/staged-excavation FEM/i);
     expect(workflows['pile-capacity']?.status).toBe('ready');
     expect(workflows['liquefaction']?.present).toContain('SPT N-values');

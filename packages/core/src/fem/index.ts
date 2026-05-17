@@ -13,6 +13,7 @@ export {
   type FemCapability,
   type FemCapabilityStatus,
   type FemRouteObjective,
+  type PrepareFemAnalysisCaseDraftInput,
 } from './routing.js';
 export { validateFemAnalysisCase, validateFemResultManifest } from './validation.js';
 export { renderFemWebglHtml } from './webgl.js';
