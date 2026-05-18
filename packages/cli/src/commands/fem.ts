@@ -7,11 +7,13 @@ import {
   buildExcavationDemoAnalysisCase,
   buildLLMConfig,
   buildRaftDemoAnalysisCase,
+  buildTunnelVolumeLossDemoAnalysisCase,
   prepareFemAnalysisCaseDraft,
   renderFemWebglHtml,
   runAgent,
   runBuiltinElasticExcavationDemo,
   runBuiltinElasticRaftDemo,
+  runBuiltinTunnelVolumeLossDemo,
   validateFemResultManifest,
   type AgentStep,
   type FemAnalysisCaseDraft,
@@ -34,7 +36,8 @@ import { addGlobalFlags, getGlobalFlags } from '../util/flags.js';
 
 const DEFAULT_RAFT_HTML = 'geotech-fem-raft-demo.html';
 const DEFAULT_EXCAVATION_HTML = 'geotech-fem-excavation-demo.html';
-type FemDemoKind = 'raft' | 'excavation';
+const DEFAULT_TUNNEL_HTML = 'geotech-fem-tunnel-demo.html';
+type FemDemoKind = 'raft' | 'excavation' | 'tunnel';
 const FEM_AGENT_TOOLS = [
   'list_fem_capabilities',
   'prepare_fem_analysis_case',
@@ -249,6 +252,13 @@ function buildFemDraftInput(
     excavationWidthM: parseNumberOption(opts.excavationWidth, '--excavation-width') ?? parsed.geometry?.excavationWidthM,
     excavationFinalDepthM: parseNumberOption(opts.excavationDepth, '--excavation-depth') ?? parsed.geometry?.excavationFinalDepthM,
     wallToeDepthM: parseNumberOption(opts.wallToeDepth, '--wall-toe-depth') ?? parsed.geometry?.wallToeDepthM,
+    tunnelDiameterM: parseNumberOption(opts.tunnelDiameter, '--tunnel-diameter') ?? parsed.geometry?.tunnelDiameterM,
+    tunnelAxisDepthM: parseNumberOption(opts.tunnelDepth, '--tunnel-depth') ?? parsed.geometry?.tunnelAxisDepthM,
+    tunnelLengthM: parseNumberOption(opts.tunnelLength, '--tunnel-length') ?? parsed.geometry?.tunnelLengthM,
+    tunnelCenterXM: parseNumberOption(opts.tunnelCenterX, '--tunnel-center-x') ?? parsed.geometry?.tunnelCenterXM,
+    tunnelCenterYM: parseNumberOption(opts.tunnelCenterY, '--tunnel-center-y') ?? parsed.geometry?.tunnelCenterYM,
+    tunnelVolumeLossPercent: parseNumberOption(opts.volumeLoss, '--volume-loss') ?? parsed.geometry?.tunnelVolumeLossPercent,
+    troughWidthParameterK: parseNumberOption(opts.troughWidth, '--trough-width') ?? parsed.geometry?.troughWidthParameterK,
   };
   const excavation = {
     ...(parsed.excavation ?? {}),
@@ -357,8 +367,19 @@ function renderPlainSummary(
   if (manifest.envelope.stageCount != null) {
     keyValue('Stages', String(manifest.envelope.stageCount));
   }
-  keyValue('Total load', `${manifest.envelope.totalLoadKn.toFixed(0)} kN`);
-  keyValue('Reaction balance', manifest.envelope.reactionBalanceRatio.toFixed(3));
+  if (manifest.envelope.volumeLossPercent != null) {
+    keyValue('Volume loss', `${manifest.envelope.volumeLossPercent.toFixed(2)}%`);
+  }
+  if (manifest.envelope.troughWidthM != null) {
+    keyValue('Trough width i', `${manifest.envelope.troughWidthM.toFixed(2)} m`);
+  }
+  if (manifest.envelope.settlementVolumeM3 != null) {
+    keyValue('Settlement volume', `${manifest.envelope.settlementVolumeM3.toFixed(3)} m3`);
+  }
+  if (manifest.envelope.totalLoadKn > 0 || manifest.analysisCase.objective !== 'tunnel_volume_loss_settlement') {
+    keyValue('Total load', `${manifest.envelope.totalLoadKn.toFixed(0)} kN`);
+    keyValue('Reaction balance', manifest.envelope.reactionBalanceRatio.toFixed(3));
+  }
   keyValue('Mesh', `${manifest.mesh.divisions.join(' x ')} ${manifest.mesh.elementType}`);
   keyValue('Nodes / elements', `${manifest.mesh.nodes} / ${manifest.mesh.elements}`);
 
@@ -519,10 +540,31 @@ export function registerFemCommand(program: Command): void {
       );
     });
 
+  const tunnel = new Command('tunnel')
+    .description('Experimental tunnel volume-loss settlement surface preview')
+    .option('--experimental', 'Acknowledge that this FEM preview is experimental and not a design calculation')
+    .addHelpText('after', `
+  Examples:
+    geotech fem demo tunnel --experimental
+    geotech fem demo tunnel --experimental --save-html tunnel-fem.html --no-open
+    geotech fem demo tunnel --experimental --output tunnel-fem.manifest.json --json
+`)
+    .action(async (opts) => {
+      await runFemDemoCommand(
+        'tunnel',
+        DEFAULT_TUNNEL_HTML,
+        'Experimental Tunnel Volume-Loss Settlement Preview',
+        runBuiltinTunnelVolumeLossDemo(buildTunnelVolumeLossDemoAnalysisCase()),
+        opts as Record<string, unknown>,
+      );
+    });
+
   addGlobalFlags(raft);
   addGlobalFlags(excavation);
+  addGlobalFlags(tunnel);
   demo.addCommand(raft);
   demo.addCommand(excavation);
+  demo.addCommand(tunnel);
   fem.addCommand(demo);
 
   const draft = new Command('draft')
@@ -542,6 +584,13 @@ export function registerFemCommand(program: Command): void {
     .option('--excavation-width <m>', 'Excavation width in metres')
     .option('--excavation-depth <m>', 'Final excavation depth in metres')
     .option('--wall-toe-depth <m>', 'Retaining wall toe depth in metres')
+    .option('--tunnel-diameter <m>', 'Tunnel outside diameter in metres')
+    .option('--tunnel-depth <m>', 'Tunnel axis depth below ground surface in metres')
+    .option('--tunnel-length <m>', 'Modelled tunnel alignment length in metres')
+    .option('--tunnel-center-x <m>', 'Tunnel alignment centre X coordinate in metres')
+    .option('--tunnel-center-y <m>', 'Tunnel alignment centre Y coordinate in metres')
+    .option('--volume-loss <percent>', 'Tunnel volume loss assumption in percent')
+    .option('--trough-width <K>', 'Gaussian settlement trough width parameter K')
     .option('--stage-depths <csv>', 'Comma-separated excavation stage depths in metres')
     .option('--support-levels <csv>', 'Comma-separated excavation support levels in metres')
     .option('--wall-type <type>', 'Excavation wall type: diaphragm_wall, secant_pile_wall, soldier_pile_lagging, unsupported_screening')
@@ -558,6 +607,7 @@ export function registerFemCommand(program: Command): void {
     geotech fem draft excavation-deformation --excavation-length 22 --excavation-width 14 --excavation-depth 9 --stage-depths 3,6,9 --support-levels 0,2,5 --json
     geotech fem draft excavation-deformation --input fem-input.json --case-output analysis_case.json
     geotech fem draft foundation-settlement --workspace ./site-data --raft-length 10 --raft-width 8 --pressure 150 --json
+    geotech fem draft tunnel-volume-loss-settlement --tunnel-diameter 6 --tunnel-depth 18 --tunnel-length 60 --volume-loss 1.2 --trough-width 0.5 --json
 
   This command prepares a review-gated FEM analysis-case draft only. It does not run a solver,
   does not create WebGL results, and never auto-approves FEM output for design use.

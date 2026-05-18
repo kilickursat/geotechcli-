@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   buildExcavationDemoAnalysisCase,
   buildRaftDemoAnalysisCase,
+  buildTunnelVolumeLossDemoAnalysisCase,
   renderFemWebglHtml,
   runBuiltinElasticExcavationDemo,
   runBuiltinElasticRaftDemo,
+  runBuiltinTunnelVolumeLossDemo,
   validateFemAnalysisCase,
   validateFemResultManifest,
   type FemResultManifest,
@@ -36,6 +38,21 @@ describe('experimental FEM raft demo', () => {
     expect(validation.status).toBe('review');
     expect(validation.blockers).toBe(0);
     expect(validation.findings.map((finding) => finding.code)).toContain('excavation.design-excluded');
+  });
+
+  it('builds a review-gated deterministic tunnel volume-loss analysis case', () => {
+    const analysisCase = buildTunnelVolumeLossDemoAnalysisCase();
+    const validation = validateFemAnalysisCase(analysisCase);
+
+    expect(analysisCase.schemaVersion).toBe('fem-analysis-case.v0');
+    expect(analysisCase.experimental).toBe(true);
+    expect(analysisCase.objective).toBe('tunnel_volume_loss_settlement');
+    expect(analysisCase.analysisType).toBe('empirical_3d_settlement_surface');
+    expect(analysisCase.geometry.tunnel?.diameterM).toBe(6);
+    expect(analysisCase.loads).toHaveLength(0);
+    expect(validation.status).toBe('review');
+    expect(validation.blockers).toBe(0);
+    expect(validation.findings.map((finding) => finding.code)).toContain('tunnel.empirical-preview');
   });
 
   it('returns a finite result envelope and self-contained visualization mesh', () => {
@@ -90,6 +107,33 @@ describe('experimental FEM raft demo', () => {
     expect(manifest.steps?.map((step) => step.id)).toEqual(['stage-1', 'stage-2', 'stage-3']);
     expect(manifest.datasets?.filter((dataset) => dataset.source === 'visualization.frame')).toHaveLength(9);
     expect(manifest.datasets?.some((dataset) => dataset.fieldId === 'support_reaction' && dataset.source === 'envelope')).toBe(true);
+    expect(validation.status).toBe('review');
+    expect(validation.blockers).toBe(0);
+  });
+
+  it('returns a finite tunnel volume-loss settlement surface manifest', () => {
+    const manifest = runBuiltinTunnelVolumeLossDemo();
+    const validation = validateFemResultManifest(manifest);
+
+    expect(manifest.schemaVersion).toBe('fem-result-manifest.v0');
+    expect(manifest.analysisCase.objective).toBe('tunnel_volume_loss_settlement');
+    expect(manifest.backend.id).toBe('builtin-tunnel-volume-loss-demo');
+    expect(manifest.mesh.nodes).toBe(19 * 17 * 5);
+    expect(manifest.mesh.elements).toBe(18 * 16 * 4);
+    expect(manifest.mesh.visualizationNodes).toBe(19 * 17);
+    expect(manifest.envelope.maxSurfaceSettlementMm).toBeGreaterThan(0);
+    expect(manifest.envelope.volumeLossPercent).toBe(1.2);
+    expect(manifest.envelope.tunnelAxisDepthM).toBe(18);
+    expect(manifest.envelope.troughWidthM).toBe(9);
+    expect(manifest.envelope.settlementVolumeM3).toBeGreaterThan(0);
+    expect(manifest.resultFields?.map((field) => field.id)).toEqual(['surface_settlement']);
+    expect(manifest.steps?.map((step) => step.id)).toEqual(['final']);
+    expect(manifest.datasets?.[0]).toMatchObject({
+      fieldId: 'surface_settlement',
+      stepId: 'final',
+      stride: 3,
+      source: 'visualization.disp',
+    });
     expect(validation.status).toBe('review');
     expect(validation.blockers).toBe(0);
   });
@@ -159,6 +203,16 @@ describe('experimental FEM raft demo', () => {
 
     expect(validateFemResultManifest(invalidFrameValue).status).toBe('blocked');
     expect(validateFemResultManifest(invalidFrameLength).status).toBe('blocked');
+  });
+
+  it('blocks invalid tunnel geometry before export', () => {
+    const invalidCase = buildTunnelVolumeLossDemoAnalysisCase();
+    invalidCase.geometry.tunnel!.axisDepthM = invalidCase.geometry.tunnel!.diameterM / 2;
+
+    const validation = validateFemAnalysisCase(invalidCase);
+
+    expect(validation.status).toBe('blocked');
+    expect(validation.findings.map((finding) => finding.code)).toContain('geometry.tunnel-cover-invalid');
   });
 
   it('blocks malformed result field, step, and dataset metadata', () => {
@@ -245,6 +299,22 @@ describe('experimental FEM raft demo', () => {
     expect(html).toContain('id="legendTitle"');
     expect(html).toContain('Stage 1 - excavate to 2.5 m');
     expect(html).toContain('excavation-deformation-demo');
+    expect(html).not.toContain('<script src=');
+    expect(html).not.toContain('<link rel=');
+  });
+
+  it('renders tunnel volume-loss WebGL artifacts without staged controls', () => {
+    const manifest = runBuiltinTunnelVolumeLossDemo();
+    const html = renderFemWebglHtml(manifest);
+
+    expect(html).toContain('Experimental deterministic FEM preview');
+    expect(html).toContain('Experimental 3D tunnel volume-loss settlement preview');
+    expect(html).toContain('Tunnel surface settlement color');
+    expect(html).toContain('tunnel-volume-loss-settlement-demo');
+    expect(html).toContain('Volume loss');
+    expect(html).toContain('Trough width i');
+    expect(html).not.toContain('id="fieldSelect"');
+    expect(html).not.toContain('id="stageSlider"');
     expect(html).not.toContain('<script src=');
     expect(html).not.toContain('<link rel=');
   });

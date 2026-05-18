@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.62] - 2026-05-18
+
+### Experimental Tunnel Volume-Loss Settlement Preview
+
+- Added `geotech fem demo tunnel --experimental` as the third deterministic 3D preview, generating an empirical Gaussian tunnel volume-loss settlement surface without hosted model calls.
+- Added a tunnel volume-loss analysis-case contract, deterministic result manifest, finite visualization mesh, source metadata, and validation gates for diameter, axis depth, alignment length, volume loss, and trough-width factor.
+- Extended `geotech fem draft tunnel-volume-loss-settlement` so agents and users can prepare review-gated tunnel settlement drafts from explicit inputs while preserving `canAutoProceed: false`.
+- Updated the FEM WebGL/Canvas smoke harness to generate and test raft, excavation, and tunnel artifacts at desktop and mobile sizes.
+- Kept the FEM safety boundary explicit: the tunnel preview is empirical and non-design; LLMs may route, draft, and review the case, but geotechCLI deterministic code owns the generated settlement surface.
+
 ## [0.4.61] - 2026-05-18
 
 ### FEM Swarm Reviewer Handoff

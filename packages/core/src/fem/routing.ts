@@ -1,6 +1,7 @@
 import {
   buildExcavationDemoAnalysisCase,
   buildRaftDemoAnalysisCase,
+  buildTunnelVolumeLossDemoAnalysisCase,
 } from './demo.js';
 import type {
   FemAnalysisCase,
@@ -48,6 +49,13 @@ export interface PrepareFemAnalysisCaseDraftInput {
     excavationWidthM?: number;
     excavationFinalDepthM?: number;
     wallToeDepthM?: number;
+    tunnelDiameterM?: number;
+    tunnelAxisDepthM?: number;
+    tunnelLengthM?: number;
+    tunnelCenterXM?: number;
+    tunnelCenterYM?: number;
+    tunnelVolumeLossPercent?: number;
+    troughWidthParameterK?: number;
   };
   excavation?: {
     stageDepthsM?: number[];
@@ -131,15 +139,16 @@ const CAPABILITIES: FemCapability[] = [
   {
     objective: 'tunnel-volume-loss-settlement',
     label: 'Tunnel volume-loss settlement preview',
-    status: 'planned',
+    status: 'implemented-demo',
     analysisType: 'empirical_3d_settlement_surface',
-    deterministicBackend: null,
-    description: 'Planned deterministic 3D settlement surface from prescribed tunnel volume loss.',
+    deterministicBackend: 'builtin-tunnel-volume-loss-demo',
+    description: 'Experimental deterministic 3D empirical settlement surface from prescribed tunnel volume loss.',
     requiredEvidence: ['tunnel geometry', 'cover depth', 'ground class', 'volume-loss assumption'],
     requiredUserInputs: ['diameter', 'axis depth', 'alignment', 'volume loss', 'trough width parameter'],
     visualizationFields: ['settlement trough', 'building influence corridor', 'alignment overlay'],
-    reviewGates: ['planned-only', 'volume-loss-assumption-review', 'not-fem-solver'],
+    reviewGates: ['experimental-only', 'volume-loss-assumption-review', 'not-fem-solver', 'not-design-calculation'],
     limitations: ['Empirical preview only; not a tunnel lining or ground loss design model.'],
+    command: 'geotech fem demo tunnel --experimental',
   },
   {
     objective: 'pile-group-elastic-interaction',
@@ -207,7 +216,11 @@ export function prepareFemAnalysisCaseDraft(input: PrepareFemAnalysisCaseDraftIn
     };
   }
 
-  if (capability.objective !== 'foundation-settlement' && capability.objective !== 'excavation-deformation') {
+  if (
+    capability.objective !== 'foundation-settlement' &&
+    capability.objective !== 'excavation-deformation' &&
+    capability.objective !== 'tunnel-volume-loss-settlement'
+  ) {
     return {
       schemaVersion: 'fem-analysis-case-draft.v1',
       objective: capability.objective,
@@ -219,6 +232,105 @@ export function prepareFemAnalysisCaseDraft(input: PrepareFemAnalysisCaseDraftIn
       assumptions: [],
       reviewGates: capability.reviewGates,
       evidenceRefs: input.evidenceRefs ?? [],
+    };
+  }
+
+  if (capability.objective === 'tunnel-volume-loss-settlement') {
+    const missing: string[] = [];
+    const useDemoDefaults = input.useDemoDefaults === true;
+    const diameterM = input.geometry?.tunnelDiameterM ?? (useDemoDefaults ? 6 : undefined);
+    const axisDepthM = input.geometry?.tunnelAxisDepthM ?? (useDemoDefaults ? 18 : undefined);
+    const lengthM = input.geometry?.tunnelLengthM ?? (useDemoDefaults ? 56 : undefined);
+    const volumeLossPercent = input.geometry?.tunnelVolumeLossPercent ?? (useDemoDefaults ? 1.2 : undefined);
+    const troughWidthParameterK = input.geometry?.troughWidthParameterK ?? (useDemoDefaults ? 0.5 : undefined);
+    const checkedDiameterM = requirePositive(diameterM, 'tunnel diameter', missing);
+    const checkedAxisDepthM = requirePositive(axisDepthM, 'tunnel axis depth', missing);
+    const checkedLengthM = requirePositive(lengthM, 'tunnel alignment length', missing);
+    const checkedVolumeLossPercent = requirePositive(volumeLossPercent, 'tunnel volume loss', missing);
+    const checkedTroughWidthParameterK = requirePositive(troughWidthParameterK, 'trough width parameter', missing);
+
+    if (
+      !checkedDiameterM ||
+      !checkedAxisDepthM ||
+      !checkedLengthM ||
+      !checkedVolumeLossPercent ||
+      !checkedTroughWidthParameterK
+    ) {
+      return {
+        schemaVersion: 'fem-analysis-case-draft.v1',
+        objective: capability.objective,
+        capability,
+        implemented: true,
+        canAutoProceed: false,
+        recommendedAction: 'collect-inputs',
+        missingUserInputs: missing,
+        assumptions: [],
+        reviewGates: ['missing-user-inputs', ...capability.reviewGates],
+        evidenceRefs: input.evidenceRefs ?? [],
+        recommendedCommand: capability.command,
+      };
+    }
+
+    const analysisCase = buildTunnelVolumeLossDemoAnalysisCase();
+    analysisCase.caseId = 'tunnel-volume-loss-settlement-draft';
+    analysisCase.title = 'Experimental 3D tunnel volume-loss settlement draft';
+    analysisCase.createdBy = 'geotechcli-fem-routing';
+    analysisCase.evidenceRefs = input.evidenceRefs ?? [];
+    analysisCase.materials.forEach((material) => {
+      material.evidenceRefs = input.evidenceRefs ?? [];
+    });
+    if (analysisCase.geometry.tunnel) {
+      analysisCase.geometry.tunnel.diameterM = checkedDiameterM;
+      analysisCase.geometry.tunnel.axisDepthM = checkedAxisDepthM;
+      analysisCase.geometry.tunnel.lengthM = checkedLengthM;
+      analysisCase.geometry.tunnel.centerXM = input.geometry?.tunnelCenterXM ?? analysisCase.geometry.tunnel.centerXM;
+      analysisCase.geometry.tunnel.centerYM = input.geometry?.tunnelCenterYM ?? analysisCase.geometry.tunnel.centerYM;
+      analysisCase.geometry.tunnel.volumeLossPercent = checkedVolumeLossPercent;
+      analysisCase.geometry.tunnel.troughWidthParameterK = checkedTroughWidthParameterK;
+    }
+    const troughWidthM = checkedAxisDepthM * checkedTroughWidthParameterK;
+    analysisCase.geometry.domain.lengthM = input.geometry?.domainLengthM ?? Math.max(checkedLengthM * 1.4, analysisCase.geometry.domain.lengthM);
+    analysisCase.geometry.domain.widthM = input.geometry?.domainWidthM ?? Math.max(troughWidthM * 7, checkedDiameterM * 8, analysisCase.geometry.domain.widthM);
+    analysisCase.geometry.domain.depthM = input.geometry?.domainDepthM ?? Math.max(checkedAxisDepthM + checkedDiameterM * 2, analysisCase.geometry.domain.depthM);
+    if (finitePositive(input.material?.elasticModulusKpa)) analysisCase.materials[0].elasticModulusKpa = input.material.elasticModulusKpa;
+    if (typeof input.material?.poissonRatio === 'number') analysisCase.materials[0].poissonRatio = input.material.poissonRatio;
+    if (finitePositive(input.material?.unitWeightKnM3)) analysisCase.materials[0].unitWeightKnM3 = input.material.unitWeightKnM3;
+    for (const assumption of analysisCase.assumptions) {
+      if (assumption.id === 'volume-loss-assumption') assumption.value = checkedVolumeLossPercent;
+      if (assumption.id === 'trough-width-factor') assumption.value = checkedTroughWidthParameterK;
+    }
+    if (input.groundwater?.condition) {
+      analysisCase.groundwater.condition = input.groundwater.condition;
+    }
+    if (typeof input.groundwater?.depthM === 'number') {
+      analysisCase.groundwater.depthM = input.groundwater.depthM;
+    }
+    if (input.groundwater?.note) {
+      analysisCase.groundwater.note = input.groundwater.note;
+    }
+
+    const validation = validateFemAnalysisCase(analysisCase);
+    const reviewGates = [
+      ...capability.reviewGates,
+      ...validation.findings
+        .filter((finding) => finding.severity !== 'info')
+        .map((finding) => finding.code),
+    ];
+
+    return {
+      schemaVersion: 'fem-analysis-case-draft.v1',
+      objective: capability.objective,
+      capability,
+      implemented: true,
+      canAutoProceed: false,
+      recommendedAction: 'run-experimental-demo',
+      missingUserInputs: [],
+      assumptions: analysisCase.assumptions,
+      reviewGates: [...new Set(reviewGates)],
+      evidenceRefs: analysisCase.evidenceRefs,
+      analysisCase,
+      validation,
+      recommendedCommand: capability.command,
     };
   }
 

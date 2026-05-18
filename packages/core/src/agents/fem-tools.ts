@@ -119,12 +119,12 @@ toolRegistry.register(
         },
         useDemoDefaults: {
           type: 'boolean',
-          description: 'Use built-in demo defaults for implemented foundation-settlement and excavation-deformation previews. Keep false for user/project evidence routing.',
+          description: 'Use built-in demo defaults for implemented foundation-settlement, excavation-deformation, and tunnel-volume-loss-settlement previews. Keep false for user/project evidence routing.',
           default: false,
         },
         geometry: {
           type: 'object',
-          description: 'Explicit geometry inputs. For foundation-settlement: raftLengthM, raftWidthM, raftThicknessM, domainLengthM, domainWidthM, domainDepthM. For excavation-deformation: excavationLengthM, excavationWidthM, excavationFinalDepthM, wallToeDepthM, plus optional domain dimensions.',
+          description: 'Explicit geometry inputs. For foundation-settlement: raftLengthM, raftWidthM, raftThicknessM, domainLengthM, domainWidthM, domainDepthM. For excavation-deformation: excavationLengthM, excavationWidthM, excavationFinalDepthM, wallToeDepthM, plus optional domain dimensions. For tunnel-volume-loss-settlement: tunnelDiameterM, tunnelAxisDepthM, tunnelLengthM, tunnelVolumeLossPercent, troughWidthParameterK, optional tunnelCenterXM/tunnelCenterYM, plus optional domain dimensions.',
         },
         load: {
           type: 'object',

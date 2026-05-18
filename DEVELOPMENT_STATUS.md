@@ -4,7 +4,7 @@ Last updated: 2026-05-18
 
 ## Current Work
 
-v0.4.61 on `strong-beta` follows the shipped v0.4.60 evidence-to-FEM draft bridge. This slice strengthens FEM agent/swarm wiring: general swarm reviewers receive deterministic FEM/calculation tool context from simulation runs, while preserving the boundary that LLMs plan and review FEM cases but do not run solvers, write WebGL artifacts, or invent FEM outputs. The wider engineering track remains provider-neutral evidence, standards-aware GroundModel readiness, GroundModel spatial and engineering visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, the PDF/page evidence benchmark foundation, and experimental deterministic FEM/WebGL contracts so future OCR/vision, BYOK-provider, and GroundModel-to-calculation changes can be measured and routed without asking LLMs to invent calculations.
+v0.4.62 on `strong-beta` follows the shipped v0.4.61 FEM swarm reviewer handoff. This slice adds an experimental deterministic tunnel volume-loss settlement surface so FEM/WebGL development now covers raft settlement, staged excavation deformation, and tunnel settlement-trough review while preserving the boundary that LLMs plan and review FEM cases but do not run solvers, write WebGL artifacts, or invent FEM outputs. The wider engineering track remains provider-neutral evidence, standards-aware GroundModel readiness, GroundModel spatial and engineering visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, the PDF/page evidence benchmark foundation, and experimental deterministic FEM/WebGL contracts so future OCR/vision, BYOK-provider, and GroundModel-to-calculation changes can be measured and routed without asking LLMs to invent calculations.
 
 Current focus:
 
@@ -32,6 +32,7 @@ Current focus:
 - Render GroundModel coordinate evidence, strip logs, SPT-depth plots, lab-depth charts, and groundwater/monitoring summaries in `geotech analyze --format html` and `geotech viz`, while keeping CRS/local-grid assumptions and evidence IDs visible.
 - Attach standards-profile assumptions and opt-in non-executing calculation input drafts to GroundModel readiness so downstream calculations are prepared but still review-gated.
 - Keep experimental FEM previews deterministic, validation-gated, and clearly separated from production design calculations while the GroundModel-to-FEM routing contract is developed.
+- Keep the tunnel volume-loss settlement preview empirical and review-gated: it can generate a deterministic 3D settlement trough from explicit tunnel geometry, volume loss, and trough-width assumptions, but it is not a tunnel lining, face-stability, or production FEM solver.
 - Expose FEM to agents as deterministic capability/routing/validation tools so LLMs and swarm roles plan and review FEM work instead of inventing solver math.
 - Keep `geotech fem agent` as a scoped FEM planning brain that can list, draft, and validate FEM cases but cannot run solvers or invent result manifests.
 - Allow FEM draft and scoped FEM agent flows to consume GroundModel readiness as evidence prefill while still requiring explicit user geometry, load, staging, and approval.
@@ -45,6 +46,15 @@ Current focus:
 - Keep the legacy Modal deploy workflow present but disabled by default.
 
 ## Done So Far
+
+### v0.4.62 Experimental Tunnel Volume-Loss Settlement Preview
+
+- Added `geotech fem demo tunnel --experimental` as the third opt-in deterministic 3D FEM/WebGL preview.
+- Added a tunnel volume-loss analysis-case contract and deterministic empirical Gaussian settlement surface with finite manifest validation, surface settlement metadata, volume-loss metrics, trough width, and settlement-volume envelope values.
+- Added `geotech fem draft tunnel-volume-loss-settlement` explicit input support for tunnel diameter, axis depth, alignment length, volume loss, trough-width factor, optional alignment center, material assumptions, groundwater notes, and evidence references.
+- Updated FEM capability routing and agent tool schema descriptions so hosted GLM and future BYOK models see tunnel settlement as an implemented demo route while still receiving `not-fem-solver`, `not-design-calculation`, and manual review gates.
+- Extended the FEM WebGL smoke harness so `npm run smoke:fem:webgl` generates and validates raft, excavation, and tunnel artifacts across desktop and mobile viewports.
+- Verified locally with targeted FEM core/routing/CLI tests and core build before release-surface updates.
 
 ### v0.4.61 FEM Swarm Reviewer Handoff
 

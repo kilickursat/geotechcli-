@@ -28,6 +28,8 @@ describe('FEM routing contract', () => {
     expect(capabilities.find((capability) => capability.objective === 'foundation-settlement')?.status).toBe('implemented-demo');
     expect(capabilities.find((capability) => capability.objective === 'excavation-deformation')?.status).toBe('implemented-demo');
     expect(capabilities.find((capability) => capability.objective === 'excavation-deformation')?.command).toBe('geotech fem demo excavation --experimental');
+    expect(capabilities.find((capability) => capability.objective === 'tunnel-volume-loss-settlement')?.status).toBe('implemented-demo');
+    expect(capabilities.find((capability) => capability.objective === 'tunnel-volume-loss-settlement')?.command).toBe('geotech fem demo tunnel --experimental');
     expect(capabilities.find((capability) => capability.objective === 'tunnel-volume-loss-settlement')?.reviewGates).toContain('not-fem-solver');
   });
 
@@ -108,6 +110,51 @@ describe('FEM routing contract', () => {
     expect(draft.analysisCase?.loads[0]?.target).toBe('excavation_surcharge');
     expect(draft.validation?.status).toBe('review');
     expect(draft.reviewGates).toContain('not-design-calculation');
+  });
+
+  it('prepares tunnel volume-loss settlement drafts without pretending it is production FEM', () => {
+    const missing = prepareFemAnalysisCaseDraft({ objective: 'tunnel-volume-loss-settlement' });
+
+    expect(missing.implemented).toBe(true);
+    expect(missing.canAutoProceed).toBe(false);
+    expect(missing.recommendedAction).toBe('collect-inputs');
+    expect(missing.missingUserInputs).toEqual([
+      'tunnel diameter',
+      'tunnel axis depth',
+      'tunnel alignment length',
+      'tunnel volume loss',
+      'trough width parameter',
+    ]);
+    expect(missing.analysisCase).toBeUndefined();
+
+    const draft = prepareFemAnalysisCaseDraft({
+      objective: 'tunnel-volume-loss-settlement',
+      geometry: {
+        tunnelDiameterM: 6.5,
+        tunnelAxisDepthM: 20,
+        tunnelLengthM: 70,
+        tunnelVolumeLossPercent: 1.1,
+        troughWidthParameterK: 0.48,
+      },
+      material: {
+        elasticModulusKpa: 52_000,
+        poissonRatio: 0.29,
+        unitWeightKnM3: 19.2,
+      },
+      evidenceRefs: [{ id: 'ev-tu-1', source: 'GroundModel', page: 22 }],
+    });
+
+    expect(draft.implemented).toBe(true);
+    expect(draft.recommendedAction).toBe('run-experimental-demo');
+    expect(draft.canAutoProceed).toBe(false);
+    expect(draft.analysisCase?.objective).toBe('tunnel_volume_loss_settlement');
+    expect(draft.analysisCase?.geometry.tunnel?.diameterM).toBe(6.5);
+    expect(draft.analysisCase?.geometry.tunnel?.volumeLossPercent).toBe(1.1);
+    expect(draft.analysisCase?.materials[0]?.elasticModulusKpa).toBe(52_000);
+    expect(draft.validation?.status).toBe('review');
+    expect(draft.reviewGates).toContain('not-fem-solver');
+    expect(draft.reviewGates).toContain('tunnel.empirical-preview');
+    expect(draft.recommendedCommand).toBe('geotech fem demo tunnel --experimental');
   });
 
   it('keeps non-implemented FEM objectives as contract-only routes', () => {

@@ -2,8 +2,10 @@ export * from './types.js';
 export {
   buildExcavationDemoAnalysisCase,
   buildRaftDemoAnalysisCase,
+  buildTunnelVolumeLossDemoAnalysisCase,
   runBuiltinElasticExcavationDemo,
   runBuiltinElasticRaftDemo,
+  runBuiltinTunnelVolumeLossDemo,
 } from './demo.js';
 export {
   getFemCapability,

@@ -413,6 +413,42 @@ describe('registerFemCommand', () => {
     expect(payload.draft.validation.status).toBe('review');
   });
 
+  it('prepares a tunnel volume-loss FEM case draft from explicit CLI inputs', async () => {
+    const registerFemCommand = await loadRegisterFemCommand();
+    const program = new Command();
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    program.exitOverride();
+    registerFemCommand(program);
+
+    await program.parseAsync([
+      'fem',
+      'draft',
+      'tunnel-volume-loss-settlement',
+      '--tunnel-diameter',
+      '6.5',
+      '--tunnel-depth',
+      '20',
+      '--tunnel-length',
+      '70',
+      '--volume-loss',
+      '1.1',
+      '--trough-width',
+      '0.48',
+      '--elastic-modulus',
+      '52000',
+      '--json',
+    ], { from: 'user' });
+
+    const payload = JSON.parse(collectLogText(logSpy).trim());
+    expect(payload.objective).toBe('tunnel-volume-loss-settlement');
+    expect(payload.draft.recommendedAction).toBe('run-experimental-demo');
+    expect(payload.draft.canAutoProceed).toBe(false);
+    expect(payload.draft.analysisCase.objective).toBe('tunnel_volume_loss_settlement');
+    expect(payload.draft.analysisCase.geometry.tunnel.diameterM).toBe(6.5);
+    expect(payload.draft.analysisCase.geometry.tunnel.volumeLossPercent).toBe(1.1);
+    expect(payload.draft.reviewGates).toContain('not-fem-solver');
+  });
+
   it('attaches FEM workspace readiness context to the scoped FEM agent without widening tools', async () => {
     coreMocks.analyzeWorkspace.mockResolvedValue(makeFemWorkspaceManifest());
     coreMocks.buildLLMConfig.mockReturnValue({
@@ -577,6 +613,47 @@ describe('registerFemCommand', () => {
     expect(html).toContain('excavation-deformation-demo');
   });
 
+  it('writes a tunnel volume-loss WebGL artifact and JSON command envelope', async () => {
+    const registerFemCommand = await loadRegisterFemCommand();
+    const program = new Command();
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-fem-cli-'));
+    tempDirs.push(dir);
+    const htmlPath = join(dir, 'tunnel-demo.html');
+    const resultPath = join(dir, 'tunnel-demo.manifest.json');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    program.exitOverride();
+    registerFemCommand(program);
+
+    await program.parseAsync([
+      'fem',
+      'demo',
+      'tunnel',
+      '--experimental',
+      '--save-html',
+      htmlPath,
+      '--output',
+      resultPath,
+      '--no-open',
+      '--json',
+    ], { from: 'user' });
+
+    const payload = JSON.parse(collectLogText(logSpy).trim());
+    const html = await readFile(htmlPath, 'utf-8');
+    const manifest = JSON.parse(await readFile(resultPath, 'utf-8'));
+
+    expect(payload.kind).toBe('geotech-fem-demo-result');
+    expect(payload.demo).toBe('tunnel');
+    expect(payload.opened).toBe(false);
+    expect(payload.manifest.analysisCase.objective).toBe('tunnel_volume_loss_settlement');
+    expect(payload.manifest.envelope.volumeLossPercent).toBe(1.2);
+    expect(manifest.backend.id).toBe('builtin-tunnel-volume-loss-demo');
+    expect(manifest.resultFields.map((field: { id: string }) => field.id)).toEqual(['surface_settlement']);
+    expect(html).toContain('Experimental 3D tunnel volume-loss settlement preview');
+    expect(html).toContain('tunnel-volume-loss-settlement-demo');
+    expect(html).not.toContain('id="fieldSelect"');
+    expect(html).not.toContain('id="stageSlider"');
+  });
+
   it('prints a quiet settlement value without creating the default HTML artifact', async () => {
     const registerFemCommand = await loadRegisterFemCommand();
     const program = new Command();
@@ -606,6 +683,17 @@ describe('registerFemCommand', () => {
 
     await expect(
       program.parseAsync(['fem', 'demo', 'excavation', '--json'], { from: 'user' }),
+    ).rejects.toThrow(/--experimental/i);
+  });
+
+  it('requires explicit experimental acknowledgement for the tunnel demo', async () => {
+    const registerFemCommand = await loadRegisterFemCommand();
+    const program = new Command();
+    program.exitOverride();
+    registerFemCommand(program);
+
+    await expect(
+      program.parseAsync(['fem', 'demo', 'tunnel', '--json'], { from: 'user' }),
     ).rejects.toThrow(/--experimental/i);
   });
 });

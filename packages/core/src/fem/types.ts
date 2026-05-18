@@ -1,6 +1,12 @@
-export type FemObjective = 'foundation_settlement' | 'excavation_deformation';
+export type FemObjective =
+  | 'foundation_settlement'
+  | 'excavation_deformation'
+  | 'tunnel_volume_loss_settlement';
 
-export type FemAnalysisType = 'static_3d_small_strain' | 'static_3d_staged_elastic';
+export type FemAnalysisType =
+  | 'static_3d_small_strain'
+  | 'static_3d_staged_elastic'
+  | 'empirical_3d_settlement_surface';
 
 export type FemAssumptionConfidence = 'measured' | 'inferred' | 'review';
 
@@ -77,6 +83,17 @@ export interface FemExcavationGeometry {
   stages: FemExcavationStage[];
 }
 
+export interface FemTunnelGeometry {
+  type: 'tunnel';
+  diameterM: number;
+  axisDepthM: number;
+  lengthM: number;
+  centerXM: number;
+  centerYM: number;
+  volumeLossPercent: number;
+  troughWidthParameterK: number;
+}
+
 export interface FemPressureLoad {
   id: string;
   type: 'uniform_pressure';
@@ -120,6 +137,7 @@ export interface FemAnalysisCase {
     domain: FemBoxDomain;
     raft?: FemRaftGeometry;
     excavation?: FemExcavationGeometry;
+    tunnel?: FemTunnelGeometry;
   };
   materials: FemMaterial[];
   loads: FemPressureLoad[];
@@ -206,6 +224,13 @@ export interface FemResultEnvelope {
   supportReactionKn?: number;
   boundaryReactionKn?: number;
   stageCount?: number;
+  tunnelDiameterM?: number;
+  tunnelAxisDepthM?: number;
+  volumeLossPercent?: number;
+  troughWidthM?: number;
+  influenceWidthM?: number;
+  settlementVolumeM3?: number;
+  settlementVolumePerM?: number;
 }
 
 export interface FemResultManifest {
@@ -214,7 +239,7 @@ export interface FemResultManifest {
   title: string;
   generatedAt: string;
   backend: {
-    id: 'builtin-elastic3d-demo' | 'builtin-staged-excavation-demo';
+    id: 'builtin-elastic3d-demo' | 'builtin-staged-excavation-demo' | 'builtin-tunnel-volume-loss-demo';
     label: string;
     deterministic: true;
     version: string;

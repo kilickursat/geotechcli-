@@ -41,7 +41,7 @@ function isFemAnalysisCaseShape(value: unknown): value is FemAnalysisCase {
   return (
     isRecord(geometry) &&
     isRecord(geometry.domain) &&
-    (isRecord(geometry.raft) || isRecord(geometry.excavation)) &&
+    (isRecord(geometry.raft) || isRecord(geometry.excavation) || isRecord(geometry.tunnel)) &&
     isRecord(mesh) &&
     isRecord(groundwater) &&
     Array.isArray(value.materials) &&
@@ -225,7 +225,7 @@ export function validateFemAnalysisCase(caseFile: FemAnalysisCase): FemValidatio
     ]);
   }
 
-  const { domain, raft, excavation } = caseFile.geometry;
+  const { domain, raft, excavation, tunnel } = caseFile.geometry;
   const material = caseFile.materials[0];
   const load = caseFile.loads[0];
 
@@ -235,13 +235,16 @@ export function validateFemAnalysisCase(caseFile: FemAnalysisCase): FemValidatio
   if (!caseFile.experimental) {
     findings.push(finding('blocker', 'mode.experimental-required', 'FEM cases must be explicitly marked experimental.'));
   }
-  if (!['foundation_settlement', 'excavation_deformation'].includes(caseFile.objective)) {
+  if (!['foundation_settlement', 'excavation_deformation', 'tunnel_volume_loss_settlement'].includes(caseFile.objective)) {
     findings.push(finding('blocker', 'objective.unsupported', `Unsupported FEM objective: ${caseFile.objective}.`));
   }
   if (caseFile.objective === 'foundation_settlement' && caseFile.analysisType !== 'static_3d_small_strain') {
     findings.push(finding('blocker', 'analysis.unsupported', `Unsupported analysis type: ${caseFile.analysisType}.`));
   }
   if (caseFile.objective === 'excavation_deformation' && caseFile.analysisType !== 'static_3d_staged_elastic') {
+    findings.push(finding('blocker', 'analysis.unsupported', `Unsupported analysis type: ${caseFile.analysisType}.`));
+  }
+  if (caseFile.objective === 'tunnel_volume_loss_settlement' && caseFile.analysisType !== 'empirical_3d_settlement_surface') {
     findings.push(finding('blocker', 'analysis.unsupported', `Unsupported analysis type: ${caseFile.analysisType}.`));
   }
   if (domain.lengthM <= 0 || domain.widthM <= 0 || domain.depthM <= 0) {
@@ -321,6 +324,58 @@ export function validateFemAnalysisCase(caseFile: FemAnalysisCase): FemValidatio
       ));
     }
   }
+  if (caseFile.objective === 'tunnel_volume_loss_settlement') {
+    if (!tunnel) {
+      findings.push(finding('blocker', 'geometry.tunnel-missing', 'Tunnel volume-loss settlement cases require tunnel geometry.'));
+    } else {
+      if (
+        tunnel.diameterM <= 0 ||
+        tunnel.axisDepthM <= 0 ||
+        tunnel.lengthM <= 0 ||
+        tunnel.volumeLossPercent <= 0 ||
+        tunnel.troughWidthParameterK <= 0
+      ) {
+        findings.push(finding('blocker', 'geometry.tunnel-invalid', 'Tunnel diameter, depth, length, volume loss, and trough-width factor must be positive.'));
+      }
+      if (tunnel.axisDepthM <= tunnel.diameterM / 2) {
+        findings.push(finding('blocker', 'geometry.tunnel-cover-invalid', 'Tunnel axis depth must exceed the tunnel radius.'));
+      }
+      const troughWidthM = tunnel.axisDepthM * tunnel.troughWidthParameterK;
+      if (domain.widthM < Math.max(tunnel.diameterM * 5, troughWidthM * 5)) {
+        findings.push(finding(
+          'review',
+          'geometry.tunnel-domain-narrow',
+          'Domain width may truncate the tunnel settlement trough; influence width should be reviewed.',
+        ));
+      }
+      if (domain.lengthM < tunnel.lengthM * 1.15) {
+        findings.push(finding(
+          'review',
+          'geometry.tunnel-domain-short',
+          'Domain length is close to the modelled tunnel length; end effects and alignment extents should be reviewed.',
+        ));
+      }
+      if (domain.depthM < tunnel.axisDepthM + tunnel.diameterM) {
+        findings.push(finding(
+          'review',
+          'geometry.tunnel-depth-shallow',
+          'Domain depth is close to the tunnel invert; subsurface influence depth should be reviewed.',
+        ));
+      }
+      if (tunnel.volumeLossPercent > 3) {
+        findings.push(finding(
+          'review',
+          'tunnel.volume-loss-high',
+          'Tunnel volume loss exceeds 3%; this assumption should be justified from project evidence or sensitivity checks.',
+        ));
+      }
+      findings.push(finding(
+        'review',
+        'tunnel.empirical-preview',
+        'Tunnel preview uses an empirical Gaussian settlement surface from prescribed volume loss; it is not a tunnel lining, face-stability, or coupled FEM solver.',
+      ));
+    }
+  }
   if (!material) {
     findings.push(finding('blocker', 'material.missing', 'At least one material is required.'));
   } else {
@@ -335,7 +390,9 @@ export function validateFemAnalysisCase(caseFile: FemAnalysisCase): FemValidatio
     }
   }
   if (!load) {
-    findings.push(finding('blocker', 'load.missing', caseFile.objective === 'foundation_settlement' ? 'A raft pressure load is required.' : 'An excavation surcharge/load assumption is required.'));
+    if (caseFile.objective !== 'tunnel_volume_loss_settlement') {
+      findings.push(finding('blocker', 'load.missing', caseFile.objective === 'foundation_settlement' ? 'A raft pressure load is required.' : 'An excavation surcharge/load assumption is required.'));
+    }
   } else if (!Number.isFinite(load.pressureKpa) || load.pressureKpa <= 0) {
     findings.push(finding('blocker', 'load.pressure-invalid', 'Uniform pressure must be positive.'));
   } else if (caseFile.objective === 'foundation_settlement' && load.target !== 'raft') {

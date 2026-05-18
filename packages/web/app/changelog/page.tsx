@@ -8,6 +8,18 @@ const releases = [
     date: '2026-05-18',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added geotech fem demo tunnel --experimental as the third deterministic 3D preview, generating an empirical tunnel volume-loss settlement surface without hosted model calls' },
+      { type: 'feat', text: 'Added a tunnel volume-loss analysis-case contract, deterministic result manifest, finite visualization mesh, and validation gates for diameter, axis depth, alignment length, volume loss, and trough-width factor' },
+      { type: 'feat', text: 'Extended geotech fem draft tunnel-volume-loss-settlement so agents and users can prepare review-gated tunnel settlement drafts from explicit inputs' },
+      { type: 'fix', text: 'Updated the FEM WebGL and Canvas smoke harness to generate and test raft, excavation, and tunnel artifacts at desktop and mobile sizes' },
+      { type: 'fix', text: 'Kept the tunnel preview empirical and non-design: LLMs may route, draft, and review the case, but geotechCLI deterministic code owns the generated settlement surface' },
+    ],
+  },
+  {
+    version: '0.4.61',
+    date: '2026-05-18',
+    tag: '0.4.61 Release',
+    changes: [
       { type: 'feat', text: 'Added deterministic simulation-tool context to reviewer swarm prompts so FEM drafts and validation data remain visible even when a model handoff summary is terse' },
       { type: 'feat', text: 'Added compact per-tool summaries for FEM and calculation outputs before reviewer JSON context, keeping BYOK and hosted models aligned on the same evidence contract' },
       { type: 'fix', text: 'Added runtime swarm regressions proving simulation agents can prepare FEM cases, reviewer agents can validate FEM cases, and reviewer agents cannot prepare FEM cases' },

@@ -320,6 +320,119 @@ export function buildExcavationDemoAnalysisCase(now = new Date('2026-05-17T00:00
   };
 }
 
+export function buildTunnelVolumeLossDemoAnalysisCase(now = new Date('2026-05-18T00:00:00.000Z')): FemAnalysisCase {
+  const assumptions: FemAssumption[] = [
+    {
+      id: 'empirical-volume-loss',
+      parameter: 'settlement method',
+      value: 'Gaussian tunnel volume-loss trough',
+      basis: 'Experimental deterministic preview for agentic routing, visualization, and review workflow validation.',
+      confidence: 'review',
+      reviewRequired: true,
+    },
+    {
+      id: 'volume-loss-assumption',
+      parameter: 'volume loss',
+      value: 1.2,
+      unit: '%',
+      basis: 'Representative preliminary assumption; must be replaced with project-specific construction method evidence.',
+      confidence: 'review',
+      reviewRequired: true,
+    },
+    {
+      id: 'trough-width-factor',
+      parameter: 'trough width parameter K',
+      value: 0.5,
+      unit: '-',
+      basis: 'Typical preliminary value for screening only; soil type and construction method require engineering review.',
+      confidence: 'review',
+      reviewRequired: true,
+    },
+    {
+      id: 'groundwater-not-coupled',
+      parameter: 'groundwater',
+      value: 'not coupled',
+      basis: 'Tunnel preview excludes pore pressure, consolidation, face stability, lining interaction, and time effects.',
+      confidence: 'review',
+      reviewRequired: true,
+    },
+  ];
+
+  return {
+    schemaVersion: 'fem-analysis-case.v0',
+    caseId: 'tunnel-volume-loss-settlement-demo',
+    title: 'Experimental 3D tunnel volume-loss settlement preview',
+    createdBy: 'geotechcli-fem-demo',
+    createdAt: now.toISOString(),
+    experimental: true,
+    objective: 'tunnel_volume_loss_settlement',
+    analysisType: 'empirical_3d_settlement_surface',
+    units: DEFAULT_UNITS,
+    geometry: {
+      domain: {
+        type: 'box',
+        lengthM: 80,
+        widthM: 60,
+        depthM: 32,
+      },
+      tunnel: {
+        type: 'tunnel',
+        diameterM: 6,
+        axisDepthM: 18,
+        lengthM: 56,
+        centerXM: 0,
+        centerYM: 0,
+        volumeLossPercent: 1.2,
+        troughWidthParameterK: 0.5,
+      },
+    },
+    materials: [
+      {
+        id: 'overburden-equivalent',
+        name: 'Representative overburden equivalent elastic ground',
+        model: 'linear_elastic',
+        elasticModulusKpa: 45_000,
+        poissonRatio: 0.3,
+        unitWeightKnM3: 19,
+        evidenceRefs: [],
+        assumptions,
+      },
+    ],
+    loads: [],
+    boundaryConditions: [
+      {
+        id: 'base-fixed',
+        type: 'fixed_base',
+        description: 'Base nodes fixed for manifest compatibility; empirical tunnel surface is evaluated at ground surface.',
+      },
+      {
+        id: 'side-rollers',
+        type: 'side_rollers',
+        description: 'Side boundaries retained for case-contract compatibility and viewer context.',
+      },
+    ],
+    mesh: {
+      elementType: 'hex8',
+      divisionsX: 18,
+      divisionsY: 16,
+      divisionsZ: 4,
+    },
+    groundwater: {
+      condition: 'not_modelled',
+      note: 'Groundwater, pore pressure, consolidation, lining interaction, and face-stability checks are not included in this experimental tunnel preview.',
+      reviewRequired: true,
+    },
+    assumptions,
+    evidenceRefs: [],
+    limitations: [
+      'Experimental empirical tunnel settlement preview only; not a production FEM solver or design model.',
+      'Uses a Gaussian surface settlement trough from prescribed volume loss and trough-width factor.',
+      'No face stability, lining design, staged excavation, consolidation, seepage, building damage assessment, or nonlinear soil response.',
+      'Volume loss and trough-width assumptions must be justified from project evidence and reviewed by a qualified engineer.',
+    ],
+  };
+}
+
 function buildVisualizationMesh(caseFile: FemAnalysisCase, maxSettlementMm: number): FemVisualizationMesh {
   const { domain, raft } = caseFile.geometry;
   if (!raft) {
@@ -507,6 +620,90 @@ function buildExcavationVisualizationMesh(
   };
 }
 
+function buildTunnelVisualizationMesh(
+  caseFile: FemAnalysisCase,
+  maxSettlementMm: number,
+): FemVisualizationMesh {
+  const { domain, tunnel } = caseFile.geometry;
+  if (!tunnel) {
+    throw new Error('Tunnel visualization mesh requires tunnel geometry.');
+  }
+  const nx = caseFile.mesh.divisionsX;
+  const ny = caseFile.mesh.divisionsY;
+  const base: number[] = [];
+  const disp: number[] = [];
+  const color: number[] = [];
+  const tri: number[] = [];
+  const edge: number[] = [];
+  const troughWidthM = tunnel.axisDepthM * tunnel.troughWidthParameterK;
+  const halfTunnelLength = tunnel.lengthM / 2;
+  const endTaperWidth = Math.max(troughWidthM * 1.25, tunnel.diameterM);
+
+  for (let iy = 0; iy <= ny; iy += 1) {
+    const y = -domain.widthM / 2 + (domain.widthM * iy) / ny;
+    for (let ix = 0; ix <= nx; ix += 1) {
+      const x = -domain.lengthM / 2 + (domain.lengthM * ix) / nx;
+      const crossAxisOffset = y - tunnel.centerYM;
+      const beyondTunnel = Math.max(Math.abs(x - tunnel.centerXM) - halfTunnelLength, 0);
+      const crossAxisInfluence = Math.exp(-(crossAxisOffset * crossAxisOffset) / (2 * troughWidthM * troughWidthM));
+      const endInfluence = beyondTunnel === 0
+        ? 1
+        : Math.exp(-(beyondTunnel * beyondTunnel) / (2 * endTaperWidth * endTaperWidth));
+      const settlementMm = maxSettlementMm * crossAxisInfluence * endInfluence;
+      const normalized = settlementMm / Math.max(maxSettlementMm, 1e-6);
+      const [r, g, b] = settlementColor(normalized);
+      base.push(round(x), round(y), 0);
+      disp.push(0, 0, round(-settlementMm / 1000, 6));
+      color.push(r, g, b);
+    }
+  }
+
+  const idx = (ix: number, iy: number) => iy * (nx + 1) + ix;
+  for (let iy = 0; iy < ny; iy += 1) {
+    for (let ix = 0; ix < nx; ix += 1) {
+      const a = idx(ix, iy);
+      const b = idx(ix + 1, iy);
+      const c = idx(ix + 1, iy + 1);
+      const d = idx(ix, iy + 1);
+      tri.push(a, b, c, a, c, d);
+    }
+  }
+  for (let iy = 0; iy <= ny; iy += 1) {
+    for (let ix = 0; ix < nx; ix += 1) {
+      edge.push(idx(ix, iy), idx(ix + 1, iy));
+    }
+  }
+  for (let ix = 0; ix <= nx; ix += 1) {
+    for (let iy = 0; iy < ny; iy += 1) {
+      edge.push(idx(ix, iy), idx(ix, iy + 1));
+    }
+  }
+
+  const z = 0.05;
+  const halfInfluenceWidth = Math.min(domain.widthM / 2, troughWidthM * 3);
+  const x0 = tunnel.centerXM - halfTunnelLength;
+  const x1 = tunnel.centerXM + halfTunnelLength;
+  const y0 = tunnel.centerYM - halfInfluenceWidth;
+  const y1 = tunnel.centerYM + halfInfluenceWidth;
+  return {
+    base,
+    disp,
+    color,
+    tri,
+    edge,
+    outlineBase: [
+      x0, y0, z,
+      x1, y0, z,
+      x1, y1, z,
+      x0, y1, z,
+      x0, tunnel.centerYM, z + 0.04,
+      x1, tunnel.centerYM, z + 0.04,
+    ],
+    outlineDisp: new Array(18).fill(0),
+    outlineIdx: [0, 1, 1, 2, 2, 3, 3, 0, 4, 5],
+  };
+}
+
 function buildRaftResultFields(): FemResultField[] {
   return [
     {
@@ -622,6 +819,43 @@ function buildExcavationResultDatasets(
   ];
 }
 
+function buildTunnelResultFields(): FemResultField[] {
+  return [
+    {
+      id: 'surface_settlement',
+      label: 'Tunnel surface settlement',
+      unit: 'mm',
+      location: 'surface_nodes',
+      quantity: 'displacement',
+      component: 'z',
+      signConvention: 'Positive values represent downward settlement magnitude from the empirical volume-loss trough.',
+    },
+  ];
+}
+
+function buildTunnelResultSteps(): FemResultStep[] {
+  return [
+    {
+      id: 'final',
+      label: 'Final volume-loss settlement surface',
+      index: 0,
+    },
+  ];
+}
+
+function buildTunnelResultDatasets(visualization: FemVisualizationMesh): FemResultDataset[] {
+  return [
+    {
+      id: 'surface_settlement-final',
+      fieldId: 'surface_settlement',
+      stepId: 'final',
+      values: visualization.disp,
+      stride: 3,
+      source: 'visualization.disp',
+    },
+  ];
+}
+
 export function runBuiltinElasticRaftDemo(caseFile = buildRaftDemoAnalysisCase()): FemResultManifest {
   const validation = validateFemAnalysisCase(caseFile);
   const material = caseFile.materials[0];
@@ -686,6 +920,75 @@ export function runBuiltinElasticRaftDemo(caseFile = buildRaftDemoAnalysisCase()
       ...caseFile.assumptions,
       ...caseFile.loads.flatMap((item) => item.assumptions),
     ],
+    limitations: caseFile.limitations,
+  };
+}
+
+export function runBuiltinTunnelVolumeLossDemo(
+  caseFile = buildTunnelVolumeLossDemoAnalysisCase(),
+): FemResultManifest {
+  const validation = validateFemAnalysisCase(caseFile);
+  const tunnel = caseFile.geometry.tunnel;
+  if (!tunnel) {
+    throw new Error('Tunnel demo requires tunnel geometry.');
+  }
+  if (validation.status === 'blocked') {
+    throw new Error(`FEM case is blocked: ${validation.findings.map((item) => item.message).join('; ')}`);
+  }
+
+  const troughWidthM = tunnel.axisDepthM * tunnel.troughWidthParameterK;
+  const tunnelAreaM2 = Math.PI * (tunnel.diameterM / 2) ** 2;
+  const settlementVolumePerM = (tunnel.volumeLossPercent / 100) * tunnelAreaM2;
+  const maxSettlementMm = round((settlementVolumePerM / (Math.sqrt(2 * Math.PI) * troughWidthM)) * 1000, 3);
+  const visualization = buildTunnelVisualizationMesh(caseFile, maxSettlementMm);
+  const settlements = visualization.disp
+    .filter((_, index) => index % 3 === 2)
+    .map((value) => Math.abs(value * 1000));
+  const minSettlementMm = round(Math.min(...settlements), 3);
+  const totalSettlementVolumeM3 = round(settlementVolumePerM * tunnel.lengthM, 3);
+
+  return {
+    schemaVersion: 'fem-result-manifest.v0',
+    caseId: caseFile.caseId,
+    title: caseFile.title,
+    generatedAt: new Date().toISOString(),
+    backend: {
+      id: 'builtin-tunnel-volume-loss-demo',
+      label: 'Built-in experimental tunnel volume-loss settlement preview',
+      deterministic: true,
+      version: '0.1.0',
+    },
+    analysisCase: caseFile,
+    validation,
+    mesh: {
+      nodes: (caseFile.mesh.divisionsX + 1) * (caseFile.mesh.divisionsY + 1) * (caseFile.mesh.divisionsZ + 1),
+      elements: caseFile.mesh.divisionsX * caseFile.mesh.divisionsY * caseFile.mesh.divisionsZ,
+      elementType: caseFile.mesh.elementType,
+      divisions: [caseFile.mesh.divisionsX, caseFile.mesh.divisionsY, caseFile.mesh.divisionsZ],
+      visualizationNodes: visualization.base.length / 3,
+      visualizationTriangles: visualization.tri.length / 3,
+      visualizationEdges: visualization.edge.length / 2,
+    },
+    envelope: {
+      maxSettlementMm,
+      minSettlementMm,
+      totalLoadKn: 0,
+      reactionKn: 0,
+      reactionBalanceRatio: 1,
+      maxSurfaceSettlementMm: maxSettlementMm,
+      tunnelDiameterM: tunnel.diameterM,
+      tunnelAxisDepthM: tunnel.axisDepthM,
+      volumeLossPercent: tunnel.volumeLossPercent,
+      troughWidthM: round(troughWidthM, 3),
+      influenceWidthM: round(troughWidthM * 6, 3),
+      settlementVolumeM3: totalSettlementVolumeM3,
+      settlementVolumePerM: round(settlementVolumePerM, 5),
+    },
+    visualization,
+    resultFields: buildTunnelResultFields(),
+    steps: buildTunnelResultSteps(),
+    datasets: buildTunnelResultDatasets(visualization),
+    assumptions: caseFile.assumptions,
     limitations: caseFile.limitations,
   };
 }

@@ -47,6 +47,7 @@ function inferCase(manifest, requested) {
   if (requested && requested !== 'auto') return requested;
   if (manifest.analysisCase?.objective === 'foundation_settlement') return 'raft';
   if (manifest.analysisCase?.objective === 'excavation_deformation') return 'excavation';
+  if (manifest.analysisCase?.objective === 'tunnel_volume_loss_settlement') return 'tunnel';
   return 'auto';
 }
 
@@ -103,6 +104,16 @@ function caseManifestChecks(manifest, caseName) {
     assert(manifest.visualization?.frames?.length === 9, 'expected three fields across three stages');
     assert(manifest.steps?.length === 3, 'expected three result steps');
     assert(manifest.datasets?.length >= 9, 'expected result datasets for staged frames');
+  } else if (caseName === 'tunnel') {
+    assert(manifest.analysisCase?.objective === 'tunnel_volume_loss_settlement', 'not a tunnel volume-loss manifest');
+    assert(manifest.backend?.id === 'builtin-tunnel-volume-loss-demo', 'unexpected tunnel backend');
+    assert(manifest.mesh?.nodes === 1615, 'unexpected tunnel node count');
+    assert(manifest.mesh?.elements === 1152, 'unexpected tunnel element count');
+    assert(Number.isFinite(manifest.envelope?.maxSurfaceSettlementMm), 'tunnel surface settlement is not finite');
+    assert(Number.isFinite(manifest.envelope?.volumeLossPercent), 'tunnel volume loss is not finite');
+    assert(Number.isFinite(manifest.envelope?.troughWidthM), 'tunnel trough width is not finite');
+    assert(manifest.resultFields?.some((field) => field.id === 'surface_settlement'), 'missing tunnel result field metadata');
+    assert(manifest.steps?.map((step) => step.id).includes('final'), 'missing tunnel final step metadata');
   }
 }
 
@@ -189,6 +200,15 @@ async function assertViewer({ browser, htmlPath, manifest, caseName, outDir, vie
     await page.locator('#stageSlider').fill('2');
     await page.getByText('Stage 3 - excavate to 8.0 m, two support levels active').waitFor();
     await page.getByText('Wall deflection proxy color').waitFor();
+  } else if (caseName === 'tunnel') {
+    await page.getByText('Experimental 3D tunnel volume-loss settlement preview').waitFor();
+    await page.getByText('Tunnel surface settlement color').waitFor();
+    await page.locator('#stats').getByText('Volume loss', { exact: true }).waitFor();
+    await page.locator('#stats').getByText('Trough width i', { exact: true }).waitFor();
+    await page.locator('#scale').fill('180');
+    await assertScaleLabel(page, '180x');
+    await page.getByRole('button', { name: '60x' }).click();
+    await assertScaleLabel(page, '60x');
   }
 
   const probe = await assertCanvas(page, viewportName);
@@ -251,10 +271,11 @@ const artifacts = [];
 if (args.demo === 'all') {
   artifacts.push({ caseName: 'raft', ...(await generateDemoArtifacts('raft', outDir)) });
   artifacts.push({ caseName: 'excavation', ...(await generateDemoArtifacts('excavation', outDir)) });
-} else if (args.demo === 'raft' || args.demo === 'excavation') {
+  artifacts.push({ caseName: 'tunnel', ...(await generateDemoArtifacts('tunnel', outDir)) });
+} else if (args.demo === 'raft' || args.demo === 'excavation' || args.demo === 'tunnel') {
   artifacts.push({ caseName: args.demo, ...(await generateDemoArtifacts(args.demo, outDir)) });
 } else {
-  assert(args.html && args.manifest, 'Usage: node scripts/smoke-fem-webgl.mjs --case <auto|raft|excavation> --html <file> --manifest <file> --out <dir>');
+  assert(args.html && args.manifest, 'Usage: node scripts/smoke-fem-webgl.mjs --case <auto|raft|excavation|tunnel> --html <file> --manifest <file> --out <dir>');
   artifacts.push({
     caseName: args.caseName,
     html: resolve(args.html),
