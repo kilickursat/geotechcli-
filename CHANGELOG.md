@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.63] - 2026-05-19
+
+### FEM Draft-to-Run Acceptance
+
+- Added `geotech fem run <analysis_case.json> --experimental` so reviewed FEM draft cases can be executed through deterministic built-in preview backends instead of only fixed demo cases.
+- Kept LLM and swarm FEM authority bounded to planning, drafting, and validation; agents can recommend a reviewed run but cannot execute solver/WebGL artifact generation as a tool.
+- Added a draft-to-run smoke harness that creates raft, excavation, and tunnel analysis-case files, runs each accepted case, and verifies deterministic manifests plus HTML artifact output.
+- Updated FEM docs, command examples, and release surfaces to distinguish draft, reviewed run, and built-in demo workflows while preserving the non-design safety boundary.
+
 ## [0.4.62] - 2026-05-18
 
 ### Experimental Tunnel Volume-Loss Settlement Preview

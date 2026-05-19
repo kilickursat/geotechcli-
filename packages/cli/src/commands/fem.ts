@@ -14,8 +14,10 @@ import {
   runBuiltinElasticExcavationDemo,
   runBuiltinElasticRaftDemo,
   runBuiltinTunnelVolumeLossDemo,
+  validateFemAnalysisCase,
   validateFemResultManifest,
   type AgentStep,
+  type FemAnalysisCase,
   type FemAnalysisCaseDraft,
   type FemGroundModelDraftBridge,
   type FemResultManifest,
@@ -37,6 +39,7 @@ import { addGlobalFlags, getGlobalFlags } from '../util/flags.js';
 const DEFAULT_RAFT_HTML = 'geotech-fem-raft-demo.html';
 const DEFAULT_EXCAVATION_HTML = 'geotech-fem-excavation-demo.html';
 const DEFAULT_TUNNEL_HTML = 'geotech-fem-tunnel-demo.html';
+const DEFAULT_RUN_HTML = 'geotech-fem-run.html';
 type FemDemoKind = 'raft' | 'excavation' | 'tunnel';
 const FEM_AGENT_TOOLS = [
   'list_fem_capabilities',
@@ -72,6 +75,19 @@ interface FemAgentJsonEnvelope {
   }>;
   tokens: number;
   latencyMs: number;
+}
+
+interface FemRunJsonEnvelope {
+  kind: 'geotech-fem-run-result';
+  schemaVersion: 'fem-run-command.v0';
+  experimental: true;
+  casePath: string;
+  objective: FemAnalysisCase['objective'];
+  manifest: FemResultManifest;
+  htmlPath?: string;
+  resultPath?: string;
+  opened: boolean;
+  warnings: string[];
 }
 
 interface FemDraftJsonEnvelope {
@@ -148,6 +164,31 @@ function parseFemDraftInput(value: unknown): Partial<PrepareFemAnalysisCaseDraft
     throw new Error('--input must resolve to a JSON object.');
   }
   return parsed as Partial<PrepareFemAnalysisCaseDraftInput>;
+}
+
+function loadFemAnalysisCase(filePath: string): { casePath: string; analysisCase: FemAnalysisCase } {
+  const resolved = resolve(filePath);
+  const parsed = JSON.parse(readFileSync(resolved, 'utf-8')) as unknown;
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('FEM analysis case file must contain a JSON object.');
+  }
+  return {
+    casePath: resolved,
+    analysisCase: parsed as FemAnalysisCase,
+  };
+}
+
+function runDeterministicFemAnalysisCase(analysisCase: FemAnalysisCase): FemResultManifest {
+  switch (analysisCase.objective) {
+    case 'foundation_settlement':
+      return runBuiltinElasticRaftDemo(analysisCase);
+    case 'excavation_deformation':
+      return runBuiltinElasticExcavationDemo(analysisCase);
+    case 'tunnel_volume_loss_settlement':
+      return runBuiltinTunnelVolumeLossDemo(analysisCase);
+    default:
+      throw new Error(`Unsupported FEM objective: ${String((analysisCase as { objective?: unknown }).objective)}.`);
+  }
 }
 
 function mergeFemDraftInputs(
@@ -321,7 +362,7 @@ function buildFemAgentTask(task: string, objective?: string, workspaceSummary?: 
     '',
     'Use only geotechCLI FEM capability, draft, and validation tools.',
     'Do not invent FEM displacement, reaction, mesh, stage, or result-envelope values.',
-    'If a deterministic preview is appropriate, recommend the matching geotech fem demo command instead of claiming you ran it.',
+    'If deterministic execution is appropriate, recommend a human-reviewed `geotech fem run <analysis_case.json> --experimental` or matching demo command instead of claiming you ran it.',
   ].filter(Boolean).join('\n');
 }
 
@@ -495,6 +536,71 @@ async function runFemDemoCommand(
   });
 }
 
+async function runFemAnalysisCaseCommand(caseFilePath: string, opts: Record<string, unknown>): Promise<void> {
+  const flags = getGlobalFlags(opts);
+  if (!opts.experimental) {
+    throw new Error('FEM runs are experimental. Re-run with --experimental to acknowledge the limitation.');
+  }
+
+  const { casePath, analysisCase } = loadFemAnalysisCase(caseFilePath);
+  const caseValidation = validateFemAnalysisCase(analysisCase);
+  if (caseValidation.status === 'blocked') {
+    throw new Error(`FEM analysis case failed validation: ${caseValidation.findings.map((item) => item.message).join('; ')}`);
+  }
+
+  const manifest = runDeterministicFemAnalysisCase(analysisCase);
+  const resultValidation = validateFemResultManifest(manifest);
+  if (resultValidation.status === 'blocked') {
+    throw new Error(`FEM result manifest failed validation: ${resultValidation.findings.map((item) => item.message).join('; ')}`);
+  }
+
+  let htmlPath: string | undefined;
+  let opened = false;
+  const shouldWriteDefaultHtml = !flags.json && !flags.quiet;
+  const requestedHtmlPath = flags.saveHtml ?? (shouldWriteDefaultHtml ? DEFAULT_RUN_HTML : undefined);
+  if (requestedHtmlPath) {
+    htmlPath = writeUtf8File(requestedHtmlPath, renderFemWebglHtml(manifest));
+    opened = flags.noOpen ? false : openFileInBrowser(htmlPath, {
+      disabledEnvVar: 'GEOTECHCLI_FEM_NO_OPEN',
+    });
+  }
+
+  let resultPath: string | undefined;
+  if (flags.output) {
+    resultPath = writeUtf8File(flags.output, JSON.stringify(manifest, null, 2));
+  }
+
+  const envelope: FemRunJsonEnvelope = {
+    kind: 'geotech-fem-run-result',
+    schemaVersion: 'fem-run-command.v0',
+    experimental: true,
+    casePath,
+    objective: analysisCase.objective,
+    manifest,
+    htmlPath,
+    resultPath,
+    opened,
+    warnings: [
+      'Experimental deterministic FEM run only; not a design calculation.',
+      'Run was invoked by the CLI from a reviewed analysis_case.json file; LLM agents can plan and validate cases but cannot execute this command as a tool.',
+      ...buildWarnings(manifest),
+    ],
+  };
+
+  if (flags.json) {
+    renderJSON(envelope);
+    return;
+  }
+
+  renderPlainSummary(manifest, {
+    title: 'Experimental FEM Case Run',
+    htmlPath,
+    resultPath,
+    opened,
+    quiet: flags.quiet,
+  });
+}
+
 export function registerFemCommand(program: Command): void {
   const fem = new Command('fem')
     .description('Experimental deterministic 3D FEM previews, scoped FEM agent planning, and WebGL artifacts');
@@ -566,6 +672,26 @@ export function registerFemCommand(program: Command): void {
   demo.addCommand(excavation);
   demo.addCommand(tunnel);
   fem.addCommand(demo);
+
+  const run = new Command('run')
+    .description('Run a reviewed experimental FEM analysis_case.json through deterministic built-in preview backends')
+    .argument('<analysisCaseJson>', 'Path to fem-analysis-case.v0 JSON produced by geotech fem draft or manual review')
+    .option('--experimental', 'Acknowledge that this FEM run is experimental and not a design calculation')
+    .addHelpText('after', `
+  Examples:
+    geotech fem draft foundation-settlement --raft-length 10 --raft-width 8 --pressure 150 --case-output analysis_case.json
+    geotech fem run analysis_case.json --experimental --save-html fem-run.html --output fem-run.manifest.json --no-open
+    geotech fem run analysis_case.json --experimental --json
+
+  This command executes only deterministic built-in preview backends from a reviewed analysis_case.json.
+  It is not exposed as an agent tool; LLMs can plan, draft, and validate FEM cases, but users approve runs.
+`)
+    .action(async (caseFilePath: string, opts) => {
+      await runFemAnalysisCaseCommand(caseFilePath, opts as Record<string, unknown>);
+    });
+
+  addGlobalFlags(run);
+  fem.addCommand(run);
 
   const draft = new Command('draft')
     .description('Prepare a validated experimental FEM analysis-case draft without running a solver')
@@ -713,7 +839,7 @@ export function registerFemCommand(program: Command): void {
         {
           allowedTools: FEM_AGENT_TOOLS,
           systemPromptSuffix:
-            'FEM scoped-agent rule: use only FEM routing, drafting, and validation tools. Never claim to run a solver or produce FEM numerical results unless they came from a deterministic geotechCLI FEM manifest. Workspace evidence may prefill material, groundwater, and evidenceRefs only; geometry, load, staging, mesh intent, and design approval require explicit user confirmation. Recommend `geotech fem demo ... --experimental` when execution or visualization is needed.',
+            'FEM scoped-agent rule: use only FEM routing, drafting, and validation tools. Never claim to run a solver or produce FEM numerical results unless they came from a deterministic geotechCLI FEM manifest. Workspace evidence may prefill material, groundwater, and evidenceRefs only; geometry, load, staging, mesh intent, and design approval require explicit user confirmation. Recommend `geotech fem run <analysis_case.json> --experimental` after human review, or `geotech fem demo ... --experimental` for built-in examples, when execution or visualization is needed.',
         },
       );
       const answer = session.steps.find((step) => step.type === 'answer')?.content ?? '';

@@ -54,6 +54,7 @@ jobs:
         with: { node-version: 22, cache: npm }
       - run: npm ci
       - run: npx turbo run build
+      - run: npm run smoke:fem:draft-run
       - run: npm run --workspace=@geotechcli/web build:cf
       - run: npm run smoke:web
       - run: test -f packages/cli/dist/index.js

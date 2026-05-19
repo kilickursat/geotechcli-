@@ -5,8 +5,19 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 const releases = [
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-05-18',
+    date: '2026-05-19',
     tag: `${GEOTECHCLI_VERSION} Release`,
+    changes: [
+      { type: 'feat', text: 'Added geotech fem run <analysis_case.json> --experimental so reviewed FEM draft cases can execute through deterministic built-in preview backends' },
+      { type: 'feat', text: 'Added a draft-to-run acceptance smoke harness covering raft, excavation, and tunnel case files, deterministic manifests, and HTML artifact output' },
+      { type: 'fix', text: 'Kept LLM and swarm FEM authority bounded to planning, drafting, and validation; agents can recommend a reviewed run but cannot execute solver/WebGL generation as a tool' },
+      { type: 'docs', text: 'Updated FEM docs and examples to distinguish draft, reviewed run, and built-in demo workflows while preserving the non-design safety boundary' },
+    ],
+  },
+  {
+    version: '0.4.62',
+    date: '2026-05-18',
+    tag: '0.4.62 Release',
     changes: [
       { type: 'feat', text: 'Added geotech fem demo tunnel --experimental as the third deterministic 3D preview, generating an empirical tunnel volume-loss settlement surface without hosted model calls' },
       { type: 'feat', text: 'Added a tunnel volume-loss analysis-case contract, deterministic result manifest, finite visualization mesh, and validation gates for diameter, axis depth, alignment length, volume loss, and trough-width factor' },

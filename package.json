@@ -13,6 +13,7 @@
     "verify:consistency": "node scripts/verify-release-consistency.mjs",
     "smoke:web": "node scripts/smoke-web-routes.mjs",
     "smoke:fem:webgl": "node scripts/smoke-fem-webgl.mjs --demo all --out __fem-webgl-smoke",
+    "smoke:fem:draft-run": "node scripts/smoke-fem-draft-run.mjs --out __fem-draft-run-smoke",
     "smoke:byok": "npm run --workspace=@geotechcli/core build && node scripts/smoke-byok-providers.mjs",
     "benchmark:geotech-report": "node scripts/benchmark-geotech-report.mjs",
     "changeset": "changeset",

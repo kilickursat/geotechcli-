@@ -1,10 +1,10 @@
 # geotechCLI Development Status
 
-Last updated: 2026-05-18
+Last updated: 2026-05-19
 
 ## Current Work
 
-v0.4.62 on `strong-beta` follows the shipped v0.4.61 FEM swarm reviewer handoff. This slice adds an experimental deterministic tunnel volume-loss settlement surface so FEM/WebGL development now covers raft settlement, staged excavation deformation, and tunnel settlement-trough review while preserving the boundary that LLMs plan and review FEM cases but do not run solvers, write WebGL artifacts, or invent FEM outputs. The wider engineering track remains provider-neutral evidence, standards-aware GroundModel readiness, GroundModel spatial and engineering visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, the PDF/page evidence benchmark foundation, and experimental deterministic FEM/WebGL contracts so future OCR/vision, BYOK-provider, and GroundModel-to-calculation changes can be measured and routed without asking LLMs to invent calculations.
+v0.4.63 work follows the shipped v0.4.62 tunnel FEM preview. This slice connects review-gated FEM drafts to a human-invoked deterministic run path: `geotech fem draft ... --case-output analysis_case.json` can now be followed by `geotech fem run analysis_case.json --experimental` to generate a validated manifest and WebGL artifact from the reviewed case. The LLM boundary remains explicit: hosted GLM and future BYOK models can plan, draft, validate, and review FEM cases, but they cannot run solvers, invoke WebGL generation as tools, or invent FEM outputs. The wider engineering track remains provider-neutral evidence, standards-aware GroundModel readiness, GroundModel spatial and engineering visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, the PDF/page evidence benchmark foundation, and experimental deterministic FEM/WebGL contracts so future OCR/vision, BYOK-provider, and GroundModel-to-calculation changes can be measured and routed without asking LLMs to invent calculations.
 
 Current focus:
 
@@ -33,6 +33,7 @@ Current focus:
 - Attach standards-profile assumptions and opt-in non-executing calculation input drafts to GroundModel readiness so downstream calculations are prepared but still review-gated.
 - Keep experimental FEM previews deterministic, validation-gated, and clearly separated from production design calculations while the GroundModel-to-FEM routing contract is developed.
 - Keep the tunnel volume-loss settlement preview empirical and review-gated: it can generate a deterministic 3D settlement trough from explicit tunnel geometry, volume loss, and trough-width assumptions, but it is not a tunnel lining, face-stability, or production FEM solver.
+- Allow reviewed FEM `analysis_case.json` drafts to be run only through the human-invoked `geotech fem run ... --experimental` path; do not expose solver/WebGL execution as an LLM or swarm tool.
 - Expose FEM to agents as deterministic capability/routing/validation tools so LLMs and swarm roles plan and review FEM work instead of inventing solver math.
 - Keep `geotech fem agent` as a scoped FEM planning brain that can list, draft, and validate FEM cases but cannot run solvers or invent result manifests.
 - Allow FEM draft and scoped FEM agent flows to consume GroundModel readiness as evidence prefill while still requiring explicit user geometry, load, staging, and approval.
@@ -46,6 +47,14 @@ Current focus:
 - Keep the legacy Modal deploy workflow present but disabled by default.
 
 ## Done So Far
+
+### v0.4.63 FEM Draft-to-Run Acceptance
+
+- Added `geotech fem run <analysis_case.json> --experimental` so reviewed FEM draft cases can execute through deterministic built-in preview backends.
+- Added run dispatch for foundation settlement, staged excavation deformation, and tunnel volume-loss settlement analysis cases while preserving manifest validation and WebGL export behavior.
+- Kept FEM agent and swarm execution boundaries unchanged: LLMs can plan, draft, and validate FEM cases, but only a human-invoked CLI run can generate deterministic FEM results.
+- Added a draft-to-run smoke harness that writes raft, excavation, and tunnel analysis-case files, runs each accepted case, and verifies deterministic result manifests plus HTML artifacts.
+- Updated docs, changelog, and release surfaces to distinguish draft, reviewed run, and built-in demo workflows.
 
 ### v0.4.62 Experimental Tunnel Volume-Loss Settlement Preview
 
@@ -132,7 +141,7 @@ Current focus:
 - Added Playwright as a development dependency and verified the generated Confidence v2 HTML report at desktop and mobile widths with no page-level horizontal overflow.
 - Added regression coverage for ingest confidence breakdown generation, evidence packet/schema propagation, benchmark output, report view-model metrics, and rendered HTML ordering.
 
-### Unreleased Report Evidence Reconciliation
+### Report Evidence Reconciliation Foundation
 
 - Added deterministic geotechnical report evidence reconciliation before synthesis, binding depth-bound parameters such as SPT, groundwater, index/lab, and strength values to a single clear borehole ID when retained page evidence supports it.
 - Quarantined naked SPT rows that have no retained borehole, depth, unit, or SPT context instead of letting numeric chart/table artifacts pollute the report parameter set.
@@ -341,7 +350,7 @@ Highest-value next work:
 - Expand PDF/image preprocessing before vision beyond margin trimming with deskew, crop tables/log panels, and normalized page-region assets.
 - Expand the benchmark harness from the current cached-rerun acceptance fixture into broader latency/provider profiles, region-level preprocessing comparisons, and historical trend output.
 - Add provider/BYOK benchmark profiles so OpenAI-compatible, hosted-beta, and future user-selected LLMs are evaluated with the same PDF/image evidence contract instead of model-specific assumptions.
-- Connect experimental FEM manifests to GroundModel calculation drafts and review-gated agent routing before adding any production solver workflow.
+- Expand accepted FEM draft fixtures from explicit CLI inputs to report-derived and GroundModel-derived acceptance cases before adding any production solver workflow.
 - Add `geotech signal analyze` for settlement, piezometer, inclinometer, vibration, load-test, and time-series data.
 - Add benchmark evaluation fixtures for boreholes, CPT, lab, reports, monitoring, sensor, pile load, and signal datasets.
 

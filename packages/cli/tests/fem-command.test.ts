@@ -449,6 +449,130 @@ describe('registerFemCommand', () => {
     expect(payload.draft.reviewGates).toContain('not-fem-solver');
   });
 
+  it('requires explicit experimental acknowledgement for running FEM case files', async () => {
+    const { buildRaftDemoAnalysisCase } = await import('../../core/src/fem/index.js');
+    const registerFemCommand = await loadRegisterFemCommand();
+    const program = new Command();
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-fem-run-'));
+    tempDirs.push(dir);
+    const casePath = join(dir, 'analysis_case.json');
+    await writeFile(casePath, JSON.stringify(buildRaftDemoAnalysisCase(), null, 2), 'utf-8');
+    program.exitOverride();
+    registerFemCommand(program);
+
+    await expect(
+      program.parseAsync(['fem', 'run', casePath, '--json'], { from: 'user' }),
+    ).rejects.toThrow(/--experimental/i);
+  });
+
+  it('runs a reviewed foundation FEM analysis case and writes WebGL artifacts', async () => {
+    const { buildRaftDemoAnalysisCase } = await import('../../core/src/fem/index.js');
+    const registerFemCommand = await loadRegisterFemCommand();
+    const program = new Command();
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-fem-run-'));
+    tempDirs.push(dir);
+    const casePath = join(dir, 'analysis_case.json');
+    const htmlPath = join(dir, 'raft-run.html');
+    const resultPath = join(dir, 'raft-run.manifest.json');
+    await writeFile(casePath, JSON.stringify(buildRaftDemoAnalysisCase(), null, 2), 'utf-8');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    program.exitOverride();
+    registerFemCommand(program);
+
+    await program.parseAsync([
+      'fem',
+      'run',
+      casePath,
+      '--experimental',
+      '--save-html',
+      htmlPath,
+      '--output',
+      resultPath,
+      '--no-open',
+      '--json',
+    ], { from: 'user' });
+
+    const payload = JSON.parse(collectLogText(logSpy).trim());
+    const html = await readFile(htmlPath, 'utf-8');
+    const manifest = JSON.parse(await readFile(resultPath, 'utf-8'));
+
+    expect(payload.kind).toBe('geotech-fem-run-result');
+    expect(payload.schemaVersion).toBe('fem-run-command.v0');
+    expect(payload.casePath).toBe(casePath);
+    expect(payload.objective).toBe('foundation_settlement');
+    expect(payload.opened).toBe(false);
+    expect(payload.manifest.backend.id).toBe('builtin-elastic3d-demo');
+    expect(payload.warnings.join(' ')).toMatch(/LLM agents can plan and validate/i);
+    expect(manifest.analysisCase.caseId).toBe('raft-settlement-demo');
+    expect(html).toContain('raft-settlement-demo');
+  });
+
+  it('dispatches reviewed excavation and tunnel FEM analysis cases through deterministic run backends', async () => {
+    const {
+      buildExcavationDemoAnalysisCase,
+      buildTunnelVolumeLossDemoAnalysisCase,
+    } = await import('../../core/src/fem/index.js');
+    const registerFemCommand = await loadRegisterFemCommand();
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-fem-run-'));
+    tempDirs.push(dir);
+
+    for (const [name, caseFile, expectedBackend] of [
+      ['excavation', buildExcavationDemoAnalysisCase(), 'builtin-staged-excavation-demo'],
+      ['tunnel', buildTunnelVolumeLossDemoAnalysisCase(), 'builtin-tunnel-volume-loss-demo'],
+    ] as const) {
+      const program = new Command();
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const casePath = join(dir, `${name}.analysis_case.json`);
+      await writeFile(casePath, JSON.stringify(caseFile, null, 2), 'utf-8');
+      program.exitOverride();
+      registerFemCommand(program);
+
+      await program.parseAsync([
+        'fem',
+        'run',
+        casePath,
+        '--experimental',
+        '--no-open',
+        '--json',
+      ], { from: 'user' });
+
+      const payload = JSON.parse(collectLogText(logSpy).trim());
+      expect(payload.kind).toBe('geotech-fem-run-result');
+      expect(payload.manifest.backend.id).toBe(expectedBackend);
+      expect(payload.manifest.analysisCase.objective).toBe(caseFile.objective);
+      logSpy.mockRestore();
+    }
+  });
+
+  it('rejects blocked FEM analysis cases before writing run artifacts', async () => {
+    const { buildRaftDemoAnalysisCase } = await import('../../core/src/fem/index.js');
+    const registerFemCommand = await loadRegisterFemCommand();
+    const program = new Command();
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-fem-run-'));
+    tempDirs.push(dir);
+    const casePath = join(dir, 'blocked.analysis_case.json');
+    const htmlPath = join(dir, 'blocked.html');
+    const blockedCase = buildRaftDemoAnalysisCase();
+    blockedCase.geometry.raft!.lengthM = -1;
+    await writeFile(casePath, JSON.stringify(blockedCase, null, 2), 'utf-8');
+    program.exitOverride();
+    registerFemCommand(program);
+
+    await expect(
+      program.parseAsync([
+        'fem',
+        'run',
+        casePath,
+        '--experimental',
+        '--save-html',
+        htmlPath,
+        '--no-open',
+        '--json',
+      ], { from: 'user' }),
+    ).rejects.toThrow(/failed validation/i);
+    expect(existsSync(htmlPath)).toBe(false);
+  });
+
   it('attaches FEM workspace readiness context to the scoped FEM agent without widening tools', async () => {
     coreMocks.analyzeWorkspace.mockResolvedValue(makeFemWorkspaceManifest());
     coreMocks.buildLLMConfig.mockReturnValue({
