@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.64] - 2026-05-19
+
+### GroundModel-to-FEM Draft Candidates
+
+- Added GroundModel-derived FEM draft candidates for report and borehole ingest output so users can see foundation-settlement and staged-excavation FEM routes from extracted evidence.
+- Added a FEM draft routing table to the HTML report output with readiness, missing user inputs, review gates, evidence prefill, and the review-gated draft command.
+- Kept the LLM and swarm boundary unchanged: agents can plan, draft, and validate FEM cases, but only the human-invoked `geotech fem run ... --experimental` path executes deterministic preview backends.
+
 ## [0.4.63] - 2026-05-19
 
 ### FEM Draft-to-Run Acceptance

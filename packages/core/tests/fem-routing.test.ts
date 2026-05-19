@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildFemDraftCandidatesFromGroundModel,
   buildFemDraftInputFromReadiness,
   listFemCapabilities,
   mapGroundModelEvidenceRefs,
@@ -327,15 +328,148 @@ describe('FEM routing contract', () => {
     });
   });
 
+  it('builds review-gated FEM draft candidates directly from a GroundModel', () => {
+    const groundModel: GroundModel = {
+      schemaVersion: 'ground-model.v1',
+      generatedAt: '2026-05-19T00:00:00.000Z',
+      project: { rootPath: 'C:/site', requestedStandard: 'eurocode7' },
+      coordinateSystem: { kind: 'unknown', warnings: [] },
+      boreholes: [{
+        id: 'BH-01',
+        sptTests: [{
+          depth: 2,
+          nValue: 18,
+          unit: 'blows/300mm',
+          evidenceIds: ['ev-spt-1'],
+          confidence: 0.92,
+          warnings: [],
+        }],
+        strata: [],
+        groundwater: [],
+        evidenceIds: ['ev-bh-1'],
+        confidence: 0.9,
+        warnings: [],
+      }],
+      strata: [{
+        boreholeId: 'BH-01',
+        topDepth: 0,
+        bottomDepth: 8,
+        description: 'medium dense silty sand over stiff clay',
+        evidenceIds: ['ev-strata-1'],
+        confidence: 0.9,
+        warnings: [],
+      }],
+      groundwater: [{
+        boreholeId: 'BH-01',
+        depth: 1.8,
+        evidenceIds: ['ev-gw-1'],
+        confidence: 0.85,
+        warnings: [],
+      }],
+      labTests: [],
+      parameters: [
+        {
+          name: 'unitWeight',
+          value: 18.5,
+          unit: 'kN/m3',
+          boreholeId: 'BH-01',
+          evidenceIds: ['ev-gamma-1'],
+          confidence: 0.88,
+          warnings: [],
+        },
+        {
+          name: 'elasticModulus',
+          value: 18000,
+          unit: 'kPa',
+          boreholeId: 'BH-01',
+          evidenceIds: ['ev-es-1'],
+          confidence: 0.8,
+          warnings: [],
+        },
+      ],
+      monitoringSeries: [],
+      evidence: [
+        {
+          id: 'ev-es-1',
+          sourceType: 'tabular-cell',
+          sourcePath: 'lab.csv',
+          location: { filePath: 'lab.csv', rowNumber: 3, columnName: 'Es', cellRef: 'C3' },
+          method: 'csv-sample',
+          confidence: 0.88,
+          normalizedValue: 18000,
+          unit: 'kPa',
+          warnings: [],
+        },
+        {
+          id: 'ev-gw-1',
+          sourceType: 'pdf-page',
+          sourcePath: 'report.pdf',
+          location: { filePath: 'report.pdf', pageNumber: 12 },
+          method: 'pdf-text',
+          confidence: 0.82,
+          normalizedValue: 1.8,
+          unit: 'm',
+          warnings: [],
+        },
+      ],
+      rejectedObservations: [],
+      warnings: [],
+      stats: {
+        boreholes: 1,
+        sptTests: 1,
+        strata: 1,
+        groundwaterObservations: 1,
+        labTests: 0,
+        parameters: 2,
+        monitoringSeries: 0,
+        evidenceRefs: 2,
+        rejectedObservations: 0,
+      },
+    };
+
+    const candidates = buildFemDraftCandidatesFromGroundModel(groundModel);
+    const foundation = candidates.find((candidate) => candidate.workflow === 'fem-foundation-settlement');
+    const excavation = candidates.find((candidate) => candidate.workflow === 'fem-excavation-deformation');
+
+    expect(candidates.map((candidate) => candidate.schemaVersion)).toEqual([
+      'fem-ground-model-draft-candidate.v1',
+      'fem-ground-model-draft-candidate.v1',
+    ]);
+    expect(foundation?.canAutoProceed).toBe(false);
+    expect(foundation?.draft.canAutoProceed).toBe(false);
+    expect(foundation?.bridge.input.material?.elasticModulusKpa).toBe(18000);
+    expect(foundation?.bridge.input.groundwater?.depthM).toBe(1.8);
+    expect(foundation?.missingUserInputs).toEqual(['raft length', 'raft width', 'service pressure']);
+    expect(foundation?.draft.analysisCase).toBeUndefined();
+    expect(excavation?.missingUserInputs).toEqual(['excavation length', 'excavation width', 'final excavation depth']);
+    expect(excavation?.command).toBe('geotech fem draft excavation-deformation --input <json> --case-output <analysis_case.json>');
+    expect(candidates.every((candidate) => candidate.command.startsWith('geotech fem draft '))).toBe(true);
+    expect(candidates.every((candidate) => !/\bfem run\b/i.test(candidate.command))).toBe(true);
+    expect(candidates.every((candidate) => candidate.draft.recommendedAction === 'collect-inputs')).toBe(true);
+    expect(candidates.every((candidate) => candidate.draft.analysisCase == null)).toBe(true);
+  });
+
   it('wires FEM tools into single-agent registry and swarm role allowlists', async () => {
     const names = toolRegistry.list().map((tool) => tool.name);
+    const femToolNames = names.filter((name) => /fem/i.test(name));
 
     expect(names).toContain('list_fem_capabilities');
     expect(names).toContain('prepare_fem_analysis_case');
     expect(names).toContain('validate_fem_analysis_case');
+    expect(femToolNames.sort()).toEqual([
+      'list_fem_capabilities',
+      'prepare_fem_analysis_case',
+      'validate_fem_analysis_case',
+    ].sort());
+    expect(names).not.toContain('run_fem_analysis_case');
+    expect(names).not.toContain('run_fem_solver');
+    expect(names).not.toContain('fem_run');
+    expect(names).not.toContain('render_fem_webgl');
+    expect(names).not.toContain('geotech_fem_run');
     expect(getAllowedToolsForAgent('simulation')).toContain('prepare_fem_analysis_case');
     expect(getAllowedToolsForAgent('reviewer')).toContain('validate_fem_analysis_case');
     expect(isToolAllowedForAgent('reviewer', 'prepare_fem_analysis_case')).toBe(false);
+    expect(isToolAllowedForAgent('simulation', 'geotech_fem_run')).toBe(false);
 
     const capabilityResult = await toolRegistry.execute('list_fem_capabilities', {});
     expect(capabilityResult.success).toBe(true);

@@ -957,7 +957,26 @@ describe('ingest dossier HTML', () => {
     expect(dossier.groundModel?.evidence.some((ref) => ref.rawValue === '10.00 m')).toBe(false);
     expect(dossier.groundModel?.evidence.every((ref) => ref.method === 'manual')).toBe(true);
     expect(dossier.groundModel?.evidence.some((ref) => ref.warnings.join(' ').includes('not present in retained page audit'))).toBe(true);
+    expect(dossier.femDraftCandidates?.map((candidate) => candidate.workflow)).toEqual([
+      'fem-foundation-settlement',
+      'fem-excavation-deformation',
+    ]);
+    expect(dossier.femDraftCandidates?.every((candidate) => candidate.canAutoProceed === false)).toBe(true);
+    expect(dossier.femDraftCandidates?.every((candidate) => candidate.command.startsWith('geotech fem draft '))).toBe(true);
+    expect(dossier.femDraftCandidates?.every((candidate) => !/\bfem run\b/i.test(candidate.command))).toBe(true);
+    expect(dossier.femDraftCandidates?.every((candidate) => candidate.draft.recommendedAction === 'collect-inputs')).toBe(true);
+    expect(dossier.femDraftCandidates?.every((candidate) => candidate.draft.analysisCase == null)).toBe(true);
+    expect(dossier.femDraftCandidates?.[0]?.draft.analysisCase).toBeUndefined();
+    expect(dossier.tables.find((table) => table.title === 'FEM draft routing')?.rows[0]).toEqual(expect.arrayContaining([
+      'Foundation / raft settlement preview',
+      'ready with assumptions',
+      expect.stringMatching(/raft length/),
+      'geotech fem draft foundation-settlement --input <json> --case-output <analysis_case.json>',
+    ]));
     expect(html).toContain('Source report evidence');
+    expect(html).toContain('FEM draft routing');
+    expect(html).toContain('Foundation / raft settlement preview');
+    expect(html).toContain('geotech fem draft foundation-settlement');
     expect(html).toContain('Validated strip log');
     expect(html).toContain('Extracted fields');
     expect(html).toContain('Professional A-A stratigraphic section');

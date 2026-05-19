@@ -10,6 +10,10 @@ import type {
   GeotechDocumentPageAudit,
 } from '../ingest/geotech-document.js';
 import { buildGroundModelMap, type GroundModel } from '../ground-model/index.js';
+import {
+  buildFemDraftCandidatesFromGroundModel,
+  type FemGroundModelDraftCandidate,
+} from '../fem/index.js';
 import type { EvidenceMethod, EvidenceRef } from '../evidence/index.js';
 import type {
   IntegratedReviewAgentReview,
@@ -162,6 +166,7 @@ export interface IngestDossier {
   confidenceBreakdown?: IngestDossierConfidenceItem[];
   boreholeProfile?: IngestDossierBoreholeProfile;
   groundModel?: GroundModel;
+  femDraftCandidates?: FemGroundModelDraftCandidate[];
   agentReviews?: IntegratedReviewAgentReview[];
   sourcePages?: IntegratedReviewSourcePage[];
   storedReview?: IngestDossierStoredReview;
@@ -682,7 +687,52 @@ function buildFindingGroups(
   return groups;
 }
 
-function buildGeotechTables(result: GeotechDocumentIngestResult): IngestDossierTable[] {
+function buildFemDraftCandidatesSafe(groundModel: GroundModel | undefined): FemGroundModelDraftCandidate[] {
+  if (!groundModel) {
+    return [];
+  }
+  try {
+    return buildFemDraftCandidatesFromGroundModel(groundModel);
+  } catch {
+    return [];
+  }
+}
+
+function summarizeFemPrefill(candidate: FemGroundModelDraftCandidate): string {
+  const input = candidate.bridge.input;
+  return uniqueStrings([
+    input.material?.elasticModulusKpa != null ? `E ${input.material.elasticModulusKpa} kPa` : undefined,
+    input.material?.unitWeightKnM3 != null ? `unit weight ${input.material.unitWeightKnM3} kN/m3` : undefined,
+    input.groundwater?.condition ? `groundwater ${input.groundwater.condition}${input.groundwater.depthM != null ? ` ${input.groundwater.depthM} m` : ''}` : undefined,
+    `${candidate.evidenceIds.length} evidence ref(s)`,
+  ]).join(', ') || '-';
+}
+
+function buildFemDraftRoutingTable(candidates: FemGroundModelDraftCandidate[]): IngestDossierTable | undefined {
+  if (candidates.length === 0) {
+    return undefined;
+  }
+
+  return {
+    title: 'FEM draft routing',
+    description: 'Review-gated FEM candidate routes derived from the GroundModel. These prepare inputs only; a human must review geometry, loads, staging, and then explicitly run geotech fem run if appropriate.',
+    columns: ['Route', 'Readiness', 'Score', 'Prefilled evidence', 'Missing user inputs', 'Review gates', 'Draft command'],
+    rows: candidates.map((candidate) => [
+      candidate.draft.capability.label,
+      candidate.status.replace(/_/g, ' '),
+      `${candidate.score}/100`,
+      displayTableText(summarizeFemPrefill(candidate), 120),
+      displayTableText(candidate.missingUserInputs.join(', ') || 'review required', 160),
+      displayTableText(candidate.reviewGates.join(', ') || 'review required', 180),
+      displayTableText(candidate.command, 180),
+    ]),
+  };
+}
+
+function buildGeotechTables(
+  result: GeotechDocumentIngestResult,
+  femDraftCandidates: FemGroundModelDraftCandidate[] = [],
+): IngestDossierTable[] {
   const tables: IngestDossierTable[] = [];
   const auditTables: IngestDossierTable[] = [];
   const materialRows = result.materials
@@ -758,6 +808,11 @@ function buildGeotechTables(result: GeotechDocumentIngestResult): IngestDossierT
     emptyState: 'No explicit engineering parameters were extracted.',
   });
 
+  const femRoutingTable = buildFemDraftRoutingTable(femDraftCandidates);
+  if (femRoutingTable) {
+    tables.push(femRoutingTable);
+  }
+
   tables.push({
     title: 'Material observations',
     description: 'Curated soil and rock observations. Noisy OCR/table fragments remain traceable in the processing audit and source evidence.',
@@ -805,8 +860,11 @@ function buildGeotechTables(result: GeotechDocumentIngestResult): IngestDossierT
   return tables;
 }
 
-function buildBoreholeTables(result: BoreholeDocumentIngestResult): IngestDossierTable[] {
-  return [{
+function buildBoreholeTables(
+  result: BoreholeDocumentIngestResult,
+  femDraftCandidates: FemGroundModelDraftCandidate[] = [],
+): IngestDossierTable[] {
+  const tables: IngestDossierTable[] = [{
     title: 'Boreholes',
     columns: ['Borehole', 'Total depth (m)', 'Water table (m)', 'Confidence', 'Status'],
     rows: result.boreholes.map((borehole) => [
@@ -818,6 +876,11 @@ function buildBoreholeTables(result: BoreholeDocumentIngestResult): IngestDossie
     ]),
     emptyState: 'No boreholes were extracted.',
   }];
+  const femRoutingTable = buildFemDraftRoutingTable(femDraftCandidates);
+  if (femRoutingTable) {
+    tables.push(femRoutingTable);
+  }
+  return tables;
 }
 
 function buildGeotechPageCards(result: GeotechDocumentIngestResult): IngestDossierPageCard[] {
@@ -2347,6 +2410,7 @@ export function buildIngestDossier(
       || geotechOutcomeSummary(geotechResult);
     const boreholeProfile = buildGeotechBoreholeProfile(geotechResult);
     const groundModel = buildGroundModelFromGeotechReport(geotechResult, boreholeProfile, sourceLabel);
+    const femDraftCandidates = buildFemDraftCandidatesSafe(groundModel);
     const sourcePages = explicitSourcePages
       ?? buildIntegratedSourcePagesFromPageAudits(geotechResult.pageAudits, sourceLabel, groundModel?.evidence ?? []);
 
@@ -2362,7 +2426,7 @@ export function buildIngestDossier(
       badges: buildGeotechBadges(geotechResult),
       metrics: buildGeotechMetrics(geotechResult),
       findings: buildFindingGroups((geotechResult.reviewFindings ?? []) as GeotechDocumentFinding[]),
-      tables: buildGeotechTables(geotechResult),
+      tables: buildGeotechTables(geotechResult, femDraftCandidates),
       pageCards: buildGeotechPageCards(geotechResult),
       sections: buildGeotechSections(geotechResult),
       executiveItems: buildGeotechExecutiveItems(geotechResult, sourceLabel),
@@ -2371,6 +2435,7 @@ export function buildIngestDossier(
       confidenceBreakdown: buildGeotechConfidenceItems(geotechResult),
       boreholeProfile,
       groundModel,
+      femDraftCandidates,
       agentReviews,
       sourcePages,
       storedReview,
@@ -2382,6 +2447,7 @@ export function buildIngestDossier(
   const boreholeResult = result as BoreholeDocumentIngestResult;
   const boreholeProfile = buildBoreholeProfile(boreholeResult);
   const groundModel = buildGroundModelFromBoreholeIngest(boreholeResult, sourceLabel);
+  const femDraftCandidates = buildFemDraftCandidatesSafe(groundModel);
   const sourcePages = explicitSourcePages
     ?? buildIntegratedSourcePagesFromPageAudits(boreholeResult.pageAudits, sourceLabel, groundModel?.evidence ?? []);
   const firstBorehole = boreholeResult.boreholes[0];
@@ -2399,7 +2465,7 @@ export function buildIngestDossier(
     badges: buildBoreholeBadges(boreholeResult),
     metrics: buildBoreholeMetrics(boreholeResult),
     findings: buildFindingGroups((boreholeResult.reviewFindings ?? []) as BoreholeIngestFinding[]),
-    tables: buildBoreholeTables(boreholeResult),
+    tables: buildBoreholeTables(boreholeResult, femDraftCandidates),
     pageCards: buildBoreholePageCards(boreholeResult),
     sections: buildBoreholeSections(boreholeResult),
     executiveItems: buildBoreholeExecutiveItems(boreholeResult, sourceLabel),
@@ -2407,6 +2473,7 @@ export function buildIngestDossier(
     trustItems: buildBoreholeTrustItems(boreholeResult),
     boreholeProfile,
     groundModel,
+    femDraftCandidates,
     agentReviews,
     sourcePages,
     storedReview,

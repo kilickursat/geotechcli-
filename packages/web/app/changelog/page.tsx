@@ -8,6 +8,16 @@ const releases = [
     date: '2026-05-19',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added GroundModel-derived FEM draft candidates to report and borehole ingest output for foundation settlement and staged excavation deformation routes' },
+      { type: 'feat', text: 'Added a FEM draft routing table to HTML report output with readiness, missing user inputs, review gates, evidence prefill, and draft commands' },
+      { type: 'fix', text: 'Kept LLM and swarm boundaries unchanged: agents can plan, draft, and validate FEM cases, while deterministic execution stays behind human-invoked geotech fem run --experimental' },
+    ],
+  },
+  {
+    version: '0.4.63',
+    date: '2026-05-19',
+    tag: '0.4.63 Release',
+    changes: [
       { type: 'feat', text: 'Added geotech fem run <analysis_case.json> --experimental so reviewed FEM draft cases can execute through deterministic built-in preview backends' },
       { type: 'feat', text: 'Added a draft-to-run acceptance smoke harness covering raft, excavation, and tunnel case files, deterministic manifests, and HTML artifact output' },
       { type: 'fix', text: 'Kept LLM and swarm FEM authority bounded to planning, drafting, and validation; agents can recommend a reviewed run but cannot execute solver/WebGL generation as a tool' },

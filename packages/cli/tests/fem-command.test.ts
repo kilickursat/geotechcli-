@@ -280,6 +280,33 @@ describe('registerFemCommand', () => {
     expect(payload.warnings.join(' ')).toMatch(/GroundModel prefilled material/i);
   });
 
+  it('does not write a run-ready analysis case from workspace prefill alone', async () => {
+    coreMocks.analyzeWorkspace.mockResolvedValue(makeFemWorkspaceManifest());
+    const registerFemCommand = await loadRegisterFemCommand();
+    const program = new Command();
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-fem-workspace-draft-'));
+    tempDirs.push(dir);
+    const casePath = join(dir, 'analysis_case.json');
+    program.exitOverride();
+    registerFemCommand(program);
+
+    await expect(
+      program.parseAsync([
+        'fem',
+        'draft',
+        'foundation-settlement',
+        '--workspace',
+        'C:/site-data',
+        '--case-output',
+        casePath,
+        '--json',
+      ], { from: 'user' }),
+    ).rejects.toThrow(/Cannot write --case-output.*no analysisCase/i);
+
+    expect(existsSync(casePath)).toBe(false);
+    expect(coreMocks.analyzeWorkspace).toHaveBeenCalledWith('C:/site-data', { includeCalculationInputDrafts: true });
+  });
+
   it('lets explicit FEM draft flags override workspace prefill and write the analysis case', async () => {
     coreMocks.analyzeWorkspace.mockResolvedValue(makeFemWorkspaceManifest());
     const registerFemCommand = await loadRegisterFemCommand();

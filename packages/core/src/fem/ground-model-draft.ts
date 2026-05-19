@@ -1,8 +1,13 @@
 import type { EvidenceRef } from '../evidence/index.js';
 import type { GroundModel } from '../ground-model/index.js';
-import type { GroundModelCalculationReadiness } from '../verifier/index.js';
+import { verifyGroundModel, type GroundModelCalculationReadiness } from '../verifier/index.js';
 import type { FemEvidenceRef } from './types.js';
-import type { FemRouteObjective, PrepareFemAnalysisCaseDraftInput } from './routing.js';
+import {
+  prepareFemAnalysisCaseDraft,
+  type FemAnalysisCaseDraft,
+  type FemRouteObjective,
+  type PrepareFemAnalysisCaseDraftInput,
+} from './routing.js';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -19,6 +24,21 @@ export interface FemGroundModelDraftBridge {
   };
   input: PrepareFemAnalysisCaseDraftInput;
   summary: string;
+}
+
+export interface FemGroundModelDraftCandidate {
+  schemaVersion: 'fem-ground-model-draft-candidate.v1';
+  objective: FemRouteObjective;
+  workflow: GroundModelCalculationReadiness['workflow'];
+  status: GroundModelCalculationReadiness['status'];
+  score: number;
+  command: string;
+  canAutoProceed: false;
+  missingUserInputs: string[];
+  reviewGates: string[];
+  evidenceIds: string[];
+  bridge: FemGroundModelDraftBridge;
+  draft: FemAnalysisCaseDraft;
 }
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -217,4 +237,35 @@ export function buildFemDraftInputFromReadiness(
     input,
     summary,
   };
+}
+
+export function buildFemDraftCandidatesFromGroundModel(
+  groundModel: GroundModel,
+): FemGroundModelDraftCandidate[] {
+  const verification = verifyGroundModel(groundModel, { includeCalculationInputDrafts: true });
+  return verification.calculationReadiness.workflows
+    .filter((workflow) =>
+      workflow.workflow === 'fem-foundation-settlement'
+      || workflow.workflow === 'fem-excavation-deformation'
+    )
+    .map((workflow) => {
+      const bridge = buildFemDraftInputFromReadiness(workflow, groundModel);
+      const draft = prepareFemAnalysisCaseDraft(bridge.input);
+      return {
+        schemaVersion: 'fem-ground-model-draft-candidate.v1',
+        objective: bridge.objective,
+        workflow: workflow.workflow,
+        status: workflow.status,
+        score: workflow.score,
+        command: workflow.inputDraft?.command ?? workflow.commandTemplate,
+        canAutoProceed: false,
+        missingUserInputs: draft.missingUserInputs.length > 0
+          ? draft.missingUserInputs
+          : bridge.readiness.missingUserInputs,
+        reviewGates: draft.reviewGates,
+        evidenceIds: bridge.readiness.evidenceIds,
+        bridge,
+        draft,
+      };
+    });
 }

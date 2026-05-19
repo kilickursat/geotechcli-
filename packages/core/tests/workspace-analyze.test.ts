@@ -107,9 +107,28 @@ describe('workspace analysis', () => {
     });
 
     const bearing = manifest.verifier?.calculationReadiness.workflows.find((workflow) => workflow.workflow === 'bearing-capacity');
+    const foundation = manifest.verifier?.calculationReadiness.workflows.find((workflow) => workflow.workflow === 'fem-foundation-settlement');
+    const excavation = manifest.verifier?.calculationReadiness.workflows.find((workflow) => workflow.workflow === 'fem-excavation-deformation');
     expect(bearing?.standardProfile).toBe('aashto');
     expect(bearing?.inputDraft?.toolName).toBe('calculate_bearing_capacity');
     expect(bearing?.inputDraft?.missingUserInputs).toContain('foundation width');
+    expect(foundation?.inputDraft?.toolName).toBe('prepare_fem_analysis_case');
+    expect(foundation?.inputDraft?.command).toBe('geotech fem draft foundation-settlement --input <json> --case-output <analysis_case.json>');
+    expect(foundation?.inputDraft?.command).not.toMatch(/\bfem run\b/i);
+    expect(foundation?.inputDraft?.readyToRun).toBe(false);
+    expect(foundation?.inputDraft?.input).toMatchObject({
+      objective: 'foundation-settlement',
+      useDemoDefaults: false,
+    });
+    expect(excavation?.inputDraft?.toolName).toBe('prepare_fem_analysis_case');
+    expect(excavation?.inputDraft?.command).toBe('geotech fem draft excavation-deformation --input <json> --case-output <analysis_case.json>');
+    expect(excavation?.inputDraft?.command).not.toMatch(/\bfem run\b/i);
+    expect(excavation?.inputDraft?.readyToRun).toBe(false);
+    expect(excavation?.inputDraft?.missingUserInputs).toEqual(expect.arrayContaining([
+      'excavation length',
+      'excavation width',
+      'final excavation depth',
+    ]));
   });
 
   it('binds lab parameters to evidence and rejects standards-reference SPT values', async () => {
