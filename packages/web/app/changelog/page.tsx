@@ -8,6 +8,16 @@ const releases = [
     date: '2026-05-21',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'fix', text: 'Fixed the sequential npm publish script so each workspace publishes from its package directory instead of an ambiguous package spec' },
+      { type: 'fix', text: 'Normalized published package repository metadata with explicit GitHub URLs and workspace directories for @geotechcli/core and geotechcli' },
+      { type: 'security', text: 'Kept the tokenless Trusted Publishing path and moved the repair release to 0.4.68 after 0.4.67 failed before publishing npm packages' },
+    ],
+  },
+  {
+    version: '0.4.67',
+    date: '2026-05-21',
+    tag: '0.4.67 Release',
+    changes: [
       { type: 'security', text: 'Replaced concurrent Changesets publishing with a deterministic npm publish script that publishes @geotechcli/core first and waits for registry visibility before publishing geotechcli' },
       { type: 'fix', text: 'Restricted npm publishing to the strong-beta branch so tag-triggered workflows create GitHub releases without attempting a second npm publish' },
       { type: 'fix', text: 'Added package-version and dependency guardrails so the CLI cannot publish against a missing or mismatched core package version' },

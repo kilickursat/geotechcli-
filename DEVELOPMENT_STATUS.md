@@ -4,7 +4,7 @@ Last updated: 2026-05-21
 
 ## Current Work
 
-v0.4.67 work follows the v0.4.66 Trusted Publishing guard fix. This slice makes npm publishing sequential and safer: `@geotechcli/core` must publish and become visible before `geotechcli` can publish, and tag-triggered workflows no longer attempt npm publish. The LLM boundary remains explicit: hosted GLM and future BYOK models can plan, draft, validate, and review FEM cases, but they cannot run solvers, invoke WebGL generation as tools, or invent FEM outputs. The wider engineering track remains provider-neutral evidence, standards-aware GroundModel readiness, GroundModel spatial and engineering visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, the PDF/page evidence benchmark foundation, and experimental deterministic FEM/WebGL contracts so future OCR/vision, BYOK-provider, and GroundModel-to-calculation changes can be measured and routed without asking LLMs to invent calculations.
+v0.4.68 work follows the v0.4.67 sequential publishing workflow update and fixes the npm publish path issue found in CI. The release script now publishes from each package directory so npm treats `@geotechcli/core` and `geotechcli` as local workspace publishes instead of ambiguous package specs. The LLM boundary remains explicit: hosted GLM and future BYOK models can plan, draft, validate, and review FEM cases, but they cannot run solvers, invoke WebGL generation as tools, or invent FEM outputs. The wider engineering track remains provider-neutral evidence, standards-aware GroundModel readiness, GroundModel spatial and engineering visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, the PDF/page evidence benchmark foundation, and experimental deterministic FEM/WebGL contracts so future OCR/vision, BYOK-provider, and GroundModel-to-calculation changes can be measured and routed without asking LLMs to invent calculations.
 
 Current focus:
 
@@ -49,6 +49,12 @@ Current focus:
 - Keep the legacy Modal deploy workflow present but disabled by default.
 
 ## Done So Far
+
+### v0.4.68 npm Publish Path Hotfix
+
+- Fixed the sequential npm publish script so each workspace publishes from its package directory instead of passing `packages/core` or `packages/cli` as an ambiguous npm package spec.
+- Normalized published package repository metadata with explicit GitHub URLs and workspace directories for `@geotechcli/core` and `geotechcli`.
+- Kept `0.4.67` unpublished on npm after the publish-path failure and moved the repair release to `0.4.68`.
 
 ### v0.4.67 Sequential npm Trusted Publishing
 

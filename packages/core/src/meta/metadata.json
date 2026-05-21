@@ -1,5 +1,5 @@
 {
-  "version": "0.4.67",
+  "version": "0.4.68",
   "defaults": {
     "provider": "hosted-beta",
     "model": "glm-5.1",

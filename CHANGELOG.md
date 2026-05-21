@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.68] - 2026-05-21
+
+### npm Publish Path Hotfix
+
+- Fixed the sequential npm publish script so each workspace publishes from its package directory instead of passing `packages/core` or `packages/cli` as an ambiguous npm package spec.
+- Normalized published package repository metadata with explicit GitHub URLs and workspace directories for `@geotechcli/core` and `geotechcli`.
+- Kept `0.4.67` unpublished on npm after the publish-path failure and moved the repair release to `0.4.68`.
+
 ## [0.4.67] - 2026-05-21
 
 ### Sequential npm Trusted Publishing

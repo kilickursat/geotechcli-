@@ -1,6 +1,6 @@
 {
   "name": "@geotechcli/core",
-  "version": "0.4.67",
+  "version": "0.4.68",
   "description": "Shared computation and LLM engine for geotechCLI",
   "type": "module",
   "main": "./dist/index.js",
@@ -59,7 +59,8 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/kilickursat/geotechcli-"
+    "url": "git+https://github.com/kilickursat/geotechcli-.git",
+    "directory": "packages/core"
   },
   "publishConfig": {
     "access": "public"

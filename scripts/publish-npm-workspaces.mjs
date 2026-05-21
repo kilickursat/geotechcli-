@@ -2,6 +2,7 @@
 import { execFile, spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { setTimeout as wait } from 'node:timers/promises';
+import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
@@ -60,24 +61,31 @@ async function waitForVisibility(packageName, version) {
 }
 
 async function publishPackage({ name, dir, version }) {
+  const packagePath = fileURLToPath(new URL(`${dir}/`, root));
+
   if (await packageExists(name, version)) {
     console.log(`${name}@${version} already published; skipping`);
     return;
   }
 
   if (dryRun) {
-    console.log(`[dry-run] would publish ${name}@${version} from ${dir}`);
+    console.log(`[dry-run] validating ${name}@${version} from ${packagePath}`);
+    await run(npmCommand, ['publish', '--dry-run', '--access', 'public', '--registry', registry], {
+      cwd: packagePath,
+    });
     return;
   }
 
   console.log(`Publishing ${name}@${version}`);
-  await run(npmCommand, ['publish', dir, '--access', 'public', '--registry', registry]);
+  await run(npmCommand, ['publish', '--access', 'public', '--registry', registry], {
+    cwd: packagePath,
+  });
   await waitForVisibility(name, version);
 }
 
-async function run(command, args) {
+async function run(command, args, options = {}) {
   await new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: 'inherit', shell: useShell });
+    const child = spawn(command, args, { stdio: 'inherit', shell: useShell, ...options });
     child.on('error', reject);
     child.on('exit', (code) => {
       if (code === 0) {

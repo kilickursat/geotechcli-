@@ -1,11 +1,11 @@
 {
   "name": "geotechcli",
-  "version": "0.4.67",
+  "version": "0.4.68",
   "description": "AI-native CLI for geotechnical engineering",
   "type": "module",
   "bin": {
-    "geotech": "./dist/index.js",
-    "geotechcli": "./dist/index.js"
+    "geotech": "dist/index.js",
+    "geotechcli": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",
@@ -16,7 +16,7 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "@geotechcli/core": "0.4.67",
+    "@geotechcli/core": "0.4.68",
     "asciichart": "^1.5.25",
     "boxen": "^8.0.1",
     "chalk": "^5.4.0",
@@ -48,7 +48,8 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/kilickursat/geotechcli-"
+    "url": "git+https://github.com/kilickursat/geotechcli-.git",
+    "directory": "packages/cli"
   },
   "homepage": "https://beta.geotechcli.com",
   "license": "SEE LICENSE IN LICENSE"
