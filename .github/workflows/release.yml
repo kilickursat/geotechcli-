@@ -36,7 +36,7 @@ jobs:
     name: Publish to npm
     runs-on: ubuntu-latest
     needs: [verify]
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/strong-beta' || startsWith(github.ref, 'refs/tags/v')
+    if: github.ref == 'refs/heads/strong-beta'
     permissions:
       contents: read
       id-token: write
@@ -54,7 +54,7 @@ jobs:
           node -e 'const child_process = require("node:child_process"); const version = child_process.execSync("npm --version", { encoding: "utf8" }).trim(); const [major, minor, patch] = version.split(".").map(Number); if (major < 11 || (major === 11 && (minor < 5 || (minor === 5 && patch < 1)))) throw new Error("npm " + version + " is too old for npm trusted publishing"); console.log("npm trusted publishing toolchain OK: node " + process.versions.node + ", npm " + version);'
       - run: npx turbo run build
       - name: Publish
-        run: npx changeset publish
+        run: node scripts/publish-npm-workspaces.mjs
       - name: Verify npm package versions
         if: github.ref == 'refs/heads/strong-beta'
         run: |
@@ -79,7 +79,7 @@ jobs:
   deploy-beta:
     name: Deploy beta to Cloudflare
     runs-on: ubuntu-latest
-    needs: [verify]
+    needs: [verify, publish]
     if: github.ref == 'refs/heads/strong-beta'
     steps:
       - uses: actions/checkout@v4

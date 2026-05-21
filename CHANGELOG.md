@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.67] - 2026-05-21
+
+### Sequential npm Trusted Publishing
+
+- Replaced concurrent Changesets publishing with a deterministic npm publish script that publishes `@geotechcli/core` first, waits for registry visibility, and only then publishes `geotechcli`.
+- Restricted npm publishing to the `strong-beta` branch so tag-triggered workflows can create GitHub releases without attempting a second npm publish.
+- Added package-version and dependency guardrails so the CLI cannot publish against a missing or mismatched core package version.
+- Made the Cloudflare beta deploy wait for successful npm publishing so the live site cannot advance after a partial npm release.
+
 ## [0.4.66] - 2026-05-21
 
 ### npm Trusted Publishing Guard Fix

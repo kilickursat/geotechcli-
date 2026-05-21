@@ -8,6 +8,17 @@ const releases = [
     date: '2026-05-21',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'security', text: 'Replaced concurrent Changesets publishing with a deterministic npm publish script that publishes @geotechcli/core first and waits for registry visibility before publishing geotechcli' },
+      { type: 'fix', text: 'Restricted npm publishing to the strong-beta branch so tag-triggered workflows create GitHub releases without attempting a second npm publish' },
+      { type: 'fix', text: 'Added package-version and dependency guardrails so the CLI cannot publish against a missing or mismatched core package version' },
+      { type: 'fix', text: 'Made the Cloudflare beta deploy wait for successful npm publishing so the live site cannot advance after a partial npm release' },
+    ],
+  },
+  {
+    version: '0.4.66',
+    date: '2026-05-21',
+    tag: '0.4.66 Release',
+    changes: [
       { type: 'fix', text: 'Fixed the Trusted Publishing toolchain guard quoting so Bash does not expand JavaScript template expressions before Node evaluates the release check' },
       { type: 'security', text: 'Kept the npm publish path tokenless and OIDC-based for the second Trusted Publishing release attempt' },
     ],

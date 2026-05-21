@@ -52,6 +52,8 @@ The npm release workflow publishes `geotechcli` and `@geotechcli/core` with npm 
 
 After both trusted publishers are verified by one successful release, restrict package publishing access in npm package settings to require 2FA and disallow traditional tokens, then revoke the old `NPM_TOKEN` automation secret from GitHub.
 
+The release workflow publishes npm packages only from `strong-beta`. Tag-triggered workflows are for GitHub release notes only. The npm publish script publishes `@geotechcli/core` first and waits for registry visibility before publishing `geotechcli`, so a scoped-package trust failure cannot publish a CLI version that depends on a missing core version.
+
 ## Minimum Validation
 
 Before opening a PR, aim to run:

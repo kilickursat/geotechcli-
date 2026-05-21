@@ -4,7 +4,7 @@ Last updated: 2026-05-21
 
 ## Current Work
 
-v0.4.66 work follows the shipped v0.4.65 npm Trusted Publishing hardening release. This slice fixes the Trusted Publishing toolchain guard quoting so the tokenless OIDC publish path can run after the npm package trust entries are configured. The LLM boundary remains explicit: hosted GLM and future BYOK models can plan, draft, validate, and review FEM cases, but they cannot run solvers, invoke WebGL generation as tools, or invent FEM outputs. The wider engineering track remains provider-neutral evidence, standards-aware GroundModel readiness, GroundModel spatial and engineering visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, the PDF/page evidence benchmark foundation, and experimental deterministic FEM/WebGL contracts so future OCR/vision, BYOK-provider, and GroundModel-to-calculation changes can be measured and routed without asking LLMs to invent calculations.
+v0.4.67 work follows the v0.4.66 Trusted Publishing guard fix. This slice makes npm publishing sequential and safer: `@geotechcli/core` must publish and become visible before `geotechcli` can publish, and tag-triggered workflows no longer attempt npm publish. The LLM boundary remains explicit: hosted GLM and future BYOK models can plan, draft, validate, and review FEM cases, but they cannot run solvers, invoke WebGL generation as tools, or invent FEM outputs. The wider engineering track remains provider-neutral evidence, standards-aware GroundModel readiness, GroundModel spatial and engineering visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, the PDF/page evidence benchmark foundation, and experimental deterministic FEM/WebGL contracts so future OCR/vision, BYOK-provider, and GroundModel-to-calculation changes can be measured and routed without asking LLMs to invent calculations.
 
 Current focus:
 
@@ -49,6 +49,13 @@ Current focus:
 - Keep the legacy Modal deploy workflow present but disabled by default.
 
 ## Done So Far
+
+### v0.4.67 Sequential npm Trusted Publishing
+
+- Replaced concurrent Changesets publishing with a deterministic npm publish script that publishes `@geotechcli/core` first, waits for registry visibility, and only then publishes `geotechcli`.
+- Restricted npm publishing to the `strong-beta` branch so tag-triggered workflows can create GitHub releases without attempting duplicate npm publishes.
+- Added package-version and dependency guardrails so `geotechcli` cannot publish against a missing or mismatched `@geotechcli/core` package version.
+- Made the Cloudflare beta deploy wait for successful npm publishing so the live site cannot advance after a partial npm release.
 
 ### v0.4.66 npm Trusted Publishing Guard Fix
 
