@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.65] - 2026-05-21
+
+### npm Trusted Publishing Hardening
+
+- Switched the npm publish job to Trusted Publishing/OIDC by removing the long-lived `NPM_TOKEN` publish path from `changeset publish`.
+- Hardened the release publish job around a Node 24/npm 11.5.1+ toolchain check so npm OIDC publishing fails early if the runner cannot satisfy Trusted Publishing requirements.
+- Added GitHub repository metadata to the published core package so npm can match the OIDC trusted publisher to the repository.
+- Documented the exact npm Trusted Publisher settings for both published packages before the old write token is revoked.
+
 ## [0.4.64] - 2026-05-19
 
 ### GroundModel-to-FEM Draft Candidates

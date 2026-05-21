@@ -1,14 +1,15 @@
 # geotechCLI Development Status
 
-Last updated: 2026-05-19
+Last updated: 2026-05-21
 
 ## Current Work
 
-v0.4.64 work follows the shipped v0.4.63 FEM draft-to-run acceptance. This slice exposes report/GroundModel-derived FEM draft candidates in ingest output so foundation-settlement and staged-excavation routes can be reviewed from extracted evidence before a human prepares or runs any analysis case. The LLM boundary remains explicit: hosted GLM and future BYOK models can plan, draft, validate, and review FEM cases, but they cannot run solvers, invoke WebGL generation as tools, or invent FEM outputs. The wider engineering track remains provider-neutral evidence, standards-aware GroundModel readiness, GroundModel spatial and engineering visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, the PDF/page evidence benchmark foundation, and experimental deterministic FEM/WebGL contracts so future OCR/vision, BYOK-provider, and GroundModel-to-calculation changes can be measured and routed without asking LLMs to invent calculations.
+v0.4.65 work follows the shipped v0.4.64 GroundModel-to-FEM draft candidate release. This slice hardens the release supply chain by moving npm publishing to Trusted Publishing/OIDC and documenting the exact npm package settings needed before revoking the old long-lived write token. The LLM boundary remains explicit: hosted GLM and future BYOK models can plan, draft, validate, and review FEM cases, but they cannot run solvers, invoke WebGL generation as tools, or invent FEM outputs. The wider engineering track remains provider-neutral evidence, standards-aware GroundModel readiness, GroundModel spatial and engineering visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, the PDF/page evidence benchmark foundation, and experimental deterministic FEM/WebGL contracts so future OCR/vision, BYOK-provider, and GroundModel-to-calculation changes can be measured and routed without asking LLMs to invent calculations.
 
 Current focus:
 
 - Keep the public provider as `hosted-beta` so users do not bring their own key.
+- Publish npm packages through Trusted Publishing/OIDC rather than long-lived write tokens once the npm package settings are configured.
 - Route hosted text and agent reasoning to `glm-5.1`.
 - Route hosted vision to `glm-5v-turbo`.
 - Route hosted PDF/table layout extraction to `glm-ocr`.
@@ -48,6 +49,13 @@ Current focus:
 - Keep the legacy Modal deploy workflow present but disabled by default.
 
 ## Done So Far
+
+### v0.4.65 npm Trusted Publishing Hardening
+
+- Removed the long-lived `NPM_TOKEN` publish path from the GitHub Actions npm publish job so `changeset publish` can use npm Trusted Publishing/OIDC.
+- Moved the publish job to a Node 24 npm toolchain with an explicit npm 11.5.1+ guard, matching npm Trusted Publishing requirements.
+- Added GitHub repository metadata to the published core package so npm can match the OIDC trusted publisher to the repository.
+- Documented the exact npm Trusted Publisher settings for `geotechcli` and `@geotechcli/core`, including GitHub owner, repository, workflow filename, and allowed action.
 
 ### v0.4.64 GroundModel-to-FEM Draft Candidates
 

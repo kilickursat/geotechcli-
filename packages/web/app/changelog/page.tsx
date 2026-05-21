@@ -5,8 +5,19 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 const releases = [
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-05-19',
+    date: '2026-05-21',
     tag: `${GEOTECHCLI_VERSION} Release`,
+    changes: [
+      { type: 'security', text: 'Switched the npm publish job to Trusted Publishing/OIDC by removing the long-lived NPM_TOKEN publish path from changeset publish' },
+      { type: 'security', text: 'Added a Node 24/npm 11.5.1+ release toolchain check so OIDC publishing fails early if the runner cannot satisfy npm Trusted Publishing requirements' },
+      { type: 'fix', text: 'Added GitHub repository metadata to the published core package so npm can match the OIDC trusted publisher to the repository' },
+      { type: 'docs', text: 'Documented the exact npm Trusted Publisher settings for both published packages before the old write token is revoked' },
+    ],
+  },
+  {
+    version: '0.4.64',
+    date: '2026-05-19',
+    tag: '0.4.64 Release',
     changes: [
       { type: 'feat', text: 'Added GroundModel-derived FEM draft candidates to report and borehole ingest output for foundation settlement and staged excavation deformation routes' },
       { type: 'feat', text: 'Added a FEM draft routing table to HTML report output with readiness, missing user inputs, review gates, evidence prefill, and draft commands' },

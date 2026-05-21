@@ -41,6 +41,17 @@ When the beta has passed smoke checks and manual review, open:
 
 `strong-beta` is the branch that currently drives the public beta website and automated npm release pipeline. Promote `strong-beta -> main` after beta validation when you want the same version to be reflected as the stable branch state and tagged release.
 
+## npm Trusted Publishing
+
+The npm release workflow publishes `geotechcli` and `@geotechcli/core` with npm Trusted Publishing/OIDC instead of a long-lived write token. Configure the same GitHub Actions trusted publisher on both npm packages:
+
+| npm package | Publisher | Organization/user | Repository | Workflow filename | Environment | Allowed actions |
+|-------------|-----------|-------------------|------------|-------------------|-------------|-----------------|
+| `geotechcli` | GitHub Actions | `kilickursat` | `geotechcli-` | `release.yml` | leave blank | `npm publish` |
+| `@geotechcli/core` | GitHub Actions | `kilickursat` | `geotechcli-` | `release.yml` | leave blank | `npm publish` |
+
+After both trusted publishers are verified by one successful release, restrict package publishing access in npm package settings to require 2FA and disallow traditional tokens, then revoke the old `NPM_TOKEN` automation secret from GitHub.
+
 ## Minimum Validation
 
 Before opening a PR, aim to run:
