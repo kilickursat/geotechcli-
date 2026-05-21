@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.66] - 2026-05-21
+
+### npm Trusted Publishing Guard Fix
+
+- Fixed the Trusted Publishing toolchain guard quoting so Bash does not expand JavaScript template expressions before Node evaluates the release check.
+- Kept the npm publish path tokenless and OIDC-based for the second Trusted Publishing release attempt.
+
 ## [0.4.65] - 2026-05-21
 
 ### npm Trusted Publishing Hardening

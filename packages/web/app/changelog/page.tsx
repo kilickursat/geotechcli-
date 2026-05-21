@@ -8,6 +8,15 @@ const releases = [
     date: '2026-05-21',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'fix', text: 'Fixed the Trusted Publishing toolchain guard quoting so Bash does not expand JavaScript template expressions before Node evaluates the release check' },
+      { type: 'security', text: 'Kept the npm publish path tokenless and OIDC-based for the second Trusted Publishing release attempt' },
+    ],
+  },
+  {
+    version: '0.4.65',
+    date: '2026-05-21',
+    tag: '0.4.65 Release',
+    changes: [
       { type: 'security', text: 'Switched the npm publish job to Trusted Publishing/OIDC by removing the long-lived NPM_TOKEN publish path from changeset publish' },
       { type: 'security', text: 'Added a Node 24/npm 11.5.1+ release toolchain check so OIDC publishing fails early if the runner cannot satisfy npm Trusted Publishing requirements' },
       { type: 'fix', text: 'Added GitHub repository metadata to the published core package so npm can match the OIDC trusted publisher to the repository' },

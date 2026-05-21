@@ -4,7 +4,7 @@ Last updated: 2026-05-21
 
 ## Current Work
 
-v0.4.65 work follows the shipped v0.4.64 GroundModel-to-FEM draft candidate release. This slice hardens the release supply chain by moving npm publishing to Trusted Publishing/OIDC and documenting the exact npm package settings needed before revoking the old long-lived write token. The LLM boundary remains explicit: hosted GLM and future BYOK models can plan, draft, validate, and review FEM cases, but they cannot run solvers, invoke WebGL generation as tools, or invent FEM outputs. The wider engineering track remains provider-neutral evidence, standards-aware GroundModel readiness, GroundModel spatial and engineering visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, the PDF/page evidence benchmark foundation, and experimental deterministic FEM/WebGL contracts so future OCR/vision, BYOK-provider, and GroundModel-to-calculation changes can be measured and routed without asking LLMs to invent calculations.
+v0.4.66 work follows the shipped v0.4.65 npm Trusted Publishing hardening release. This slice fixes the Trusted Publishing toolchain guard quoting so the tokenless OIDC publish path can run after the npm package trust entries are configured. The LLM boundary remains explicit: hosted GLM and future BYOK models can plan, draft, validate, and review FEM cases, but they cannot run solvers, invoke WebGL generation as tools, or invent FEM outputs. The wider engineering track remains provider-neutral evidence, standards-aware GroundModel readiness, GroundModel spatial and engineering visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, the PDF/page evidence benchmark foundation, and experimental deterministic FEM/WebGL contracts so future OCR/vision, BYOK-provider, and GroundModel-to-calculation changes can be measured and routed without asking LLMs to invent calculations.
 
 Current focus:
 
@@ -49,6 +49,11 @@ Current focus:
 - Keep the legacy Modal deploy workflow present but disabled by default.
 
 ## Done So Far
+
+### v0.4.66 npm Trusted Publishing Guard Fix
+
+- Fixed the Trusted Publishing toolchain guard quoting so Bash does not expand JavaScript template expressions before Node evaluates the release check.
+- Kept the release publish path tokenless and OIDC-based for the second Trusted Publishing release attempt.
 
 ### v0.4.65 npm Trusted Publishing Hardening
 

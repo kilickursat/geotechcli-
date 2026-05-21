@@ -50,8 +50,8 @@ jobs:
       - run: npm ci
       - name: Verify trusted publishing toolchain
         run: |
-          node -e "const [major, minor] = process.versions.node.split('.').map(Number); if (major < 22 || (major === 22 && minor < 14)) throw new Error(`Node ${process.versions.node} is too old for npm trusted publishing`);"
-          node -e "const child_process = require('node:child_process'); const version = child_process.execSync('npm --version', { encoding: 'utf8' }).trim(); const [major, minor, patch] = version.split('.').map(Number); if (major < 11 || (major === 11 && (minor < 5 || (minor === 5 && patch < 1)))) throw new Error(`npm ${version} is too old for npm trusted publishing`); console.log(`npm trusted publishing toolchain OK: node ${process.versions.node}, npm ${version}`);"
+          node -e 'const [major, minor] = process.versions.node.split(".").map(Number); if (major < 22 || (major === 22 && minor < 14)) throw new Error("Node " + process.versions.node + " is too old for npm trusted publishing");'
+          node -e 'const child_process = require("node:child_process"); const version = child_process.execSync("npm --version", { encoding: "utf8" }).trim(); const [major, minor, patch] = version.split(".").map(Number); if (major < 11 || (major === 11 && (minor < 5 || (minor === 5 && patch < 1)))) throw new Error("npm " + version + " is too old for npm trusted publishing"); console.log("npm trusted publishing toolchain OK: node " + process.versions.node + ", npm " + version);'
       - run: npx turbo run build
       - name: Publish
         run: npx changeset publish
