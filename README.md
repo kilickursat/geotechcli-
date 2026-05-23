@@ -84,17 +84,18 @@ geotech ingest Geotechnical-Report.pdf --type geotech-document --format html --o
 geotech skill list
 geotech skill show shallow-foundation-option-screening
 
-# AI: Terzaghi agent analysis
+# AI: Terzaghi agent analysis with project-aware workspace context by default
 geotech agent "evaluate foundation options for a 12-story building on soft clay"
 
 # AI: project-aware discovery from the current folder, no model call
 geotech agent --plan-only
+geotech agent .
 
 # AI: run a selected project-aware workflow with workspace evidence attached
 geotech agent --task risk-analysis --workspace .
 
-# AI: attach a local GroundModel summary to the agent task
-geotech agent "analyze this folder and prepare a foundation screening report" --workspace .
+# AI: disable workspace discovery for a generic one-off prompt
+geotech agent "explain Terzaghi bearing factors" --no-workspace
 
 # AI: role-based swarm planning over workspace evidence and review gates
 geotech agent "review bearing, settlement, and slope risks for this site" --workspace . --skills --swarm
@@ -151,11 +152,13 @@ Agents and swarm runs now see FEM through deterministic routing tools, not promp
 
 ## Project-Aware Agent Harness
 
-`geotech agent --plan-only` is the low-cost project-aware entry point. It scans the selected workspace with the deterministic analyzer, writes `.geotech/project.json`, `.geotech/manifest.json`, `.geotech/context/readiness.json`, `.geotech/context/project_summary.md`, and `.geotech/runs/<runId>/plan.json`, then shows which workflows are ready before any LLM call is made.
+`geotech agent --plan-only` is the low-cost project-aware entry point. It resolves the workspace boundary from `--workspace`, an existing `.geotech/project.json`, the nearest git root, or the current directory, then scans the selected workspace with the deterministic analyzer. It writes `.geotech/project.json`, `.geotech/manifest.json`, `.geotech/evidence/file_index.jsonl`, `.geotech/evidence/evidence_index.jsonl`, `.geotech/context/readiness.json`, `.geotech/context/project_summary.md`, `.geotech/context/memory.json`, and per-run intent/plan/trace/tool-call/model-call artifacts before any LLM call is made.
 
 ```bash
 cd ./my-geotech-project
 geotech agent --plan-only
+geotech agent .
+geotech agent "find anomalies and create visualizations"
 geotech agent --task data-quality --workspace .
 geotech agent --task ground-model --workspace .
 geotech agent --task risk-analysis --workspace .
@@ -164,7 +167,7 @@ geotech agent --task recommendations --workspace .
 geotech agent --task visualization --workspace .
 ```
 
-No-prompt `geotech agent` enters the same discovery-first mode and prints the next workflow choices instead of behaving like generic chat. Existing prompted usage such as `geotech agent "evaluate foundation options"` remains available; add `--workspace .` when you want the LLM to receive the deterministic project manifest and GroundModel/verifier summary. Each discovery run also writes `.geotech/runs/<runId>/trace.json`; task runs currently use the existing workspace-backed agent path, with fuller intent/workflow traces planned next.
+No-prompt `geotech agent` and `geotech agent .` enter the same discovery-first mode and print the next workflow choices instead of behaving like generic chat. Prompted usage now also builds the project context by default unless `--no-workspace` is supplied, so BYOK and hosted models receive the same manifest, readiness, evidence index, and GroundModel/verifier summary instead of guessing from raw files. Use `--max-files` and `--max-depth` to bound discovery. Task runs currently route the selected intent through the existing workspace-backed agent path; the richer intent and trace artifacts are already written, while full deterministic workflow execution remains the next harness slice.
 
 ## Interactive Visualization
 
@@ -250,7 +253,7 @@ These commands now use the hosted beta GLM path by default.
 
 Installed strong-beta skills are available directly through `geotech skill ...`. Agent and chat sessions can opt into skill tools explicitly with `--skills` while the default strong-beta agent path stays unchanged.
 
-Strong-beta reliability note: Terzaghi single-agent mode and optional role-based swarm mode share the same under-specified hosted-beta intake screen, the same first-turn hosted-beta fallback behavior, and the same case-file deliverable tool bootstrap for report and export follow-on workflows. Swarm mode now prepares a deterministic WorkspaceScout, DataEngineer, GroundModeler, StandardsChecker, DesignEngineer, RiskReviewer, and ReportEngineer plan over workspace evidence, standards readiness, calculation input drafts, approved executable skills, and blocked review gates before specialist prompts run.
+Strong-beta reliability note: Terzaghi single-agent mode and optional role-based swarm mode share the same under-specified hosted-beta intake screen, the same first-turn hosted-beta fallback behavior, and the same case-file deliverable tool bootstrap for report and export follow-on workflows. Swarm mode now prepares a deterministic WorkspaceScout, DataEngineer, GroundModeler, StandardsChecker, DesignEngineer, RiskReviewer, and ReportEngineer plan over workspace evidence, standards readiness, calculation input drafts, approved executable skills, and blocked review gates before specialist prompts run. Skill tools are not advertised in role plans unless `--skills` is enabled, reviewer tool context is retained in the final session context, and rejected review cycles remain `UNRESOLVED - REVIEW REJECTED` rather than approved-with-notes.
 
 ## Geotechnical Document Ingest
 

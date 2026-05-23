@@ -1,6 +1,7 @@
 import {
   ensureBundledSkillsInstalled,
   getStrongBetaSkillApproval,
+  isAgentSkillToolName,
   type InstalledSkill,
   type StrongBetaSkillApprovalStatus,
 } from '../skills/index.js';
@@ -170,12 +171,22 @@ const ROLE_SEEDS: RoleSeed[] = [
     legacyAgent: 'orchestrator',
     objective: 'Produce the final evidence-first engineering report with traceable limitations and next actions.',
     evidenceInputs: ['role handoffs', 'case-file artifacts', 'review verdict', 'source evidence'],
-    toolStrategy: ['generate_report', 'render_pdf', 'render_docx', 'export_csv'],
+    toolStrategy: [],
     preferredSkills: ['evidence-to-casefile-curator', 'design-basis-and-calculation-coverage'],
     skillKeywords: ['casefile', 'report', 'design basis', 'evidence'],
     handoff: 'Final answer with traceability, limitations, and review status.',
   },
 ];
+
+function filterRoleToolStrategy(seed: RoleSeed, skillsEnabled: boolean): string[] {
+  if (seed.legacyAgent === 'orchestrator') {
+    return [];
+  }
+  if (skillsEnabled) {
+    return seed.toolStrategy;
+  }
+  return seed.toolStrategy.filter((toolName) => !isAgentSkillToolName(toolName));
+}
 
 export function loadInstalledSkillsForSwarmPlanning(skillsEnabled: boolean): SwarmPlanningSkill[] {
   if (!skillsEnabled) {
@@ -228,7 +239,7 @@ export function buildSkillAwareSwarmPlan(
       legacyAgent: seed.legacyAgent,
       objective: seed.objective,
       evidenceInputs: seed.evidenceInputs,
-      toolStrategy: seed.toolStrategy,
+      toolStrategy: filterRoleToolStrategy(seed, skillsEnabled),
       recommendedSkills,
       blockedSkills,
       handoff: seed.handoff,
@@ -267,7 +278,7 @@ export function buildSkillAwareSwarmPlan(
 export function formatSwarmPlanForPrompt(plan: SwarmExecutionPlan): string {
   const roleLines = plan.roles.map((role) => [
     `- ${role.role} (${role.status}, ${role.legacyAgent}): ${role.objective}`,
-    `  tools: ${role.toolStrategy.join(', ')}`,
+    `  tools: ${role.toolStrategy.join(', ') || 'none; final synthesis or planning responsibility only'}`,
     role.recommendedSkills.length > 0 ? `  approved skills: ${role.recommendedSkills.join(', ')}` : '  approved skills: none selected',
     role.blockedSkills.length > 0 ? `  excluded skills: ${role.blockedSkills.join(', ')}` : '',
     `  handoff: ${role.handoff}`,

@@ -1,12 +1,13 @@
 import { Command } from 'commander';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const coreMocks = vi.hoisted(() => ({
   analyzeWorkspace: vi.fn(),
   buildLLMConfig: vi.fn(),
+  resolveWorkspaceRoot: vi.fn(),
   runAgent: vi.fn(),
   runSwarm: vi.fn(),
 }));
@@ -25,6 +26,7 @@ vi.mock('@geotechcli/core', () => ({
   ],
   DEFAULT_LLM_VISION_MODEL: 'glm-5v-turbo',
   buildLLMConfig: coreMocks.buildLLMConfig,
+  resolveWorkspaceRoot: coreMocks.resolveWorkspaceRoot,
   runAgent: coreMocks.runAgent,
   runSwarm: coreMocks.runSwarm,
   analyzeWorkspace: coreMocks.analyzeWorkspace,
@@ -79,24 +81,82 @@ function makeSwarmSession(answer = 'done') {
   };
 }
 
+function findAncestorContaining(startPath: string, relativeMarker: string): string | undefined {
+  let current = resolve(startPath);
+  for (;;) {
+    if (existsSync(join(current, relativeMarker))) return current;
+    const parent = dirname(current);
+    if (parent === current) return undefined;
+    current = parent;
+  }
+}
+
+function makeWorkspaceRoot(options: { workspacePath?: string } = {}) {
+  if (options.workspacePath?.trim()) {
+    return {
+      path: resolve(options.workspacePath),
+      detectedBy: 'explicit_workspace_arg',
+      trustLevel: 'explicit',
+      readScope: 'root_only',
+      writeScope: 'geotech_output_only',
+    };
+  }
+  const cwd = process.cwd();
+  const geotechRoot = findAncestorContaining(cwd, join('.geotech', 'project.json'));
+  if (geotechRoot) {
+    return {
+      path: geotechRoot,
+      detectedBy: 'geotech_project_file',
+      trustLevel: 'inferred',
+      readScope: 'root_only',
+      writeScope: 'geotech_output_only',
+    };
+  }
+  const gitRoot = findAncestorContaining(cwd, '.git');
+  return {
+    path: gitRoot ?? resolve(cwd),
+    detectedBy: gitRoot ? 'git_root' : 'cwd',
+    trustLevel: 'inferred',
+    readScope: 'root_only',
+    writeScope: 'geotech_output_only',
+  };
+}
+
 function makeWorkspaceManifest() {
   return {
     schemaVersion: 'workspace-manifest.v1',
     generatedAt: new Date().toISOString(),
     rootPath: 'C:/project',
-    files: [],
+    files: [
+      {
+        path: 'reports/gi-report.pdf',
+        absolutePath: 'C:/project/reports/gi-report.pdf',
+        name: 'gi-report.pdf',
+        extension: '.pdf',
+        sizeBytes: 1024,
+        modifiedAt: new Date().toISOString(),
+        classification: {
+          kind: 'pdf',
+          datasetType: 'geotechnical-report',
+          branches: ['reports'],
+          confidence: 0.9,
+          signals: ['report'],
+          warnings: [],
+        },
+      },
+    ],
     warnings: [],
     summary: {
-      totalFiles: 0,
-      supportedFiles: 0,
+      totalFiles: 1,
+      supportedFiles: 1,
       tabularFiles: 0,
-      pdfFiles: 0,
+      pdfFiles: 1,
       imageFiles: 0,
       skippedFiles: 0,
-      kinds: {},
-      datasetTypes: {},
-      branches: [],
-      recommendations: [],
+      kinds: { pdf: 1 },
+      datasetTypes: { 'geotechnical-report': 1 },
+      branches: ['reports'],
+      recommendations: ['PDF reports detected. Use geotech ingest for structured extraction.'],
     },
   };
 }
@@ -114,6 +174,7 @@ describe('agent command skill opt-in', () => {
     coreMocks.runAgent.mockResolvedValue(makeAgentSession());
     coreMocks.runSwarm.mockResolvedValue(makeSwarmSession());
     coreMocks.analyzeWorkspace.mockResolvedValue(makeWorkspaceManifest());
+    coreMocks.resolveWorkspaceRoot.mockImplementation(makeWorkspaceRoot);
     vi.spyOn(console, 'log').mockImplementation(() => {});
   });
 
@@ -130,7 +191,7 @@ describe('agent command skill opt-in', () => {
     const program = new Command();
     registerAgentCommand(program);
 
-    await program.parseAsync(['agent', 'review', 'foundation', '--json'], { from: 'user' });
+    await program.parseAsync(['agent', 'review', 'foundation', '--no-workspace', '--json'], { from: 'user' });
 
     expect(coreMocks.runAgent).toHaveBeenCalledWith(
       'review foundation',
@@ -144,7 +205,7 @@ describe('agent command skill opt-in', () => {
     const program = new Command();
     registerAgentCommand(program);
 
-    await program.parseAsync(['agent', 'review', 'foundation', '--skills', '--json'], { from: 'user' });
+    await program.parseAsync(['agent', 'review', 'foundation', '--no-workspace', '--skills', '--json'], { from: 'user' });
 
     expect(coreMocks.runAgent).toHaveBeenCalledWith(
       'review foundation',
@@ -155,6 +216,8 @@ describe('agent command skill opt-in', () => {
   });
 
   it('passes skill opt-in and workspace drafts into swarm sessions', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'geotech-agent-swarm-'));
+    tempDirs.push(workspace);
     const program = new Command();
     registerAgentCommand(program);
 
@@ -163,13 +226,13 @@ describe('agent command skill opt-in', () => {
       'review',
       'foundation',
       '--workspace',
-      '.',
+      workspace,
       '--swarm',
       '--skills',
       '--json',
     ], { from: 'user' });
 
-    expect(coreMocks.analyzeWorkspace).toHaveBeenCalledWith('.', {
+    expect(coreMocks.analyzeWorkspace).toHaveBeenCalledWith(workspace, {
       includeCalculationInputDrafts: true,
     });
     expect(coreMocks.runSwarm).toHaveBeenCalledWith(
@@ -194,10 +257,17 @@ describe('agent command skill opt-in', () => {
     expect(coreMocks.runAgent).not.toHaveBeenCalled();
     expect(coreMocks.runSwarm).not.toHaveBeenCalled();
     expect(existsSync(join(workspace, '.geotech', 'manifest.json'))).toBe(true);
+    expect(existsSync(join(workspace, '.geotech', 'evidence', 'file_index.jsonl'))).toBe(true);
+    expect(existsSync(join(workspace, '.geotech', 'evidence', 'evidence_index.jsonl'))).toBe(true);
     expect(existsSync(join(workspace, '.geotech', 'context', 'readiness.json'))).toBe(true);
+    expect(existsSync(join(workspace, '.geotech', 'context', 'memory.json'))).toBe(true);
     const runId = readdirSync(join(workspace, '.geotech', 'runs'))[0];
     const plan = JSON.parse(readFileSync(join(workspace, '.geotech', 'runs', runId, 'plan.json'), 'utf-8'));
     expect(plan.executionMode).toBe('discovery-only');
+    expect(existsSync(join(workspace, '.geotech', 'runs', runId, 'run_manifest.json'))).toBe(true);
+    expect(existsSync(join(workspace, '.geotech', 'runs', runId, 'intent.json'))).toBe(true);
+    expect(existsSync(join(workspace, '.geotech', 'runs', runId, 'tool_calls.jsonl'))).toBe(true);
+    expect(existsSync(join(workspace, '.geotech', 'runs', runId, 'model_calls.jsonl'))).toBe(true);
   });
 
   it('uses project-aware task mode as a workspace-backed agent prompt', async () => {
@@ -219,12 +289,84 @@ describe('agent command skill opt-in', () => {
       includeCalculationInputDrafts: true,
     });
     expect(coreMocks.runAgent).toHaveBeenCalledWith(
-      expect.stringContaining('Selected task: risk-analysis'),
+      expect.stringContaining('Selected intent: risk-analysis'),
       expect.objectContaining({ skillsEnabled: false }),
       expect.any(Function),
       expect.objectContaining({ workspace: expect.any(Object) }),
     );
     const geotechPlanDirs = join(workspace, '.geotech', 'runs');
     expect(existsSync(geotechPlanDirs)).toBe(true);
+  });
+
+  it('auto-discovers a workspace for prompted project agent requests by default', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'geotech-agent-auto-'));
+    tempDirs.push(workspace);
+    vi.spyOn(process, 'cwd').mockReturnValue(workspace);
+    const program = new Command();
+    registerAgentCommand(program);
+
+    await program.parseAsync(['agent', 'find', 'anomalies', 'and', 'create', 'visualizations', '--json'], { from: 'user' });
+
+    expect(coreMocks.analyzeWorkspace).toHaveBeenCalledWith(workspace, {
+      includeCalculationInputDrafts: true,
+    });
+    expect(coreMocks.runAgent).toHaveBeenCalledWith(
+      expect.stringContaining('Project-aware task context:'),
+      expect.any(Object),
+      expect.any(Function),
+      expect.objectContaining({ workspace: expect.any(Object) }),
+    );
+    const runId = readdirSync(join(workspace, '.geotech', 'runs'))[0];
+    const intent = JSON.parse(readFileSync(join(workspace, '.geotech', 'runs', runId, 'intent.json'), 'utf-8'));
+    expect(intent.type).toBe('combined');
+    expect(intent.tasks).toEqual(expect.arrayContaining(['anomaly-detection', 'visualization']));
+  });
+
+  it('treats dot argument as project discovery and detects an existing .geotech project root', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'geotech-agent-root-'));
+    const child = join(workspace, 'nested');
+    mkdirSync(join(workspace, '.geotech'), { recursive: true });
+    mkdirSync(child, { recursive: true });
+    writeFileSync(join(workspace, '.geotech', 'project.json'), '{}', 'utf-8');
+    tempDirs.push(workspace);
+    vi.spyOn(process, 'cwd').mockReturnValue(child);
+    const program = new Command();
+    registerAgentCommand(program);
+
+    await program.parseAsync(['agent', '.', '--json'], { from: 'user' });
+
+    expect(coreMocks.analyzeWorkspace).toHaveBeenCalledWith(workspace, {
+      includeCalculationInputDrafts: true,
+    });
+    expect(coreMocks.runAgent).not.toHaveBeenCalled();
+    const runId = readdirSync(join(workspace, '.geotech', 'runs'))[0];
+    const plan = JSON.parse(readFileSync(join(workspace, '.geotech', 'runs', runId, 'plan.json'), 'utf-8'));
+    expect(plan.workspace.detectedBy).toBe('geotech_project_file');
+    expect(plan.intent.type).toBe('discovery');
+  });
+
+  it('passes project-aware scan limits into workspace analysis', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'geotech-agent-limits-'));
+    tempDirs.push(workspace);
+    const program = new Command();
+    registerAgentCommand(program);
+
+    await program.parseAsync([
+      'agent',
+      '--workspace',
+      workspace,
+      '--plan-only',
+      '--max-files',
+      '25',
+      '--max-depth',
+      '2',
+      '--json',
+    ], { from: 'user' });
+
+    expect(coreMocks.analyzeWorkspace).toHaveBeenCalledWith(workspace, {
+      includeCalculationInputDrafts: true,
+      maxFiles: 25,
+      maxDepth: 2,
+    });
   });
 });

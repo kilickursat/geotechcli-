@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.70] - 2026-05-23
+
+### Project-Aware Agent Root, Intent, And Swarm Trace Fixes
+
+- Added provider-neutral project root detection for `geotech agent`: explicit `--workspace`, existing `.geotech/project.json`, nearest git root, then current directory.
+- Made prompted `geotech agent "..."` project-aware by default unless `--no-workspace` is supplied, while `geotech agent .` now enters discovery mode like no-prompt runs.
+- Added project-agent intent artifacts, run manifests, file/evidence JSONL indexes, local `memory.json`, tool-call traces, and model-call traces under `.geotech/`.
+- Added `--max-files`, `--max-depth`, and `--trace` project-agent options so workspace discovery can be bounded and audited.
+- Fixed swarm planning so disabled skill tools are not advertised unless `--skills` is enabled, orchestrator-only report planning does not claim unavailable deliverable tools, reviewer tool context is retained, and rejected swarm reviews remain unresolved instead of approved-with-notes.
+
 ## [0.4.69] - 2026-05-23
 
 ### Project-Aware Agent Harness

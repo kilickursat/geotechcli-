@@ -221,6 +221,12 @@ describe('Swarm tool policy', () => {
         }),
       }),
     });
+    expect(session.context.reviewer).toMatchObject({
+      validate_fem_analysis_case: expect.objectContaining({
+        status: expect.any(String),
+        reviewItems: expect.any(Number),
+      }),
+    });
 
     const reviewerMessages = mockedGenerateChat.mock.calls[3]?.[0] as Array<{ role: string; content: string }>;
     const reviewerUserPrompt = reviewerMessages.find((message) => message.role === 'user')?.content ?? '';
@@ -256,6 +262,38 @@ describe('Swarm tool policy', () => {
     expect(finalStep?.content).toContain('Swarm analysis completed');
     expect(finalStep?.content).toContain('hosted synthesis timed out');
     expect(finalStep?.content).toContain('Simulation output');
+  });
+
+  it('keeps rejected swarm review status unresolved in final synthesis', async () => {
+    mockedGenerateChat
+      .mockResolvedValueOnce(
+        response('```handoff\n{"to":"simulation","data":{"soil":"sand"},"summary":"parsed"}\n```'),
+      )
+      .mockResolvedValueOnce(
+        response('```handoff\n{"to":"reviewer","results":{"fos":0.8},"summary":"calculated"}\n```'),
+      )
+      .mockResolvedValueOnce(
+        response('```review\n{"verdict":"REJECTED","issues":["factor of safety below acceptance"],"corrections":["request missing load case"]}\n```'),
+      )
+      .mockResolvedValueOnce(
+        response('```handoff\n{"to":"reviewer","results":{"fos":0.8},"summary":"still unresolved"}\n```'),
+      )
+      .mockResolvedValueOnce(
+        response('```review\n{"verdict":"REJECTED","issues":["still below acceptance"],"corrections":["do not approve"]}\n```'),
+      );
+    mockedGenerateText.mockResolvedValue(response('final unresolved report'));
+
+    const session = await runSwarm(
+      'review an unsafe slope result',
+      {} as any,
+      () => {},
+      {},
+    );
+
+    expect(session.reviewPassed).toBe(false);
+    const finalPrompt = mockedGenerateText.mock.calls[0]?.[0] as string;
+    expect(finalPrompt).toContain('Review status: UNRESOLVED - REVIEW REJECTED');
+    expect(finalPrompt).not.toContain('APPROVED WITH NOTES');
   });
 
   it('threads the role-based execution plan into swarm prompts and session output', async () => {

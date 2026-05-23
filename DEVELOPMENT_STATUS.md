@@ -4,7 +4,7 @@ Last updated: 2026-05-23
 
 ## Current Work
 
-v0.4.69 work follows the v0.4.68 npm publish path hotfix and opens the project-aware agent harness slice. The release script still publishes from each package directory so npm treats `@geotechcli/core` and `geotechcli` as local workspace publishes instead of ambiguous package specs. The LLM boundary remains explicit: hosted GLM and future BYOK models can plan, draft, validate, and review FEM cases, but they cannot run solvers, invoke WebGL generation as tools, or invent FEM outputs. The wider engineering track remains provider-neutral evidence, standards-aware GroundModel readiness, GroundModel spatial and engineering visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, the PDF/page evidence benchmark foundation, and experimental deterministic FEM/WebGL contracts so future OCR/vision, BYOK-provider, and GroundModel-to-calculation changes can be measured and routed without asking LLMs to invent calculations.
+v0.4.70 work follows the v0.4.69 project-aware agent harness release and extends the agent boundary from discovery-only state writing into root detection, intent artifacts, evidence indexes, local project memory, scan limits, and swarm trace correctness. The release script still publishes from each package directory so npm treats `@geotechcli/core` and `geotechcli` as local workspace publishes instead of ambiguous package specs. The LLM boundary remains explicit: hosted GLM and future BYOK models can plan, draft, validate, and review FEM cases, but they cannot run solvers, invoke WebGL generation as tools, or invent FEM outputs. The wider engineering track remains provider-neutral evidence, standards-aware GroundModel readiness, GroundModel spatial and engineering visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, the PDF/page evidence benchmark foundation, and experimental deterministic FEM/WebGL contracts so future OCR/vision, BYOK-provider, and GroundModel-to-calculation changes can be measured and routed without asking LLMs to invent calculations.
 
 Current focus:
 
@@ -44,6 +44,9 @@ Current focus:
 - Keep the experimental FEM artifact screenshot-testable with Playwright; headless Chromium may use the deterministic Canvas fallback when WebGL exposes a zero-size drawing buffer.
 - Add the first project-aware `geotech agent` harness slice: no-prompt and `--plan-only` discovery scan the workspace, write `.geotech` project state, compute workflow readiness, and ask for the next workflow before any LLM call.
 - Route `geotech agent --task <task> --workspace <dir>` through the same provider-neutral workspace manifest and GroundModel/verifier context instead of letting a BYOK/default model guess from raw files.
+- Resolve project-agent roots through explicit `--workspace`, existing `.geotech/project.json`, nearest git root, or cwd, and make prompted agent runs project-aware by default unless `--no-workspace` is supplied.
+- Write project-agent intent, run manifest, file/evidence indexes, local memory, tool-call trace, and model-call trace artifacts under `.geotech/` so BYOK/default model runs have the same auditable harness context.
+- Keep swarm plans honest by suppressing disabled skill tools when `--skills` is off, retaining reviewer tool outputs in session context, and preserving rejected reviews as unresolved instead of approved-with-notes.
 - Keep FEM route recommendations current: draft creation uses `geotech fem draft ...`, reviewed analysis cases use `geotech fem run <analysis_case.json> --experimental`, and built-in demo commands remain examples rather than agent-recommended execution paths.
 - Keep BYOK OpenAI-compatible environment variables aligned with docs and smoke checks by treating `OPENAI_COMPATIBLE_MODEL` as primary and `OPENAI_COMPATIBLE_MODEL_ID` as a backward-compatible alias.
 - Keep the bundled strong-beta skill catalog repairable on first use so direct skill commands and `--skills` agent sessions can see the complete approved catalog after partial installs.
@@ -54,11 +57,19 @@ Current focus:
 
 ## Done So Far
 
+### Project-Aware Agent Root, Intent, And Swarm Trace Slice
+
+- Added core workspace root detection for `geotech agent` with the order: explicit `--workspace`, parent `.geotech/project.json`, nearest git root, then cwd.
+- Made prompted `geotech agent "..."` project-aware by default and kept `--no-workspace` as the opt-out for generic one-off AI prompts.
+- Added `geotech agent .`, `--max-files`, `--max-depth`, and `--trace` support for bounded, auditable project-aware runs.
+- Added `.geotech/evidence/file_index.jsonl`, `.geotech/evidence/evidence_index.jsonl`, `.geotech/context/memory.json`, `.geotech/runs/<runId>/run_manifest.json`, `intent.json`, `tool_calls.jsonl`, and `model_calls.jsonl`.
+- Hardened swarm planning so disabled skill tools and unavailable orchestrator deliverable tools are not advertised, reviewer tool context is preserved, and rejected review cycles remain `UNRESOLVED - REVIEW REJECTED`.
+
 ### Project-Aware Agent Harness Slice
 
 - Made `geotech agent --plan-only` and no-prompt `geotech agent` run deterministic workspace discovery first, write `.geotech/project.json`, `.geotech/manifest.json`, `.geotech/context/readiness.json`, `.geotech/context/project_summary.md`, and per-run plan/trace files, then present ready/blocked project workflows without calling an LLM.
 - Added `geotech agent --task data-quality|ground-model|risk-analysis|anomaly-detection|recommendations|visualization --workspace <dir>` so selected project workflows route through the existing provider-neutral manifest/GroundModel/verifier context before the LLM reasons.
-- Kept existing prompted `geotech agent "..."` behavior stable unless workspace/project-aware mode is explicitly requested, preserving strong-beta compatibility while adding the discovery-first project entry point.
+- Kept `--no-workspace` as the generic-prompt opt-out while project-aware discovery becomes the default agent entry point.
 - Split FEM capability recommendations so completed drafts point to reviewed `geotech fem run <analysis_case.json> --experimental` execution instead of stale built-in demo commands, while missing-input states still point to `geotech fem draft ... --case-output`.
 - Fixed the OpenAI-compatible BYOK model env contract so the documented `OPENAI_COMPATIBLE_MODEL` drives config and the older `OPENAI_COMPATIBLE_MODEL_ID` remains a fallback alias.
 

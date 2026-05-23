@@ -121,6 +121,11 @@ describe('skill-aware swarm planner', () => {
 
     expect(plan.skillCatalog.installed).toBe(5);
     expect(plan.roles.flatMap((role) => role.recommendedSkills)).toEqual([]);
+    expect(plan.roles.flatMap((role) => role.toolStrategy)).not.toEqual(expect.arrayContaining([
+      'list_skills',
+      'describe_skill',
+      'run_skill',
+    ]));
     expect(plan.warnings).toContain('Skill tools are disabled for this session; roles may only use deterministic core tools.');
   });
 
@@ -140,5 +145,22 @@ describe('skill-aware swarm planner', () => {
     expect(prompt).toContain('DesignEngineer');
     expect(prompt).toContain('approved skills: shallow-foundation-option-screening');
     expect(prompt).toContain('blockedWorkflows=liquefaction');
+  });
+
+  it('does not advertise report deliverable tools through the orchestrator-only role', () => {
+    const plan = buildSkillAwareSwarmPlan(
+      'prepare a final project report',
+      workspaceContext,
+      {
+        skillsEnabled: true,
+        installedSkills: skillCatalog,
+      },
+    );
+
+    const report = plan.roles.find((role) => role.role === 'ReportEngineer');
+    expect(report?.legacyAgent).toBe('orchestrator');
+    expect(report?.toolStrategy).toEqual([]);
+    expect(formatSwarmPlanForPrompt(plan)).toContain('ReportEngineer');
+    expect(formatSwarmPlanForPrompt(plan)).not.toContain('generate_report, render_pdf');
   });
 });

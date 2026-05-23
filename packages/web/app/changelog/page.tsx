@@ -8,6 +8,17 @@ const releases = [
     date: '2026-05-23',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added project-agent root detection across explicit workspace, .geotech/project.json, git root, and cwd so project-aware runs have a clear filesystem boundary' },
+      { type: 'feat', text: 'Made prompted geotech agent runs project-aware by default unless --no-workspace is supplied, with geotech agent . entering discovery mode' },
+      { type: 'feat', text: 'Added project-agent intent artifacts, run manifests, file/evidence JSONL indexes, local memory.json, tool-call traces, and model-call traces under .geotech' },
+      { type: 'fix', text: 'Stopped swarm plans from advertising disabled skill tools or unavailable orchestrator deliverable tools, preserved reviewer tool context, and kept rejected reviews unresolved instead of approved-with-notes' },
+    ],
+  },
+  {
+    version: '0.4.69',
+    date: '2026-05-23',
+    tag: '0.4.69 Release',
+    changes: [
       { type: 'feat', text: 'Added project-aware geotech agent discovery: --plan-only and no-prompt runs scan the workspace, write .geotech project state, and show workflow readiness before any LLM call' },
       { type: 'feat', text: 'Added geotech agent --task data-quality|ground-model|risk-analysis|anomaly-detection|recommendations|visualization --workspace <dir> for selected project workflows over the provider-neutral manifest context' },
       { type: 'fix', text: 'Updated FEM draft recommendations so reviewed cases point to geotech fem run <analysis_case.json> --experimental instead of stale built-in demo commands' },

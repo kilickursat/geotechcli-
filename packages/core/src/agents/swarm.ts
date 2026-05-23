@@ -768,6 +768,7 @@ export async function runSwarm(
 
     session.totalTokens += reviewResult.tokens;
     session.totalLatencyMs += reviewResult.latency;
+    session.context = { ...session.context, reviewer: reviewResult.context };
 
     const reviewBlock = reviewResult.output.match(/```review\s*\n?([\s\S]*?)\n?```/);
     if (!reviewBlock) {
@@ -826,7 +827,7 @@ export async function runSwarm(
 
   try {
     const finalResult = await generateText(
-      `${promptContextBlock}Task: ${task}\n\nInterpretation output:\n${interpData}\n\nSimulation output:\n${simOutput}\n\nReview status: ${session.reviewPassed ? 'APPROVED' : 'APPROVED WITH NOTES'}\nCorrections applied: ${session.corrections.length > 0 ? session.corrections.join('; ') : 'None'}\n\nSynthesize the final engineering report. Include what evidence remained blocked and which role owned each unresolved action.`,
+      `${promptContextBlock}Task: ${task}\n\nInterpretation output:\n${interpData}\n\nSimulation output:\n${simOutput}\n\nReview status: ${session.reviewPassed ? 'APPROVED' : 'UNRESOLVED - REVIEW REJECTED'}\nCorrections applied: ${session.corrections.length > 0 ? session.corrections.join('; ') : 'None'}\n\nSynthesize the final engineering report. Include what evidence remained blocked and which role owned each unresolved action.`,
       config,
       { systemPrompt: orchestratorPrompt(config), temperature: 0.2, maxTokens: getHostedSwarmMaxTokens(config, 'final') },
     );
@@ -838,7 +839,7 @@ export async function runSwarm(
     const fallback = [
       `Swarm analysis completed, but final hosted synthesis was unavailable: ${err instanceof Error ? err.message : String(err)}`,
       '',
-      `Review status: ${session.reviewPassed ? 'APPROVED' : 'APPROVED WITH NOTES'}`,
+      `Review status: ${session.reviewPassed ? 'APPROVED' : 'UNRESOLVED - REVIEW REJECTED'}`,
       `Corrections applied: ${session.corrections.length > 0 ? session.corrections.join('; ') : 'None'}`,
       '',
       'Interpretation output:',

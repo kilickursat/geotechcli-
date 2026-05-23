@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import chalk from 'chalk';
 import ora from 'ora';
@@ -32,7 +32,9 @@ import {
   persistSwarmCaseFile,
   persistCaseFileEvidence,
   analyzeWorkspace,
+  resolveWorkspaceRoot,
   type ProjectManifest,
+  type WorkspaceRoot,
   type GeneratedReport,
   type AgentStep,
   type AgentSession,
@@ -132,20 +134,23 @@ type ProjectAgentTask =
   | 'visualization'
   | 'custom-question';
 
+interface ProjectAgentIntent {
+  schemaVersion: 'geotech.project-agent-intent.v1';
+  source: 'task-option' | 'prompt' | 'discovery';
+  type: ProjectAgentTask | 'combined' | 'discovery';
+  tasks: ProjectAgentTask[];
+  prompt?: string;
+}
+
 interface ProjectAwarePlan {
   schemaVersion: 'geotech.project-agent-plan.v1';
   runId: string;
-  workspace: {
-    rootPath: string;
-    detectedBy: 'explicit_workspace_arg' | 'cwd';
-    trustLevel: 'explicit' | 'inferred';
-    readScope: 'root_only';
-    writeScope: 'geotech_output_only';
-  };
+  workspace: WorkspaceRoot & { rootPath: string };
   project: {
     name: string;
     generatedAt: string;
   };
+  intent: ProjectAgentIntent;
   executionMode: 'discovery-only' | 'workspace-backed-agent';
   summary: ProjectManifest['summary'];
   readiness: Array<{
@@ -159,10 +164,17 @@ interface ProjectAwarePlan {
   artifacts: {
     project: string;
     manifest: string;
+    fileIndex: string;
+    evidenceIndex: string;
     readiness: string;
     summary: string;
+    memory: string;
+    runManifest: string;
+    intent: string;
     plan: string;
     trace: string;
+    toolCalls: string;
+    modelCalls: string;
   };
   warnings: string[];
 }
@@ -211,7 +223,21 @@ function safeProjectName(rootPath: string): string {
 }
 
 function nowRunId(): string {
-  return `run_${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}`;
+  return `run_${new Date().toISOString().replace(/\D/g, '').slice(0, 17)}`;
+}
+
+function parsePositiveInteger(value: unknown, optionName: string): number | undefined {
+  if (value == null) return undefined;
+  const parsed = Number.parseInt(String(value), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${optionName} must be a positive integer.`);
+  }
+  return parsed;
+}
+
+function isWorkspaceSelectorOnly(rawTask: string): boolean {
+  const normalized = rawTask.trim().replace(/\\/g, '/');
+  return normalized === '.' || normalized === './';
 }
 
 function normalizeProjectTask(value: unknown): ProjectAgentTask | undefined {
@@ -256,6 +282,57 @@ function projectTaskPrompt(task: ProjectAgentTask, customPrompt?: string): strin
     return `Project-aware custom question: ${customPrompt.trim()}`;
   }
   return taskDef.prompt;
+}
+
+function inferProjectIntent(rawPrompt: string, selectedTask?: ProjectAgentTask): ProjectAgentIntent {
+  const prompt = isWorkspaceSelectorOnly(rawPrompt) ? '' : rawPrompt.trim();
+  if (selectedTask) {
+    return {
+      schemaVersion: 'geotech.project-agent-intent.v1',
+      source: 'task-option',
+      type: selectedTask,
+      tasks: [selectedTask],
+      prompt: prompt || undefined,
+    };
+  }
+  if (!prompt) {
+    return {
+      schemaVersion: 'geotech.project-agent-intent.v1',
+      source: 'discovery',
+      type: 'discovery',
+      tasks: [],
+    };
+  }
+
+  const lower = prompt.toLowerCase();
+  const tasks: ProjectAgentTask[] = [];
+  const add = (task: ProjectAgentTask, pattern: RegExp) => {
+    if (pattern.test(lower)) tasks.push(task);
+  };
+  add('data-quality', /\b(?:data quality|inventory|missing data|quality report|duplicate)\b/);
+  add('ground-model', /\b(?:ground model|interpret|strata|stratigraphy|lithology|hydrogeology)\b/);
+  add('risk-analysis', /\b(?:risk|hazard|limitation|uncertainty|mitigation)\b/);
+  add('anomaly-detection', /\b(?:anomal\w*|conflict|outlier|inconsistent|inconsistency)\b/);
+  add('recommendations', /\b(?:recommend|foundation option|advice|next action)\b/);
+  add('visualization', /\b(?:visual\w*|map|plot|chart|section|profile|strip log)\b/);
+
+  const uniqueTasks = [...new Set(tasks)];
+  if (uniqueTasks.length === 0) {
+    return {
+      schemaVersion: 'geotech.project-agent-intent.v1',
+      source: 'prompt',
+      type: 'custom-question',
+      tasks: ['custom-question'],
+      prompt,
+    };
+  }
+  return {
+    schemaVersion: 'geotech.project-agent-intent.v1',
+    source: 'prompt',
+    type: uniqueTasks.length === 1 ? uniqueTasks[0] : 'combined',
+    tasks: uniqueTasks,
+    prompt,
+  };
 }
 
 function projectReadinessFromManifest(manifest: ProjectManifest): ProjectAwarePlan['readiness'] {
@@ -356,13 +433,13 @@ function renderProjectSummaryMarkdown(plan: ProjectAwarePlan): string {
 function buildProjectAwarePlan(
   manifest: ProjectManifest,
   options: {
-    workspaceRoot: string;
-    detectedBy: 'explicit_workspace_arg' | 'cwd';
+    workspace: WorkspaceRoot;
     executionMode: ProjectAwarePlan['executionMode'];
+    intent: ProjectAgentIntent;
     runId?: string;
   },
 ): ProjectAwarePlan {
-  const rootPath = resolve(options.workspaceRoot);
+  const rootPath = resolve(options.workspace.path);
   const runId = options.runId ?? nowRunId();
   const geotechDir = join(rootPath, '.geotech');
   const readiness = projectReadinessFromManifest(manifest);
@@ -375,16 +452,14 @@ function buildProjectAwarePlan(
     schemaVersion: 'geotech.project-agent-plan.v1',
     runId,
     workspace: {
+      ...options.workspace,
       rootPath,
-      detectedBy: options.detectedBy,
-      trustLevel: options.detectedBy === 'explicit_workspace_arg' ? 'explicit' : 'inferred',
-      readScope: 'root_only',
-      writeScope: 'geotech_output_only',
     },
     project: {
       name: safeProjectName(rootPath),
       generatedAt: new Date().toISOString(),
     },
+    intent: options.intent,
     executionMode: options.executionMode,
     summary: manifest.summary,
     readiness,
@@ -392,10 +467,17 @@ function buildProjectAwarePlan(
     artifacts: {
       project: join(geotechDir, 'project.json'),
       manifest: join(geotechDir, 'manifest.json'),
+      fileIndex: join(geotechDir, 'evidence', 'file_index.jsonl'),
+      evidenceIndex: join(geotechDir, 'evidence', 'evidence_index.jsonl'),
       readiness: join(geotechDir, 'context', 'readiness.json'),
       summary: join(geotechDir, 'context', 'project_summary.md'),
+      memory: join(geotechDir, 'context', 'memory.json'),
+      runManifest: join(geotechDir, 'runs', runId, 'run_manifest.json'),
+      intent: join(geotechDir, 'runs', runId, 'intent.json'),
       plan: join(geotechDir, 'runs', runId, 'plan.json'),
       trace: join(geotechDir, 'runs', runId, 'trace.json'),
+      toolCalls: join(geotechDir, 'runs', runId, 'tool_calls.jsonl'),
+      modelCalls: join(geotechDir, 'runs', runId, 'model_calls.jsonl'),
     },
     warnings: [
       ...manifest.warnings,
@@ -406,9 +488,56 @@ function buildProjectAwarePlan(
   };
 }
 
+function jsonl(rows: unknown[]): string {
+  return rows.map((row) => JSON.stringify(row)).join('\n') + (rows.length > 0 ? '\n' : '');
+}
+
+function buildFileIndexRows(manifest: ProjectManifest): unknown[] {
+  return manifest.files.map((file, index) => ({
+    schemaVersion: 'geotech.project-file-index.v1',
+    id: `file_${String(index + 1).padStart(4, '0')}`,
+    path: file.path,
+    name: file.name,
+    kind: file.classification.kind,
+    datasetType: file.classification.datasetType,
+    branches: file.classification.branches,
+    confidence: file.classification.confidence,
+    sizeBytes: file.sizeBytes,
+    modifiedAt: file.modifiedAt,
+  }));
+}
+
+function buildEvidenceIndexRows(manifest: ProjectManifest): unknown[] {
+  const fileRows = manifest.files.map((file, index) => ({
+    schemaVersion: 'geotech.project-evidence-index.v1',
+    id: `ev_file_${String(index + 1).padStart(4, '0')}`,
+    type: 'workspace-file',
+    source: file.path,
+    method: 'workspace.scan',
+    confidence: file.classification.confidence,
+    summary: `${file.classification.datasetType} (${file.classification.kind})`,
+    branches: file.classification.branches,
+    warnings: file.classification.warnings,
+  }));
+  const groundModel = manifest.groundModel
+    ? [{
+        schemaVersion: 'geotech.project-evidence-index.v1',
+        id: 'ev_ground_model_summary',
+        type: 'ground-model-summary',
+        source: 'manifest.groundModel',
+        method: 'groundModel.buildFromManifest',
+        confidence: manifest.groundModel.stats.evidenceRefs > 0 ? 0.8 : 0.3,
+        summary: `${manifest.groundModel.stats.boreholes} borehole(s), ${manifest.groundModel.stats.strata} strata, ${manifest.groundModel.stats.parameters} parameter(s), ${manifest.groundModel.stats.evidenceRefs} evidence ref(s)`,
+        warnings: manifest.groundModel.warnings,
+      }]
+    : [];
+  return [...fileRows, ...groundModel];
+}
+
 function writeProjectAwareState(plan: ProjectAwarePlan, manifest: ProjectManifest): void {
   for (const dir of [
     join(plan.workspace.rootPath, '.geotech'),
+    join(plan.workspace.rootPath, '.geotech', 'evidence'),
     join(plan.workspace.rootPath, '.geotech', 'context'),
     join(plan.workspace.rootPath, '.geotech', 'runs', plan.runId),
   ]) {
@@ -424,29 +553,66 @@ function writeProjectAwareState(plan: ProjectAwarePlan, manifest: ProjectManifes
     updatedAt: plan.project.generatedAt,
     workspace: plan.workspace,
   };
+  const runManifest = {
+    schemaVersion: 'geotech.project-agent-run.v1',
+    runId: plan.runId,
+    createdAt: plan.project.generatedAt,
+    workspace: plan.workspace,
+    intent: plan.intent,
+    executionMode: plan.executionMode,
+    artifacts: plan.artifacts,
+  };
+  const toolCalls = [
+    { type: 'tool_call', tool: 'workspace.resolve_root', status: 'pass', output: plan.workspace },
+    { type: 'tool_call', tool: 'analyzeWorkspace', status: 'pass', output: plan.artifacts.manifest },
+    { type: 'tool_call', tool: 'projectReadinessFromManifest', status: 'pass', output: plan.artifacts.readiness },
+    { type: 'tool_call', tool: 'project.write_file_index', status: 'pass', output: plan.artifacts.fileIndex },
+    { type: 'tool_call', tool: 'project.write_evidence_index', status: 'pass', output: plan.artifacts.evidenceIndex },
+  ];
+  const modelCalls = plan.executionMode === 'discovery-only'
+    ? []
+    : [{ type: 'model_call', status: 'planned', purpose: 'workspace-backed-agent-task', intent: plan.intent.type }];
   const trace = {
     schemaVersion: 'geotech.project-agent-trace.v1',
     runId: plan.runId,
     workspace: plan.workspace.rootPath,
+    intent: plan.intent,
     steps: [
-      { type: 'tool_call', tool: 'analyzeWorkspace', status: 'pass', output: plan.artifacts.manifest },
-      { type: 'tool_call', tool: 'projectReadinessFromManifest', status: 'pass', output: plan.artifacts.readiness },
+      ...toolCalls,
       plan.executionMode === 'discovery-only'
         ? { type: 'review_gate', status: 'pending', message: 'User must select a workflow before model-heavy or write-heavy actions execute.' }
         : { type: 'model_call', status: 'planned', message: 'Selected project-aware task will execute through the existing workspace-backed agent path.' },
     ],
   };
+  const memory = {
+    schemaVersion: 'geotech.project-memory.v1',
+    assumptions: [],
+    decisions: [],
+    userPreferences: {},
+    notes: [
+      'Project memory stores only confirmed assumptions, decisions, and preferences. Raw documents and secrets are not stored here.',
+    ],
+  };
 
   writeFileSync(plan.artifacts.project, JSON.stringify(projectJson, null, 2), 'utf-8');
   writeFileSync(plan.artifacts.manifest, JSON.stringify(manifest, null, 2), 'utf-8');
+  writeFileSync(plan.artifacts.fileIndex, jsonl(buildFileIndexRows(manifest)), 'utf-8');
+  writeFileSync(plan.artifacts.evidenceIndex, jsonl(buildEvidenceIndexRows(manifest)), 'utf-8');
   writeFileSync(plan.artifacts.readiness, JSON.stringify({
     schemaVersion: 'geotech.workflow_readiness.v1',
     generatedAt: plan.project.generatedAt,
     workflows: plan.readiness,
   }, null, 2), 'utf-8');
   writeFileSync(plan.artifacts.summary, renderProjectSummaryMarkdown(plan), 'utf-8');
+  if (!existsSync(plan.artifacts.memory)) {
+    writeFileSync(plan.artifacts.memory, JSON.stringify(memory, null, 2), 'utf-8');
+  }
+  writeFileSync(plan.artifacts.runManifest, JSON.stringify(runManifest, null, 2), 'utf-8');
+  writeFileSync(plan.artifacts.intent, JSON.stringify(plan.intent, null, 2), 'utf-8');
   writeFileSync(plan.artifacts.plan, JSON.stringify(plan, null, 2), 'utf-8');
   writeFileSync(plan.artifacts.trace, JSON.stringify(trace, null, 2), 'utf-8');
+  writeFileSync(plan.artifacts.toolCalls, jsonl(toolCalls), 'utf-8');
+  writeFileSync(plan.artifacts.modelCalls, jsonl(modelCalls), 'utf-8');
 }
 
 function relativeArtifactPath(rootPath: string, filePath: string): string {
@@ -466,6 +632,8 @@ function renderProjectAwarePlan(plan: ProjectAwarePlan, flags: { json?: boolean;
 
   heading('Project-Aware Agent Plan');
   keyValue('Workspace', plan.workspace.rootPath);
+  keyValue('Detected by', plan.workspace.detectedBy);
+  keyValue('Intent', plan.intent.type);
   keyValue('Files', `${plan.summary.totalFiles} total, ${plan.summary.supportedFiles} supported`);
   keyValue('Branches', plan.summary.branches.join(', ') || 'none');
   console.log('');
@@ -486,6 +654,7 @@ function renderProjectAwarePlan(plan: ProjectAwarePlan, flags: { json?: boolean;
   }
   console.log('');
   warn('No model-heavy workflow has run yet. Choose a task with --task, or ask a project question with --workspace.');
+  console.log(chalk.gray('  Next actions: geotech agent --task data-quality | --task ground-model | --task risk-analysis | --task anomaly-detection | --task recommendations | --task visualization'));
   success(`Project state written to ${relativeArtifactPath(plan.workspace.rootPath, join(plan.workspace.rootPath, '.geotech'))}`);
 }
 
@@ -1685,39 +1854,47 @@ export function registerAgentCommand(program: Command): void {
     .option('--task <task>', 'Run a project-aware task: data-quality, ground-model, risk-analysis, anomaly-detection, recommendations, visualization')
     .option('--plan-only', 'Scan the workspace, write .geotech project state, and show workflow readiness without calling an LLM')
     .option('--refresh', 'Refresh the deterministic workspace manifest and .geotech project state')
+    .option('--trace', 'Write project-agent trace artifacts (enabled by default in project-aware mode)')
+    .option('--max-files <n>', 'Maximum files to scan in project-aware workspace discovery')
+    .option('--max-depth <n>', 'Maximum directory depth to scan in project-aware workspace discovery')
     .action(async (taskParts: string[], opts) => {
       const flags = getGlobalFlags(opts);
       const rawTask = Array.isArray(taskParts) ? taskParts.join(' ').trim() : '';
+      const workspaceSelectorOnly = isWorkspaceSelectorOnly(rawTask);
+      const promptTask = workspaceSelectorOnly ? '' : rawTask;
       const selectedProjectTask = normalizeProjectTask(opts.task);
       if (typeof opts.task === 'string' && !selectedProjectTask) {
         throw new Error(`Unsupported project-aware task: ${opts.task}`);
       }
-      const task = selectedProjectTask ? projectTaskPrompt(selectedProjectTask, rawTask) : rawTask;
+      const projectIntent = inferProjectIntent(rawTask, selectedProjectTask);
+      const task = selectedProjectTask ? projectTaskPrompt(selectedProjectTask, promptTask) : promptTask;
       let agentTask = task;
       const useSwarm = opts.swarm === true;
       const showLiveStatus = !flags.json && !flags.quiet && !flags.verbose;
-      const shouldAutoDiscoverWorkspace = opts.workspace !== false && (opts.planOnly === true || selectedProjectTask || !rawTask);
+      const shouldAutoDiscoverWorkspace = opts.workspace !== false;
+      const maxFiles = parsePositiveInteger(opts.maxFiles, '--max-files');
+      const maxDepth = parsePositiveInteger(opts.maxDepth, '--max-depth');
 
       let workspaceManifest: ProjectManifest | undefined;
       if (shouldAutoDiscoverWorkspace) {
-        const workspaceRoot = typeof opts.workspace === 'string' && opts.workspace.trim()
-          ? opts.workspace
-          : process.cwd();
-        workspaceManifest = await analyzeWorkspace(workspaceRoot, {
+        const workspace = resolveWorkspaceRoot({
+          workspacePath: typeof opts.workspace === 'string' && opts.workspace.trim() ? opts.workspace : undefined,
+        });
+        workspaceManifest = await analyzeWorkspace(workspace.path, {
           includeCalculationInputDrafts: true,
+          ...(maxFiles ? { maxFiles } : {}),
+          ...(maxDepth ? { maxDepth } : {}),
         });
         const plan = buildProjectAwarePlan(workspaceManifest, {
-          workspaceRoot,
-          detectedBy: typeof opts.workspace === 'string' && opts.workspace.trim()
-            ? 'explicit_workspace_arg'
-            : 'cwd',
-          executionMode: opts.planOnly === true || (!rawTask && !selectedProjectTask)
+          workspace,
+          intent: projectIntent,
+          executionMode: opts.planOnly === true || (!promptTask && !selectedProjectTask)
             ? 'discovery-only'
             : 'workspace-backed-agent',
         });
         writeProjectAwareState(plan, workspaceManifest);
 
-        if (opts.planOnly === true || (!rawTask && !selectedProjectTask)) {
+        if (opts.planOnly === true || (!promptTask && !selectedProjectTask)) {
           renderProjectAwarePlan(plan, flags);
           return;
         }
@@ -1725,10 +1902,11 @@ export function registerAgentCommand(program: Command): void {
         agentTask = [
           task,
           'Project-aware task context:',
-          `Selected task: ${selectedProjectTask}`,
+          `Selected intent: ${projectIntent.type}`,
+          projectIntent.tasks.length > 0 ? `Intent tasks: ${projectIntent.tasks.join(', ')}` : '',
           `Project state: ${relativeArtifactPath(plan.workspace.rootPath, plan.artifacts.plan)}`,
           summarizeWorkspaceManifestForAgent(workspaceManifest),
-        ].join('\n\n');
+        ].filter(Boolean).join('\n\n');
       }
 
       if (!task) {

@@ -11,6 +11,13 @@ export {
 } from './dossier.js';
 
 export {
+  resolveWorkspaceRoot,
+  type ResolveWorkspaceRootOptions,
+  type WorkspaceRoot,
+  type WorkspaceRootDetectedBy,
+} from './resolve-root.js';
+
+export {
   DEFAULT_ANALYZE_WORKSPACE_OPTIONS,
   type AnalyzeWorkspaceOptions,
   type ProjectManifest,
