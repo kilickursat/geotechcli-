@@ -47,7 +47,7 @@ function toPosixRelative(rootPath: string, absolutePath: string): string {
 
 function shouldIgnoreEntry(name: string): boolean {
   if (IGNORED_FILES.has(name)) return true;
-  if (name.startsWith('.') && name !== '.geotech') return true;
+  if (name.startsWith('.')) return true;
   return false;
 }
 

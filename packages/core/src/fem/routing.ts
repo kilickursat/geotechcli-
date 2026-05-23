@@ -32,7 +32,14 @@ export interface FemCapability {
   visualizationFields: string[];
   reviewGates: string[];
   limitations: string[];
+  /**
+   * Safest next user command for this route. For implemented routes this points
+   * to draft creation, not solver/demo execution.
+   */
   command?: string;
+  demoCommand?: string;
+  draftCommandTemplate?: string;
+  runCommandTemplate?: string;
 }
 
 export interface PrepareFemAnalysisCaseDraftInput {
@@ -84,7 +91,7 @@ export interface FemAnalysisCaseDraft {
   capability: FemCapability;
   implemented: boolean;
   canAutoProceed: false;
-  recommendedAction: 'run-experimental-demo' | 'collect-inputs' | 'contract-only';
+  recommendedAction: 'run-reviewed-case' | 'collect-inputs' | 'contract-only';
   missingUserInputs: string[];
   assumptions: FemAssumption[];
   reviewGates: string[];
@@ -107,7 +114,10 @@ const CAPABILITIES: FemCapability[] = [
     visualizationFields: ['vertical displacement', 'settlement basin', 'mesh wireframe', 'load patch'],
     reviewGates: ['experimental-only', 'linear-elastic-only', 'groundwater-not-coupled', 'not-design-calculation'],
     limitations: ['No plasticity, consolidation, construction staging, or pore pressure coupling.'],
-    command: 'geotech fem demo raft --experimental',
+    command: 'geotech fem draft foundation-settlement --input <json> --case-output <analysis_case.json>',
+    demoCommand: 'geotech fem demo raft --experimental',
+    draftCommandTemplate: 'geotech fem draft foundation-settlement --input <json> --case-output <analysis_case.json>',
+    runCommandTemplate: 'geotech fem run <analysis_case.json> --experimental',
   },
   {
     objective: 'excavation-deformation',
@@ -121,7 +131,10 @@ const CAPABILITIES: FemCapability[] = [
     visualizationFields: ['surface settlement', 'horizontal displacement', 'wall deflection proxy', 'stage slider', 'support overlays'],
     reviewGates: ['experimental-only', 'unsupported-wall-design', 'groundwater-coupling-required-review', 'not-basal-heave-verification', 'not-design-calculation'],
     limitations: ['No wall design, basal heave design, seepage, consolidation, or nonlinear soil response.'],
-    command: 'geotech fem demo excavation --experimental',
+    command: 'geotech fem draft excavation-deformation --input <json> --case-output <analysis_case.json>',
+    demoCommand: 'geotech fem demo excavation --experimental',
+    draftCommandTemplate: 'geotech fem draft excavation-deformation --input <json> --case-output <analysis_case.json>',
+    runCommandTemplate: 'geotech fem run <analysis_case.json> --experimental',
   },
   {
     objective: 'shaft-deformation',
@@ -148,7 +161,10 @@ const CAPABILITIES: FemCapability[] = [
     visualizationFields: ['settlement trough', 'building influence corridor', 'alignment overlay'],
     reviewGates: ['experimental-only', 'volume-loss-assumption-review', 'not-fem-solver', 'not-design-calculation'],
     limitations: ['Empirical preview only; not a tunnel lining or ground loss design model.'],
-    command: 'geotech fem demo tunnel --experimental',
+    command: 'geotech fem draft tunnel-volume-loss-settlement --input <json> --case-output <analysis_case.json>',
+    demoCommand: 'geotech fem demo tunnel --experimental',
+    draftCommandTemplate: 'geotech fem draft tunnel-volume-loss-settlement --input <json> --case-output <analysis_case.json>',
+    runCommandTemplate: 'geotech fem run <analysis_case.json> --experimental',
   },
   {
     objective: 'pile-group-elastic-interaction',
@@ -177,6 +193,14 @@ function requirePositive(value: unknown, label: string, missing: string[]): numb
 
 function roundStageDepth(value: number): number {
   return Math.round(value * 10) / 10;
+}
+
+function draftCommandFor(capability: FemCapability): string | undefined {
+  return capability.draftCommandTemplate ?? capability.command;
+}
+
+function runCommandFor(capability: FemCapability): string | undefined {
+  return capability.runCommandTemplate;
 }
 
 export function listFemCapabilities(objective?: FemRouteObjective): FemCapability[] {
@@ -267,7 +291,7 @@ export function prepareFemAnalysisCaseDraft(input: PrepareFemAnalysisCaseDraftIn
         assumptions: [],
         reviewGates: ['missing-user-inputs', ...capability.reviewGates],
         evidenceRefs: input.evidenceRefs ?? [],
-        recommendedCommand: capability.command,
+        recommendedCommand: draftCommandFor(capability),
       };
     }
 
@@ -323,14 +347,14 @@ export function prepareFemAnalysisCaseDraft(input: PrepareFemAnalysisCaseDraftIn
       capability,
       implemented: true,
       canAutoProceed: false,
-      recommendedAction: 'run-experimental-demo',
+      recommendedAction: 'run-reviewed-case',
       missingUserInputs: [],
       assumptions: analysisCase.assumptions,
       reviewGates: [...new Set(reviewGates)],
       evidenceRefs: analysisCase.evidenceRefs,
       analysisCase,
       validation,
-      recommendedCommand: capability.command,
+      recommendedCommand: runCommandFor(capability),
     };
   }
 
@@ -356,7 +380,7 @@ export function prepareFemAnalysisCaseDraft(input: PrepareFemAnalysisCaseDraftIn
         assumptions: [],
         reviewGates: ['missing-user-inputs', ...capability.reviewGates],
         evidenceRefs: input.evidenceRefs ?? [],
-        recommendedCommand: capability.command,
+        recommendedCommand: draftCommandFor(capability),
       };
     }
 
@@ -422,14 +446,14 @@ export function prepareFemAnalysisCaseDraft(input: PrepareFemAnalysisCaseDraftIn
       capability,
       implemented: true,
       canAutoProceed: false,
-      recommendedAction: 'run-experimental-demo',
+      recommendedAction: 'run-reviewed-case',
       missingUserInputs: [],
       assumptions: analysisCase.assumptions,
       reviewGates: [...new Set(reviewGates)],
       evidenceRefs: analysisCase.evidenceRefs,
       analysisCase,
       validation,
-      recommendedCommand: capability.command,
+      recommendedCommand: runCommandFor(capability),
     };
   }
 
@@ -454,7 +478,7 @@ export function prepareFemAnalysisCaseDraft(input: PrepareFemAnalysisCaseDraftIn
       assumptions: [],
       reviewGates: ['missing-user-inputs', ...capability.reviewGates],
       evidenceRefs: input.evidenceRefs ?? [],
-      recommendedCommand: capability.command,
+      recommendedCommand: draftCommandFor(capability),
     };
   }
 
@@ -502,13 +526,13 @@ export function prepareFemAnalysisCaseDraft(input: PrepareFemAnalysisCaseDraftIn
     capability,
     implemented: true,
     canAutoProceed: false,
-    recommendedAction: 'run-experimental-demo',
+    recommendedAction: 'run-reviewed-case',
     missingUserInputs: [],
     assumptions: analysisCase.assumptions,
     reviewGates: [...new Set(reviewGates)],
     evidenceRefs: analysisCase.evidenceRefs,
     analysisCase,
     validation,
-    recommendedCommand: capability.command,
+    recommendedCommand: runCommandFor(capability),
   };
 }

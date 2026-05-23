@@ -250,7 +250,11 @@ export function buildLLMConfig(): import('../llm/types.js').LLMConfig & { timeou
   // Resolve model overrides
   let modelId = config.llm.model || undefined;
   if (provider === 'openai-compatible') {
-    modelId = preferEnv(process.env.OPENAI_COMPATIBLE_MODEL_ID, config.llm.model) || undefined;
+    modelId = preferEnv(
+      process.env.OPENAI_COMPATIBLE_MODEL,
+      process.env.OPENAI_COMPATIBLE_MODEL_ID,
+      config.llm.model,
+    ) || undefined;
   }
 
   return {

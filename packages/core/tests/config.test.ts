@@ -13,6 +13,8 @@ describe('hosted-beta config defaults', () => {
   let previousSkillsFlag: string | undefined;
   let previousZhipuApiKey: string | undefined;
   let previousZhipuBaseUrl: string | undefined;
+  let previousOpenAICompatibleModel: string | undefined;
+  let previousOpenAICompatibleModelId: string | undefined;
 
   beforeEach(() => {
     previousConfigDir = process.env.GEOTECHCLI_CONFIG_DIR;
@@ -21,12 +23,16 @@ describe('hosted-beta config defaults', () => {
     previousSkillsFlag = process.env.GEOTECHCLI_ENABLE_SKILLS;
     previousZhipuApiKey = process.env.ZHIPU_API_KEY;
     previousZhipuBaseUrl = process.env.ZHIPU_API_BASE_URL;
+    previousOpenAICompatibleModel = process.env.OPENAI_COMPATIBLE_MODEL;
+    previousOpenAICompatibleModelId = process.env.OPENAI_COMPATIBLE_MODEL_ID;
     configDir = mkdtempSync(join(tmpdir(), 'geotechcli-config-'));
     process.env.GEOTECHCLI_CONFIG_DIR = configDir;
     delete process.env.GEOTECHCLI_PROXY_URL;
     delete process.env.GEOTECHCLI_ENABLE_SKILLS;
     delete process.env.ZHIPU_API_KEY;
     delete process.env.ZHIPU_API_BASE_URL;
+    delete process.env.OPENAI_COMPATIBLE_MODEL;
+    delete process.env.OPENAI_COMPATIBLE_MODEL_ID;
   });
 
   afterEach(() => {
@@ -64,6 +70,18 @@ describe('hosted-beta config defaults', () => {
       delete process.env.ZHIPU_API_BASE_URL;
     } else {
       process.env.ZHIPU_API_BASE_URL = previousZhipuBaseUrl;
+    }
+
+    if (previousOpenAICompatibleModel === undefined) {
+      delete process.env.OPENAI_COMPATIBLE_MODEL;
+    } else {
+      process.env.OPENAI_COMPATIBLE_MODEL = previousOpenAICompatibleModel;
+    }
+
+    if (previousOpenAICompatibleModelId === undefined) {
+      delete process.env.OPENAI_COMPATIBLE_MODEL_ID;
+    } else {
+      process.env.OPENAI_COMPATIBLE_MODEL_ID = previousOpenAICompatibleModelId;
     }
 
     rmSync(configDir, { recursive: true, force: true });
@@ -202,5 +220,34 @@ describe('hosted-beta config defaults', () => {
     expect(llmConfig.baseUrl).toBe('https://api.z.ai/api/paas/v4');
     expect(llmConfig.modelId).toBe('glm-5.1');
     expect(llmConfig.visionModelId).toBe('glm-5v-turbo');
+  });
+
+  it('uses OPENAI_COMPATIBLE_MODEL as the documented model env and keeps MODEL_ID as a fallback alias', () => {
+    process.env.OPENAI_COMPATIBLE_MODEL = 'openrouter/free-model';
+    process.env.OPENAI_COMPATIBLE_MODEL_ID = 'legacy/model-id';
+
+    saveConfig({
+      llm: {
+        provider: 'openai-compatible',
+        api_key: '',
+        model: 'config-model',
+        vision_model: '',
+        base_url: 'https://openrouter.ai/api/v1',
+        timeout: 60000,
+      },
+      auth: {
+        api_key: '',
+        tier: 'free',
+      },
+      cli: {
+        color: true,
+        verbose: false,
+      },
+    });
+
+    expect(buildLLMConfig().modelId).toBe('openrouter/free-model');
+
+    delete process.env.OPENAI_COMPATIBLE_MODEL;
+    expect(buildLLMConfig().modelId).toBe('legacy/model-id');
   });
 });

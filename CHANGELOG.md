@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.69] - 2026-05-23
+
+### Project-Aware Agent Harness
+
+- Added the first project-aware `geotech agent` harness slice: no-prompt and `--plan-only` runs now scan the workspace deterministically, write `.geotech` project state, compute workflow readiness, and show next workflow options before any LLM call.
+- Added `geotech agent --task data-quality|ground-model|risk-analysis|anomaly-detection|recommendations|visualization --workspace <dir>` so selected project workflows route through the provider-neutral workspace manifest and GroundModel/verifier context.
+- Updated FEM route recommendations so completed drafts point to reviewed `geotech fem run <analysis_case.json> --experimental` execution while missing-input states continue to point to `geotech fem draft ... --case-output`.
+- Fixed the OpenAI-compatible BYOK environment contract so `OPENAI_COMPATIBLE_MODEL` is the documented primary model variable and `OPENAI_COMPATIBLE_MODEL_ID` remains a backward-compatible alias.
+
 ## [0.4.68] - 2026-05-21
 
 ### npm Publish Path Hotfix

@@ -1,4 +1,7 @@
 import { Command } from 'commander';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const coreMocks = vi.hoisted(() => ({
@@ -99,6 +102,8 @@ function makeWorkspaceManifest() {
 }
 
 describe('agent command skill opt-in', () => {
+  let tempDirs: string[] = [];
+
   beforeEach(() => {
     coreMocks.buildLLMConfig.mockReturnValue({
       provider: 'hosted-beta',
@@ -113,6 +118,10 @@ describe('agent command skill opt-in', () => {
   });
 
   afterEach(() => {
+    for (const dir of tempDirs) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+    tempDirs = [];
     vi.restoreAllMocks();
     vi.clearAllMocks();
   });
@@ -169,5 +178,53 @@ describe('agent command skill opt-in', () => {
       expect.any(Function),
       expect.objectContaining({ workspace: expect.any(Object) }),
     );
+  });
+
+  it('runs project-aware plan-only discovery without calling the LLM', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'geotech-agent-project-'));
+    tempDirs.push(workspace);
+    const program = new Command();
+    registerAgentCommand(program);
+
+    await program.parseAsync(['agent', '--workspace', workspace, '--plan-only', '--json'], { from: 'user' });
+
+    expect(coreMocks.analyzeWorkspace).toHaveBeenCalledWith(workspace, {
+      includeCalculationInputDrafts: true,
+    });
+    expect(coreMocks.runAgent).not.toHaveBeenCalled();
+    expect(coreMocks.runSwarm).not.toHaveBeenCalled();
+    expect(existsSync(join(workspace, '.geotech', 'manifest.json'))).toBe(true);
+    expect(existsSync(join(workspace, '.geotech', 'context', 'readiness.json'))).toBe(true);
+    const runId = readdirSync(join(workspace, '.geotech', 'runs'))[0];
+    const plan = JSON.parse(readFileSync(join(workspace, '.geotech', 'runs', runId, 'plan.json'), 'utf-8'));
+    expect(plan.executionMode).toBe('discovery-only');
+  });
+
+  it('uses project-aware task mode as a workspace-backed agent prompt', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'geotech-agent-task-'));
+    tempDirs.push(workspace);
+    const program = new Command();
+    registerAgentCommand(program);
+
+    await program.parseAsync([
+      'agent',
+      '--workspace',
+      workspace,
+      '--task',
+      'risk-analysis',
+      '--json',
+    ], { from: 'user' });
+
+    expect(coreMocks.analyzeWorkspace).toHaveBeenCalledWith(workspace, {
+      includeCalculationInputDrafts: true,
+    });
+    expect(coreMocks.runAgent).toHaveBeenCalledWith(
+      expect.stringContaining('Selected task: risk-analysis'),
+      expect.objectContaining({ skillsEnabled: false }),
+      expect.any(Function),
+      expect.objectContaining({ workspace: expect.any(Object) }),
+    );
+    const geotechPlanDirs = join(workspace, '.geotech', 'runs');
+    expect(existsSync(geotechPlanDirs)).toBe(true);
   });
 });

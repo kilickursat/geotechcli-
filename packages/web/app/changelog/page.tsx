@@ -5,8 +5,19 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 const releases = [
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-05-21',
+    date: '2026-05-23',
     tag: `${GEOTECHCLI_VERSION} Release`,
+    changes: [
+      { type: 'feat', text: 'Added project-aware geotech agent discovery: --plan-only and no-prompt runs scan the workspace, write .geotech project state, and show workflow readiness before any LLM call' },
+      { type: 'feat', text: 'Added geotech agent --task data-quality|ground-model|risk-analysis|anomaly-detection|recommendations|visualization --workspace <dir> for selected project workflows over the provider-neutral manifest context' },
+      { type: 'fix', text: 'Updated FEM draft recommendations so reviewed cases point to geotech fem run <analysis_case.json> --experimental instead of stale built-in demo commands' },
+      { type: 'fix', text: 'Aligned OpenAI-compatible BYOK config with docs by using OPENAI_COMPATIBLE_MODEL as primary and OPENAI_COMPATIBLE_MODEL_ID as a fallback alias' },
+    ],
+  },
+  {
+    version: '0.4.68',
+    date: '2026-05-21',
+    tag: '0.4.68 Release',
     changes: [
       { type: 'fix', text: 'Fixed the sequential npm publish script so each workspace publishes from its package directory instead of an ambiguous package spec' },
       { type: 'fix', text: 'Normalized published package repository metadata with explicit GitHub URLs and workspace directories for @geotechcli/core and geotechcli' },

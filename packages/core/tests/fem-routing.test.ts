@@ -28,9 +28,12 @@ describe('FEM routing contract', () => {
     ]);
     expect(capabilities.find((capability) => capability.objective === 'foundation-settlement')?.status).toBe('implemented-demo');
     expect(capabilities.find((capability) => capability.objective === 'excavation-deformation')?.status).toBe('implemented-demo');
-    expect(capabilities.find((capability) => capability.objective === 'excavation-deformation')?.command).toBe('geotech fem demo excavation --experimental');
+    expect(capabilities.find((capability) => capability.objective === 'excavation-deformation')?.command).toBe('geotech fem draft excavation-deformation --input <json> --case-output <analysis_case.json>');
+    expect(capabilities.find((capability) => capability.objective === 'excavation-deformation')?.demoCommand).toBe('geotech fem demo excavation --experimental');
+    expect(capabilities.find((capability) => capability.objective === 'excavation-deformation')?.runCommandTemplate).toBe('geotech fem run <analysis_case.json> --experimental');
     expect(capabilities.find((capability) => capability.objective === 'tunnel-volume-loss-settlement')?.status).toBe('implemented-demo');
-    expect(capabilities.find((capability) => capability.objective === 'tunnel-volume-loss-settlement')?.command).toBe('geotech fem demo tunnel --experimental');
+    expect(capabilities.find((capability) => capability.objective === 'tunnel-volume-loss-settlement')?.command).toBe('geotech fem draft tunnel-volume-loss-settlement --input <json> --case-output <analysis_case.json>');
+    expect(capabilities.find((capability) => capability.objective === 'tunnel-volume-loss-settlement')?.demoCommand).toBe('geotech fem demo tunnel --experimental');
     expect(capabilities.find((capability) => capability.objective === 'tunnel-volume-loss-settlement')?.reviewGates).toContain('not-fem-solver');
   });
 
@@ -63,7 +66,8 @@ describe('FEM routing contract', () => {
       evidenceRefs: [{ id: 'ev-es-1', source: 'GroundModel', page: 12 }],
     });
 
-    expect(draft.recommendedAction).toBe('run-experimental-demo');
+    expect(draft.recommendedAction).toBe('run-reviewed-case');
+    expect(draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental');
     expect(draft.canAutoProceed).toBe(false);
     expect(draft.analysisCase?.geometry.raft.lengthM).toBe(10);
     expect(draft.analysisCase?.loads[0]?.pressureKpa).toBe(180);
@@ -104,7 +108,8 @@ describe('FEM routing contract', () => {
     });
 
     expect(draft.implemented).toBe(true);
-    expect(draft.recommendedAction).toBe('run-experimental-demo');
+    expect(draft.recommendedAction).toBe('run-reviewed-case');
+    expect(draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental');
     expect(draft.canAutoProceed).toBe(false);
     expect(draft.analysisCase?.objective).toBe('excavation_deformation');
     expect(draft.analysisCase?.geometry.excavation?.finalDepthM).toBe(9);
@@ -146,7 +151,7 @@ describe('FEM routing contract', () => {
     });
 
     expect(draft.implemented).toBe(true);
-    expect(draft.recommendedAction).toBe('run-experimental-demo');
+    expect(draft.recommendedAction).toBe('run-reviewed-case');
     expect(draft.canAutoProceed).toBe(false);
     expect(draft.analysisCase?.objective).toBe('tunnel_volume_loss_settlement');
     expect(draft.analysisCase?.geometry.tunnel?.diameterM).toBe(6.5);
@@ -155,7 +160,7 @@ describe('FEM routing contract', () => {
     expect(draft.validation?.status).toBe('review');
     expect(draft.reviewGates).toContain('not-fem-solver');
     expect(draft.reviewGates).toContain('tunnel.empirical-preview');
-    expect(draft.recommendedCommand).toBe('geotech fem demo tunnel --experimental');
+    expect(draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental');
   });
 
   it('keeps non-implemented FEM objectives as contract-only routes', () => {

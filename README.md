@@ -87,6 +87,12 @@ geotech skill show shallow-foundation-option-screening
 # AI: Terzaghi agent analysis
 geotech agent "evaluate foundation options for a 12-story building on soft clay"
 
+# AI: project-aware discovery from the current folder, no model call
+geotech agent --plan-only
+
+# AI: run a selected project-aware workflow with workspace evidence attached
+geotech agent --task risk-analysis --workspace .
+
 # AI: attach a local GroundModel summary to the agent task
 geotech agent "analyze this folder and prepare a foundation screening report" --workspace .
 
@@ -142,6 +148,23 @@ geotech fem agent "review FEM readiness for this site" --workspace ./site-data -
 Current scope: foundation-settlement, staged-excavation deformation, and tunnel volume-loss settlement drafts/demos, explicit draft inputs, reviewed case-file execution through `geotech fem run`, workspace evidence prefill for foundation/excavation material and groundwater assumptions, fixed built-in demo geometry, deterministic result manifests, and WebGL/Canvas visualization. The draft command emits editable analysis cases; the run command executes a reviewed `analysis_case.json` through deterministic built-in preview backends; the demo commands execute only the built-in experimental examples. Raft and excavation previews use deterministic elastic screening fields; the tunnel preview uses an empirical Gaussian settlement trough from prescribed volume loss and trough-width factor. The excavation preview adds staged field controls for surface settlement, horizontal displacement, and wall-deflection proxy. FEM manifests also include optional `resultFields`, `steps`, and `datasets` metadata so future shaft, pile-group, embankment, seepage, and slope previews can share the same validation and viewer contract. These commands are not production FEM solvers, wall-design checks, tunnel lining checks, face-stability checks, basal-heave checks, seepage analyses, or design calculations; they exist to validate the agentic contract, result schema, reviewer warnings, and browser artifact path before report-ingested GroundModel routing is expanded.
 
 Agents and swarm runs now see FEM through deterministic routing tools, not prompt-only instructions. `geotech fem agent` is a narrower LLM brain for FEM planning: it may only list FEM capabilities, prepare review-gated case drafts, and validate FEM cases. With `--workspace`, it receives FEM-only GroundModel readiness context and the same evidence-prefill contract as `geotech fem draft` for supported workspace draft routes. It cannot run solvers, write WebGL artifacts, invoke `geotech fem run`, or invent FEM displacement/reaction values. In general swarm mode, simulation-stage FEM/calculation tool outputs are threaded into reviewer prompts as deterministic tool context so RiskReviewer validation does not depend on a model restating every case detail in prose. Blocked validation is returned as inspectable review data so reviewer agents can reject unsafe cases with specific blocker codes. Draft and planned routes still include shaft deformation and pile-group interaction as contract-aware future targets until deterministic engines are added.
+
+## Project-Aware Agent Harness
+
+`geotech agent --plan-only` is the low-cost project-aware entry point. It scans the selected workspace with the deterministic analyzer, writes `.geotech/project.json`, `.geotech/manifest.json`, `.geotech/context/readiness.json`, `.geotech/context/project_summary.md`, and `.geotech/runs/<runId>/plan.json`, then shows which workflows are ready before any LLM call is made.
+
+```bash
+cd ./my-geotech-project
+geotech agent --plan-only
+geotech agent --task data-quality --workspace .
+geotech agent --task ground-model --workspace .
+geotech agent --task risk-analysis --workspace .
+geotech agent --task anomaly-detection --workspace .
+geotech agent --task recommendations --workspace .
+geotech agent --task visualization --workspace .
+```
+
+No-prompt `geotech agent` enters the same discovery-first mode and prints the next workflow choices instead of behaving like generic chat. Existing prompted usage such as `geotech agent "evaluate foundation options"` remains available; add `--workspace .` when you want the LLM to receive the deterministic project manifest and GroundModel/verifier summary. Each discovery run also writes `.geotech/runs/<runId>/trace.json`; task runs currently use the existing workspace-backed agent path, with fuller intent/workflow traces planned next.
 
 ## Interactive Visualization
 
@@ -221,7 +244,7 @@ These commands now use the hosted beta GLM path by default.
 | `geotech ingest` | Geotechnical PDF/image ingest for borehole logs and broader report intelligence, with live PDF progress and optional browser HTML report or benchmark output |
 | `geotech ai-classify` | Natural language soil description to USCS and properties |
 | `geotech gbr chat` | GBR document question answering |
-| `geotech agent` | Terzaghi single-agent reasoning by default; optional evidence-bound `--workspace`, role-based `--swarm` orchestration, skill-enabled sessions, and project memory |
+| `geotech agent` | Project-aware discovery with `--plan-only`/`--task`, Terzaghi single-agent reasoning for prompted tasks, optional evidence-bound `--workspace`, role-based `--swarm`, skills, and project memory |
 | `geotech chat` | Interactive AI session with optional project memory |
 | `geotech report` | AI-generated geotechnical report drafting |
 

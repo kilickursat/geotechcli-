@@ -338,9 +338,20 @@ Hosted-beta reliability note: geotechnical PDFs above the best-result window are
   {
     id: 'agent',
     title: 'geotech agent (AI)',
-    content: `Agentic geotechnical reasoning. The default Terzaghi agent screens underspecified requests before spending hosted-beta time, can execute deterministic tools when evidence is present, can receive an evidence-bound workspace GroundModel with --workspace, and can reuse persistent project memory with --project. Use --swarm for a role-based specialist plan over workspace evidence, standards readiness, calculation input drafts, skills, and review gates.
+    content: `Agentic geotechnical reasoning. No-prompt and --plan-only runs now start with project-aware discovery: the CLI scans the current or explicit workspace, writes .geotech project state, computes workflow readiness, and asks which project workflow should run before spending hosted-beta time. Prompted Terzaghi agent runs still support direct questions, deterministic tools, evidence-bound workspace GroundModel context with --workspace, persistent project memory with --project, and --swarm for role-based specialist planning over workspace evidence, standards readiness, calculation input drafts, skills, and review gates.
 
 \`\`\`bash
+# Project-aware discovery with no LLM call
+geotech agent --plan-only
+
+# Run a selected project-aware workflow with workspace evidence
+geotech agent --task data-quality --workspace .
+geotech agent --task ground-model --workspace .
+geotech agent --task risk-analysis --workspace .
+geotech agent --task anomaly-detection --workspace .
+geotech agent --task recommendations --workspace .
+geotech agent --task visualization --workspace .
+
 # Default Terzaghi agent
 geotech agent "evaluate TBM selection for 6.5m tunnel in mixed face conditions with 3 bar water pressure"
 
@@ -365,7 +376,7 @@ geotech agent "check bearing and settlement for the current foundation concept" 
 geotech agent "analyze slope stability for 15m cut" --output slope-report.md
 \`\`\`
 
-Strong-beta reliability note: Terzaghi single-agent mode and optional role-based swarm mode share the same under-specified hosted-beta intake screen, the same first-turn hosted-beta fallback behavior, and the same case-file deliverable tool bootstrap for report and export follow-on workflows. Swarm mode prepares WorkspaceScout, DataEngineer, GroundModeler, StandardsChecker, DesignEngineer, RiskReviewer, and ReportEngineer ownership before specialist prompts run, and prompt-only or unapproved skills stay out of execution while remaining visible in the audit context.`,
+Strong-beta reliability note: project-aware discovery writes .geotech/project.json, .geotech/manifest.json, .geotech/context/readiness.json, .geotech/context/project_summary.md, .geotech/runs/<runId>/plan.json, and .geotech/runs/<runId>/trace.json from deterministic workspace analysis before any LLM call. Task mode currently routes selected project workflows into the existing workspace-backed agent path; full intent/workflow traces are the next harness slice. Terzaghi single-agent mode and optional role-based swarm mode share the same under-specified hosted-beta intake screen, the same first-turn hosted-beta fallback behavior, and the same case-file deliverable tool bootstrap for report and export follow-on workflows. Swarm mode prepares WorkspaceScout, DataEngineer, GroundModeler, StandardsChecker, DesignEngineer, RiskReviewer, and ReportEngineer ownership before specialist prompts run, and prompt-only or unapproved skills stay out of execution while remaining visible in the audit context.`,
   },
   {
     id: 'export',

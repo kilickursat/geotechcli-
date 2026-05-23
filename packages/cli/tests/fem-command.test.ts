@@ -337,7 +337,8 @@ describe('registerFemCommand', () => {
 
     const payload = JSON.parse(collectLogText(logSpy).trim());
     const caseFile = JSON.parse(await readFile(casePath, 'utf-8'));
-    expect(payload.draft.recommendedAction).toBe('run-experimental-demo');
+    expect(payload.draft.recommendedAction).toBe('run-reviewed-case');
+    expect(payload.draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental');
     expect(payload.draft.analysisCase.geometry.raft.lengthM).toBe(11);
     expect(payload.draft.analysisCase.materials[0].elasticModulusKpa).toBe(25_000);
     expect(payload.draft.analysisCase.groundwater.depthM).toBe(2.1);
@@ -382,7 +383,8 @@ describe('registerFemCommand', () => {
     const draftEnvelope = JSON.parse(await readFile(draftPath, 'utf-8'));
     const caseFile = JSON.parse(await readFile(casePath, 'utf-8'));
 
-    expect(payload.draft.recommendedAction).toBe('run-experimental-demo');
+    expect(payload.draft.recommendedAction).toBe('run-reviewed-case');
+    expect(payload.draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental');
     expect(payload.draft.canAutoProceed).toBe(false);
     expect(payload.draft.analysisCase.geometry.raft.lengthM).toBe(10);
     expect(payload.draft.analysisCase.loads[0].pressureKpa).toBe(160);
@@ -433,7 +435,8 @@ describe('registerFemCommand', () => {
 
     const payload = JSON.parse(collectLogText(logSpy).trim());
     expect(payload.objective).toBe('excavation-deformation');
-    expect(payload.draft.recommendedAction).toBe('run-experimental-demo');
+    expect(payload.draft.recommendedAction).toBe('run-reviewed-case');
+    expect(payload.draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental');
     expect(payload.draft.canAutoProceed).toBe(false);
     expect(payload.draft.analysisCase.objective).toBe('excavation_deformation');
     expect(payload.draft.analysisCase.geometry.excavation.finalDepthM).toBe(9);
@@ -468,7 +471,8 @@ describe('registerFemCommand', () => {
 
     const payload = JSON.parse(collectLogText(logSpy).trim());
     expect(payload.objective).toBe('tunnel-volume-loss-settlement');
-    expect(payload.draft.recommendedAction).toBe('run-experimental-demo');
+    expect(payload.draft.recommendedAction).toBe('run-reviewed-case');
+    expect(payload.draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental');
     expect(payload.draft.canAutoProceed).toBe(false);
     expect(payload.draft.analysisCase.objective).toBe('tunnel_volume_loss_settlement');
     expect(payload.draft.analysisCase.geometry.tunnel.diameterM).toBe(6.5);

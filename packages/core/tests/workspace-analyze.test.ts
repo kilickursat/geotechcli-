@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { zipSync, strToU8 } from 'fflate';
@@ -77,6 +77,27 @@ describe('workspace analysis', () => {
     const sptFile = manifest.files.find((file) => file.path === 'spt-profile.csv');
     expect(sptFile?.schemas?.[0].detected.sptColumns).toContain('sptN');
     expect(sptFile?.schemas?.[0].detected.depthColumns).toContain('depth_m');
+  });
+
+  it('skips local .geotech project state so agent reruns do not ingest prior plans', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-workspace-state-'));
+    tempDirs.push(dir);
+
+    await writeFile(
+      join(dir, 'spt-profile.csv'),
+      [
+        'borehole_id,depth_m,sptN',
+        'BH-01,1.5,12',
+      ].join('\n'),
+      'utf-8',
+    );
+    await mkdir(join(dir, '.geotech'), { recursive: true });
+    await writeFile(join(dir, '.geotech', 'manifest.json'), '{"schemaVersion":"old"}', 'utf-8');
+
+    const manifest = await analyzeWorkspace(dir);
+
+    expect(manifest.files.map((file) => file.path)).toEqual(['spt-profile.csv']);
+    expect(manifest.summary.supportedFiles).toBe(1);
   });
 
   it('propagates opt-in calculation input drafts through workspace analysis', async () => {

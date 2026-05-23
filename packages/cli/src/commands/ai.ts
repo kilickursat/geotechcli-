@@ -1,5 +1,6 @@
 import { Command } from 'commander';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join, relative, resolve } from 'node:path';
 import chalk from 'chalk';
 import ora from 'ora';
 import {
@@ -120,6 +121,372 @@ function buildAgentRuntimeContext(
         }
       : {}),
   };
+}
+
+type ProjectAgentTask =
+  | 'data-quality'
+  | 'ground-model'
+  | 'risk-analysis'
+  | 'anomaly-detection'
+  | 'recommendations'
+  | 'visualization'
+  | 'custom-question';
+
+interface ProjectAwarePlan {
+  schemaVersion: 'geotech.project-agent-plan.v1';
+  runId: string;
+  workspace: {
+    rootPath: string;
+    detectedBy: 'explicit_workspace_arg' | 'cwd';
+    trustLevel: 'explicit' | 'inferred';
+    readScope: 'root_only';
+    writeScope: 'geotech_output_only';
+  };
+  project: {
+    name: string;
+    generatedAt: string;
+  };
+  executionMode: 'discovery-only' | 'workspace-backed-agent';
+  summary: ProjectManifest['summary'];
+  readiness: Array<{
+    task: ProjectAgentTask;
+    label: string;
+    status: 'ready' | 'partially_ready' | 'blocked';
+    reasons: string[];
+    missing: string[];
+  }>;
+  recommendedNextActions: string[];
+  artifacts: {
+    project: string;
+    manifest: string;
+    readiness: string;
+    summary: string;
+    plan: string;
+    trace: string;
+  };
+  warnings: string[];
+}
+
+const PROJECT_AGENT_TASKS: Array<{ task: ProjectAgentTask; label: string; prompt: string }> = [
+  {
+    task: 'data-quality',
+    label: 'Data inventory and quality report',
+    prompt: 'Prepare a project data inventory and quality report from the attached workspace manifest. Focus on missing data, conflicts, duplicate sources, and review gates.',
+  },
+  {
+    task: 'ground-model',
+    label: 'Ground-model interpretation',
+    prompt: 'Interpret the evidence-bound GroundModel from the attached workspace manifest. Summarize strata, groundwater, uncertainty, and what engineering workflows are ready.',
+  },
+  {
+    task: 'risk-analysis',
+    label: 'Risk analysis',
+    prompt: 'Prepare a geotechnical risk analysis from the attached workspace manifest. Separate evidence-backed risks from missing-data risks and include review actions.',
+  },
+  {
+    task: 'anomaly-detection',
+    label: 'Anomaly detection / data conflicts',
+    prompt: 'Find likely geotechnical data anomalies and cross-source conflicts from the attached workspace manifest. Prioritize boreholes, depths, coordinates, groundwater, SPT, and lab values.',
+  },
+  {
+    task: 'recommendations',
+    label: 'Preliminary recommendations',
+    prompt: 'Prepare preliminary geotechnical recommendations from the attached workspace manifest. Clearly mark what is evidence-backed, assumption-bound, or blocked by missing inputs.',
+  },
+  {
+    task: 'visualization',
+    label: 'Visualizations and maps',
+    prompt: 'Plan deterministic geotechnical visualizations from the attached workspace manifest. Include maps, strip logs, SPT-depth plots, lab charts, groundwater plots, and blocked CRS/data gates.',
+  },
+  {
+    task: 'custom-question',
+    label: 'Ask a custom project question',
+    prompt: 'Answer the custom project question using the attached workspace manifest, deterministic tools, source evidence, and review gates.',
+  },
+];
+
+function safeProjectName(rootPath: string): string {
+  const parts = rootPath.replace(/\\/g, '/').split('/').filter(Boolean);
+  return parts.at(-1) ?? 'geotech-project';
+}
+
+function nowRunId(): string {
+  return `run_${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}`;
+}
+
+function normalizeProjectTask(value: unknown): ProjectAgentTask | undefined {
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim().toLowerCase().replaceAll('_', '-');
+  switch (normalized) {
+    case 'data-quality':
+    case 'quality':
+    case 'inventory':
+      return 'data-quality';
+    case 'ground-model':
+    case 'interpretation':
+    case 'ground-model-interpretation':
+      return 'ground-model';
+    case 'risk':
+    case 'risk-analysis':
+      return 'risk-analysis';
+    case 'anomaly':
+    case 'anomaly-detection':
+    case 'conflict-detection':
+      return 'anomaly-detection';
+    case 'recommendation':
+    case 'recommendations':
+    case 'foundation-recommendations':
+      return 'recommendations';
+    case 'viz':
+    case 'visualize':
+    case 'visualization':
+    case 'visualizations':
+      return 'visualization';
+    case 'custom':
+    case 'custom-question':
+      return 'custom-question';
+    default:
+      return undefined;
+  }
+}
+
+function projectTaskPrompt(task: ProjectAgentTask, customPrompt?: string): string {
+  const taskDef = PROJECT_AGENT_TASKS.find((item) => item.task === task) ?? PROJECT_AGENT_TASKS[6];
+  if (task === 'custom-question' && customPrompt?.trim()) {
+    return `Project-aware custom question: ${customPrompt.trim()}`;
+  }
+  return taskDef.prompt;
+}
+
+function projectReadinessFromManifest(manifest: ProjectManifest): ProjectAwarePlan['readiness'] {
+  const hasGroundModel = Boolean(manifest.groundModel && manifest.groundModel.stats.evidenceRefs > 0);
+  const hasCoordinates = Boolean(manifest.groundModel?.map?.points?.length);
+  const hasVerifier = Boolean(manifest.verifier);
+  const calculationWorkflows = manifest.verifier?.calculationReadiness.workflows ?? [];
+  const readyWorkflowCount = calculationWorkflows.filter((workflow) => workflow.status !== 'blocked').length;
+  const verifierMissing = calculationWorkflows.flatMap((workflow) => workflow.missing).slice(0, 8);
+  const supportedFiles = manifest.summary.supportedFiles;
+
+  return [
+    {
+      task: 'data-quality',
+      label: 'Data inventory and quality report',
+      status: supportedFiles > 0 ? 'ready' : 'blocked',
+      reasons: supportedFiles > 0
+        ? [`${supportedFiles} supported project file(s) indexed.`]
+        : ['No supported geotechnical files were indexed.'],
+      missing: supportedFiles > 0 ? [] : ['supported geotechnical files'],
+    },
+    {
+      task: 'ground-model',
+      label: 'Ground-model interpretation',
+      status: hasGroundModel ? 'ready' : supportedFiles > 0 ? 'partially_ready' : 'blocked',
+      reasons: hasGroundModel
+        ? [`GroundModel has ${manifest.groundModel?.stats.boreholes ?? 0} borehole(s), ${manifest.groundModel?.stats.strata ?? 0} strata, and ${manifest.groundModel?.stats.evidenceRefs ?? 0} evidence refs.`]
+        : ['GroundModel evidence is not yet sufficient for interpretation.'],
+      missing: hasGroundModel ? [] : ['borehole/strata evidence'],
+    },
+    {
+      task: 'risk-analysis',
+      label: 'Risk analysis',
+      status: hasVerifier ? 'ready' : hasGroundModel ? 'partially_ready' : 'blocked',
+      reasons: hasVerifier
+        ? [`Verifier status is ${manifest.verifier?.status}; ${manifest.verifier?.summary.review ?? 0} review finding(s), ${manifest.verifier?.summary.blocking ?? 0} blocker(s).`]
+        : ['Risk analysis needs GroundModel verification output.'],
+      missing: hasVerifier ? verifierMissing : ['GroundModel verifier output'],
+    },
+    {
+      task: 'anomaly-detection',
+      label: 'Anomaly detection / data conflicts',
+      status: supportedFiles > 1 ? 'partially_ready' : 'blocked',
+      reasons: supportedFiles > 1
+        ? [`${supportedFiles} supported file(s) can be compared for cross-source conflicts.`]
+        : ['Anomaly detection needs multiple comparable evidence sources.'],
+      missing: supportedFiles > 1 ? [] : ['multiple comparable files'],
+    },
+    {
+      task: 'recommendations',
+      label: 'Preliminary recommendations',
+      status: readyWorkflowCount > 0 ? 'partially_ready' : 'blocked',
+      reasons: readyWorkflowCount > 0
+        ? [`${readyWorkflowCount} calculation workflow(s) are ready or ready with assumptions.`]
+        : ['No downstream calculation workflow is ready yet.'],
+      missing: verifierMissing,
+    },
+    {
+      task: 'visualization',
+      label: 'Visualizations and maps',
+      status: hasCoordinates || hasGroundModel ? 'partially_ready' : 'blocked',
+      reasons: hasCoordinates
+        ? [`${manifest.groundModel?.map?.points?.length ?? 0} mapped GroundModel point(s) available.`]
+        : hasGroundModel
+          ? ['GroundModel evidence can support strip logs and charts; map output still needs coordinate evidence.']
+          : ['Visualization needs GroundModel or coordinate evidence.'],
+      missing: hasCoordinates ? [] : ['validated coordinates / CRS evidence'],
+    },
+  ];
+}
+
+function renderProjectSummaryMarkdown(plan: ProjectAwarePlan): string {
+  return [
+    `# ${plan.project.name} Project Context`,
+    '',
+    `Generated: ${plan.project.generatedAt}`,
+    `Workspace: ${plan.workspace.rootPath}`,
+    '',
+    '## Inventory',
+    '',
+    `- Files: ${plan.summary.totalFiles}`,
+    `- Supported: ${plan.summary.supportedFiles}`,
+    `- PDFs: ${plan.summary.pdfFiles}`,
+    `- Images: ${plan.summary.imageFiles}`,
+    `- Tabular files: ${plan.summary.tabularFiles}`,
+    `- Branches: ${plan.summary.branches.join(', ') || 'none'}`,
+    '',
+    '## Readiness',
+    '',
+    ...plan.readiness.map((item) => `- ${item.label}: ${item.status}${item.missing.length ? ` (missing: ${item.missing.join(', ')})` : ''}`),
+    '',
+    '## Recommended Next Actions',
+    '',
+    ...plan.recommendedNextActions.map((item) => `- ${item}`),
+  ].join('\n');
+}
+
+function buildProjectAwarePlan(
+  manifest: ProjectManifest,
+  options: {
+    workspaceRoot: string;
+    detectedBy: 'explicit_workspace_arg' | 'cwd';
+    executionMode: ProjectAwarePlan['executionMode'];
+    runId?: string;
+  },
+): ProjectAwarePlan {
+  const rootPath = resolve(options.workspaceRoot);
+  const runId = options.runId ?? nowRunId();
+  const geotechDir = join(rootPath, '.geotech');
+  const readiness = projectReadinessFromManifest(manifest);
+  const recommendedNextActions = readiness
+    .filter((item) => item.status !== 'blocked')
+    .slice(0, 6)
+    .map((item) => item.label);
+
+  return {
+    schemaVersion: 'geotech.project-agent-plan.v1',
+    runId,
+    workspace: {
+      rootPath,
+      detectedBy: options.detectedBy,
+      trustLevel: options.detectedBy === 'explicit_workspace_arg' ? 'explicit' : 'inferred',
+      readScope: 'root_only',
+      writeScope: 'geotech_output_only',
+    },
+    project: {
+      name: safeProjectName(rootPath),
+      generatedAt: new Date().toISOString(),
+    },
+    executionMode: options.executionMode,
+    summary: manifest.summary,
+    readiness,
+    recommendedNextActions,
+    artifacts: {
+      project: join(geotechDir, 'project.json'),
+      manifest: join(geotechDir, 'manifest.json'),
+      readiness: join(geotechDir, 'context', 'readiness.json'),
+      summary: join(geotechDir, 'context', 'project_summary.md'),
+      plan: join(geotechDir, 'runs', runId, 'plan.json'),
+      trace: join(geotechDir, 'runs', runId, 'trace.json'),
+    },
+    warnings: [
+      ...manifest.warnings,
+      options.executionMode === 'discovery-only'
+        ? 'Project-aware agent plan is deterministic workspace context only; no LLM workflow was executed.'
+        : 'Project-aware agent plan was written before the selected workspace-backed LLM task executed.',
+    ],
+  };
+}
+
+function writeProjectAwareState(plan: ProjectAwarePlan, manifest: ProjectManifest): void {
+  for (const dir of [
+    join(plan.workspace.rootPath, '.geotech'),
+    join(plan.workspace.rootPath, '.geotech', 'context'),
+    join(plan.workspace.rootPath, '.geotech', 'runs', plan.runId),
+  ]) {
+    mkdirSync(dir, { recursive: true });
+  }
+
+  const projectJson = {
+    schemaVersion: 'geotech.project.v1',
+    projectId: plan.project.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'geotech-project',
+    name: plan.project.name,
+    root: plan.workspace.rootPath,
+    createdAt: plan.project.generatedAt,
+    updatedAt: plan.project.generatedAt,
+    workspace: plan.workspace,
+  };
+  const trace = {
+    schemaVersion: 'geotech.project-agent-trace.v1',
+    runId: plan.runId,
+    workspace: plan.workspace.rootPath,
+    steps: [
+      { type: 'tool_call', tool: 'analyzeWorkspace', status: 'pass', output: plan.artifacts.manifest },
+      { type: 'tool_call', tool: 'projectReadinessFromManifest', status: 'pass', output: plan.artifacts.readiness },
+      plan.executionMode === 'discovery-only'
+        ? { type: 'review_gate', status: 'pending', message: 'User must select a workflow before model-heavy or write-heavy actions execute.' }
+        : { type: 'model_call', status: 'planned', message: 'Selected project-aware task will execute through the existing workspace-backed agent path.' },
+    ],
+  };
+
+  writeFileSync(plan.artifacts.project, JSON.stringify(projectJson, null, 2), 'utf-8');
+  writeFileSync(plan.artifacts.manifest, JSON.stringify(manifest, null, 2), 'utf-8');
+  writeFileSync(plan.artifacts.readiness, JSON.stringify({
+    schemaVersion: 'geotech.workflow_readiness.v1',
+    generatedAt: plan.project.generatedAt,
+    workflows: plan.readiness,
+  }, null, 2), 'utf-8');
+  writeFileSync(plan.artifacts.summary, renderProjectSummaryMarkdown(plan), 'utf-8');
+  writeFileSync(plan.artifacts.plan, JSON.stringify(plan, null, 2), 'utf-8');
+  writeFileSync(plan.artifacts.trace, JSON.stringify(trace, null, 2), 'utf-8');
+}
+
+function relativeArtifactPath(rootPath: string, filePath: string): string {
+  const rel = relative(rootPath, filePath);
+  return rel && !rel.startsWith('..') ? rel : filePath;
+}
+
+function renderProjectAwarePlan(plan: ProjectAwarePlan, flags: { json?: boolean; quiet?: boolean }): void {
+  if (flags.json) {
+    renderJSON(plan);
+    return;
+  }
+  if (flags.quiet) {
+    console.log(plan.runId);
+    return;
+  }
+
+  heading('Project-Aware Agent Plan');
+  keyValue('Workspace', plan.workspace.rootPath);
+  keyValue('Files', `${plan.summary.totalFiles} total, ${plan.summary.supportedFiles} supported`);
+  keyValue('Branches', plan.summary.branches.join(', ') || 'none');
+  console.log('');
+  console.log(chalk.bold('Ready workflows'));
+  for (const [index, item] of plan.readiness.entries()) {
+    const status = item.status === 'ready'
+      ? chalk.green(item.status)
+      : item.status === 'partially_ready'
+        ? chalk.yellow(item.status)
+        : chalk.red(item.status);
+    console.log(`  ${index + 1}. ${item.label} - ${status}`);
+    for (const reason of item.reasons.slice(0, 2)) {
+      console.log(chalk.gray(`     ${reason}`));
+    }
+    if (item.missing.length > 0) {
+      console.log(chalk.gray(`     Missing: ${item.missing.join(', ')}`));
+    }
+  }
+  console.log('');
+  warn('No model-heavy workflow has run yet. Choose a task with --task, or ask a project question with --workspace.');
+  success(`Project state written to ${relativeArtifactPath(plan.workspace.rootPath, join(plan.workspace.rootPath, '.geotech'))}`);
 }
 
 async function checkQuota(_callType: 'llmCalls' | 'visionCalls' | 'agentCalls'): Promise<boolean> {
@@ -1309,22 +1676,68 @@ function renderSwarmStep(step: SwarmStep, json: boolean, quiet: boolean = false)
 export function registerAgentCommand(program: Command): void {
   const cmd = new Command('agent')
     .description('Agentic AI - reasons about your problem and executes real calculations')
-    .argument('<task...>', 'Engineering task in natural language')
+    .argument('[task...]', 'Engineering task in natural language')
     .option('--swarm', 'Use the role-based multi-agent swarm planner and specialist review loop')
     .option('--skills', 'Enable installed skill tools for this session')
     .option('--project <id>', 'Load and persist context to a stored project')
     .option('--workspace <dir>', 'Scan a local workspace and attach its manifest summary to the agent task')
+    .option('--no-workspace', 'Disable automatic project-aware workspace discovery when no task is provided')
+    .option('--task <task>', 'Run a project-aware task: data-quality, ground-model, risk-analysis, anomaly-detection, recommendations, visualization')
+    .option('--plan-only', 'Scan the workspace, write .geotech project state, and show workflow readiness without calling an LLM')
+    .option('--refresh', 'Refresh the deterministic workspace manifest and .geotech project state')
     .action(async (taskParts: string[], opts) => {
       const flags = getGlobalFlags(opts);
-      const task = taskParts.join(' ');
+      const rawTask = Array.isArray(taskParts) ? taskParts.join(' ').trim() : '';
+      const selectedProjectTask = normalizeProjectTask(opts.task);
+      if (typeof opts.task === 'string' && !selectedProjectTask) {
+        throw new Error(`Unsupported project-aware task: ${opts.task}`);
+      }
+      const task = selectedProjectTask ? projectTaskPrompt(selectedProjectTask, rawTask) : rawTask;
       let agentTask = task;
       const useSwarm = opts.swarm === true;
       const showLiveStatus = !flags.json && !flags.quiet && !flags.verbose;
+      const shouldAutoDiscoverWorkspace = opts.workspace !== false && (opts.planOnly === true || selectedProjectTask || !rawTask);
+
+      let workspaceManifest: ProjectManifest | undefined;
+      if (shouldAutoDiscoverWorkspace) {
+        const workspaceRoot = typeof opts.workspace === 'string' && opts.workspace.trim()
+          ? opts.workspace
+          : process.cwd();
+        workspaceManifest = await analyzeWorkspace(workspaceRoot, {
+          includeCalculationInputDrafts: true,
+        });
+        const plan = buildProjectAwarePlan(workspaceManifest, {
+          workspaceRoot,
+          detectedBy: typeof opts.workspace === 'string' && opts.workspace.trim()
+            ? 'explicit_workspace_arg'
+            : 'cwd',
+          executionMode: opts.planOnly === true || (!rawTask && !selectedProjectTask)
+            ? 'discovery-only'
+            : 'workspace-backed-agent',
+        });
+        writeProjectAwareState(plan, workspaceManifest);
+
+        if (opts.planOnly === true || (!rawTask && !selectedProjectTask)) {
+          renderProjectAwarePlan(plan, flags);
+          return;
+        }
+
+        agentTask = [
+          task,
+          'Project-aware task context:',
+          `Selected task: ${selectedProjectTask}`,
+          `Project state: ${relativeArtifactPath(plan.workspace.rootPath, plan.artifacts.plan)}`,
+          summarizeWorkspaceManifestForAgent(workspaceManifest),
+        ].join('\n\n');
+      }
+
+      if (!task) {
+        throw new Error('Provide an agent task, use --task <task>, or run geotech agent --plan-only for project discovery.');
+      }
 
       if (!(await checkQuota('agentCalls'))) return;
 
-      let workspaceManifest: ProjectManifest | undefined;
-      if (typeof opts.workspace === 'string' && opts.workspace.trim()) {
+      if (!workspaceManifest && typeof opts.workspace === 'string' && opts.workspace.trim()) {
         workspaceManifest = await analyzeWorkspace(opts.workspace, {
           includeCalculationInputDrafts: useSwarm || opts.skills === true,
         });
