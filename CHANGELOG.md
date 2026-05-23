@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.71] - 2026-05-23
+
+### Release Checkout Permission Hotfix
+
+- Added explicit repository read permissions to the release verify and Cloudflare deploy jobs so `actions/checkout` has a usable token even when repository default workflow permissions are tightened.
+- Clarified the `geotech agent --no-workspace` help text so it matches the current behavior: the flag disables automatic project-aware discovery for prompted and non-prompted runs.
+
 ## [0.4.70] - 2026-05-23
 
 ### Project-Aware Agent Root, Intent, And Swarm Trace Fixes

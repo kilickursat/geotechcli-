@@ -1850,7 +1850,7 @@ export function registerAgentCommand(program: Command): void {
     .option('--skills', 'Enable installed skill tools for this session')
     .option('--project <id>', 'Load and persist context to a stored project')
     .option('--workspace <dir>', 'Scan a local workspace and attach its manifest summary to the agent task')
-    .option('--no-workspace', 'Disable automatic project-aware workspace discovery when no task is provided')
+    .option('--no-workspace', 'Disable automatic project-aware workspace discovery')
     .option('--task <task>', 'Run a project-aware task: data-quality, ground-model, risk-analysis, anomaly-detection, recommendations, visualization')
     .option('--plan-only', 'Scan the workspace, write .geotech project state, and show workflow readiness without calling an LLM')
     .option('--refresh', 'Refresh the deterministic workspace manifest and .geotech project state')

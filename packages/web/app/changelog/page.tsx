@@ -8,6 +8,15 @@ const releases = [
     date: '2026-05-23',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'fix', text: 'Added explicit repository read permissions to release verify and Cloudflare deploy jobs so checkout works when default workflow permissions are tightened' },
+      { type: 'fix', text: 'Clarified geotech agent --no-workspace help text so it matches the current opt-out behavior for automatic project-aware discovery' },
+    ],
+  },
+  {
+    version: '0.4.70',
+    date: '2026-05-23',
+    tag: '0.4.70 Release',
+    changes: [
       { type: 'feat', text: 'Added project-agent root detection across explicit workspace, .geotech/project.json, git root, and cwd so project-aware runs have a clear filesystem boundary' },
       { type: 'feat', text: 'Made prompted geotech agent runs project-aware by default unless --no-workspace is supplied, with geotech agent . entering discovery mode' },
       { type: 'feat', text: 'Added project-agent intent artifacts, run manifests, file/evidence JSONL indexes, local memory.json, tool-call traces, and model-call traces under .geotech' },
