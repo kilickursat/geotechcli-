@@ -50,6 +50,9 @@ export {
   type CaseFileReportInput,
   type GenerateStoredCaseFileReportOptions,
 } from './casefile.js';
+export {
+  buildProjectWorkflowReport,
+} from './project-workflow.js';
 
 export interface ReportSection {
   title: string;

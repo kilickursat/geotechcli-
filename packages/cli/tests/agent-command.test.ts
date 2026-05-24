@@ -8,6 +8,8 @@ const coreMocks = vi.hoisted(() => ({
   analyzeWorkspace: vi.fn(),
   buildLLMConfig: vi.fn(),
   resolveWorkspaceRoot: vi.fn(),
+  runProjectWorkflow: vi.fn(),
+  buildProjectWorkflowReport: vi.fn(),
   runAgent: vi.fn(),
   runSwarm: vi.fn(),
 }));
@@ -27,6 +29,8 @@ vi.mock('@geotechcli/core', () => ({
   DEFAULT_LLM_VISION_MODEL: 'glm-5v-turbo',
   buildLLMConfig: coreMocks.buildLLMConfig,
   resolveWorkspaceRoot: coreMocks.resolveWorkspaceRoot,
+  runProjectWorkflow: coreMocks.runProjectWorkflow,
+  buildProjectWorkflowReport: coreMocks.buildProjectWorkflowReport,
   runAgent: coreMocks.runAgent,
   runSwarm: coreMocks.runSwarm,
   analyzeWorkspace: coreMocks.analyzeWorkspace,
@@ -78,6 +82,44 @@ function makeSwarmSession(answer = 'done') {
       roles: [],
       skillCatalog: { executableApproved: 0 },
     },
+  };
+}
+
+function makeProjectWorkflowRun(task = 'risk-analysis') {
+  return {
+    schemaVersion: 'geotech.project-workflow-run.v1',
+    runId: 'run_test',
+    task,
+    generatedAt: new Date().toISOString(),
+    status: 'review',
+    providerContract: {
+      providerNeutral: true,
+      purpose: 'deterministic-project-workflow',
+      llmRole: 'none',
+    },
+    workspace: {
+      rootPath: 'C:/project',
+      totalFiles: 1,
+      supportedFiles: 1,
+      branches: ['reports'],
+    },
+    summary: ['deterministic project workflow summary'],
+    findings: [],
+    actions: [],
+    charts: [],
+    artifacts: [],
+    trace: { steps: [] },
+    toolCalls: [{ type: 'tool_call', tool: 'workspace.project_workflow_executor', status: 'review', summary: 'done' }],
+    modelCalls: [],
+  };
+}
+
+function makeProjectWorkflowReport(task = 'risk-analysis') {
+  return {
+    title: `Project Workflow Report: ${task}`,
+    sections: [{ title: 'Executive Summary', content: 'deterministic project workflow summary' }],
+    fullMarkdown: `# Project Workflow Report: ${task}\n\ndeterministic project workflow summary`,
+    latencyMs: 1,
   };
 }
 
@@ -175,6 +217,8 @@ describe('agent command skill opt-in', () => {
     coreMocks.runSwarm.mockResolvedValue(makeSwarmSession());
     coreMocks.analyzeWorkspace.mockResolvedValue(makeWorkspaceManifest());
     coreMocks.resolveWorkspaceRoot.mockImplementation(makeWorkspaceRoot);
+    coreMocks.runProjectWorkflow.mockImplementation(({ task }) => makeProjectWorkflowRun(task));
+    coreMocks.buildProjectWorkflowReport.mockImplementation((run) => makeProjectWorkflowReport(run.task));
     vi.spyOn(console, 'log').mockImplementation(() => {});
   });
 
@@ -270,7 +314,7 @@ describe('agent command skill opt-in', () => {
     expect(existsSync(join(workspace, '.geotech', 'runs', runId, 'model_calls.jsonl'))).toBe(true);
   });
 
-  it('uses project-aware task mode as a workspace-backed agent prompt', async () => {
+  it('runs explicit project-aware task mode through the deterministic workflow executor', async () => {
     const workspace = mkdtempSync(join(tmpdir(), 'geotech-agent-task-'));
     tempDirs.push(workspace);
     const program = new Command();
@@ -288,14 +332,51 @@ describe('agent command skill opt-in', () => {
     expect(coreMocks.analyzeWorkspace).toHaveBeenCalledWith(workspace, {
       includeCalculationInputDrafts: true,
     });
-    expect(coreMocks.runAgent).toHaveBeenCalledWith(
-      expect.stringContaining('Selected intent: risk-analysis'),
-      expect.objectContaining({ skillsEnabled: false }),
-      expect.any(Function),
-      expect.objectContaining({ workspace: expect.any(Object) }),
-    );
+    expect(coreMocks.runProjectWorkflow).toHaveBeenCalledWith(expect.objectContaining({
+      manifest: expect.any(Object),
+      task: 'risk-analysis',
+      runId: expect.any(String),
+    }));
+    expect(coreMocks.buildProjectWorkflowReport).toHaveBeenCalled();
+    expect(coreMocks.buildLLMConfig).not.toHaveBeenCalled();
+    expect(coreMocks.runAgent).not.toHaveBeenCalled();
+    expect(coreMocks.runSwarm).not.toHaveBeenCalled();
     const geotechPlanDirs = join(workspace, '.geotech', 'runs');
     expect(existsSync(geotechPlanDirs)).toBe(true);
+    const runId = readdirSync(geotechPlanDirs)[0];
+    const plan = JSON.parse(readFileSync(join(geotechPlanDirs, runId, 'plan.json'), 'utf-8'));
+    expect(plan.executionMode).toBe('deterministic-workflow');
+    expect(existsSync(join(geotechPlanDirs, runId, 'workflow_result.json'))).toBe(true);
+    expect(existsSync(join(geotechPlanDirs, runId, 'workflow_report.md'))).toBe(true);
+    expect(readFileSync(join(geotechPlanDirs, runId, 'model_calls.jsonl'), 'utf-8')).toBe('');
+  });
+
+  it.each([
+    'data-quality',
+    'ground-model',
+    'risk-analysis',
+    'anomaly-detection',
+    'recommendations',
+    'visualization',
+  ])('keeps explicit %s project task provider-neutral', async (projectTask) => {
+    const workspace = mkdtempSync(join(tmpdir(), `geotech-agent-${projectTask}-`));
+    tempDirs.push(workspace);
+    const program = new Command();
+    registerAgentCommand(program);
+
+    await program.parseAsync([
+      'agent',
+      '--workspace',
+      workspace,
+      '--task',
+      projectTask,
+      '--json',
+    ], { from: 'user' });
+
+    expect(coreMocks.runProjectWorkflow).toHaveBeenCalledWith(expect.objectContaining({ task: projectTask }));
+    expect(coreMocks.buildLLMConfig).not.toHaveBeenCalled();
+    expect(coreMocks.runAgent).not.toHaveBeenCalled();
+    expect(coreMocks.runSwarm).not.toHaveBeenCalled();
   });
 
   it('auto-discovers a workspace for prompted project agent requests by default', async () => {

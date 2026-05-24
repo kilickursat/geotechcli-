@@ -5,8 +5,18 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 const releases = [
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-05-23',
+    date: '2026-05-24',
     tag: `${GEOTECHCLI_VERSION} Release`,
+    changes: [
+      { type: 'feat', text: 'Added a provider-neutral project workflow executor for explicit geotech agent --task data-quality, ground-model, risk-analysis, anomaly-detection, recommendations, and visualization runs' },
+      { type: 'feat', text: 'Added deterministic .geotech workflow_result.json, workflow_report.md, and workflow_trace.json artifacts while keeping model_calls.jsonl empty for task runs' },
+      { type: 'fix', text: 'Added core project-workflow exports and regression coverage for deterministic workflow results, chart specs, reports, and CLI short-circuit behavior' },
+    ],
+  },
+  {
+    version: '0.4.71',
+    date: '2026-05-23',
+    tag: '0.4.71 Release',
     changes: [
       { type: 'fix', text: 'Added explicit repository read permissions to release verify and Cloudflare deploy jobs so checkout works when default workflow permissions are tightened' },
       { type: 'fix', text: 'Clarified geotech agent --no-workspace help text so it matches the current opt-out behavior for automatic project-aware discovery' },

@@ -91,7 +91,7 @@ geotech agent "evaluate foundation options for a 12-story building on soft clay"
 geotech agent --plan-only
 geotech agent .
 
-# AI: run a selected project-aware workflow with workspace evidence attached
+# AI: run a selected project-aware workflow deterministically from workspace evidence
 geotech agent --task risk-analysis --workspace .
 
 # AI: disable workspace discovery for a generic one-off prompt
@@ -167,7 +167,7 @@ geotech agent --task recommendations --workspace .
 geotech agent --task visualization --workspace .
 ```
 
-No-prompt `geotech agent` and `geotech agent .` enter the same discovery-first mode and print the next workflow choices instead of behaving like generic chat. Prompted usage now also builds the project context by default unless `--no-workspace` is supplied, so BYOK and hosted models receive the same manifest, readiness, evidence index, and GroundModel/verifier summary instead of guessing from raw files. Use `--max-files` and `--max-depth` to bound discovery. Task runs currently route the selected intent through the existing workspace-backed agent path; the richer intent and trace artifacts are already written, while full deterministic workflow execution remains the next harness slice.
+No-prompt `geotech agent` and `geotech agent .` enter the same discovery-first mode and print the next workflow choices instead of behaving like generic chat. Prompted usage now also builds the project context by default unless `--no-workspace` is supplied, so BYOK and hosted models receive the same manifest, readiness, evidence index, and GroundModel/verifier summary instead of guessing from raw files. Use `--max-files` and `--max-depth` to bound discovery. Explicit `--task data-quality|ground-model|risk-analysis|anomaly-detection|recommendations|visualization` runs now execute a deterministic provider-neutral workflow first, write `workflow_result.json`, `workflow_report.md`, and `workflow_trace.json` under `.geotech/runs/<runId>/`, and keep `model_calls.jsonl` empty unless the user separately asks for LLM review.
 
 ## Interactive Visualization
 
@@ -247,7 +247,7 @@ These commands now use the hosted beta GLM path by default.
 | `geotech ingest` | Geotechnical PDF/image ingest for borehole logs and broader report intelligence, with live PDF progress and optional browser HTML report or benchmark output |
 | `geotech ai-classify` | Natural language soil description to USCS and properties |
 | `geotech gbr chat` | GBR document question answering |
-| `geotech agent` | Project-aware discovery with `--plan-only`/`--task`, Terzaghi single-agent reasoning for prompted tasks, optional evidence-bound `--workspace`, role-based `--swarm`, skills, and project memory |
+| `geotech agent` | Project-aware discovery with `--plan-only`, deterministic provider-neutral `--task` workflows, Terzaghi single-agent reasoning for prompted tasks, optional evidence-bound `--workspace`, role-based `--swarm`, skills, and project memory |
 | `geotech chat` | Interactive AI session with optional project memory |
 | `geotech report` | AI-generated geotechnical report drafting |
 

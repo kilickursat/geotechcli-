@@ -1,0 +1,675 @@
+import type { GroundModel, GroundModelParameter } from '../ground-model/index.js';
+import type { GroundModelCalculationReadiness, GroundModelFinding } from '../verifier/index.js';
+import type { ProjectManifest, WorkspaceFileEntry } from './manifest.js';
+
+export type ProjectWorkflowTask =
+  | 'data-quality'
+  | 'ground-model'
+  | 'risk-analysis'
+  | 'anomaly-detection'
+  | 'recommendations'
+  | 'visualization';
+
+export type ProjectWorkflowStatus = 'pass' | 'review' | 'blocked';
+
+export type ProjectWorkflowFindingSeverity = 'info' | 'warning' | 'risk' | 'blocking';
+
+export interface ProjectWorkflowFinding {
+  id: string;
+  severity: ProjectWorkflowFindingSeverity;
+  title: string;
+  detail: string;
+  evidenceIds: string[];
+  source?: string;
+  recommendation?: string;
+}
+
+export interface ProjectWorkflowAction {
+  id: string;
+  label: string;
+  status: 'ready' | 'needs_input' | 'blocked';
+  command?: string;
+  missing: string[];
+  evidenceIds: string[];
+  recommendation: string;
+}
+
+export interface ProjectWorkflowChartPoint {
+  x: number;
+  y: number;
+  label?: string;
+  evidenceIds?: string[];
+}
+
+export interface ProjectWorkflowChartSeries {
+  id: string;
+  label: string;
+  points: ProjectWorkflowChartPoint[];
+}
+
+export interface ProjectWorkflowChartSpec {
+  id: string;
+  title: string;
+  kind: 'map' | 'xy' | 'table';
+  xLabel?: string;
+  yLabel?: string;
+  series: ProjectWorkflowChartSeries[];
+  warnings: string[];
+}
+
+export interface ProjectWorkflowRun {
+  schemaVersion: 'geotech.project-workflow-run.v1';
+  runId: string;
+  task: ProjectWorkflowTask;
+  generatedAt: string;
+  status: ProjectWorkflowStatus;
+  providerContract: {
+    providerNeutral: true;
+    purpose: 'deterministic-project-workflow';
+    llmRole: 'none';
+  };
+  workspace: {
+    rootPath: string;
+    totalFiles: number;
+    supportedFiles: number;
+    branches: string[];
+  };
+  summary: string[];
+  findings: ProjectWorkflowFinding[];
+  actions: ProjectWorkflowAction[];
+  charts: ProjectWorkflowChartSpec[];
+  artifacts: Array<{
+    kind: 'json' | 'markdown' | 'chart-spec';
+    path: string;
+    description: string;
+  }>;
+  trace: {
+    steps: Array<{
+      type: 'tool_call' | 'review_gate';
+      name: string;
+      status: 'pass' | 'review' | 'blocked';
+      detail: string;
+    }>;
+  };
+  toolCalls: Array<{
+    type: 'tool_call';
+    tool: string;
+    status: 'pass' | 'review' | 'blocked';
+    summary: string;
+  }>;
+  modelCalls: [];
+}
+
+export interface RunProjectWorkflowOptions {
+  manifest: ProjectManifest;
+  task: ProjectWorkflowTask;
+  runId?: string;
+  now?: string;
+}
+
+export function runProjectWorkflow(options: RunProjectWorkflowOptions): ProjectWorkflowRun {
+  const generatedAt = options.now ?? new Date().toISOString();
+  const runId = options.runId ?? `workflow_${generatedAt.replace(/\D/g, '').slice(0, 17)}`;
+  const findings = buildFindings(options.manifest, options.task);
+  const actions = buildActions(options.manifest, options.task);
+  const charts = options.task === 'visualization' ? buildVisualizationCharts(options.manifest) : [];
+  const status = deriveWorkflowStatus(options.manifest, findings, charts, options.task);
+  const summary = buildSummary(options.manifest, options.task, status, findings, actions, charts);
+  const taskLabel = taskTitle(options.task);
+
+  const toolCalls: ProjectWorkflowRun['toolCalls'] = [
+    {
+      type: 'tool_call',
+      tool: 'workspace.project_workflow_executor',
+      status,
+      summary: `${taskLabel} evaluated deterministically from workspace manifest, GroundModel, verifier, and schema evidence.`,
+    },
+  ];
+
+  if (charts.length > 0) {
+    toolCalls.push({
+      type: 'tool_call',
+      tool: 'viz.project_chart_specs',
+      status: 'pass',
+      summary: `${charts.length} deterministic chart spec(s) prepared from GroundModel evidence.`,
+    });
+  }
+
+  return {
+    schemaVersion: 'geotech.project-workflow-run.v1',
+    runId,
+    task: options.task,
+    generatedAt,
+    status,
+    providerContract: {
+      providerNeutral: true,
+      purpose: 'deterministic-project-workflow',
+      llmRole: 'none',
+    },
+    workspace: {
+      rootPath: options.manifest.rootPath,
+      totalFiles: options.manifest.summary.totalFiles,
+      supportedFiles: options.manifest.summary.supportedFiles,
+      branches: options.manifest.summary.branches,
+    },
+    summary,
+    findings,
+    actions,
+    charts,
+    artifacts: [
+      { kind: 'json', path: `.geotech/runs/${runId}/workflow_result.json`, description: 'Deterministic workflow result' },
+      { kind: 'markdown', path: `.geotech/runs/${runId}/workflow_report.md`, description: 'Human-readable deterministic workflow report' },
+      ...(charts.length > 0
+        ? [{ kind: 'chart-spec' as const, path: `.geotech/runs/${runId}/workflow_result.json#charts`, description: 'Deterministic visualization chart specs' }]
+        : []),
+    ],
+    trace: {
+      steps: [
+        {
+          type: 'tool_call',
+          name: 'workspace.project_workflow_executor',
+          status,
+          detail: `${taskLabel} used provider-neutral manifest evidence only.`,
+        },
+        {
+          type: 'review_gate',
+          name: 'engineering_review_required',
+          status: status === 'blocked' ? 'blocked' : 'review',
+          detail: 'Project workflow output supports engineering review and must not be treated as final design without human approval.',
+        },
+      ],
+    },
+    toolCalls,
+    modelCalls: [],
+  };
+}
+
+function buildFindings(manifest: ProjectManifest, task: ProjectWorkflowTask): ProjectWorkflowFinding[] {
+  const findings: ProjectWorkflowFinding[] = [];
+  const push = (finding: Omit<ProjectWorkflowFinding, 'id'>) => {
+    findings.push({ id: `finding_${String(findings.length + 1).padStart(3, '0')}`, ...finding });
+  };
+
+  if (manifest.summary.supportedFiles === 0) {
+    push({
+      severity: 'blocking',
+      title: 'No supported project evidence indexed',
+      detail: 'The workspace scan did not find supported geotechnical files for this workflow.',
+      evidenceIds: [],
+      recommendation: 'Add AGS, CSV/XLSX, PDF, image, GIS, CAD, or JSON geotechnical evidence and rerun project discovery.',
+    });
+  }
+
+  for (const warning of manifest.warnings.slice(0, 8)) {
+    push({
+      severity: 'warning',
+      title: 'Workspace warning',
+      detail: warning,
+      evidenceIds: [],
+      recommendation: 'Review the workspace scan warning before using downstream workflow output.',
+    });
+  }
+
+  if (task === 'data-quality') {
+    addDataQualityFindings(manifest, push);
+  }
+  if (task === 'ground-model') {
+    addGroundModelFindings(manifest, push);
+  }
+  if (task === 'risk-analysis') {
+    addRiskFindings(manifest, push);
+  }
+  if (task === 'anomaly-detection') {
+    addAnomalyFindings(manifest, push);
+  }
+  if (task === 'recommendations') {
+    addRecommendationFindings(manifest, push);
+  }
+  if (task === 'visualization') {
+    addVisualizationFindings(manifest, push);
+  }
+
+  if (findings.length === 0) {
+    push({
+      severity: 'info',
+      title: 'No deterministic issues found',
+      detail: `${taskTitle(task)} did not find obvious blockers in the current workspace evidence.`,
+      evidenceIds: [],
+      recommendation: 'Continue with engineering review and deeper extraction where required.',
+    });
+  }
+
+  return findings;
+}
+
+function addDataQualityFindings(
+  manifest: ProjectManifest,
+  push: (finding: Omit<ProjectWorkflowFinding, 'id'>) => void,
+): void {
+  if (manifest.summary.skippedFiles > 0) {
+    push({
+      severity: 'warning',
+      title: 'Skipped files present',
+      detail: `${manifest.summary.skippedFiles} file(s) were skipped by workspace discovery.`,
+      evidenceIds: [],
+      recommendation: 'Confirm whether skipped files include project-critical drawings, reports, or monitoring data.',
+    });
+  }
+
+  for (const file of filesWithWarnings(manifest).slice(0, 8)) {
+    push({
+      severity: 'warning',
+      title: `File warning: ${file.path}`,
+      detail: file.classification.warnings.join('; '),
+      evidenceIds: [`file:${file.path}`],
+      source: file.path,
+      recommendation: 'Inspect this source before relying on its extracted schema or classification.',
+    });
+  }
+
+  const duplicateNames = duplicated(manifest.files.map((file) => file.name.toLowerCase()));
+  for (const name of duplicateNames.slice(0, 5)) {
+    push({
+      severity: 'info',
+      title: `Duplicate filename: ${name}`,
+      detail: 'Multiple files share the same filename, which may indicate duplicate exports or repeated evidence packages.',
+      evidenceIds: manifest.files.filter((file) => file.name.toLowerCase() === name).map((file) => `file:${file.path}`),
+      recommendation: 'Check whether duplicate filenames refer to unique revisions or redundant evidence.',
+    });
+  }
+}
+
+function addGroundModelFindings(
+  manifest: ProjectManifest,
+  push: (finding: Omit<ProjectWorkflowFinding, 'id'>) => void,
+): void {
+  const model = manifest.groundModel;
+  if (!model || model.stats.evidenceRefs === 0) {
+    push({
+      severity: 'blocking',
+      title: 'GroundModel evidence not available',
+      detail: 'The manifest does not contain evidence-bound boreholes, strata, parameters, or groundwater observations.',
+      evidenceIds: [],
+      recommendation: 'Add structured borehole/log/lab data or ingest PDFs before ground-model interpretation.',
+    });
+    return;
+  }
+
+  for (const warning of model.warnings.slice(0, 8)) {
+    push({
+      severity: 'warning',
+      title: 'GroundModel warning',
+      detail: warning,
+      evidenceIds: [],
+      recommendation: 'Verify the GroundModel source evidence and extracted field mapping.',
+    });
+  }
+
+  addVerifierFindings(manifest.verifier?.findings ?? [], push);
+}
+
+function addRiskFindings(
+  manifest: ProjectManifest,
+  push: (finding: Omit<ProjectWorkflowFinding, 'id'>) => void,
+): void {
+  const model = manifest.groundModel;
+  if (!manifest.verifier) {
+    push({
+      severity: 'blocking',
+      title: 'Verifier output missing',
+      detail: 'Risk analysis needs GroundModel verifier findings and workflow readiness.',
+      evidenceIds: [],
+      recommendation: 'Build or refresh GroundModel verification before risk analysis.',
+    });
+    return;
+  }
+
+  addVerifierFindings(manifest.verifier.findings, push, 'risk');
+  if (model && model.stats.boreholes > 0 && model.stats.groundwaterObservations === 0) {
+    push({
+      severity: 'risk',
+      title: 'Groundwater data missing',
+      detail: 'Borehole evidence exists, but no groundwater observations are bound to evidence.',
+      evidenceIds: model.boreholes.flatMap((borehole) => borehole.evidenceIds).slice(0, 8),
+      recommendation: 'Confirm groundwater strikes, standpipe readings, or an explicit dry/unknown groundwater assumption before design use.',
+    });
+  }
+}
+
+function addAnomalyFindings(
+  manifest: ProjectManifest,
+  push: (finding: Omit<ProjectWorkflowFinding, 'id'>) => void,
+): void {
+  const model = manifest.groundModel;
+  if (manifest.summary.supportedFiles < 2) {
+    push({
+      severity: 'warning',
+      title: 'Limited cross-source comparison',
+      detail: 'Anomaly detection is stronger when multiple independent files or data tables can be compared.',
+      evidenceIds: manifest.files.map((file) => `file:${file.path}`).slice(0, 8),
+      recommendation: 'Add AGS, tabular, PDF, or monitoring sources to improve cross-source conflict checks.',
+    });
+  }
+
+  for (const rejected of model?.rejectedObservations ?? []) {
+    push({
+      severity: rejected.kind === 'spt' ? 'warning' : 'info',
+      title: `Rejected ${rejected.kind} observation`,
+      detail: rejected.reason,
+      source: rejected.sourcePath,
+      evidenceIds: rejected.evidenceIds,
+      recommendation: 'Review the source value and confirm whether it is project data or a standards/reference number.',
+    });
+  }
+
+  addVerifierFindings((manifest.verifier?.findings ?? []).filter((finding) => /duplicate|negative|rejected|missing|conflict/i.test(finding.code)), push);
+}
+
+function addRecommendationFindings(
+  manifest: ProjectManifest,
+  push: (finding: Omit<ProjectWorkflowFinding, 'id'>) => void,
+): void {
+  const workflows = manifest.verifier?.calculationReadiness.workflows ?? [];
+  if (workflows.length === 0) {
+    push({
+      severity: 'blocking',
+      title: 'No calculation readiness routes',
+      detail: 'No calculation workflow readiness records are available for recommendation routing.',
+      evidenceIds: [],
+      recommendation: 'Refresh workspace analysis with GroundModel and calculation readiness enabled.',
+    });
+    return;
+  }
+
+  for (const workflow of workflows.filter((item) => item.status === 'blocked').slice(0, 8)) {
+    push({
+      severity: 'warning',
+      title: `${workflow.label} blocked`,
+      detail: `Missing: ${workflow.missing.join(', ') || 'required inputs'}.`,
+      evidenceIds: workflow.evidenceIds,
+      recommendation: workflow.recommendation,
+    });
+  }
+}
+
+function addVisualizationFindings(
+  manifest: ProjectManifest,
+  push: (finding: Omit<ProjectWorkflowFinding, 'id'>) => void,
+): void {
+  const model = manifest.groundModel;
+  if (!model) {
+    push({
+      severity: 'blocking',
+      title: 'Visualization source model missing',
+      detail: 'No GroundModel exists for deterministic project visualization.',
+      evidenceIds: [],
+      recommendation: 'Add borehole, coordinate, SPT, groundwater, or lab evidence and rerun workspace analysis.',
+    });
+    return;
+  }
+
+  if (!model.map?.points.length) {
+    push({
+      severity: 'warning',
+      title: 'Map visualization gated by coordinates',
+      detail: 'GroundModel exists, but no plottable coordinate points were found.',
+      evidenceIds: model.boreholes.flatMap((borehole) => borehole.evidenceIds).slice(0, 8),
+      recommendation: 'Add borehole coordinate evidence and declare/confirm CRS before map or cross-section output.',
+    });
+  }
+}
+
+function addVerifierFindings(
+  findings: GroundModelFinding[],
+  push: (finding: Omit<ProjectWorkflowFinding, 'id'>) => void,
+  defaultSeverity?: ProjectWorkflowFindingSeverity,
+): void {
+  for (const finding of findings.slice(0, 12)) {
+    push({
+      severity: defaultSeverity ?? mapVerifierSeverity(finding.severity),
+      title: finding.code.replace(/_/g, ' '),
+      detail: finding.message,
+      evidenceIds: finding.evidenceIds,
+      recommendation: finding.recommendation,
+    });
+  }
+}
+
+function buildActions(manifest: ProjectManifest, task: ProjectWorkflowTask): ProjectWorkflowAction[] {
+  const actions: ProjectWorkflowAction[] = [];
+  const push = (action: Omit<ProjectWorkflowAction, 'id'>) => {
+    actions.push({ id: `action_${String(actions.length + 1).padStart(3, '0')}`, ...action });
+  };
+
+  if (task === 'recommendations' || task === 'risk-analysis' || task === 'ground-model') {
+    for (const workflow of manifest.verifier?.calculationReadiness.workflows ?? []) {
+      push(actionFromReadiness(workflow));
+    }
+  }
+
+  if (task === 'data-quality') {
+    push({
+      label: 'Review workspace manifest and missing data',
+      status: manifest.summary.supportedFiles > 0 ? 'ready' : 'blocked',
+      missing: manifest.summary.supportedFiles > 0 ? [] : ['supported geotechnical evidence'],
+      evidenceIds: manifest.files.map((file) => `file:${file.path}`).slice(0, 8),
+      recommendation: manifest.summary.recommendations[0] ?? 'Add recognized project evidence and rerun workspace discovery.',
+    });
+  }
+
+  if (task === 'anomaly-detection') {
+    push({
+      label: 'Review rejected observations and verifier findings',
+      status: manifest.groundModel?.rejectedObservations.length || manifest.verifier?.findings.length ? 'needs_input' : 'ready',
+      missing: manifest.summary.supportedFiles > 1 ? [] : ['multiple comparable evidence sources'],
+      evidenceIds: manifest.groundModel?.rejectedObservations.flatMap((item) => item.evidenceIds).slice(0, 8) ?? [],
+      recommendation: 'Use source-page/evidence review before promoting anomalies into project decisions.',
+    });
+  }
+
+  if (task === 'visualization') {
+    const charts = buildVisualizationCharts(manifest);
+    push({
+      label: 'Generate deterministic project visualizations',
+      status: charts.length > 0 ? 'ready' : 'blocked',
+      missing: charts.length > 0 ? [] : ['GroundModel chart evidence'],
+      evidenceIds: manifest.groundModel?.evidence.map((item) => item.id).slice(0, 8) ?? [],
+      recommendation: charts.length > 0
+        ? 'Render chart specs through the CLI/web visualization layer after CRS and review gates are accepted.'
+        : 'Add coordinate, SPT, groundwater, or lab evidence to unlock visualization specs.',
+    });
+  }
+
+  return actions;
+}
+
+function actionFromReadiness(workflow: GroundModelCalculationReadiness): Omit<ProjectWorkflowAction, 'id'> {
+  return {
+    label: workflow.label,
+    status: workflow.status === 'ready' ? 'ready' : workflow.status === 'ready_with_assumptions' ? 'needs_input' : 'blocked',
+    command: workflow.commandTemplate,
+    missing: workflow.missing,
+    evidenceIds: workflow.evidenceIds,
+    recommendation: workflow.recommendation,
+  };
+}
+
+function buildVisualizationCharts(manifest: ProjectManifest): ProjectWorkflowChartSpec[] {
+  const model = manifest.groundModel;
+  if (!model) return [];
+
+  const charts: ProjectWorkflowChartSpec[] = [];
+  if (model.map?.points.length) {
+    charts.push({
+      id: 'ground-model-map',
+      title: 'GroundModel Map',
+      kind: 'map',
+      xLabel: model.map.coordinateType === 'geographic' ? 'Longitude' : 'Easting / local X',
+      yLabel: model.map.coordinateType === 'geographic' ? 'Latitude' : 'Northing / local Y',
+      series: [{
+        id: 'locations',
+        label: 'Investigation locations',
+        points: model.map.points.map((point) => ({
+          x: point.x,
+          y: point.y,
+          label: point.label,
+          evidenceIds: point.sourceEvidenceIds,
+        })),
+      }],
+      warnings: model.map.warnings,
+    });
+  }
+
+  const sptSeries = model.boreholes
+    .filter((borehole) => borehole.sptTests.length > 0)
+    .map((borehole) => ({
+      id: `spt-${borehole.id}`,
+      label: `${borehole.id} SPT N`,
+      points: borehole.sptTests.map((test) => ({
+        x: test.nValue,
+        y: test.depth,
+        label: `${borehole.id} ${test.depth}m`,
+        evidenceIds: test.evidenceIds,
+      })),
+    }));
+  if (sptSeries.length > 0) {
+    charts.push({
+      id: 'spt-depth',
+      title: 'SPT N-value by Depth',
+      kind: 'xy',
+      xLabel: 'SPT N-value',
+      yLabel: 'Depth (m)',
+      series: sptSeries,
+      warnings: [],
+    });
+  }
+
+  const groundwaterSeries = model.boreholes
+    .filter((borehole) => borehole.groundwater.length > 0)
+    .map((borehole) => ({
+      id: `groundwater-${borehole.id}`,
+      label: `${borehole.id} groundwater`,
+      points: borehole.groundwater.map((item, index) => ({
+        x: index + 1,
+        y: item.depth,
+        label: `${borehole.id} ${item.depth}m`,
+        evidenceIds: item.evidenceIds,
+      })),
+    }));
+  if (groundwaterSeries.length > 0) {
+    charts.push({
+      id: 'groundwater-depth',
+      title: 'Groundwater Observations',
+      kind: 'xy',
+      xLabel: 'Observation',
+      yLabel: 'Depth (m)',
+      series: groundwaterSeries,
+      warnings: [],
+    });
+  }
+
+  const labParameters = numericDepthParameters(model).slice(0, 6);
+  if (labParameters.length > 0) {
+    charts.push({
+      id: 'lab-parameters-depth',
+      title: 'Lab Parameters by Depth',
+      kind: 'xy',
+      xLabel: 'Value',
+      yLabel: 'Depth (m)',
+      series: labParameters.map(([name, parameters]) => ({
+        id: `parameter-${slug(name)}`,
+        label: name,
+        points: parameters.map((parameter) => ({
+          x: Number(parameter.value),
+          y: parameter.depth ?? 0,
+          label: parameter.boreholeId ?? parameter.sampleId,
+          evidenceIds: parameter.evidenceIds,
+        })),
+      })),
+      warnings: [],
+    });
+  }
+
+  return charts;
+}
+
+function numericDepthParameters(model: GroundModel): Array<[string, GroundModelParameter[]]> {
+  const grouped = new Map<string, GroundModelParameter[]>();
+  for (const parameter of model.parameters) {
+    if (typeof parameter.value !== 'number' || parameter.depth == null) continue;
+    const group = grouped.get(parameter.name) ?? [];
+    group.push(parameter);
+    grouped.set(parameter.name, group);
+  }
+  return [...grouped.entries()].filter(([, parameters]) => parameters.length > 0);
+}
+
+function buildSummary(
+  manifest: ProjectManifest,
+  task: ProjectWorkflowTask,
+  status: ProjectWorkflowStatus,
+  findings: ProjectWorkflowFinding[],
+  actions: ProjectWorkflowAction[],
+  charts: ProjectWorkflowChartSpec[],
+): string[] {
+  const model = manifest.groundModel;
+  return [
+    `${taskTitle(task)} completed as a deterministic, provider-neutral project workflow with status ${status}.`,
+    `Workspace evidence: ${manifest.summary.supportedFiles}/${manifest.summary.totalFiles} supported files, branches ${manifest.summary.branches.join(', ') || 'none'}.`,
+    model
+      ? `GroundModel evidence: ${model.stats.boreholes} boreholes, ${model.stats.strata} strata, ${model.stats.sptTests} SPT tests, ${model.stats.parameters} parameters, ${model.stats.evidenceRefs} evidence refs.`
+      : 'GroundModel evidence is not available in this manifest.',
+    `Findings: ${findings.filter((item) => item.severity === 'blocking').length} blocking, ${findings.filter((item) => item.severity === 'risk').length} risk, ${findings.filter((item) => item.severity === 'warning').length} warning, ${findings.filter((item) => item.severity === 'info').length} info.`,
+    actions.length > 0 ? `Actions prepared: ${actions.length}.` : 'No downstream action routes were prepared.',
+    charts.length > 0 ? `Visualization chart specs prepared: ${charts.length}.` : 'No visualization chart specs were prepared.',
+  ];
+}
+
+function deriveWorkflowStatus(
+  manifest: ProjectManifest,
+  findings: ProjectWorkflowFinding[],
+  charts: ProjectWorkflowChartSpec[],
+  task: ProjectWorkflowTask,
+): ProjectWorkflowStatus {
+  if (findings.some((finding) => finding.severity === 'blocking')) return 'blocked';
+  if (task === 'visualization' && charts.length === 0) return 'blocked';
+  if (manifest.verifier?.status === 'blocking') return 'blocked';
+  if (findings.some((finding) => finding.severity === 'risk' || finding.severity === 'warning')) return 'review';
+  if (manifest.verifier?.status === 'review') return 'review';
+  return 'pass';
+}
+
+function filesWithWarnings(manifest: ProjectManifest): WorkspaceFileEntry[] {
+  return manifest.files.filter((file) => file.classification.warnings.length > 0);
+}
+
+function duplicated(values: string[]): string[] {
+  return [...new Set(values.filter((value, index) => values.indexOf(value) !== index))];
+}
+
+function mapVerifierSeverity(severity: GroundModelFinding['severity']): ProjectWorkflowFindingSeverity {
+  if (severity === 'blocking') return 'blocking';
+  if (severity === 'review') return 'warning';
+  return 'info';
+}
+
+function taskTitle(task: ProjectWorkflowTask): string {
+  switch (task) {
+    case 'data-quality':
+      return 'Data quality';
+    case 'ground-model':
+      return 'Ground-model interpretation';
+    case 'risk-analysis':
+      return 'Risk analysis';
+    case 'anomaly-detection':
+      return 'Anomaly detection';
+    case 'recommendations':
+      return 'Recommendations';
+    case 'visualization':
+      return 'Visualization';
+  }
+}
+
+function slug(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'parameter';
+}

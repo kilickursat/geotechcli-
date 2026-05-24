@@ -164,6 +164,7 @@ export {
   buildIngestDossier,
   buildArtifactDrivenReport,
   generateReportFromCaseFile,
+  buildProjectWorkflowReport,
   buildIntegratedReviewModel,
   buildIntegratedSourcePagesFromEvidence,
   buildIntegratedSourcePagesFromLayout,

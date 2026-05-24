@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import chalk from 'chalk';
 import ora from 'ora';
@@ -26,6 +26,7 @@ import {
   setActiveAnalysisContext,
   generateReport,
   generateReportFromCaseFile,
+  buildProjectWorkflowReport,
   renderReportAsPdf,
   renderReportAsDocx,
   buildSwarmSessionProjectRecord,
@@ -33,7 +34,9 @@ import {
   persistCaseFileEvidence,
   analyzeWorkspace,
   resolveWorkspaceRoot,
+  runProjectWorkflow,
   type ProjectManifest,
+  type ProjectWorkflowTask,
   type WorkspaceRoot,
   type GeneratedReport,
   type AgentStep,
@@ -151,7 +154,7 @@ interface ProjectAwarePlan {
     generatedAt: string;
   };
   intent: ProjectAgentIntent;
-  executionMode: 'discovery-only' | 'workspace-backed-agent';
+  executionMode: 'deterministic-workflow' | 'discovery-only' | 'workspace-backed-agent';
   summary: ProjectManifest['summary'];
   readiness: Array<{
     task: ProjectAgentTask;
@@ -282,6 +285,10 @@ function projectTaskPrompt(task: ProjectAgentTask, customPrompt?: string): strin
     return `Project-aware custom question: ${customPrompt.trim()}`;
   }
   return taskDef.prompt;
+}
+
+function isDeterministicProjectTask(task: ProjectAgentTask | undefined): task is ProjectWorkflowTask {
+  return Boolean(task && task !== 'custom-question');
 }
 
 function inferProjectIntent(rawPrompt: string, selectedTask?: ProjectAgentTask): ProjectAgentIntent {
@@ -483,6 +490,8 @@ function buildProjectAwarePlan(
       ...manifest.warnings,
       options.executionMode === 'discovery-only'
         ? 'Project-aware agent plan is deterministic workspace context only; no LLM workflow was executed.'
+        : options.executionMode === 'deterministic-workflow'
+          ? 'Selected project-aware task will execute through a deterministic provider-neutral workflow before any optional LLM review.'
         : 'Project-aware agent plan was written before the selected workspace-backed LLM task executed.',
     ],
   };
@@ -569,9 +578,9 @@ function writeProjectAwareState(plan: ProjectAwarePlan, manifest: ProjectManifes
     { type: 'tool_call', tool: 'project.write_file_index', status: 'pass', output: plan.artifacts.fileIndex },
     { type: 'tool_call', tool: 'project.write_evidence_index', status: 'pass', output: plan.artifacts.evidenceIndex },
   ];
-  const modelCalls = plan.executionMode === 'discovery-only'
-    ? []
-    : [{ type: 'model_call', status: 'planned', purpose: 'workspace-backed-agent-task', intent: plan.intent.type }];
+  const modelCalls = plan.executionMode === 'workspace-backed-agent'
+    ? [{ type: 'model_call', status: 'planned', purpose: 'workspace-backed-agent-task', intent: plan.intent.type }]
+    : [];
   const trace = {
     schemaVersion: 'geotech.project-agent-trace.v1',
     runId: plan.runId,
@@ -581,7 +590,9 @@ function writeProjectAwareState(plan: ProjectAwarePlan, manifest: ProjectManifes
       ...toolCalls,
       plan.executionMode === 'discovery-only'
         ? { type: 'review_gate', status: 'pending', message: 'User must select a workflow before model-heavy or write-heavy actions execute.' }
-        : { type: 'model_call', status: 'planned', message: 'Selected project-aware task will execute through the existing workspace-backed agent path.' },
+        : plan.executionMode === 'deterministic-workflow'
+          ? { type: 'tool_call', status: 'planned', message: 'Selected project-aware task will execute through a deterministic provider-neutral workflow.' }
+          : { type: 'model_call', status: 'planned', message: 'Selected project-aware task will execute through the existing workspace-backed agent path.' },
     ],
   };
   const memory = {
@@ -656,6 +667,80 @@ function renderProjectAwarePlan(plan: ProjectAwarePlan, flags: { json?: boolean;
   warn('No model-heavy workflow has run yet. Choose a task with --task, or ask a project question with --workspace.');
   console.log(chalk.gray('  Next actions: geotech agent --task data-quality | --task ground-model | --task risk-analysis | --task anomaly-detection | --task recommendations | --task visualization'));
   success(`Project state written to ${relativeArtifactPath(plan.workspace.rootPath, join(plan.workspace.rootPath, '.geotech'))}`);
+}
+
+async function renderAndPersistProjectWorkflow(
+  plan: ProjectAwarePlan,
+  manifest: ProjectManifest,
+  task: ProjectWorkflowTask,
+  flags: ReturnType<typeof getGlobalFlags>,
+): Promise<void> {
+  const workflowRun = runProjectWorkflow({
+    manifest,
+    task,
+    runId: plan.runId,
+    now: plan.project.generatedAt,
+  });
+  const report = buildProjectWorkflowReport(workflowRun);
+  const runDir = join(plan.workspace.rootPath, '.geotech', 'runs', plan.runId);
+  const resultPath = join(runDir, 'workflow_result.json');
+  const reportPath = join(runDir, 'workflow_report.md');
+  const tracePath = join(runDir, 'workflow_trace.json');
+
+  writeFileSync(resultPath, JSON.stringify(workflowRun, null, 2), 'utf-8');
+  writeFileSync(reportPath, report.fullMarkdown, 'utf-8');
+  writeFileSync(tracePath, JSON.stringify(workflowRun.trace, null, 2), 'utf-8');
+  appendFileSync(plan.artifacts.toolCalls, jsonl(workflowRun.toolCalls), 'utf-8');
+  writeFileSync(plan.artifacts.modelCalls, '', 'utf-8');
+
+  if (flags.output) {
+    const outputTarget = resolveStructuredOutputTarget({
+      outputPath: flags.output,
+      defaultBaseName: `project-${task}`,
+    });
+
+    if (outputTarget.warning && !flags.json && !flags.quiet) {
+      warn(outputTarget.warning);
+    }
+
+    if (outputTarget.kind === 'pdf' || outputTarget.kind === 'docx') {
+      const buffer = outputTarget.kind === 'pdf'
+        ? await renderReportAsPdf(report)
+        : await renderReportAsDocx(report);
+      writeFileSync(outputTarget.outputPath, buffer);
+    } else {
+      writeFileSync(outputTarget.outputPath, report.fullMarkdown, 'utf-8');
+    }
+
+    if (!flags.json && !flags.quiet) {
+      success(`Project workflow output saved to ${outputTarget.outputPath}`);
+    }
+  }
+
+  if (flags.json) {
+    renderJSON({
+      mode: 'deterministic-project-workflow',
+      task,
+      workflow: workflowRun,
+      artifacts: {
+        result: relativeArtifactPath(plan.workspace.rootPath, resultPath),
+        report: relativeArtifactPath(plan.workspace.rootPath, reportPath),
+        trace: relativeArtifactPath(plan.workspace.rootPath, tracePath),
+      },
+    });
+    return;
+  }
+
+  if (flags.quiet) {
+    console.log(plan.runId);
+    return;
+  }
+
+  heading('Project Workflow Report');
+  renderRichText(report.fullMarkdown);
+  console.log('');
+  success(`Deterministic workflow artifacts written to ${relativeArtifactPath(plan.workspace.rootPath, runDir)}`);
+  warn('No LLM/provider call was made. Use this output as a traceable review package, not final engineering design.');
 }
 
 async function checkQuota(_callType: 'llmCalls' | 'visionCalls' | 'agentCalls'): Promise<boolean> {
@@ -1890,12 +1975,22 @@ export function registerAgentCommand(program: Command): void {
           intent: projectIntent,
           executionMode: opts.planOnly === true || (!promptTask && !selectedProjectTask)
             ? 'discovery-only'
+            : isDeterministicProjectTask(selectedProjectTask)
+              ? 'deterministic-workflow'
             : 'workspace-backed-agent',
         });
         writeProjectAwareState(plan, workspaceManifest);
 
         if (opts.planOnly === true || (!promptTask && !selectedProjectTask)) {
           renderProjectAwarePlan(plan, flags);
+          return;
+        }
+
+        if (isDeterministicProjectTask(selectedProjectTask)) {
+          if ((opts.swarm === true || opts.skills === true) && !flags.json && !flags.quiet) {
+            warn('--swarm and --skills do not change deterministic project workflow execution. Optional LLM review can be run separately.');
+          }
+          await renderAndPersistProjectWorkflow(plan, workspaceManifest, selectedProjectTask, flags);
           return;
         }
 

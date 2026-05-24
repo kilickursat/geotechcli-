@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.72] - 2026-05-24
+
+### Deterministic Project Workflow Executor
+
+- Added a provider-neutral project workflow executor for explicit `geotech agent --task data-quality|ground-model|risk-analysis|anomaly-detection|recommendations|visualization` runs, so selected project workflows now produce deterministic artifacts before any optional LLM review.
+- Added deterministic workflow artifacts under `.geotech/runs/<runId>/`: `workflow_result.json`, `workflow_report.md`, and `workflow_trace.json`, with `model_calls.jsonl` kept empty for deterministic task runs.
+- Added a core `@geotechcli/core/project-workflow` export surface and regression coverage for provider-neutral workflow results, chart specs, reports, and CLI short-circuit behavior.
+
 ## [0.4.71] - 2026-05-23
 
 ### Release Checkout Permission Hotfix

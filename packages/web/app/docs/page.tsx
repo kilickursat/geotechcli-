@@ -345,7 +345,7 @@ Hosted-beta reliability note: geotechnical PDFs above the best-result window are
 geotech agent --plan-only
 geotech agent .
 
-# Run a selected project-aware workflow with workspace evidence
+# Run a selected project-aware workflow deterministically from workspace evidence
 geotech agent --task data-quality --workspace .
 geotech agent --task ground-model --workspace .
 geotech agent --task risk-analysis --workspace .
@@ -381,7 +381,7 @@ geotech agent "check bearing and settlement for the current foundation concept" 
 geotech agent "analyze slope stability for 15m cut" --output slope-report.md
 \`\`\`
 
-Strong-beta reliability note: project-aware discovery writes .geotech/project.json, .geotech/manifest.json, .geotech/evidence/file_index.jsonl, .geotech/evidence/evidence_index.jsonl, .geotech/context/readiness.json, .geotech/context/project_summary.md, .geotech/context/memory.json, and per-run intent/plan/trace/tool-call/model-call artifacts from deterministic workspace analysis before any LLM call. Use --max-files and --max-depth to bound discovery. Task mode currently routes selected project workflows into the existing workspace-backed agent path; full deterministic workflow execution is the next harness slice. Terzaghi single-agent mode and optional role-based swarm mode share the same under-specified hosted-beta intake screen, the same first-turn hosted-beta fallback behavior, and the same case-file deliverable tool bootstrap for report and export follow-on workflows. Swarm mode prepares WorkspaceScout, DataEngineer, GroundModeler, StandardsChecker, DesignEngineer, RiskReviewer, and ReportEngineer ownership before specialist prompts run; skill tools are not advertised unless --skills is enabled, reviewer tool context is retained, and rejected reviews remain unresolved rather than approved-with-notes.`,
+Strong-beta reliability note: project-aware discovery writes .geotech/project.json, .geotech/manifest.json, .geotech/evidence/file_index.jsonl, .geotech/evidence/evidence_index.jsonl, .geotech/context/readiness.json, .geotech/context/project_summary.md, .geotech/context/memory.json, and per-run intent/plan/trace/tool-call/model-call artifacts from deterministic workspace analysis before any LLM call. Use --max-files and --max-depth to bound discovery. Explicit --task data-quality, ground-model, risk-analysis, anomaly-detection, recommendations, and visualization runs now execute a deterministic provider-neutral project workflow first, write workflow_result.json, workflow_report.md, and workflow_trace.json under .geotech/runs/<runId>/, and keep model_calls.jsonl empty unless the user separately asks for LLM review. Terzaghi single-agent mode and optional role-based swarm mode remain available for prompted reasoning and share the same under-specified hosted-beta intake screen, first-turn hosted-beta fallback behavior, and case-file deliverable tool bootstrap for report and export follow-on workflows. Swarm mode prepares WorkspaceScout, DataEngineer, GroundModeler, StandardsChecker, DesignEngineer, RiskReviewer, and ReportEngineer ownership before specialist prompts run; skill tools are not advertised unless --skills is enabled, reviewer tool context is retained, and rejected reviews remain unresolved rather than approved-with-notes.`,
   },
   {
     id: 'export',

@@ -1,10 +1,10 @@
 # geotechCLI Development Status
 
-Last updated: 2026-05-23
+Last updated: 2026-05-24
 
 ## Current Work
 
-v0.4.71 follows the v0.4.70 project-aware agent root-tracing release with a narrow release-pipeline hotfix: release verify and Cloudflare deploy jobs now request explicit repository read permissions for checkout, and `geotech agent --no-workspace` help text now matches the current project-aware opt-out behavior. The v0.4.70 agent boundary remains in place: discovery-only state writing has been extended into root detection, intent artifacts, evidence indexes, local project memory, scan limits, and swarm trace correctness. The release script still publishes from each package directory so npm treats `@geotechcli/core` and `geotechcli` as local workspace publishes instead of ambiguous package specs. The LLM boundary remains explicit: hosted GLM and future BYOK models can plan, draft, validate, and review FEM cases, but they cannot run solvers, invoke WebGL generation as tools, or invent FEM outputs. The wider engineering track remains provider-neutral evidence, standards-aware GroundModel readiness, GroundModel spatial and engineering visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, the PDF/page evidence benchmark foundation, and experimental deterministic FEM/WebGL contracts so future OCR/vision, BYOK-provider, and GroundModel-to-calculation changes can be measured and routed without asking LLMs to invent calculations.
+v0.4.72 follows the v0.4.71 release-pipeline hotfix with the next project-aware harness slice: explicit `geotech agent --task data-quality|ground-model|risk-analysis|anomaly-detection|recommendations|visualization` runs now execute deterministic provider-neutral workflows before any LLM/provider setup, write `workflow_result.json`, `workflow_report.md`, and `workflow_trace.json` under `.geotech/runs/<runId>/`, and keep `model_calls.jsonl` empty. The v0.4.70 agent boundary remains in place: discovery-only state writing has been extended into root detection, intent artifacts, evidence indexes, local project memory, scan limits, and swarm trace correctness. The release script still publishes from each package directory so npm treats `@geotechcli/core` and `geotechcli` as local workspace publishes instead of ambiguous package specs. The LLM boundary remains explicit: hosted GLM and future BYOK models can plan, draft, validate, and review project workflows and FEM cases, but they cannot run solvers, invoke WebGL generation as tools, or invent calculation outputs. The wider engineering track remains standards-aware GroundModel readiness, richer GroundModel visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, the PDF/page evidence benchmark foundation, and experimental deterministic FEM/WebGL contracts so future OCR/vision, BYOK-provider, and GroundModel-to-calculation changes can be measured and routed without asking LLMs to invent calculations.
 
 Current focus:
 
@@ -44,6 +44,7 @@ Current focus:
 - Keep the experimental FEM artifact screenshot-testable with Playwright; headless Chromium may use the deterministic Canvas fallback when WebGL exposes a zero-size drawing buffer.
 - Add the first project-aware `geotech agent` harness slice: no-prompt and `--plan-only` discovery scan the workspace, write `.geotech` project state, compute workflow readiness, and ask for the next workflow before any LLM call.
 - Route `geotech agent --task <task> --workspace <dir>` through the same provider-neutral workspace manifest and GroundModel/verifier context instead of letting a BYOK/default model guess from raw files.
+- Execute explicit `geotech agent --task data-quality|ground-model|risk-analysis|anomaly-detection|recommendations|visualization` runs through deterministic provider-neutral project workflows before any optional LLM review.
 - Resolve project-agent roots through explicit `--workspace`, existing `.geotech/project.json`, nearest git root, or cwd, and make prompted agent runs project-aware by default unless `--no-workspace` is supplied.
 - Write project-agent intent, run manifest, file/evidence indexes, local memory, tool-call trace, and model-call trace artifacts under `.geotech/` so BYOK/default model runs have the same auditable harness context.
 - Keep swarm plans honest by suppressing disabled skill tools when `--skills` is off, retaining reviewer tool outputs in session context, and preserving rejected reviews as unresolved instead of approved-with-notes.
@@ -56,6 +57,14 @@ Current focus:
 - Keep the legacy Modal deploy workflow present but disabled by default.
 
 ## Done So Far
+
+### Project-Aware Deterministic Workflow Executor
+
+- Added a core provider-neutral `runProjectWorkflow` executor for explicit project-agent tasks: data quality, ground model, risk analysis, anomaly detection, recommendations, and visualization.
+- Added deterministic project workflow reports through `buildProjectWorkflowReport`, plus the `@geotechcli/core/project-workflow` export surface for downstream integration.
+- Made `geotech agent --task ... --workspace <dir>` short-circuit before quota checks, provider config, `runAgent`, or `runSwarm`, then write `workflow_result.json`, `workflow_report.md`, `workflow_trace.json`, append deterministic tool-call records, and keep `model_calls.jsonl` empty.
+- Kept natural-language prompted project requests on the existing agent path so BYOK/default models can still reason over the compact workspace evidence packet when the user asks a custom question.
+- Added regression coverage for all six deterministic project tasks, visualization chart specs, report rendering, blocked GroundModel states, and CLI no-model-call behavior.
 
 ### Project-Aware Agent Root, Intent, And Swarm Trace Slice
 
