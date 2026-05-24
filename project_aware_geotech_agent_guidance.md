@@ -1227,7 +1227,7 @@ Every `geotech agent` project run should write:
 .geotech/runs/<run_id>/plan.json
 ```
 
-`model_calls.jsonl` should always exist for audit consistency. Deterministic discovery, explicit `--task`, and clear recognized workflow routes should leave it empty. `--route-with-model` should append a compact router-proposal row, and fallback to the workspace-backed agent should add the planned/actual agent model-call provenance.
+`model_calls.jsonl` should always exist for audit consistency. Deterministic discovery, explicit `--task`, and clear recognized workflow routes should leave it empty. `--route-with-model` should append a compact router-proposal row, and fallback to the workspace-backed agent should add a planned handoff row for that agent path.
 
 Trace should include:
 

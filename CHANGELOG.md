@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.75] - 2026-05-24
+
+### Route Proposal Fallback Audit
+
+- Added CLI regression coverage for failed `--route-with-model` router calls, proving the command falls back to the workspace-backed agent path while preserving a failed router row in `model_calls.jsonl`.
+- Clarified project-aware agent guidance so fallback provenance describes the current planned workspace-backed handoff row instead of implying post-run provider model-call telemetry that is not yet captured.
+
 ## [0.4.74] - 2026-05-24
 
 ### Optional LLM Workflow Route Proposals

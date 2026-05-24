@@ -650,6 +650,62 @@ describe('agent command skill opt-in', () => {
     ]);
   });
 
+  it('falls back to the workspace-backed LLM agent when the opt-in route proposal fails', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'geotech-agent-failed-model-route-'));
+    tempDirs.push(workspace);
+    vi.spyOn(process, 'cwd').mockReturnValue(workspace);
+    coreMocks.generateText.mockRejectedValueOnce(new Error('router unavailable'));
+    coreMocks.routeProjectWorkflowRequest.mockImplementation(({ prompt, runId, modelCalls }) => makeProjectWorkflowRoutePlan({
+      runId,
+      prompt,
+      tasks: [],
+      executionMode: 'needs-selection',
+      modelCalls,
+    }));
+    const program = new Command();
+    registerAgentCommand(program);
+
+    await program.parseAsync(['agent', 'decide', 'the', 'best', 'project', 'workflow', '--route-with-model', '--json'], { from: 'user' });
+
+    expect(coreMocks.generateText).toHaveBeenCalledWith(
+      'PROJECT WORKFLOW ROUTER CONTRACT',
+      expect.objectContaining({ provider: 'hosted-beta', skillsEnabled: false }),
+      expect.objectContaining({ jsonMode: true, temperature: 0, thinkingMode: 'disabled' }),
+    );
+    expect(coreMocks.routeProjectWorkflowRequest).toHaveBeenLastCalledWith(expect.objectContaining({
+      llmSelection: undefined,
+      modelCalls: [expect.objectContaining({
+        purpose: 'project-workflow-router',
+        status: 'failed',
+        error: 'router unavailable',
+      })],
+    }));
+    expect(coreMocks.runProjectWorkflow).not.toHaveBeenCalled();
+    expect(coreMocks.runAgent).toHaveBeenCalledWith(
+      expect.stringContaining('Workflow router:'),
+      expect.any(Object),
+      expect.any(Function),
+      expect.objectContaining({ workspace: expect.any(Object) }),
+    );
+    const runRoot = join(workspace, '.geotech', 'runs');
+    const runId = readdirSync(runRoot).find((entry) => existsSync(join(runRoot, entry, 'plan.json')));
+    expect(runId).toBeTruthy();
+    const route = JSON.parse(readFileSync(join(runRoot, runId ?? '', 'workflow_route.json'), 'utf-8'));
+    expect(route.executionMode).toBe('needs-selection');
+    expect(route.modelCalls).toEqual([
+      expect.objectContaining({
+        purpose: 'project-workflow-router',
+        status: 'failed',
+        error: 'router unavailable',
+      }),
+    ]);
+    const modelRows = readFileSync(join(runRoot, runId ?? '', 'model_calls.jsonl'), 'utf-8').trim().split('\n').map((line) => JSON.parse(line));
+    expect(modelRows).toEqual([
+      expect.objectContaining({ purpose: 'project-workflow-router', status: 'failed', error: 'router unavailable' }),
+      expect.objectContaining({ purpose: 'workspace-backed-agent-task', status: 'planned' }),
+    ]);
+  });
+
   it('treats dot argument as project discovery and detects an existing .geotech project root', async () => {
     const workspace = mkdtempSync(join(tmpdir(), 'geotech-agent-root-'));
     const child = join(workspace, 'nested');
