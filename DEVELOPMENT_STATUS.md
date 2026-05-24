@@ -1,10 +1,10 @@
 # geotechCLI Development Status
 
-Last updated: 2026-05-24
+Last updated: 2026-05-25
 
 ## Current Work
 
-v0.4.75 builds on the v0.4.74 provider-neutral project workflow router with an explicit `geotech agent --route-with-model` opt-in: clear prompted workflow intents still use the zero-model deterministic route, while ambiguous project prompts can ask the configured hosted/BYOK model for a strict JSON workflow proposal that GeotechCLI validates before execution. Custom questions, rejected proposals, failed proposals, low-confidence routes, and no-evidence model suggestions still fall back to the workspace-backed LLM path, and the failed-proposal path now has direct CLI regression coverage plus corrected guidance for the current planned fallback handoff row in `model_calls.jsonl`. The LLM boundary remains tight: hosted GLM and future BYOK models can propose, plan, draft, validate, and review project workflows and FEM cases, while GeotechCLI deterministic contracts own calculations, FEM case data, visualization specs, confidence, and persisted artifacts. The release script still publishes from each package directory so npm treats `@geotechcli/core` and `geotechcli` as local workspace publishes instead of ambiguous package specs. The wider engineering track remains standards-aware GroundModel readiness, richer GroundModel visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, the PDF/page evidence benchmark foundation, and experimental deterministic FEM/WebGL contracts so future OCR/vision, BYOK-provider, and GroundModel-to-calculation changes can be measured and routed without asking LLMs to invent calculations.
+v0.4.76 builds on the integrated ingest report UI and GroundModel evidence path by preserving every recovered report borehole in the evidence, strip-log, field, map, and A-A section views, and by promoting borehole-specific coordinate text from retained OCR/native report evidence into source-bound GroundModel map points. Clear prompted workflow intents still use the zero-model deterministic route, while ambiguous project prompts can ask the configured hosted/BYOK model for a strict JSON workflow proposal that GeotechCLI validates before execution. Custom questions, rejected proposals, failed proposals, low-confidence routes, and no-evidence model suggestions still fall back to the workspace-backed LLM path. The LLM boundary remains tight: hosted GLM and future BYOK models can propose, plan, draft, validate, and review project workflows and FEM cases, while GeotechCLI deterministic contracts own calculations, FEM case data, visualization specs, confidence, and persisted artifacts. The wider engineering track remains standards-aware GroundModel readiness, richer GroundModel visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, the PDF/page evidence benchmark foundation, and experimental deterministic FEM/WebGL contracts so future OCR/vision, BYOK-provider, and GroundModel-to-calculation changes can be measured and routed without asking LLMs to invent calculations.
 
 Current focus:
 
@@ -15,6 +15,8 @@ Current focus:
 - Route hosted PDF/table layout extraction to `glm-ocr`.
 - Retry final report synthesis without thinking when GLM-5.1 returns an empty thinking-mode response.
 - Present HTML ingest results as an evidence-first Geotechnical Intelligence Report with a premium review dashboard.
+- Keep integrated ingest HTML borehole-aware: recovered BH1/BH2/BH3-style report boreholes must remain selectable in source evidence, strip-log, field, map, and A-A section views instead of collapsing to the first selected borehole.
+- Promote source-bound report borehole coordinates from labelled OCR/native text into GroundModel map evidence only when the coordinate text is tied to a borehole ID, and keep schematic fallback when coordinates are missing or partial.
 - Make geotechnical report synthesis whole-report-first before high-signal page-row extraction, so takeaways, risks, recommendations, and borehole interpretation are not dominated by figures or appendices.
 - Render borehole and ground-model report visuals as compact lithology/source-page views with Playwright layout QA.
 - Cache compact page evidence by file hash, page hash, preprocessing settings, model version, and schema version so reruns can reuse trusted page extraction work.
@@ -60,6 +62,14 @@ Current focus:
 - Keep the legacy Modal deploy workflow present but disabled by default.
 
 ## Done So Far
+
+### Integrated Ingest Borehole And Map Retention
+
+- Fixed the integrated review model so GroundModel-derived boreholes are merged with missing report-profile boreholes instead of replacing the whole recovered profile when only part of the report binds to structured evidence.
+- Kept the existing HTML visual design but added a borehole selector that switches source evidence, validated strip-log, field cards, and CRS guardrail panels across every recovered borehole.
+- Updated map rendering to plot projected easting/northing or WGS84 latitude/longitude source coordinates, and to fall back to a clearly labeled schematic borehole alignment when source coordinates are not available.
+- Added report-side coordinate promotion for OCR/native text such as `BORE HOLE NO 1 Latitude (N) - ... Longitude(E) - ...`, including compact multi-borehole OCR lines and hemisphere labels.
+- Added regression coverage for multi-borehole geotech-document reports without plottable coordinates, WGS84-only borehole-log locations, compact report latitude/longitude rows, partial-coordinate fallback, and site-coordinate text that must not create fake borehole map points.
 
 ### Optional LLM Workflow Route Proposals
 

@@ -801,6 +801,38 @@ function buildIntegratedBoreholesFromProfile(profile: IngestDossierBoreholeProfi
   }));
 }
 
+function integratedBoreholeIdentity(value: string): string {
+  const compact = value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const boreholeMatch = compact.match(/^BH0*(\d+)$/);
+  return boreholeMatch ? `BH${boreholeMatch[1]}` : compact;
+}
+
+function mergeIntegratedBoreholes(
+  primary: IntegratedReviewBorehole[],
+  fallback: IntegratedReviewBorehole[],
+): IntegratedReviewBorehole[] {
+  const merged = [...primary];
+  const seen = new Set(primary.map((borehole) => integratedBoreholeIdentity(borehole.id)));
+  for (const borehole of fallback) {
+    const identity = integratedBoreholeIdentity(borehole.id);
+    if (seen.has(identity)) {
+      continue;
+    }
+    seen.add(identity);
+    merged.push({
+      ...borehole,
+      warnings: uniqueStrings([
+        ...borehole.warnings,
+        'Borehole retained from report-level profile because no matching GroundModel borehole was recovered.',
+      ]),
+    });
+  }
+  return merged.map((borehole, index) => ({
+    ...borehole,
+    chainage: borehole.chainage || index * 35,
+  }));
+}
+
 export function buildIntegratedReviewModel(
   dossier: IngestDossier,
   options: BuildIntegratedReviewModelOptions = {},
@@ -812,9 +844,10 @@ export function buildIntegratedReviewModel(
   );
   const regionByEvidenceId = sourceRegionLookup(sourcePages);
   const groundBoreholes = buildIntegratedBoreholesFromGroundModel(dossier.groundModel, regionByEvidenceId);
+  const profileBoreholes = buildIntegratedBoreholesFromProfile(dossier.boreholeProfile);
   const boreholes = groundBoreholes.length > 0
-    ? groundBoreholes
-    : buildIntegratedBoreholesFromProfile(dossier.boreholeProfile);
+    ? mergeIntegratedBoreholes(groundBoreholes, profileBoreholes)
+    : profileBoreholes;
   const confidenceValues = [
     ...boreholes.map((borehole) => borehole.confidence),
     ...boreholes.flatMap((borehole) => [

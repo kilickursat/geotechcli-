@@ -5,8 +5,18 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 const releases = [
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-05-24',
+    date: '2026-05-25',
     tag: `${GEOTECHCLI_VERSION} Release`,
+    changes: [
+      { type: 'fix', text: 'Kept all recovered report boreholes selectable across integrated ingest evidence, strip-log, extracted-field, map, and A-A section views instead of collapsing to the first structured borehole' },
+      { type: 'fix', text: 'Promoted borehole-specific coordinate text from retained OCR/native report evidence into GroundModel map points, including compact latitude/longitude OCR rows and projected easting/northing rows' },
+      { type: 'fix', text: 'Kept site-only coordinates out of borehole maps and preserved schematic alignment fallback when recovered borehole coordinates are missing or partial' },
+    ],
+  },
+  {
+    version: '0.4.75',
+    date: '2026-05-24',
+    tag: '0.4.75 Release',
     changes: [
       { type: 'fix', text: 'Added regression coverage for failed geotech agent --route-with-model router calls so outage paths still fall back to the workspace-backed agent and keep a failed router row in model_calls.jsonl' },
       { type: 'fix', text: 'Clarified project-aware agent guidance so fallback provenance describes the current planned workspace-backed handoff row without implying unavailable post-run model-call telemetry' },

@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.76] - 2026-05-25
+
+### Integrated Ingest Borehole Map Retention
+
+- Kept all recovered report boreholes selectable in the integrated ingest HTML evidence, strip-log, extracted-field, map, and A-A section views instead of collapsing the review to the first structured borehole.
+- Promoted borehole-specific coordinate text from retained OCR/native report evidence into GroundModel map points, including compact `BORE HOLE NO ... Latitude/Longitude ...` OCR rows and projected easting/northing rows.
+- Preserved engineering trust boundaries by keeping site-only coordinates out of borehole maps and falling back to a clearly labeled schematic alignment when recovered borehole coordinates are missing or partial.
+
 ## [0.4.75] - 2026-05-24
 
 ### Route Proposal Fallback Audit

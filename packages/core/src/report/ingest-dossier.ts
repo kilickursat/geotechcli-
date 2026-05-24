@@ -15,6 +15,7 @@ import {
   type FemGroundModelDraftCandidate,
 } from '../fem/index.js';
 import type { EvidenceMethod, EvidenceRef } from '../evidence/index.js';
+import { buildBoreholeLocation } from '../geo/coordinates.js';
 import type {
   IntegratedReviewAgentReview,
   IntegratedReviewSourceRegionLink,
@@ -1706,6 +1707,173 @@ function parameterBoreholeId(parameter: GeotechDocumentIngestResult['parameters'
   return inferBoreholeIdsFromText(parameter.material, parameter.context, parameter.name)[0];
 }
 
+interface ReportCoordinateTextEntry {
+  text: string;
+  pageNumber?: number;
+}
+
+interface ReportBoreholeCoordinateCandidate {
+  boreholeId: string;
+  rawText: string;
+  pageNumber?: number;
+  easting?: string;
+  northing?: string;
+  latitude?: string;
+  longitude?: string;
+  crs?: string;
+}
+
+function firstRegexGroup(text: string, pattern: RegExp): string | undefined {
+  return text.match(pattern)?.[1]?.trim();
+}
+
+function labelledCoordinateValue(
+  text: string,
+  pattern: RegExp,
+  allowedHemisphere: RegExp,
+): string | undefined {
+  const match = text.match(pattern);
+  if (!match?.[2]) {
+    return undefined;
+  }
+  const hemisphere = match[1]?.trim().toUpperCase();
+  const value = match[2].trim();
+  if (!hemisphere || /[NSEW]$/i.test(value) || !allowedHemisphere.test(hemisphere)) {
+    return value;
+  }
+  return `${value} ${hemisphere}`;
+}
+
+function reportBoreholeCoordinateSegments(text: string): string[] {
+  const normalized = text.replace(/\r\n/g, '\n');
+  const boreholeMarker = /\b(?:B\.?\s*H\.?|BH|BORE\s*HOLE|BOREHOLE|BOREHOLENO)\s*(?:NO\.?)?\s*[:#-]?\s*0*\d{1,3}\b/gi;
+  const matches = [...normalized.matchAll(boreholeMarker)]
+    .map((match) => match.index)
+    .filter((index): index is number => index != null);
+  if (matches.length === 0) {
+    return normalized
+      .split(/\r?\n/)
+      .map((line) => line.replace(/\s+/g, ' ').trim())
+      .filter(Boolean);
+  }
+  return matches
+    .map((start, index) => normalized.slice(start, matches[index + 1] ?? normalized.length))
+    .flatMap((segment) => segment.split(/(?<=\.)\s+(?=(?:BH|B\.?\s*H|Bore\s*Hole|Borehole)\b)/i))
+    .map((segment) => segment.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+}
+
+function reportCoordinateTextEntries(result: GeotechDocumentIngestResult): ReportCoordinateTextEntry[] {
+  return [
+    ...(result.contentChunks ?? []).map((chunk) => ({
+      text: [chunk.headingAncestry.join(' '), chunk.text].filter(Boolean).join('\n'),
+      pageNumber: firstSourcePage([chunk.sourcePages]),
+    })),
+    ...(result.inspection?.pages ?? []).map((page) => ({
+      text: [
+        page.normalizedText,
+        page.extractedText,
+        page.normalizedArtifact?.nativeText,
+      ].filter(Boolean).join('\n'),
+      pageNumber: page.pageNumber,
+    })),
+    ...result.parameters.map((parameter) => ({
+      text: [parameter.name, parameter.valueText, parameter.unit, parameter.material, parameter.context].filter(Boolean).join(' '),
+      pageNumber: firstSourcePage([parameter.sourcePages]),
+    })),
+  ].filter((entry) => entry.text.trim().length > 0);
+}
+
+function extractReportCoordinateCandidateFromLine(
+  rawLine: string,
+  pageNumber?: number,
+): ReportBoreholeCoordinateCandidate | undefined {
+  const line = rawLine.replace(/\s+/g, ' ').trim();
+  if (!line || !/\b(?:coordinate|location|latitude|longitude|easting|northing|bore\s*hole|borehole|bh)\b/i.test(line)) {
+    return undefined;
+  }
+  const boreholeIds = inferBoreholeIdsFromText(line);
+  if (boreholeIds.length !== 1) {
+    return undefined;
+  }
+
+  const easting = firstRegexGroup(line, /\b(?:easting|east)\s*(?:\([ex]\))?\s*[:=\-]?\s*([+-]?\d[\d,]*(?:\.\d+)?)/i);
+  const northing = firstRegexGroup(line, /\b(?:northing|north)\s*(?:\([ny]\))?\s*[:=\-]?\s*([+-]?\d[\d,]*(?:\.\d+)?)/i);
+  const latitude = labelledCoordinateValue(
+    line,
+    /\b(?:latitude|lat)\s*(?:\(([ns])\))?\s*[:=\-]?\s*([+-]?\d{1,2}(?:[.,]\d+)?\s*[NS]?)/i,
+    /^[NS]$/i,
+  );
+  const longitude = labelledCoordinateValue(
+    line,
+    /\b(?:longitude|long|lon)\s*(?:\(([ew])\))?\s*[:=\-]?\s*([+-]?\d{1,3}(?:[.,]\d+)?\s*[EW]?)/i,
+    /^[EW]$/i,
+  );
+
+  if (!((easting && northing) || (latitude && longitude))) {
+    return undefined;
+  }
+
+  const epsg = firstRegexGroup(line, /\bEPSG\s*[:#-]?\s*(\d{3,5})\b/i);
+  return {
+    boreholeId: boreholeIds[0]!,
+    rawText: line,
+    ...(pageNumber != null ? { pageNumber } : {}),
+    ...(easting ? { easting } : {}),
+    ...(northing ? { northing } : {}),
+    ...(latitude ? { latitude } : {}),
+    ...(longitude ? { longitude } : {}),
+    ...(epsg ? { crs: `EPSG:${epsg}` } : {}),
+  };
+}
+
+function extractReportBoreholeCoordinateCandidates(
+  result: GeotechDocumentIngestResult,
+): ReportBoreholeCoordinateCandidate[] {
+  const candidates: ReportBoreholeCoordinateCandidate[] = [];
+  const seen = new Set<string>();
+  for (const entry of reportCoordinateTextEntries(result)) {
+    for (const segment of reportBoreholeCoordinateSegments(entry.text)) {
+      const candidate = extractReportCoordinateCandidateFromLine(segment, entry.pageNumber);
+      if (!candidate) {
+        continue;
+      }
+      const key = `${candidate.boreholeId}:${candidate.easting ?? ''}:${candidate.northing ?? ''}:${candidate.latitude ?? ''}:${candidate.longitude ?? ''}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      candidates.push(candidate);
+    }
+  }
+  return candidates;
+}
+
+function coordinateSystemFromReportBoreholes(
+  boreholes: ReportGroundModelBorehole[],
+): GroundModel['coordinateSystem'] {
+  const coordinates = boreholes.map((borehole) => borehole.coordinates).filter(Boolean);
+  const hasProjected = coordinates.some((coordinate) => coordinate?.easting != null && coordinate.northing != null);
+  const hasGeographic = coordinates.some((coordinate) => coordinate?.latitude != null && coordinate.longitude != null);
+  if (hasProjected) {
+    return {
+      kind: 'local-grid',
+      warnings: ['PDF report coordinate evidence requires CRS/unit verification before design or GIS overlay use.'],
+    };
+  }
+  if (hasGeographic) {
+    return {
+      kind: 'geographic',
+      crs: 'EPSG:4326',
+      warnings: ['Geographic borehole coordinates were extracted from report text; verify against the source PDF before design use.'],
+    };
+  }
+  return {
+    kind: 'unknown',
+    warnings: ['PDF report evidence did not include plottable coordinate data.'],
+  };
+}
+
 function looksLikeBearingTableSptFalsePositive(parameter: GeotechDocumentIngestResult['parameters'][number]): boolean {
   const normalizedName = parameter.name.toLowerCase().replace(/\s+/g, '');
   if (!/spt|nvalue|n-value|standardpenetration/.test(normalizedName)) {
@@ -1731,6 +1899,7 @@ function buildGroundModelFromGeotechReport(
   const strata: ReportGroundModelStratum[] = [];
   const groundwater: ReportGroundModelGroundwater[] = [];
   const parameters: ReportGroundModelParameter[] = [];
+  let promotedCoordinateSystem: GroundModel['coordinateSystem'] | undefined;
 
   const ensureBorehole = (id: string, evidenceIds: string[] = []): ReportGroundModelBorehole => {
     const normalizedId = normalizeBoreholeId(id);
@@ -1865,6 +2034,68 @@ function buildGroundModelFromGeotechReport(
     parameters.push(visualParameter);
   }
 
+  for (const candidate of extractReportBoreholeCoordinateCandidates(result)) {
+    const location = buildBoreholeLocation({
+      boreholeId: candidate.boreholeId,
+      source: 'pdf-report',
+      description: candidate.rawText,
+      crs: candidate.crs,
+      easting: candidate.easting,
+      northing: candidate.northing,
+      latitude: candidate.latitude,
+      longitude: candidate.longitude,
+      raw: { rawCoordinateText: candidate.rawText },
+    });
+    const hasPlottableCoordinates = Boolean(location?.projected || location?.wgs84);
+    if (!location || !hasPlottableCoordinates) {
+      continue;
+    }
+    const locationCrs = location.crs?.code ?? (location.crs?.epsg != null ? `EPSG:${location.crs.epsg}` : location.crs?.name);
+    if (!promotedCoordinateSystem) {
+      promotedCoordinateSystem = location.projected
+        ? {
+            kind: 'local-grid',
+            ...(locationCrs ? { crs: locationCrs } : {}),
+            warnings: locationCrs
+              ? ['PDF report coordinate evidence requires source-page verification before design or GIS overlay use.']
+              : ['Projected borehole coordinates were extracted from report text without an explicit CRS.'],
+          }
+        : {
+            kind: 'geographic',
+            crs: locationCrs ?? 'EPSG:4326',
+            warnings: ['Geographic borehole coordinates were extracted from report text; verify against the source PDF before design use.'],
+          };
+    }
+    const evidenceId = addReportEvidenceRef(evidenceState, {
+      pageNumber: candidate.pageNumber,
+      rawValue: candidate.rawText,
+      normalizedValue: location.projected
+        ? `E ${location.projected.easting}, N ${location.projected.northing}`
+        : location.wgs84
+          ? `${location.wgs84.latitude}, ${location.wgs84.longitude}`
+          : null,
+      warnings: location.crs?.kind === 'unknown' ? ['Coordinate CRS is unknown.'] : [],
+    });
+    const borehole = ensureBorehole(candidate.boreholeId, [evidenceId]);
+    borehole.coordinates = {
+      ...(location.projected
+        ? {
+            easting: location.projected.easting,
+            northing: location.projected.northing,
+          }
+        : {}),
+      ...(location.wgs84
+        ? {
+            latitude: location.wgs84.latitude,
+            longitude: location.wgs84.longitude,
+          }
+        : {}),
+      evidenceIds: [evidenceId],
+      confidence: confidenceRatio(result.confidence),
+    };
+    borehole.evidenceIds = uniqueStrings([...borehole.evidenceIds, evidenceId]);
+  }
+
   const boreholeList = [...boreholes.values()].sort((left, right) => left.id.localeCompare(right.id, undefined, { numeric: true }));
   const sptTestCount = boreholeList.reduce((count, borehole) => count + borehole.sptTests.length, 0);
   if (strata.length === 0 && groundwater.length === 0 && parameters.length === 0 && sptTestCount === 0) {
@@ -1888,10 +2119,7 @@ function buildGroundModelFromGeotechReport(
     project: {
       rootPath: result.source.filePath ?? result.source.fileName ?? sourceLabel,
     },
-    coordinateSystem: {
-      kind: 'unknown',
-      warnings: ['PDF report evidence did not include plottable coordinate data.'],
-    },
+    coordinateSystem: promotedCoordinateSystem ?? coordinateSystemFromReportBoreholes(boreholeList),
     boreholes: boreholeList,
     strata,
     groundwater,

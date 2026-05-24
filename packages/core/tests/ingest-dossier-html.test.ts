@@ -414,6 +414,8 @@ describe('ingest dossier HTML', () => {
     expect(html).toContain('Boreholes</div>');
     expect(html).toContain('EPSG:32633');
     expect(html).toContain('Map-ready borehole view');
+    expect(html).toContain('data-borehole-target="BH1"');
+    expect(html).toContain('data-borehole-target="BH2"');
     expect(html).toContain('BH-01');
     expect(html).toContain('BH-02');
     expect(html).toContain('N12 at 1.00 m');
@@ -423,6 +425,36 @@ describe('ingest dossier HTML', () => {
     expect(html).toContain('Integrated extraction JSON');
     expect(html).toContain('data-region-mode="reconstructed"');
     expect(html).not.toContain('Geotechnical Intelligence Report');
+  });
+
+  it('renders WGS84-only borehole locations as source map markers', () => {
+    const base = makeBoreholeResult();
+    const dossier = buildIngestDossier({
+      ...base,
+      boreholes: base.boreholes.map((borehole, index) => ({
+        ...borehole,
+        location: {
+          boreholeId: borehole.boreholeId,
+          crs: { kind: 'geographic', code: 'EPSG:4326', source: 'explicit', confidence: 0.84 },
+          wgs84: {
+            latitude: 35.681 + index * 0.001,
+            longitude: 139.767 + index * 0.001,
+          },
+          raw: { rawCoordinateText: `${35.681 + index * 0.001}, ${139.767 + index * 0.001}` },
+        },
+      })),
+    }, {
+      sourceLabel: 'Borehole log packet',
+    });
+    const html = renderIngestDossierAsHtml(dossier);
+
+    expect(dossier.groundModel?.coordinateSystem).toMatchObject({ kind: 'geographic', crs: 'EPSG:4326' });
+    expect(dossier.groundModel?.map?.summary.boreholePoints).toBe(2);
+    expect(html).toContain('Source coordinates retained in EPSG:4326');
+    expect(html).not.toContain('No validated borehole coordinates were available for map rendering.');
+    expect(html).not.toContain('Schematic borehole alignment from recovered report boreholes');
+    expect(html).toContain('BH-01');
+    expect(html).toContain('BH-02');
   });
 
   it('renders GLM-OCR layout regions as the source page when bbox evidence is supplied', () => {
@@ -1116,5 +1148,289 @@ describe('ingest dossier HTML', () => {
     expect(html).toContain('A-A Stratigraphic Section');
     expect(html).toContain('TD 10.0 m');
     expect(html).toContain('Use source logs before treating the profile as design-grade stratigraphy.');
+  });
+
+  it('keeps all recovered boreholes in integrated review and renders a schematic map without coordinates', () => {
+    const scheduleText = [
+      'Schedule of boreholes is tabulated below.',
+      'Bore Hole No. Terminating Depth (m) Water Table below EGL (m)',
+      'BH - 1 10.00 Not found',
+      'BH - 2 10.00 Not found',
+      'BH - 3 10.00 Not found',
+      'The boring was carried out up to maximum depth of 10.00 m.',
+    ].join('\n');
+    const dossier = buildIngestDossier(makeGeotechResult({
+      summary: 'BH1, BH2, and BH3 were drilled to 10.00 m. Only BH-3 has tabulated SPT evidence.',
+      materials: [
+        { kind: 'soil', description: 'hard clayey silt', uscsSymbol: 'CI', lithology: null },
+        { kind: 'soil', description: 'medium dense silty sand', uscsSymbol: 'SM', lithology: null },
+      ],
+      parameters: [
+        { name: 'sptN', valueText: '20', numericValue: 20, unit: 'blows/ft', material: 'BH-3', context: 'Depth 2.0 m, SPT row', sourcePages: [5] },
+      ],
+      inspection: {
+        kind: 'pdf-document-inspection',
+        totalPages: 2,
+        pages: [
+          {
+            pageNumber: 2,
+            totalPages: 2,
+            classification: 'digital-text',
+            extractedText: scheduleText,
+            normalizedText: scheduleText,
+            normalizedArtifact: { nativeText: scheduleText },
+          },
+        ],
+      } as any,
+      contentChunks: [
+        {
+          chunkId: 'report-ground-model',
+          pageRange: [22, 22],
+          headingAncestry: ['Conclusion'],
+          scope: 'section',
+          sectionType: 'ground-model',
+          significance: 90,
+          text: 'Around BH - 1, hard clayey silt at top followed by weathered rock. Around BH - 2, hard clayey silt followed by very dense silty sand. Around BH - 3, medium dense to dense silty sand continues up to the terminating depth.',
+          sourcePages: [22],
+        },
+      ],
+    }));
+
+    const model = buildIntegratedReviewModel(dossier);
+    const html = renderIngestDossierAsHtml(dossier);
+
+    expect(dossier.boreholeProfile?.columns.map((column) => column.boreholeId)).toEqual(['BH1', 'BH2', 'BH3']);
+    expect(dossier.groundModel?.boreholes.map((borehole) => borehole.id)).toEqual(['BH1', 'BH2', 'BH3']);
+    expect(model.boreholes.map((borehole) => borehole.id)).toEqual(['BH1', 'BH2', 'BH3']);
+    expect(html).toContain('Schematic borehole alignment from recovered report boreholes');
+    expect(html).not.toContain('No validated borehole coordinates were available for map rendering.');
+    expect(html).toContain('data-borehole-target="BH1"');
+    expect(html).toContain('data-borehole-target="BH2"');
+    expect(html).toContain('data-borehole-target="BH3"');
+    expect(html).toContain('BH1');
+    expect(html).toContain('BH2');
+    expect(html).toContain('BH3');
+    expect(html).toContain('Professional A-A stratigraphic section');
+  });
+
+  it('promotes labelled report borehole coordinate text into GroundModel map points', () => {
+    const dossier = buildIngestDossier(makeGeotechResult({
+      summary: 'BH1 and BH2 were drilled to 10.00 m and reported with projected coordinates.',
+      parameters: [],
+      contentChunks: [
+        {
+          chunkId: 'bh1-coordinates',
+          pageRange: [3, 3],
+          headingAncestry: ['Borehole location schedule'],
+          scope: 'table',
+          sectionType: 'ground-model',
+          significance: 95,
+          text: 'BH1 Easting 542315.6 Northing 4237761.4 EPSG:32633. Layer 1 (0.0 m to 2.0 m): stiff clay. Layer 2 (2.0 m to 10.0 m): dense sand.',
+          sourcePages: [3],
+        },
+        {
+          chunkId: 'bh2-coordinates',
+          pageRange: [3, 3],
+          headingAncestry: ['Borehole location schedule'],
+          scope: 'table',
+          sectionType: 'ground-model',
+          significance: 95,
+          text: 'BH2 Easting 542355.2 Northing 4237780.5 EPSG:32633. Layer 1 (0.0 m to 3.0 m): soft clay. Layer 2 (3.0 m to 10.0 m): weathered sandstone.',
+          sourcePages: [3],
+        },
+      ],
+    }));
+    const html = renderIngestDossierAsHtml(dossier);
+
+    expect(dossier.groundModel?.coordinateSystem).toMatchObject({ kind: 'local-grid', crs: 'EPSG:32633' });
+    expect(dossier.groundModel?.map?.summary.boreholePoints).toBe(2);
+    expect(dossier.groundModel?.boreholes.find((borehole) => borehole.id === 'BH1')?.coordinates).toMatchObject({
+      easting: 542315.6,
+      northing: 4237761.4,
+    });
+    expect(dossier.groundModel?.boreholes.find((borehole) => borehole.id === 'BH2')?.coordinates).toMatchObject({
+      easting: 542355.2,
+      northing: 4237780.5,
+    });
+    expect(html).toContain('Source coordinates retained in EPSG:32633');
+    expect(html).not.toContain('Schematic borehole alignment from recovered report boreholes');
+  });
+
+  it('promotes compact OCR borehole latitude and longitude text into report map points', () => {
+    const page25 = [
+      'BORE HOLE NO 1',
+      'Latitude (N) - 25.5551',
+      'Longitude(E) - 91.8693',
+      'Layer 1 (0.0 m to 10.0 m): hard clayey silt and weathered rock.',
+      'BOREHOLENO 2 Latitude(N) - 25.5546 Longitude(E) - 91.8703 Layer 1 (0.0 m to 10.0 m): hard clayey silt and very dense silty sand.',
+    ].join('\n');
+    const page26 = [
+      'BOREHOLENO 3',
+      'Latitude(N) - 25.5479',
+      'Longitude(E) - 91.8742',
+      'Layer 1 (0.0 m to 10.0 m): medium dense to dense silty sand.',
+    ].join('\n');
+    const dossier = buildIngestDossier(makeGeotechResult({
+      summary: 'BH1, BH2, and BH3 were drilled to 10.00 m and report borehole coordinates were retained.',
+      parameters: [],
+      inspection: {
+        kind: 'pdf-document-inspection',
+        totalPages: 26,
+        pages: [
+          {
+            pageNumber: 25,
+            totalPages: 26,
+            classification: 'digital-text',
+            extractedText: page25,
+            normalizedText: page25,
+            normalizedArtifact: { nativeText: page25 },
+          },
+          {
+            pageNumber: 26,
+            totalPages: 26,
+            classification: 'digital-text',
+            extractedText: page26,
+            normalizedText: page26,
+            normalizedArtifact: { nativeText: page26 },
+          },
+        ],
+      } as any,
+      contentChunks: [
+        {
+          chunkId: 'bh1-coordinate-and-layer',
+          pageRange: [25, 25],
+          headingAncestry: ['Borehole log BH1'],
+          scope: 'section',
+          sectionType: 'ground-model',
+          significance: 95,
+          text: page25,
+          sourcePages: [25],
+        },
+        {
+          chunkId: 'bh3-coordinate-and-layer',
+          pageRange: [26, 26],
+          headingAncestry: ['Borehole log BH3'],
+          scope: 'section',
+          sectionType: 'ground-model',
+          significance: 95,
+          text: page26,
+          sourcePages: [26],
+        },
+      ],
+    }));
+    const html = renderIngestDossierAsHtml(dossier);
+
+    expect(dossier.groundModel?.coordinateSystem).toMatchObject({ kind: 'geographic', crs: 'EPSG:4326' });
+    expect(dossier.groundModel?.map?.summary.boreholePoints).toBe(3);
+    expect(dossier.groundModel?.boreholes.find((borehole) => borehole.id === 'BH1')?.coordinates).toMatchObject({
+      latitude: 25.5551,
+      longitude: 91.8693,
+    });
+    expect(dossier.groundModel?.boreholes.find((borehole) => borehole.id === 'BH2')?.coordinates).toMatchObject({
+      latitude: 25.5546,
+      longitude: 91.8703,
+    });
+    expect(dossier.groundModel?.boreholes.find((borehole) => borehole.id === 'BH3')?.coordinates).toMatchObject({
+      latitude: 25.5479,
+      longitude: 91.8742,
+    });
+    expect(html).toContain('Source coordinates retained in EPSG:4326');
+    expect(html).not.toContain('Schematic borehole alignment from recovered report boreholes');
+  });
+
+  it('keeps the integrated map schematic when only some recovered boreholes have coordinates', () => {
+    const dossier = buildIngestDossier(makeGeotechResult({
+      summary: 'BH1 and BH2 were drilled to 10.00 m, but only BH1 has retained coordinates.',
+      parameters: [],
+      contentChunks: [
+        {
+          chunkId: 'bh1-coordinate-and-layer',
+          pageRange: [3, 3],
+          headingAncestry: ['Borehole log BH1'],
+          scope: 'section',
+          sectionType: 'ground-model',
+          significance: 95,
+          text: 'BH1 Latitude (N) - 25.5551 Longitude(E) - 91.8693. Layer 1 (0.0 m to 10.0 m): hard clayey silt.',
+          sourcePages: [3],
+        },
+        {
+          chunkId: 'bh2-layer-only',
+          pageRange: [4, 4],
+          headingAncestry: ['Borehole log BH2'],
+          scope: 'section',
+          sectionType: 'ground-model',
+          significance: 95,
+          text: 'BH2 Layer 1 (0.0 m to 10.0 m): dense silty sand. Borehole coordinates were not recovered.',
+          sourcePages: [4],
+        },
+      ],
+    }));
+    const html = renderIngestDossierAsHtml(dossier);
+
+    expect(dossier.groundModel?.map?.summary.boreholePoints).toBe(1);
+    expect(dossier.groundModel?.map?.summary.missingBoreholeCoordinates).toBeGreaterThanOrEqual(1);
+    expect(html).toContain('Schematic borehole alignment from recovered report boreholes');
+    expect(html).not.toContain('Source coordinates retained in EPSG:4326');
+    expect(html).toContain('BH1');
+    expect(html).toContain('BH2');
+  });
+
+  it('honors southern and western hemisphere labels in report borehole coordinates', () => {
+    const dossier = buildIngestDossier(makeGeotechResult({
+      summary: 'BH1 was drilled to 10.00 m and report coordinates were retained.',
+      parameters: [],
+      contentChunks: [
+        {
+          chunkId: 'bh1-south-west-coordinate',
+          pageRange: [3, 3],
+          headingAncestry: ['Borehole log BH1'],
+          scope: 'section',
+          sectionType: 'ground-model',
+          significance: 95,
+          text: 'BORE HOLE NO 1 Latitude (S) - 25.5551 Longitude(W) - 91.8693. Layer 1 (0.0 m to 10.0 m): stiff clay.',
+          sourcePages: [3],
+        },
+      ],
+    }));
+
+    expect(dossier.groundModel?.coordinateSystem).toMatchObject({ kind: 'geographic', crs: 'EPSG:4326' });
+    expect(dossier.groundModel?.boreholes.find((borehole) => borehole.id === 'BH1')?.coordinates).toMatchObject({
+      latitude: -25.5551,
+      longitude: -91.8693,
+    });
+  });
+
+  it('does not promote free-floating report coordinates without a borehole id', () => {
+    const dossier = buildIngestDossier(makeGeotechResult({
+      summary: 'BH1 was drilled to 10.00 m. The project site centroid was reported separately.',
+      parameters: [],
+      contentChunks: [
+        {
+          chunkId: 'site-centroid',
+          pageRange: [2, 2],
+          headingAncestry: ['Site location'],
+          scope: 'section',
+          sectionType: 'general',
+          significance: 88,
+          text: 'Project site centroid Latitude 35.681 Longitude 139.767. This is not a borehole coordinate.',
+          sourcePages: [2],
+        },
+        {
+          chunkId: 'bh1-layers',
+          pageRange: [4, 4],
+          headingAncestry: ['BH1'],
+          scope: 'section',
+          sectionType: 'ground-model',
+          significance: 92,
+          text: 'Layer 1 (0.0 m to 3.0 m): stiff clay. Layer 2 (3.0 m to 10.0 m): dense sand.',
+          sourcePages: [4],
+        },
+      ],
+    }));
+    const html = renderIngestDossierAsHtml(dossier);
+
+    expect(dossier.groundModel?.map?.summary.boreholePoints).toBe(0);
+    expect(dossier.groundModel?.boreholes.find((borehole) => borehole.id === 'BH1')?.coordinates).toBeUndefined();
+    expect(html).toContain('Schematic borehole alignment from recovered report boreholes');
   });
 });

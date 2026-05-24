@@ -1097,9 +1097,14 @@ function renderLightFields(borehole: IntegratedReviewBorehole | undefined, model
   if (!borehole) {
     return '<div class="empty-light">No extracted fields were available.</div>';
   }
+  const coordinateValue = borehole.easting != null && borehole.northing != null
+    ? `E ${borehole.easting.toFixed(2)} / N ${borehole.northing.toFixed(2)} (${model.project.inputCrs})`
+    : borehole.latitude != null && borehole.longitude != null
+      ? `${borehole.latitude.toFixed(6)}, ${borehole.longitude.toFixed(6)} (${model.project.inputCrs})`
+      : 'not resolved';
   const fields = [
     { id: borehole.evidenceIds[0] ?? `${borehole.id}-id`, type: 'header', title: 'Borehole ID', value: borehole.id, conf: borehole.confidence, status: 'accepted', engine: 'GLM-OCR + GLM-5.1' },
-    { id: borehole.coordinateEvidenceId ?? `${borehole.id}-coords`, type: 'header', title: 'Coordinates', value: borehole.easting != null && borehole.northing != null ? `E ${borehole.easting.toFixed(2)} / N ${borehole.northing.toFixed(2)} (${model.project.inputCrs})` : 'not resolved', conf: borehole.confidence, status: 'accepted', engine: 'OCR + CRS validator' },
+    { id: borehole.coordinateEvidenceId ?? `${borehole.id}-coords`, type: 'header', title: 'Coordinates', value: coordinateValue, conf: borehole.confidence, status: 'accepted', engine: 'OCR + CRS validator' },
     { id: `${borehole.id}-td`, type: 'header', title: 'Final depth', value: `${borehole.totalDepth.toFixed(2)} m bgl`, conf: borehole.confidence, status: 'accepted', engine: 'GLM-OCR' },
     ...borehole.strata.map((stratum, index) => ({ id: stratum.evidenceId, type: 'strata', title: `Stratum ${index + 1}`, value: `${stratum.top.toFixed(2)}-${stratum.base.toFixed(2)} m | ${stratum.description}`, conf: stratum.confidence, status: stratum.status === 'accepted' ? 'accepted' : 'review', engine: 'OCR + depth map' })),
     ...borehole.spt.map((spt) => ({ id: spt.evidenceId, type: 'spt', title: 'SPT', value: `${spt.label} at ${spt.depth.toFixed(2)} m`, conf: spt.confidence, status: 'accepted', engine: 'OCR + geometry' })),
@@ -1131,36 +1136,94 @@ function renderLightFields(borehole: IntegratedReviewBorehole | undefined, model
   `;
 }
 
+function renderLightBoreholeSwitch(model: IntegratedReviewModel): string {
+  if (model.boreholes.length <= 1) {
+    return '';
+  }
+  return `
+    <div class="borehole-switch" aria-label="Borehole selector">
+      ${model.boreholes.map((borehole, index) => `<button class="tool-btn borehole-btn ${index === 0 ? 'active' : ''}" type="button" data-borehole-target="${escapeHtml(borehole.id)}">${escapeHtml(borehole.id)}</button>`).join('')}
+    </div>
+  `;
+}
+
+function renderLightBoreholePanels(
+  model: IntegratedReviewModel,
+  renderer: (borehole: IntegratedReviewBorehole | undefined) => string,
+): string {
+  if (model.boreholes.length === 0) {
+    return renderer(undefined);
+  }
+  return model.boreholes.map((borehole, index) => `
+    <div class="bh-panel ${index === 0 ? 'active' : ''}" data-borehole-panel="${escapeHtml(borehole.id)}">
+      ${renderer(borehole)}
+    </div>
+  `).join('');
+}
+
 function renderLightMap(model: IntegratedReviewModel): string {
-  const points = model.boreholes.filter((borehole) =>
-    borehole.easting != null && borehole.northing != null,
-  );
+  const coordinatePoints = model.boreholes
+    .map((borehole) => {
+      if (borehole.easting != null && borehole.northing != null) {
+        return {
+          borehole,
+          x: borehole.easting,
+          y: borehole.northing,
+        };
+      }
+      if (borehole.latitude != null && borehole.longitude != null) {
+        return {
+          borehole,
+          x: borehole.longitude,
+          y: borehole.latitude,
+        };
+      }
+      return null;
+    })
+    .filter((point): point is { borehole: IntegratedReviewBorehole; x: number; y: number } => point != null);
+  const usesSourceCoordinates = coordinatePoints.length > 0 && coordinatePoints.length === model.boreholes.length;
+  const points = usesSourceCoordinates
+    ? coordinatePoints
+    : model.boreholes.map((borehole, index) => ({
+        borehole,
+        x: borehole.chainage ?? index * 35,
+        y: borehole.offset ?? 0,
+      }));
   if (points.length === 0) {
     return '<div class="empty-light">No validated borehole coordinates were available for map rendering.</div>';
   }
   const width = 860;
   const height = 420;
   const pad = 52;
-  const xs = points.map((point) => point.easting ?? 0);
-  const ys = points.map((point) => point.northing ?? 0);
+  const xs = points.map((point) => point.x);
+  const ys = points.map((point) => point.y);
   const minX = Math.min(...xs);
   const maxX = Math.max(...xs);
   const minY = Math.min(...ys);
   const maxY = Math.max(...ys);
-  const xFor = (x: number) => pad + ((x - minX) / Math.max(1, maxX - minX)) * (width - pad * 2);
-  const yFor = (y: number) => height - pad - ((y - minY) / Math.max(1, maxY - minY)) * (height - pad * 2);
+  const xFor = (x: number) => maxX === minX
+    ? width / 2
+    : pad + ((x - minX) / Math.max(1, maxX - minX)) * (width - pad * 2);
+  const yFor = (y: number) => maxY === minY
+    ? height / 2
+    : height - pad - ((y - minY) / Math.max(1, maxY - minY)) * (height - pad * 2);
+  const stroke = usesSourceCoordinates ? '#2563eb' : '#b7791f';
+  const marker = usesSourceCoordinates ? '#2563eb' : '#f59e0b';
+  const caption = usesSourceCoordinates
+    ? `Source coordinates retained in ${model.project.inputCrs}. Map-ready coordinates render only after CRS validation.`
+    : 'Schematic borehole alignment from recovered report boreholes. Source coordinates were not available; do not use as a geographic site plan.';
   return `
     <div class="map-canvas">
       <svg viewBox="0 0 ${width} ${height}" style="width:100%;height:auto;display:block" role="img" aria-label="Borehole coordinate map">
         <rect x="0" y="0" width="${width}" height="${height}" rx="14" fill="#f8fafc"/>
         ${Array.from({ length: 9 }, (_value, index) => `<line x1="${pad + index * ((width - pad * 2) / 8)}" y1="${pad}" x2="${pad + index * ((width - pad * 2) / 8)}" y2="${height - pad}" stroke="#dbe4f0"/><line x1="${pad}" y1="${pad + index * ((height - pad * 2) / 8)}" x2="${width - pad}" y2="${pad + index * ((height - pad * 2) / 8)}" stroke="#dbe4f0"/>`).join('')}
-        <polyline points="${points.map((point) => `${xFor(point.easting ?? 0).toFixed(2)},${yFor(point.northing ?? 0).toFixed(2)}`).join(' ')}" fill="none" stroke="#2563eb" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+        <polyline points="${points.map((point) => `${xFor(point.x).toFixed(2)},${yFor(point.y).toFixed(2)}`).join(' ')}" fill="none" stroke="${stroke}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="${usesSourceCoordinates ? '' : '10 8'}"/>
         ${points.map((point, index) => {
-          const x = xFor(point.easting ?? 0);
-          const y = yFor(point.northing ?? 0);
-          return `<g><circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${index === 0 ? 11 : 9}" fill="#2563eb" stroke="#ffffff" stroke-width="4"/><text x="${(x + 14).toFixed(2)}" y="${(y - 12).toFixed(2)}" font-size="12" font-weight="850" fill="#172033">${escapeHtml(point.id)}</text></g>`;
+          const x = xFor(point.x);
+          const y = yFor(point.y);
+          return `<g><circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${index === 0 ? 11 : 9}" fill="${marker}" stroke="#ffffff" stroke-width="4"/><text x="${(x + 14).toFixed(2)}" y="${(y - 12).toFixed(2)}" font-size="12" font-weight="850" fill="#172033">${escapeHtml(point.borehole.id)}</text></g>`;
         }).join('')}
-        <text x="${pad}" y="${height - 18}" font-size="12" fill="#64748b">Source coordinates retained in ${escapeHtml(model.project.inputCrs)}. Map-ready coordinates render only after CRS validation.</text>
+        <text x="${pad}" y="${height - 18}" font-size="12" fill="#64748b">${escapeHtml(caption)}</text>
       </svg>
     </div>
   `;
@@ -1347,7 +1410,6 @@ function renderLightValidation(dossier: IngestDossier, model: IntegratedReviewMo
 
 function renderIntegratedReviewOnlyHtml(dossier: IngestDossier): string {
   const model = buildIntegratedReviewModel(dossier);
-  const selected = model.boreholes[0];
   const generatedDate = new Date(dossier.generatedAt).toLocaleString('en-CA', {
     dateStyle: 'medium',
     timeStyle: 'short',
@@ -1369,7 +1431,7 @@ function renderIntegratedReviewOnlyHtml(dossier: IngestDossier): string {
     main{padding:24px 28px 42px;max-width:1760px;margin:0 auto}.summary-grid{display:grid;grid-template-columns:repeat(5,minmax(160px,1fr));gap:14px;margin-bottom:16px}.metric{background:#fff;border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px}.metric .label{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}.metric .value{font-size:25px;font-weight:850;letter-spacing:0}.metric .note{color:var(--muted);font-size:12px;margin-top:6px;line-height:1.35}.status-good{color:var(--good)}.status-warn{color:var(--warn)}.status-blue{color:var(--blue)}.status-bad{color:var(--bad)}
     .view-nav{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}.nav-btn{border:1px solid #cbd5e1;background:#fff;color:#172033;border-radius:999px;padding:9px 12px;font-weight:800;font-size:13px;cursor:pointer}.nav-btn:hover{border-color:var(--blue);color:var(--blue)}.nav-btn.active{background:var(--blue);border-color:var(--blue);color:#fff}.view{display:none}.view.active{display:block}
     .panel{background:#fff;border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}.panel h2{font-size:16px;margin:0;padding:15px 17px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:12px;align-items:center}.panel h2 small{color:var(--muted);font-weight:500}.panel-body{padding:15px}.review-grid{display:grid;grid-template-columns:minmax(340px,1.02fr) minmax(340px,.78fr) minmax(380px,1.08fr);gap:16px;align-items:start}
-    .toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}.tool-btn{border:1px solid #cbd5e1;background:#fff;color:#172033;border-radius:999px;padding:7px 10px;font-weight:750;font-size:12px;cursor:pointer}.tool-btn.active{background:var(--blue);border-color:var(--blue);color:#fff}
+    .toolbar,.borehole-switch{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}.tool-btn{border:1px solid #cbd5e1;background:#fff;color:#172033;border-radius:999px;padding:7px 10px;font-weight:750;font-size:12px;cursor:pointer}.tool-btn.active{background:var(--blue);border-color:var(--blue);color:#fff}.bh-panel{display:none}.bh-panel.active{display:block}
     .mock-page{position:relative;width:100%;aspect-ratio:.707/1;background:#fff;border:1px solid #cbd5e1;border-radius:12px;overflow:hidden}.page-title{position:absolute;left:5%;top:3.2%;width:90%;height:5%;border-bottom:2px solid #111827;font-weight:850;font-size:clamp(12px,1vw,18px);display:flex;align-items:center;justify-content:space-between}.page-title span:last-child{color:#475569}.page-meta{position:absolute;left:5%;top:9.5%;width:90%;height:8.4%;border:1px solid #94a3b8;display:grid;grid-template-columns:1fr 1fr;font-size:clamp(8px,.62vw,11px)}.page-meta div{padding:4px 6px;border-bottom:1px solid #e2e8f0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
     .log-frame{position:absolute;left:5%;top:20%;width:90%;height:72%;border:2px solid #334155}.col{position:absolute;top:0;height:100%;border-right:1px solid #64748b}.c-depth{left:0;width:11%}.c-lith{left:11%;width:10%}.c-desc{left:21%;width:38%}.c-sample{left:59%;width:13%}.c-spt{left:72%;width:12%}.c-water{left:84%;width:8%}.c-remarks{left:92%;width:8%;border-right:none}.col-label{position:absolute;top:0;height:6.2%;width:100%;background:#e2e8f0;border-bottom:1px solid #64748b;font-size:clamp(6px,.55vw,9px);font-weight:800;display:flex;justify-content:center;align-items:center;text-align:center}
     .depth-tick{position:absolute;left:0;width:100%;border-top:1px solid #cbd5e1;font-size:clamp(6px,.55vw,9px);color:#334155}.depth-tick span{position:absolute;left:5%;top:-7px;background:#fff;padding-right:2px}.desc-text{position:absolute;left:23%;width:34%;font-size:clamp(6.5px,.58vw,10px);line-height:1.18;color:#111827;overflow:hidden}.hatch{position:absolute;left:12%;width:8%;border-left:1px solid #94a3b8;border-right:1px solid #94a3b8;background:repeating-linear-gradient(45deg,rgba(15,23,42,.24) 0 2px,transparent 2px 7px)}.hatch.made{background:repeating-linear-gradient(135deg,rgba(139,90,43,.55) 0 4px,rgba(139,90,43,.18) 4px 8px)}.hatch.clay{background:repeating-linear-gradient(45deg,rgba(111,78,55,.3) 0 2px,transparent 2px 7px),#f3d3c1}.hatch.sand{background:radial-gradient(circle,rgba(15,23,42,.35) 1px,transparent 1.5px) 0 0/8px 8px,#fde68a}.hatch.gravel{background:radial-gradient(circle,rgba(15,23,42,.35) 1.5px,transparent 2px) 0 0/10px 10px,repeating-linear-gradient(135deg,transparent 0 7px,rgba(15,23,42,.2) 7px 9px),#d4d4d4}.layer-line{position:absolute;left:11%;width:48%;border-top:2px solid #111827}.layer-line.review{border-top:2px dashed var(--warn)}
@@ -1425,6 +1487,7 @@ function renderIntegratedReviewOnlyHtml(dossier: IngestDossier): string {
         <div class="panel">
           <h2>Source report evidence <small>GLM-OCR regions when available, reconstructed log otherwise</small></h2>
           <div class="panel-body">
+            ${renderLightBoreholeSwitch(model)}
             <div class="toolbar">
               <button class="tool-btn filter active" type="button" data-filter="all">All evidence</button>
               <button class="tool-btn filter" type="button" data-filter="header">Header</button>
@@ -1436,7 +1499,7 @@ function renderIntegratedReviewOnlyHtml(dossier: IngestDossier): string {
               <button class="tool-btn filter" type="button" data-filter="parameter">Parameters</button>
               <button class="tool-btn filter" type="button" data-filter="table">Tables</button>
             </div>
-            ${renderLightSourcePage(selected, model)}
+            ${renderLightBoreholePanels(model, (borehole) => renderLightSourcePage(borehole, model))}
             <div class="legend">
               <span class="legend-item"><span class="swatch"></span>Accepted evidence</span>
               <span class="legend-item"><span class="swatch warn"></span>Review recommended</span>
@@ -1445,8 +1508,8 @@ function renderIntegratedReviewOnlyHtml(dossier: IngestDossier): string {
             </div>
           </div>
         </div>
-        <div class="panel"><h2>Validated strip log <small>deterministic renderer</small></h2><div class="panel-body">${renderLightStripLog(selected, model)}</div></div>
-        <div class="panel"><h2>Extracted fields <small>schema + confidence + evidence</small></h2><div class="panel-body">${renderLightFields(selected, model)}</div></div>
+        <div class="panel"><h2>Validated strip log <small>deterministic renderer</small></h2><div class="panel-body">${renderLightBoreholePanels(model, (borehole) => renderLightStripLog(borehole, model))}</div></div>
+        <div class="panel"><h2>Extracted fields <small>schema + confidence + evidence</small></h2><div class="panel-body">${renderLightBoreholePanels(model, (borehole) => renderLightFields(borehole, model))}</div></div>
       </div>
     </section>
     <section id="geoView" class="view">
@@ -1459,7 +1522,7 @@ function renderIntegratedReviewOnlyHtml(dossier: IngestDossier): string {
             <div class="notice"><strong>CRS rule:</strong> no map or section should be treated as design-grade until source CRS, units, project location, and vertical datum have passed validation.</div>
           </div>
         </div>
-        <div class="panel"><h2>Selected borehole + CRS guardrail <small>same object drives log, map, and section</small></h2><div class="panel-body">${renderLightSelectedBorehole(selected, model)}</div></div>
+        <div class="panel"><h2>Selected borehole + CRS guardrail <small>same object drives log, map, and section</small></h2><div class="panel-body">${renderLightBoreholeSwitch(model)}${renderLightBoreholePanels(model, (borehole) => renderLightSelectedBorehole(borehole, model))}</div></div>
       </div>
       <div class="panel section-panel">
         <h2>Professional A-A stratigraphic section <small>interpolated contacts + actual vertical borehole log columns</small></h2>
@@ -1485,11 +1548,28 @@ function renderIntegratedReviewOnlyHtml(dossier: IngestDossier): string {
           element.classList.toggle('active', element.getAttribute('data-id') === id);
         });
       };
-      const firstEvidence = document.querySelector('[data-id]');
+      const setActiveBorehole = (id) => {
+        document.querySelectorAll('[data-borehole-target]').forEach((button) => {
+          button.classList.toggle('active', button.getAttribute('data-borehole-target') === id);
+        });
+        document.querySelectorAll('[data-borehole-panel]').forEach((panel) => {
+          panel.classList.toggle('active', panel.getAttribute('data-borehole-panel') === id);
+        });
+        const firstVisibleEvidence = document.querySelector('.bh-panel.active [data-id]');
+        if (firstVisibleEvidence) setActiveEvidence(firstVisibleEvidence.getAttribute('data-id'));
+      };
+      const firstBorehole = document.querySelector('[data-borehole-target]');
+      if (firstBorehole) setActiveBorehole(firstBorehole.getAttribute('data-borehole-target'));
+      const firstEvidence = document.querySelector('.bh-panel.active [data-id], [data-id]');
       if (firstEvidence) setActiveEvidence(firstEvidence.getAttribute('data-id'));
       document.addEventListener('click', (event) => {
         const evidence = event.target.closest('[data-id]');
         if (evidence) setActiveEvidence(evidence.getAttribute('data-id'));
+      });
+      document.querySelectorAll('[data-borehole-target]').forEach((button) => {
+        button.addEventListener('click', () => {
+          setActiveBorehole(button.getAttribute('data-borehole-target'));
+        });
       });
       document.querySelectorAll('[data-view-target]').forEach((button) => {
         button.addEventListener('click', () => {
