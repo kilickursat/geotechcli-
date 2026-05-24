@@ -8,6 +8,16 @@ const releases = [
     date: '2026-05-24',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added a provider-neutral project workflow router so prompted project requests can select and sequence deterministic workflows before any optional model review' },
+      { type: 'feat', text: 'Prompted requests such as geotech agent "find anomalies and create visualizations" now write workflow_route.json, deterministic workflow outputs, and a combined workflow_route_report.md' },
+      { type: 'fix', text: 'Added strict route validation and provider-contract tests so hosted GLM, BYOK OpenAI-compatible routes, direct Z.ai, and local-compatible models share the same allowed workflow task contract' },
+    ],
+  },
+  {
+    version: '0.4.72',
+    date: '2026-05-24',
+    tag: '0.4.72 Release',
+    changes: [
       { type: 'feat', text: 'Added a provider-neutral project workflow executor for explicit geotech agent --task data-quality, ground-model, risk-analysis, anomaly-detection, recommendations, and visualization runs' },
       { type: 'feat', text: 'Added deterministic .geotech workflow_result.json, workflow_report.md, and workflow_trace.json artifacts while keeping model_calls.jsonl empty for task runs' },
       { type: 'fix', text: 'Added core project-workflow exports and regression coverage for deterministic workflow results, chart specs, reports, and CLI short-circuit behavior' },

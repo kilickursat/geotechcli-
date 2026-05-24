@@ -4,7 +4,7 @@ Last updated: 2026-05-24
 
 ## Current Work
 
-v0.4.72 follows the v0.4.71 release-pipeline hotfix with the next project-aware harness slice: explicit `geotech agent --task data-quality|ground-model|risk-analysis|anomaly-detection|recommendations|visualization` runs now execute deterministic provider-neutral workflows before any LLM/provider setup, write `workflow_result.json`, `workflow_report.md`, and `workflow_trace.json` under `.geotech/runs/<runId>/`, and keep `model_calls.jsonl` empty. The v0.4.70 agent boundary remains in place: discovery-only state writing has been extended into root detection, intent artifacts, evidence indexes, local project memory, scan limits, and swarm trace correctness. The release script still publishes from each package directory so npm treats `@geotechcli/core` and `geotechcli` as local workspace publishes instead of ambiguous package specs. The LLM boundary remains explicit: hosted GLM and future BYOK models can plan, draft, validate, and review project workflows and FEM cases, but they cannot run solvers, invoke WebGL generation as tools, or invent calculation outputs. The wider engineering track remains standards-aware GroundModel readiness, richer GroundModel visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, the PDF/page evidence benchmark foundation, and experimental deterministic FEM/WebGL contracts so future OCR/vision, BYOK-provider, and GroundModel-to-calculation changes can be measured and routed without asking LLMs to invent calculations.
+v0.4.73 builds on the v0.4.72 deterministic workflow executor with a provider-neutral project workflow router: prompted project requests can now route recognized workflow intents such as anomaly detection, risk analysis, recommendations, and visualization into confidence-gated deterministic `.geotech` workflow artifacts before any optional model review. Custom questions and low-confidence routes still fall back to the workspace-backed LLM path, but the LLM boundary is tighter: hosted GLM and future BYOK models can plan, draft, validate, and review project workflows and FEM cases, while GeotechCLI deterministic contracts own calculations, FEM case data, visualization specs, confidence, and persisted artifacts. The release script still publishes from each package directory so npm treats `@geotechcli/core` and `geotechcli` as local workspace publishes instead of ambiguous package specs. The wider engineering track remains standards-aware GroundModel readiness, richer GroundModel visualization, skill-enabled agents, role-based swarm planning, whole-report geotechnical synthesis, compact borehole/ground-model visual QA, the PDF/page evidence benchmark foundation, and experimental deterministic FEM/WebGL contracts so future OCR/vision, BYOK-provider, and GroundModel-to-calculation changes can be measured and routed without asking LLMs to invent calculations.
 
 Current focus:
 
@@ -24,6 +24,7 @@ Current focus:
 - Normalize geotechnical PDF/report outputs into a provider-neutral `DocumentEvidencePacket` so hosted GLM and future BYOK providers target the same page, observation, traceability, confidence, and review-gate contract.
 - Feed compact `DocumentEvidencePacket` summaries into agent tool results so agent reasoning sees source pages, extraction methods, missing values, review gates, borehole IDs, and max depth before raw result JSON is truncated.
 - Inject a provider-agnostic operating contract into single-agent, swarm, and specialist prompts so any BYOK model receives the same GeotechCLI evidence, tool, capability, confidence, and review-gate rules as hosted GLM.
+- Route recognized prompted project workflows through the provider-neutral workflow router before any optional model review, confidence-gate deterministic execution, and validate any model-supplied task selections against the same deterministic task allowlist.
 - Keep BYOK capability gates honest for OpenAI-compatible/free routes so text-only models are guided through OCR/page evidence instead of being treated as native image readers.
 - Keep a canonical cached-rerun fixture and `npm run benchmark:geotech-report` local harness for the `GeotechnicalInvestigationReport (1).pdf` acceptance target.
 - Keep the agentic document evidence contract provider-neutral so hosted GLM is only the strong-beta default; future BYOK LLMs should plug into the same page evidence, cache, traceability, and GroundModel readiness space.
@@ -45,6 +46,7 @@ Current focus:
 - Add the first project-aware `geotech agent` harness slice: no-prompt and `--plan-only` discovery scan the workspace, write `.geotech` project state, compute workflow readiness, and ask for the next workflow before any LLM call.
 - Route `geotech agent --task <task> --workspace <dir>` through the same provider-neutral workspace manifest and GroundModel/verifier context instead of letting a BYOK/default model guess from raw files.
 - Execute explicit `geotech agent --task data-quality|ground-model|risk-analysis|anomaly-detection|recommendations|visualization` runs through deterministic provider-neutral project workflows before any optional LLM review.
+- Execute recognized prompted workflow sequences such as anomaly detection plus visualization through deterministic child workflow outputs and a combined `workflow_route_report.md`.
 - Resolve project-agent roots through explicit `--workspace`, existing `.geotech/project.json`, nearest git root, or cwd, and make prompted agent runs project-aware by default unless `--no-workspace` is supplied.
 - Write project-agent intent, run manifest, file/evidence indexes, local memory, tool-call trace, and model-call trace artifacts under `.geotech/` so BYOK/default model runs have the same auditable harness context.
 - Keep swarm plans honest by suppressing disabled skill tools when `--skills` is off, retaining reviewer tool outputs in session context, and preserving rejected reviews as unresolved instead of approved-with-notes.
@@ -58,12 +60,20 @@ Current focus:
 
 ## Done So Far
 
+### LLM-Agnostic Project Workflow Router
+
+- Added a provider-neutral project workflow router contract that accepts explicit tasks, optional validated model selections, or deterministic keyword routing, rejects unknown task names, and returns a planner/reviewer-only route with `modelCalls: []`.
+- Added provider operating-contract support for the `project-workflow-router` task so hosted GLM, direct Z.ai, OpenAI-compatible BYOK, free OpenRouter-style routes, and local-compatible models receive the same "select workflows only" boundary when router prompts are used.
+- Made prompted project requests such as `geotech agent "find anomalies and create visualizations"` route through confidence-gated deterministic child workflow outputs before falling back to the workspace-backed LLM agent for custom questions or low-confidence routes.
+- Added `workflow_route.json` and `workflow_route_report.md` artifacts, combined route reporting, and CLI regression coverage proving routed workflows call `runProjectWorkflow`, avoid `runAgent`/`runSwarm`, and keep `model_calls.jsonl` empty.
+- Added router tests covering provider profiles, free-route review gates, invalid/fenced JSON parsing, rejected tasks, keyword fallback, and custom-question review mode.
+
 ### Project-Aware Deterministic Workflow Executor
 
 - Added a core provider-neutral `runProjectWorkflow` executor for explicit project-agent tasks: data quality, ground model, risk analysis, anomaly detection, recommendations, and visualization.
 - Added deterministic project workflow reports through `buildProjectWorkflowReport`, plus the `@geotechcli/core/project-workflow` export surface for downstream integration.
 - Made `geotech agent --task ... --workspace <dir>` short-circuit before quota checks, provider config, `runAgent`, or `runSwarm`, then write `workflow_result.json`, `workflow_report.md`, `workflow_trace.json`, append deterministic tool-call records, and keep `model_calls.jsonl` empty.
-- Kept natural-language prompted project requests on the existing agent path so BYOK/default models can still reason over the compact workspace evidence packet when the user asks a custom question.
+- Kept custom natural-language project questions on the existing agent path so BYOK/default models can still reason over the compact workspace evidence packet when the request does not map to deterministic workflow routing.
 - Added regression coverage for all six deterministic project tasks, visualization chart specs, report rendering, blocked GroundModel states, and CLI no-model-call behavior.
 
 ### Project-Aware Agent Root, Intent, And Swarm Trace Slice

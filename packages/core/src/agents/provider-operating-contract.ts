@@ -3,6 +3,7 @@ import { resolveProviderCapabilities } from '../llm/capabilities.js';
 
 export type AgentOperatingTask =
   | 'single-agent'
+  | 'project-workflow-router'
   | 'swarm-interpretation'
   | 'swarm-simulation'
   | 'swarm-review'
@@ -180,6 +181,8 @@ function renderProviderOperatingPrompt(input: {
 
 function taskSpecificRule(task: AgentOperatingTask): string {
   switch (task) {
+    case 'project-workflow-router':
+      return 'Project workflow router task: select and sequence only allowed deterministic GeotechCLI workflows; never invent engineering conclusions, calculations, FEM results, OCR results, or visualization data.';
     case 'swarm-interpretation':
       return 'Interpretation task: collect and normalize evidence; do not calculate design values from unreviewed extracted data.';
     case 'swarm-simulation':

@@ -94,6 +94,9 @@ geotech agent .
 # AI: run a selected project-aware workflow deterministically from workspace evidence
 geotech agent --task risk-analysis --workspace .
 
+# AI: route a prompted project workflow through deterministic tools first
+geotech agent "find anomalies and create visualizations" --workspace .
+
 # AI: disable workspace discovery for a generic one-off prompt
 geotech agent "explain Terzaghi bearing factors" --no-workspace
 
@@ -167,7 +170,7 @@ geotech agent --task recommendations --workspace .
 geotech agent --task visualization --workspace .
 ```
 
-No-prompt `geotech agent` and `geotech agent .` enter the same discovery-first mode and print the next workflow choices instead of behaving like generic chat. Prompted usage now also builds the project context by default unless `--no-workspace` is supplied, so BYOK and hosted models receive the same manifest, readiness, evidence index, and GroundModel/verifier summary instead of guessing from raw files. Use `--max-files` and `--max-depth` to bound discovery. Explicit `--task data-quality|ground-model|risk-analysis|anomaly-detection|recommendations|visualization` runs now execute a deterministic provider-neutral workflow first, write `workflow_result.json`, `workflow_report.md`, and `workflow_trace.json` under `.geotech/runs/<runId>/`, and keep `model_calls.jsonl` empty unless the user separately asks for LLM review.
+No-prompt `geotech agent` and `geotech agent .` enter the same discovery-first mode and print the next workflow choices instead of behaving like generic chat. Prompted usage now also builds the project context by default unless `--no-workspace` is supplied. Recognized project workflow prompts are routed through the provider-neutral workflow router first, so requests like "find anomalies and create visualizations" execute confidence-gated deterministic `anomaly-detection` and `visualization` workflows, write `workflow_route.json`, child workflow outputs, and `workflow_route_report.md`, and keep `model_calls.jsonl` empty. Custom project questions and low-confidence routes still fall back to the workspace-backed LLM agent with the same manifest, readiness, evidence index, and GroundModel/verifier summary instead of guessing from raw files. Use `--max-files` and `--max-depth` to bound discovery. Explicit `--task data-quality|ground-model|risk-analysis|anomaly-detection|recommendations|visualization` runs execute a deterministic provider-neutral workflow first, write `workflow_result.json`, `workflow_report.md`, and `workflow_trace.json` under `.geotech/runs/<runId>/`, and keep `model_calls.jsonl` empty unless the user separately asks for LLM review.
 
 ## Interactive Visualization
 
@@ -418,7 +421,7 @@ npm run smoke:byok -- --provider=openrouter --strict
 
 Supported smoke environment variables are `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `ZHIPU_API_KEY`/`ZAI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `HF_TOKEN`/`HUGGINGFACE_API_KEY`, or `OPENAI_COMPATIBLE_API_KEY` with `OPENAI_COMPATIBLE_BASE_URL` and `OPENAI_COMPATIBLE_MODEL`. These checks validate that BYOK text synthesis can answer the same compact evidence-contract prompt path; PDF, OCR, and vision confidence still depends on the provider capability advertised for the selected model.
 
-Provider-agnostic agent behavior: hosted GLM is the strong-beta default, but GeotechCLI now injects the same operating contract into single-agent, role-based swarm, and specialist-agent prompts for BYOK providers. That contract tells each model what capabilities it has, when to use `DocumentEvidencePacket`, `GroundModel`, standards snippets, deterministic tools, source pages, confidence, and review gates, and how to fall back when a free/open route lacks image, native-PDF, strict JSON, or stable capacity.
+Provider-agnostic agent behavior: hosted GLM is the strong-beta default, but GeotechCLI now injects the same operating contract into workflow router prompts, single-agent, role-based swarm, and specialist-agent prompts for BYOK providers. That contract tells each model what capabilities it has, when to use `DocumentEvidencePacket`, `GroundModel`, standards snippets, deterministic tools, source pages, confidence, and review gates, and how to fall back when a free/open route lacks image, native-PDF, strict JSON, or stable capacity. In the shipped recognized workflow path, routing is deterministic and confidence-gated; the router contract also validates optional model-supplied task selections so models can only select or review allowed workflows while GeotechCLI executors produce calculations, FEM case data, visualization specs, confidence, and persisted artifacts.
 
 ## Pricing
 

@@ -32,6 +32,22 @@ export {
 } from './project-workflow-executor.js';
 
 export {
+  PROJECT_WORKFLOW_ROUTER_TASKS,
+  PROJECT_WORKFLOW_ROUTE_MIN_CONFIDENCE,
+  buildProjectWorkflowRouterPrompt,
+  inferProjectWorkflowRouteTasks,
+  normalizeProjectWorkflowRouteTask,
+  parseProjectWorkflowRouterSelection,
+  routeProjectWorkflowRequest,
+  type BuildProjectWorkflowRouterPromptOptions,
+  type ProjectWorkflowRouteExecutionMode,
+  type ProjectWorkflowRoutePlan,
+  type ProjectWorkflowRouteRejectedTask,
+  type ProjectWorkflowRouterSelection,
+  type RouteProjectWorkflowRequestOptions,
+} from './project-workflow-router.js';
+
+export {
   DEFAULT_ANALYZE_WORKSPACE_OPTIONS,
   type AnalyzeWorkspaceOptions,
   type ProjectManifest,

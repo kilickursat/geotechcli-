@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.73] - 2026-05-24
+
+### LLM-Agnostic Project Workflow Router
+
+- Added a provider-neutral project workflow router contract that supports deterministic CLI routing today and validates any model-supplied workflow selections without letting models own calculations or FEM math.
+- Prompted project requests such as `geotech agent "find anomalies and create visualizations"` now route recognized workflow intents through confidence-gated deterministic `.geotech` workflow artifacts before falling back to the LLM-backed agent for custom questions.
+- Added route artifacts, combined route reports, strict task validation, rejected-task handling, provider operating-contract coverage, and CLI regression tests proving deterministic routes keep `model_calls.jsonl` empty.
+
 ## [0.4.72] - 2026-05-24
 
 ### Deterministic Project Workflow Executor

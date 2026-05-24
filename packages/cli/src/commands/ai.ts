@@ -34,8 +34,10 @@ import {
   persistCaseFileEvidence,
   analyzeWorkspace,
   resolveWorkspaceRoot,
+  routeProjectWorkflowRequest,
   runProjectWorkflow,
   type ProjectManifest,
+  type ProjectWorkflowRoutePlan,
   type ProjectWorkflowTask,
   type WorkspaceRoot,
   type GeneratedReport,
@@ -178,6 +180,7 @@ interface ProjectAwarePlan {
     trace: string;
     toolCalls: string;
     modelCalls: string;
+    workflowRoute: string;
   };
   warnings: string[];
 }
@@ -485,6 +488,7 @@ function buildProjectAwarePlan(
       trace: join(geotechDir, 'runs', runId, 'trace.json'),
       toolCalls: join(geotechDir, 'runs', runId, 'tool_calls.jsonl'),
       modelCalls: join(geotechDir, 'runs', runId, 'model_calls.jsonl'),
+      workflowRoute: join(geotechDir, 'runs', runId, 'workflow_route.json'),
     },
     warnings: [
       ...manifest.warnings,
@@ -741,6 +745,165 @@ async function renderAndPersistProjectWorkflow(
   console.log('');
   success(`Deterministic workflow artifacts written to ${relativeArtifactPath(plan.workspace.rootPath, runDir)}`);
   warn('No LLM/provider call was made. Use this output as a traceable review package, not final engineering design.');
+}
+
+async function renderAndPersistProjectWorkflowRoute(
+  plan: ProjectAwarePlan,
+  manifest: ProjectManifest,
+  route: ProjectWorkflowRoutePlan,
+  flags: ReturnType<typeof getGlobalFlags>,
+): Promise<void> {
+  const parentRunDir = join(plan.workspace.rootPath, '.geotech', 'runs', plan.runId);
+  mkdirSync(parentRunDir, { recursive: true });
+  writeFileSync(plan.artifacts.workflowRoute, JSON.stringify(route, null, 2), 'utf-8');
+
+  const routeToolCall = {
+    type: 'tool_call',
+    tool: 'project.workflow_router',
+    status: route.executionMode === 'deterministic-sequence' ? 'pass' : 'review',
+    summary: route.executionMode === 'deterministic-sequence'
+      ? `Router selected deterministic workflow task(s): ${route.tasks.join(', ')}.`
+      : 'Router could not select deterministic workflow tasks; custom question handling required.',
+  };
+  appendFileSync(plan.artifacts.toolCalls, jsonl([routeToolCall]), 'utf-8');
+  writeFileSync(plan.artifacts.modelCalls, '', 'utf-8');
+
+  const workflowOutputs: Array<{
+    task: ProjectWorkflowTask;
+    runId: string;
+    resultPath: string;
+    reportPath: string;
+    tracePath: string;
+    report: GeneratedReport;
+  }> = [];
+
+  for (const task of route.tasks) {
+    const workflowRunId = route.tasks.length === 1 ? plan.runId : `${plan.runId}_${task}`;
+    const workflowRun = runProjectWorkflow({
+      manifest,
+      task,
+      runId: workflowRunId,
+      now: plan.project.generatedAt,
+    });
+    const report = buildProjectWorkflowReport(workflowRun);
+    const runDir = join(plan.workspace.rootPath, '.geotech', 'runs', workflowRun.runId);
+    mkdirSync(runDir, { recursive: true });
+    const resultPath = join(runDir, 'workflow_result.json');
+    const reportPath = join(runDir, 'workflow_report.md');
+    const tracePath = join(runDir, 'workflow_trace.json');
+
+    writeFileSync(resultPath, JSON.stringify(workflowRun, null, 2), 'utf-8');
+    writeFileSync(reportPath, report.fullMarkdown, 'utf-8');
+    writeFileSync(tracePath, JSON.stringify(workflowRun.trace, null, 2), 'utf-8');
+    appendFileSync(plan.artifacts.toolCalls, jsonl(workflowRun.toolCalls), 'utf-8');
+
+    workflowOutputs.push({
+      task,
+      runId: workflowRun.runId,
+      resultPath,
+      reportPath,
+      tracePath,
+      report,
+    });
+  }
+
+  const combinedMarkdown = [
+    '# Project Workflow Route Report',
+    '',
+    `Prompt: ${route.prompt || '(none)'}`,
+    `Route: ${route.tasks.join(', ') || 'needs selection'}`,
+    `Confidence: ${Math.round(route.confidence * 100)}%`,
+    '',
+    '## Router Rationale',
+    '',
+    ...route.rationale.map((item) => `- ${item}`),
+    route.rejectedTasks.length > 0 ? '' : undefined,
+    route.rejectedTasks.length > 0 ? '## Rejected Route Items' : undefined,
+    ...route.rejectedTasks.map((item) => `- ${item.value}: ${item.reason}`),
+    '',
+    '## Deterministic Workflow Outputs',
+    '',
+    ...workflowOutputs.flatMap((output) => [
+      `### ${output.task}`,
+      '',
+      `Run: ${output.runId}`,
+      `Artifacts: ${relativeArtifactPath(plan.workspace.rootPath, output.resultPath)}, ${relativeArtifactPath(plan.workspace.rootPath, output.reportPath)}`,
+      '',
+      output.report.fullMarkdown,
+      '',
+    ]),
+    '## Boundary',
+    '',
+    'The workflow route contract allows only task selection and review. GeotechCLI deterministic executors own calculations, FEM cases, validation, confidence, and persisted artifacts.',
+  ].filter((item): item is string => typeof item === 'string').join('\n');
+
+  const combinedReport: GeneratedReport = {
+    title: 'Project Workflow Route Report',
+    sections: [
+      { title: 'Router Rationale', content: route.rationale.join('\n') },
+      { title: 'Deterministic Workflow Outputs', content: workflowOutputs.map((output) => `${output.task}: ${output.report.title}`).join('\n') },
+    ],
+    fullMarkdown: combinedMarkdown,
+    latencyMs: workflowOutputs.reduce((total, output) => total + output.report.latencyMs, 0),
+  };
+  const combinedReportPath = join(parentRunDir, 'workflow_route_report.md');
+  writeFileSync(combinedReportPath, combinedReport.fullMarkdown, 'utf-8');
+
+  if (flags.output) {
+    const outputTarget = resolveStructuredOutputTarget({
+      outputPath: flags.output,
+      defaultBaseName: 'project-workflow-route',
+    });
+
+    if (outputTarget.warning && !flags.json && !flags.quiet) {
+      warn(outputTarget.warning);
+    }
+
+    if (outputTarget.kind === 'pdf' || outputTarget.kind === 'docx') {
+      const buffer = outputTarget.kind === 'pdf'
+        ? await renderReportAsPdf(combinedReport)
+        : await renderReportAsDocx(combinedReport);
+      writeFileSync(outputTarget.outputPath, buffer);
+    } else {
+      writeFileSync(outputTarget.outputPath, combinedReport.fullMarkdown, 'utf-8');
+    }
+
+    if (!flags.json && !flags.quiet) {
+      success(`Project workflow route output saved to ${outputTarget.outputPath}`);
+    }
+  }
+
+  if (flags.json) {
+    renderJSON({
+      mode: 'project-workflow-route',
+      route,
+      workflows: workflowOutputs.map((output) => ({
+        task: output.task,
+        runId: output.runId,
+        artifacts: {
+          result: relativeArtifactPath(plan.workspace.rootPath, output.resultPath),
+          report: relativeArtifactPath(plan.workspace.rootPath, output.reportPath),
+          trace: relativeArtifactPath(plan.workspace.rootPath, output.tracePath),
+        },
+      })),
+      artifacts: {
+        route: relativeArtifactPath(plan.workspace.rootPath, plan.artifacts.workflowRoute),
+        report: relativeArtifactPath(plan.workspace.rootPath, combinedReportPath),
+      },
+    });
+    return;
+  }
+
+  if (flags.quiet) {
+    console.log(plan.runId);
+    return;
+  }
+
+  heading('Project Workflow Route Report');
+  renderRichText(combinedReport.fullMarkdown);
+  console.log('');
+  success(`Workflow route artifacts written to ${relativeArtifactPath(plan.workspace.rootPath, parentRunDir)}`);
+  warn('No engineering result was invented by an LLM. Deterministic GeotechCLI workflows produced the persisted outputs.');
 }
 
 async function checkQuota(_callType: 'llmCalls' | 'visionCalls' | 'agentCalls'): Promise<boolean> {
@@ -1965,21 +2128,42 @@ export function registerAgentCommand(program: Command): void {
         const workspace = resolveWorkspaceRoot({
           workspacePath: typeof opts.workspace === 'string' && opts.workspace.trim() ? opts.workspace : undefined,
         });
+        const runId = nowRunId();
         workspaceManifest = await analyzeWorkspace(workspace.path, {
           includeCalculationInputDrafts: true,
           ...(maxFiles ? { maxFiles } : {}),
           ...(maxDepth ? { maxDepth } : {}),
         });
+        const projectWorkflowRoute = !selectedProjectTask && promptTask
+          ? routeProjectWorkflowRequest({
+              prompt: promptTask,
+              manifest: workspaceManifest,
+              runId,
+            })
+          : undefined;
+        const routedIntent: ProjectAgentIntent = projectWorkflowRoute?.executionMode === 'deterministic-sequence'
+          ? {
+              schemaVersion: 'geotech.project-agent-intent.v1',
+              source: 'prompt',
+              type: projectWorkflowRoute.tasks.length === 1 ? projectWorkflowRoute.tasks[0] : 'combined',
+              tasks: projectWorkflowRoute.tasks,
+              prompt: promptTask,
+            }
+          : projectIntent;
         const plan = buildProjectAwarePlan(workspaceManifest, {
           workspace,
-          intent: projectIntent,
+          intent: routedIntent,
+          runId,
           executionMode: opts.planOnly === true || (!promptTask && !selectedProjectTask)
             ? 'discovery-only'
-            : isDeterministicProjectTask(selectedProjectTask)
+            : isDeterministicProjectTask(selectedProjectTask) || projectWorkflowRoute?.executionMode === 'deterministic-sequence'
               ? 'deterministic-workflow'
             : 'workspace-backed-agent',
         });
         writeProjectAwareState(plan, workspaceManifest);
+        if (projectWorkflowRoute) {
+          writeFileSync(plan.artifacts.workflowRoute, JSON.stringify(projectWorkflowRoute, null, 2), 'utf-8');
+        }
 
         if (opts.planOnly === true || (!promptTask && !selectedProjectTask)) {
           renderProjectAwarePlan(plan, flags);
@@ -1994,12 +2178,21 @@ export function registerAgentCommand(program: Command): void {
           return;
         }
 
+        if (projectWorkflowRoute?.executionMode === 'deterministic-sequence') {
+          if ((opts.swarm === true || opts.skills === true) && !flags.json && !flags.quiet) {
+            warn('--swarm and --skills do not change deterministic project workflow routing. Optional LLM review can be run separately.');
+          }
+          await renderAndPersistProjectWorkflowRoute(plan, workspaceManifest, projectWorkflowRoute, flags);
+          return;
+        }
+
         agentTask = [
           task,
           'Project-aware task context:',
-          `Selected intent: ${projectIntent.type}`,
-          projectIntent.tasks.length > 0 ? `Intent tasks: ${projectIntent.tasks.join(', ')}` : '',
+          `Selected intent: ${routedIntent.type}`,
+          routedIntent.tasks.length > 0 ? `Intent tasks: ${routedIntent.tasks.join(', ')}` : '',
           `Project state: ${relativeArtifactPath(plan.workspace.rootPath, plan.artifacts.plan)}`,
+          projectWorkflowRoute ? `Workflow router: ${relativeArtifactPath(plan.workspace.rootPath, plan.artifacts.workflowRoute)} (${projectWorkflowRoute.executionMode})` : '',
           summarizeWorkspaceManifestForAgent(workspaceManifest),
         ].filter(Boolean).join('\n\n');
       }

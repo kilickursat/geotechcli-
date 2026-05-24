@@ -8,6 +8,7 @@ const coreMocks = vi.hoisted(() => ({
   analyzeWorkspace: vi.fn(),
   buildLLMConfig: vi.fn(),
   resolveWorkspaceRoot: vi.fn(),
+  routeProjectWorkflowRequest: vi.fn(),
   runProjectWorkflow: vi.fn(),
   buildProjectWorkflowReport: vi.fn(),
   runAgent: vi.fn(),
@@ -29,6 +30,7 @@ vi.mock('@geotechcli/core', () => ({
   DEFAULT_LLM_VISION_MODEL: 'glm-5v-turbo',
   buildLLMConfig: coreMocks.buildLLMConfig,
   resolveWorkspaceRoot: coreMocks.resolveWorkspaceRoot,
+  routeProjectWorkflowRequest: coreMocks.routeProjectWorkflowRequest,
   runProjectWorkflow: coreMocks.runProjectWorkflow,
   buildProjectWorkflowReport: coreMocks.buildProjectWorkflowReport,
   runAgent: coreMocks.runAgent,
@@ -120,6 +122,40 @@ function makeProjectWorkflowReport(task = 'risk-analysis') {
     sections: [{ title: 'Executive Summary', content: 'deterministic project workflow summary' }],
     fullMarkdown: `# Project Workflow Report: ${task}\n\ndeterministic project workflow summary`,
     latencyMs: 1,
+  };
+}
+
+function makeProjectWorkflowRoutePlan(options: {
+  runId?: string;
+  prompt?: string;
+  tasks?: string[];
+  executionMode?: 'deterministic-sequence' | 'needs-selection';
+  confidence?: number;
+} = {}) {
+  const tasks = options.tasks ?? [];
+  return {
+    schemaVersion: 'geotech.project-workflow-route-plan.v1',
+    routeId: `route_${options.runId ?? 'run_test'}`,
+    runId: options.runId ?? 'run_test',
+    generatedAt: new Date().toISOString(),
+    prompt: options.prompt ?? '',
+    executionMode: options.executionMode ?? (tasks.length > 0 ? 'deterministic-sequence' : 'needs-selection'),
+    tasks,
+    confidence: options.confidence ?? (tasks.length > 0 ? 0.82 : 0.2),
+    rationale: tasks.length > 0 ? ['matched deterministic workflow route'] : ['requires custom question handling'],
+    rejectedTasks: [],
+    providerContract: {
+      providerNeutral: true,
+      purpose: 'project-workflow-routing',
+      llmRole: 'planner-reviewer-only',
+      deterministicExecutionRequired: true,
+      allowedTasks: ['data-quality', 'ground-model', 'risk-analysis', 'anomaly-detection', 'recommendations', 'visualization'],
+      disallowedActions: ['invent calculation results'],
+    },
+    trace: {
+      steps: [],
+    },
+    modelCalls: [],
   };
 }
 
@@ -219,6 +255,29 @@ describe('agent command skill opt-in', () => {
     coreMocks.resolveWorkspaceRoot.mockImplementation(makeWorkspaceRoot);
     coreMocks.runProjectWorkflow.mockImplementation(({ task }) => makeProjectWorkflowRun(task));
     coreMocks.buildProjectWorkflowReport.mockImplementation((run) => makeProjectWorkflowReport(run.task));
+    coreMocks.routeProjectWorkflowRequest.mockImplementation(({ prompt, runId }) => {
+      const lower = String(prompt ?? '').toLowerCase();
+      if (lower.includes('anomal') || lower.includes('visual')) {
+        return makeProjectWorkflowRoutePlan({
+          runId,
+          prompt,
+          tasks: ['anomaly-detection', 'visualization'],
+        });
+      }
+      if (lower.includes('risk')) {
+        return makeProjectWorkflowRoutePlan({
+          runId,
+          prompt,
+          tasks: ['risk-analysis'],
+        });
+      }
+      return makeProjectWorkflowRoutePlan({
+        runId,
+        prompt,
+        tasks: [],
+        executionMode: 'needs-selection',
+      });
+    });
     vi.spyOn(console, 'log').mockImplementation(() => {});
   });
 
@@ -379,7 +438,7 @@ describe('agent command skill opt-in', () => {
     expect(coreMocks.runSwarm).not.toHaveBeenCalled();
   });
 
-  it('auto-discovers a workspace for prompted project agent requests by default', async () => {
+  it('routes prompted project workflow requests through deterministic execution before LLM analysis', async () => {
     const workspace = mkdtempSync(join(tmpdir(), 'geotech-agent-auto-'));
     tempDirs.push(workspace);
     vi.spyOn(process, 'cwd').mockReturnValue(workspace);
@@ -391,16 +450,83 @@ describe('agent command skill opt-in', () => {
     expect(coreMocks.analyzeWorkspace).toHaveBeenCalledWith(workspace, {
       includeCalculationInputDrafts: true,
     });
+    expect(coreMocks.routeProjectWorkflowRequest).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: 'find anomalies and create visualizations',
+      manifest: expect.any(Object),
+      runId: expect.any(String),
+    }));
+    expect(coreMocks.runProjectWorkflow).toHaveBeenCalledWith(expect.objectContaining({ task: 'anomaly-detection' }));
+    expect(coreMocks.runProjectWorkflow).toHaveBeenCalledWith(expect.objectContaining({ task: 'visualization' }));
+    expect(coreMocks.buildLLMConfig).not.toHaveBeenCalled();
+    expect(coreMocks.runAgent).not.toHaveBeenCalled();
+    expect(coreMocks.runSwarm).not.toHaveBeenCalled();
+    const runRoot = join(workspace, '.geotech', 'runs');
+    const runId = readdirSync(runRoot).find((entry) => existsSync(join(runRoot, entry, 'plan.json')));
+    expect(runId).toBeTruthy();
+    const selectedRunId = runId ?? '';
+    const intent = JSON.parse(readFileSync(join(workspace, '.geotech', 'runs', selectedRunId, 'intent.json'), 'utf-8'));
+    expect(intent.type).toBe('combined');
+    expect(intent.tasks).toEqual(expect.arrayContaining(['anomaly-detection', 'visualization']));
+    expect(existsSync(join(workspace, '.geotech', 'runs', selectedRunId, 'workflow_route.json'))).toBe(true);
+    expect(existsSync(join(workspace, '.geotech', 'runs', selectedRunId, 'workflow_route_report.md'))).toBe(true);
+    expect(readFileSync(join(workspace, '.geotech', 'runs', selectedRunId, 'model_calls.jsonl'), 'utf-8')).toBe('');
+  });
+
+  it('falls back to the workspace-backed LLM agent for custom project questions', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'geotech-agent-custom-'));
+    tempDirs.push(workspace);
+    vi.spyOn(process, 'cwd').mockReturnValue(workspace);
+    const program = new Command();
+    registerAgentCommand(program);
+
+    await program.parseAsync(['agent', 'summarize', 'the', 'client', 'email', '--json'], { from: 'user' });
+
+    expect(coreMocks.routeProjectWorkflowRequest).toHaveBeenCalled();
+    expect(coreMocks.runProjectWorkflow).not.toHaveBeenCalled();
+    expect(coreMocks.buildLLMConfig).toHaveBeenCalled();
     expect(coreMocks.runAgent).toHaveBeenCalledWith(
       expect.stringContaining('Project-aware task context:'),
       expect.any(Object),
       expect.any(Function),
       expect.objectContaining({ workspace: expect.any(Object) }),
     );
-    const runId = readdirSync(join(workspace, '.geotech', 'runs'))[0];
-    const intent = JSON.parse(readFileSync(join(workspace, '.geotech', 'runs', runId, 'intent.json'), 'utf-8'));
-    expect(intent.type).toBe('combined');
-    expect(intent.tasks).toEqual(expect.arrayContaining(['anomaly-detection', 'visualization']));
+    const runRoot = join(workspace, '.geotech', 'runs');
+    const runId = readdirSync(runRoot).find((entry) => existsSync(join(runRoot, entry, 'plan.json')));
+    expect(runId).toBeTruthy();
+    expect(existsSync(join(runRoot, runId ?? '', 'workflow_route.json'))).toBe(true);
+  });
+
+  it('falls back to the workspace-backed LLM agent for low-confidence project routes', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'geotech-agent-low-route-'));
+    tempDirs.push(workspace);
+    vi.spyOn(process, 'cwd').mockReturnValue(workspace);
+    coreMocks.routeProjectWorkflowRequest.mockImplementationOnce(({ prompt, runId }) => makeProjectWorkflowRoutePlan({
+      runId,
+      prompt,
+      tasks: ['visualization'],
+      executionMode: 'needs-selection',
+      confidence: 0.52,
+    }));
+    const program = new Command();
+    registerAgentCommand(program);
+
+    await program.parseAsync(['agent', 'create', 'visualizations', '--json'], { from: 'user' });
+
+    expect(coreMocks.routeProjectWorkflowRequest).toHaveBeenCalled();
+    expect(coreMocks.runProjectWorkflow).not.toHaveBeenCalled();
+    expect(coreMocks.buildLLMConfig).toHaveBeenCalled();
+    expect(coreMocks.runAgent).toHaveBeenCalledWith(
+      expect.stringContaining('Workflow router:'),
+      expect.any(Object),
+      expect.any(Function),
+      expect.objectContaining({ workspace: expect.any(Object) }),
+    );
+    const runRoot = join(workspace, '.geotech', 'runs');
+    const runId = readdirSync(runRoot).find((entry) => existsSync(join(runRoot, entry, 'plan.json')));
+    expect(runId).toBeTruthy();
+    const route = JSON.parse(readFileSync(join(runRoot, runId ?? '', 'workflow_route.json'), 'utf-8'));
+    expect(route.executionMode).toBe('needs-selection');
+    expect(route.confidence).toBe(0.52);
   });
 
   it('treats dot argument as project discovery and detects an existing .geotech project root', async () => {
