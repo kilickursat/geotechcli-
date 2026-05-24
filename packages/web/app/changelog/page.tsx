@@ -8,6 +8,16 @@ const releases = [
     date: '2026-05-24',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added geotech agent --route-with-model so ambiguous project prompts can request a strict JSON workflow route proposal from the configured hosted or BYOK model' },
+      { type: 'feat', text: 'Workflow route artifacts now record selectionSource, rejected model tasks, confidence-gate status, and opt-in router proposal rows in model_calls.jsonl' },
+      { type: 'fix', text: 'Rejected unknown model-supplied workflow tasks, kept no-evidence model proposals below the deterministic execution gate, and preserved fallback to the workspace-backed agent path' },
+    ],
+  },
+  {
+    version: '0.4.73',
+    date: '2026-05-24',
+    tag: '0.4.73 Release',
+    changes: [
       { type: 'feat', text: 'Added a provider-neutral project workflow router so prompted project requests can select and sequence deterministic workflows before any optional model review' },
       { type: 'feat', text: 'Prompted requests such as geotech agent "find anomalies and create visualizations" now write workflow_route.json, deterministic workflow outputs, and a combined workflow_route_report.md' },
       { type: 'fix', text: 'Added strict route validation and provider-contract tests so hosted GLM, BYOK OpenAI-compatible routes, direct Z.ai, and local-compatible models share the same allowed workflow task contract' },

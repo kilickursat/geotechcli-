@@ -4,6 +4,7 @@ import type { ProjectManifest } from './manifest.js';
 import type { ProjectWorkflowTask } from './project-workflow-executor.js';
 
 export type ProjectWorkflowRouteExecutionMode = 'deterministic-sequence' | 'needs-selection';
+export type ProjectWorkflowRouteSelectionSource = 'explicit' | 'deterministic' | 'model' | 'merged' | 'none';
 
 export interface ProjectWorkflowRouteRejectedTask {
   value: string;
@@ -14,6 +15,24 @@ export interface ProjectWorkflowRouterSelection {
   tasks: ProjectWorkflowTask[];
   rejectedTasks: ProjectWorkflowRouteRejectedTask[];
   rationale: string[];
+  requiresCustomQuestion?: boolean;
+}
+
+export interface ProjectWorkflowRouteModelCall {
+  type: 'model_call';
+  purpose: 'project-workflow-router';
+  status: 'pass' | 'review' | 'failed';
+  provider?: LLMConfig['provider'];
+  model?: string;
+  latencyMs?: number;
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+  promptChars?: number;
+  outputChars?: number;
+  error?: string;
 }
 
 export interface ProjectWorkflowRoutePlan {
@@ -25,6 +44,7 @@ export interface ProjectWorkflowRoutePlan {
   executionMode: ProjectWorkflowRouteExecutionMode;
   tasks: ProjectWorkflowTask[];
   confidence: number;
+  selectionSource: ProjectWorkflowRouteSelectionSource;
   rationale: string[];
   rejectedTasks: ProjectWorkflowRouteRejectedTask[];
   providerContract: {
@@ -51,7 +71,7 @@ export interface ProjectWorkflowRoutePlan {
       detail: string;
     }>;
   };
-  modelCalls: [];
+  modelCalls: ProjectWorkflowRouteModelCall[];
 }
 
 export interface RouteProjectWorkflowRequestOptions {
@@ -59,6 +79,7 @@ export interface RouteProjectWorkflowRequestOptions {
   manifest?: ProjectManifest;
   requestedTasks?: Array<ProjectWorkflowTask | string>;
   llmSelection?: unknown;
+  modelCalls?: ProjectWorkflowRouteModelCall[];
   providerConfig?: Pick<LLMConfig, 'provider' | 'modelId' | 'visionModelId'>;
   runId?: string;
   now?: string;
@@ -166,7 +187,12 @@ export function parseProjectWorkflowRouterSelection(raw: unknown): ProjectWorkfl
       ? [payload.rationale]
       : [];
 
-  return { tasks, rejectedTasks, rationale };
+  const requiresCustomQuestion = payload?.requiresCustomQuestion === true
+    || payload?.requires_custom_question === true
+    || payload?.customQuestion === true
+    || payload?.needsAgent === true;
+
+  return { tasks, rejectedTasks, rationale, requiresCustomQuestion };
 }
 
 export function inferProjectWorkflowRouteTasks(prompt: string): ProjectWorkflowRouterSelection {
@@ -191,6 +217,7 @@ export function inferProjectWorkflowRouteTasks(prompt: string): ProjectWorkflowR
     tasks,
     rejectedTasks: [],
     rationale,
+    requiresCustomQuestion: tasks.length === 0,
   };
 }
 
@@ -214,10 +241,19 @@ export function routeProjectWorkflowRequest(options: RouteProjectWorkflowRequest
     ?? (modelSelection && modelSelection.tasks.length > 0 ? modelSelection : undefined)
     ?? mergeSelections(inferredSelection, modelSelection)
     ?? { tasks: [], rejectedTasks: [], rationale: [] };
+  const selectionSource = deriveSelectionSource({
+    explicit: explicitSelection,
+    model: modelSelection,
+    inferred: inferredSelection,
+    selection,
+  });
   const confidence = deriveRouteConfidence(selection, Boolean(explicitSelection), Boolean(modelSelection), options.manifest);
-  const executionMode: ProjectWorkflowRouteExecutionMode = selection.tasks.length > 0 && confidence >= PROJECT_WORKFLOW_ROUTE_MIN_CONFIDENCE
+  const executionMode: ProjectWorkflowRouteExecutionMode = selection.tasks.length > 0
+    && !selection.requiresCustomQuestion
+    && confidence >= PROJECT_WORKFLOW_ROUTE_MIN_CONFIDENCE
     ? 'deterministic-sequence'
     : 'needs-selection';
+  const modelCalls = options.modelCalls ?? [];
 
   return {
     schemaVersion: 'geotech.project-workflow-route-plan.v1',
@@ -228,6 +264,7 @@ export function routeProjectWorkflowRequest(options: RouteProjectWorkflowRequest
     executionMode,
     tasks: selection.tasks,
     confidence,
+    selectionSource,
     rationale: selection.rationale.length > 0
       ? selection.rationale
       : executionMode === 'needs-selection'
@@ -259,8 +296,10 @@ export function routeProjectWorkflowRequest(options: RouteProjectWorkflowRequest
           type: 'router',
           status: executionMode === 'deterministic-sequence' ? 'pass' : 'review',
           detail: executionMode === 'deterministic-sequence'
-            ? `Routed to deterministic workflow task(s): ${selection.tasks.join(', ')}.`
-            : selection.tasks.length > 0
+            ? `Routed to deterministic workflow task(s): ${selection.tasks.join(', ')} from ${selectionSource} selection.`
+            : selection.requiresCustomQuestion
+              ? 'Router selection requires custom question handling; keep the request in the workspace-backed LLM path.'
+              : selection.tasks.length > 0
               ? `Route confidence ${confidence.toFixed(2)} is below the ${PROJECT_WORKFLOW_ROUTE_MIN_CONFIDENCE.toFixed(2)} execution gate; keep the request in custom LLM review or ask the user to choose a task.`
               : 'No deterministic workflow route selected; keep the request in custom LLM review or ask the user to choose a task.',
         },
@@ -271,7 +310,7 @@ export function routeProjectWorkflowRequest(options: RouteProjectWorkflowRequest
         },
       ],
     },
-    modelCalls: [],
+    modelCalls,
   };
 }
 
@@ -298,7 +337,7 @@ export function buildProjectWorkflowRouterPrompt(options: BuildProjectWorkflowRo
     `Workspace evidence summary: ${manifestSummary}.`,
     '',
     'Return strict JSON only:',
-    '{"tasks":["risk-analysis"],"rationale":["why these deterministic workflow tasks match"],"requiresCustomQuestion":false}',
+    '{"tasks":["risk-analysis"],"rationale":["why these deterministic workflow tasks match"],"confidence":0.74,"requiresCustomQuestion":false}',
     '',
     'User request:',
     options.prompt.trim() || '(no prompt; ask user to select a workflow)',
@@ -330,7 +369,24 @@ function deriveRouteConfidence(
   if (selection.tasks.length > 1) confidence -= 0.04;
   if (selection.rejectedTasks.length > 0) confidence -= 0.15;
   if (manifest && manifest.summary.supportedFiles === 0) confidence -= 0.2;
+  if (modelSuggested && manifest && manifest.summary.supportedFiles === 0) {
+    confidence = Math.min(confidence, PROJECT_WORKFLOW_ROUTE_MIN_CONFIDENCE - 0.05);
+  }
   return Math.max(0.1, Math.min(0.99, Number(confidence.toFixed(2))));
+}
+
+function deriveSelectionSource(input: {
+  explicit?: ProjectWorkflowRouterSelection;
+  model?: ProjectWorkflowRouterSelection;
+  inferred?: ProjectWorkflowRouterSelection;
+  selection: ProjectWorkflowRouterSelection;
+}): ProjectWorkflowRouteSelectionSource {
+  if (input.explicit) return 'explicit';
+  if (input.model && input.model.tasks.length > 0) return 'model';
+  if (input.inferred && input.inferred.tasks.length > 0 && input.model) return 'merged';
+  if (input.inferred && input.inferred.tasks.length > 0) return 'deterministic';
+  if (input.model) return 'model';
+  return 'none';
 }
 
 function mergeSelections(
@@ -342,5 +398,6 @@ function mergeSelections(
     tasks: primary?.tasks ?? [],
     rejectedTasks: [...(primary?.rejectedTasks ?? []), ...(secondary?.rejectedTasks ?? [])],
     rationale: [...(primary?.rationale ?? []), ...(secondary?.rationale ?? [])],
+    requiresCustomQuestion: primary?.requiresCustomQuestion === true || secondary?.requiresCustomQuestion === true,
   };
 }

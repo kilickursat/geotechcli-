@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.74] - 2026-05-24
+
+### Optional LLM Workflow Route Proposals
+
+- Added `geotech agent --route-with-model` so ambiguous project prompts can ask the configured hosted/BYOK model for a strict JSON workflow route proposal while clear recognized prompts still keep the zero-model deterministic fast path.
+- Added route provenance and proposal audit records: `workflow_route.json` now records `selectionSource`, rejected model tasks, and confidence-gate results, while `model_calls.jsonl` records the router proposal only when the opt-in model route path is used.
+- Hardened route validation so unknown model-supplied tasks are rejected, no-evidence model proposals remain below the deterministic execution gate, and failed or rejected route proposals fall back to the existing workspace-backed LLM agent path.
+
 ## [0.4.73] - 2026-05-24
 
 ### LLM-Agnostic Project Workflow Router

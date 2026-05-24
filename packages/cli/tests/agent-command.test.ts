@@ -6,7 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const coreMocks = vi.hoisted(() => ({
   analyzeWorkspace: vi.fn(),
+  buildProjectWorkflowRouterPrompt: vi.fn(),
   buildLLMConfig: vi.fn(),
+  generateText: vi.fn(),
   resolveWorkspaceRoot: vi.fn(),
   routeProjectWorkflowRequest: vi.fn(),
   runProjectWorkflow: vi.fn(),
@@ -29,6 +31,8 @@ vi.mock('@geotechcli/core', () => ({
   ],
   DEFAULT_LLM_VISION_MODEL: 'glm-5v-turbo',
   buildLLMConfig: coreMocks.buildLLMConfig,
+  buildProjectWorkflowRouterPrompt: coreMocks.buildProjectWorkflowRouterPrompt,
+  generateText: coreMocks.generateText,
   resolveWorkspaceRoot: coreMocks.resolveWorkspaceRoot,
   routeProjectWorkflowRequest: coreMocks.routeProjectWorkflowRequest,
   runProjectWorkflow: coreMocks.runProjectWorkflow,
@@ -131,6 +135,9 @@ function makeProjectWorkflowRoutePlan(options: {
   tasks?: string[];
   executionMode?: 'deterministic-sequence' | 'needs-selection';
   confidence?: number;
+  selectionSource?: 'explicit' | 'deterministic' | 'model' | 'merged' | 'none';
+  rejectedTasks?: Array<{ value: string; reason: string }>;
+  modelCalls?: unknown[];
 } = {}) {
   const tasks = options.tasks ?? [];
   return {
@@ -142,8 +149,9 @@ function makeProjectWorkflowRoutePlan(options: {
     executionMode: options.executionMode ?? (tasks.length > 0 ? 'deterministic-sequence' : 'needs-selection'),
     tasks,
     confidence: options.confidence ?? (tasks.length > 0 ? 0.82 : 0.2),
+    selectionSource: options.selectionSource ?? (tasks.length > 0 ? 'deterministic' : 'none'),
     rationale: tasks.length > 0 ? ['matched deterministic workflow route'] : ['requires custom question handling'],
-    rejectedTasks: [],
+    rejectedTasks: options.rejectedTasks ?? [],
     providerContract: {
       providerNeutral: true,
       purpose: 'project-workflow-routing',
@@ -155,7 +163,7 @@ function makeProjectWorkflowRoutePlan(options: {
     trace: {
       steps: [],
     },
-    modelCalls: [],
+    modelCalls: options.modelCalls ?? [],
   };
 }
 
@@ -246,8 +254,17 @@ describe('agent command skill opt-in', () => {
     coreMocks.buildLLMConfig.mockReturnValue({
       provider: 'hosted-beta',
       apiKey: '',
+      modelId: 'glm-5.1',
       timeout: 60000,
       skillsEnabled: true,
+    });
+    coreMocks.buildProjectWorkflowRouterPrompt.mockReturnValue('PROJECT WORKFLOW ROUTER CONTRACT');
+    coreMocks.generateText.mockResolvedValue({
+      text: '{"tasks":["risk-analysis"],"rationale":["model proposed risk workflow"]}',
+      usage: { promptTokens: 10, completionTokens: 8, totalTokens: 18 },
+      model: 'glm-5.1',
+      provider: 'hosted-beta',
+      latencyMs: 25,
     });
     coreMocks.runAgent.mockResolvedValue(makeAgentSession());
     coreMocks.runSwarm.mockResolvedValue(makeSwarmSession());
@@ -527,6 +544,110 @@ describe('agent command skill opt-in', () => {
     const route = JSON.parse(readFileSync(join(runRoot, runId ?? '', 'workflow_route.json'), 'utf-8'));
     expect(route.executionMode).toBe('needs-selection');
     expect(route.confidence).toBe(0.52);
+  });
+
+  it('uses an opt-in LLM route proposal for ambiguous project prompts and records the model call', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'geotech-agent-model-route-'));
+    tempDirs.push(workspace);
+    vi.spyOn(process, 'cwd').mockReturnValue(workspace);
+    coreMocks.routeProjectWorkflowRequest.mockImplementation(({ prompt, runId, llmSelection, modelCalls }) => {
+      if (llmSelection) {
+        return makeProjectWorkflowRoutePlan({
+          runId,
+          prompt,
+          tasks: ['risk-analysis'],
+          selectionSource: 'model',
+          modelCalls,
+        });
+      }
+      return makeProjectWorkflowRoutePlan({
+        runId,
+        prompt,
+        tasks: [],
+        executionMode: 'needs-selection',
+      });
+    });
+    const program = new Command();
+    registerAgentCommand(program);
+
+    await program.parseAsync(['agent', 'decide', 'the', 'best', 'project', 'workflow', '--route-with-model', '--json'], { from: 'user' });
+
+    expect(coreMocks.buildProjectWorkflowRouterPrompt).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: 'decide the best project workflow',
+      manifest: expect.any(Object),
+      providerConfig: expect.objectContaining({ provider: 'hosted-beta', modelId: 'glm-5.1' }),
+      compact: true,
+    }));
+    expect(coreMocks.generateText).toHaveBeenCalledWith(
+      'PROJECT WORKFLOW ROUTER CONTRACT',
+      expect.objectContaining({ provider: 'hosted-beta', skillsEnabled: false }),
+      expect.objectContaining({ jsonMode: true, temperature: 0, thinkingMode: 'disabled' }),
+    );
+    expect(coreMocks.runProjectWorkflow).toHaveBeenCalledWith(expect.objectContaining({ task: 'risk-analysis' }));
+    expect(coreMocks.runAgent).not.toHaveBeenCalled();
+    const runRoot = join(workspace, '.geotech', 'runs');
+    const runId = readdirSync(runRoot).find((entry) => existsSync(join(runRoot, entry, 'plan.json')));
+    expect(runId).toBeTruthy();
+    const route = JSON.parse(readFileSync(join(runRoot, runId ?? '', 'workflow_route.json'), 'utf-8'));
+    expect(route.selectionSource).toBe('model');
+    const modelRows = readFileSync(join(runRoot, runId ?? '', 'model_calls.jsonl'), 'utf-8').trim().split('\n').map((line) => JSON.parse(line));
+    expect(modelRows).toHaveLength(1);
+    expect(modelRows[0]).toEqual(expect.objectContaining({
+      purpose: 'project-workflow-router',
+      status: 'pass',
+      model: 'glm-5.1',
+    }));
+  });
+
+  it('falls back to the workspace-backed LLM agent when the opt-in route proposal is rejected', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'geotech-agent-bad-model-route-'));
+    tempDirs.push(workspace);
+    vi.spyOn(process, 'cwd').mockReturnValue(workspace);
+    coreMocks.generateText.mockResolvedValueOnce({
+      text: '{"tasks":["invent-fem-result"],"rationale":["bad proposal"]}',
+      usage: { promptTokens: 10, completionTokens: 8, totalTokens: 18 },
+      model: 'glm-5.1',
+      provider: 'hosted-beta',
+      latencyMs: 25,
+    });
+    coreMocks.routeProjectWorkflowRequest.mockImplementation(({ prompt, runId, llmSelection, modelCalls }) => {
+      if (llmSelection) {
+        return makeProjectWorkflowRoutePlan({
+          runId,
+          prompt,
+          tasks: [],
+          executionMode: 'needs-selection',
+          selectionSource: 'model',
+          rejectedTasks: [{ value: 'invent-fem-result', reason: 'Not an allowed deterministic project workflow task.' }],
+          modelCalls,
+        });
+      }
+      return makeProjectWorkflowRoutePlan({
+        runId,
+        prompt,
+        tasks: [],
+        executionMode: 'needs-selection',
+      });
+    });
+    const program = new Command();
+    registerAgentCommand(program);
+
+    await program.parseAsync(['agent', 'decide', 'the', 'best', 'project', 'workflow', '--route-with-model', '--json'], { from: 'user' });
+
+    expect(coreMocks.generateText).toHaveBeenCalled();
+    expect(coreMocks.runProjectWorkflow).not.toHaveBeenCalled();
+    expect(coreMocks.runAgent).toHaveBeenCalled();
+    const runRoot = join(workspace, '.geotech', 'runs');
+    const runId = readdirSync(runRoot).find((entry) => existsSync(join(runRoot, entry, 'plan.json')));
+    expect(runId).toBeTruthy();
+    const route = JSON.parse(readFileSync(join(runRoot, runId ?? '', 'workflow_route.json'), 'utf-8'));
+    expect(route.selectionSource).toBe('model');
+    expect(route.rejectedTasks).toEqual([expect.objectContaining({ value: 'invent-fem-result' })]);
+    const modelRows = readFileSync(join(runRoot, runId ?? '', 'model_calls.jsonl'), 'utf-8').trim().split('\n').map((line) => JSON.parse(line));
+    expect(modelRows).toEqual([
+      expect.objectContaining({ purpose: 'project-workflow-router', status: 'pass' }),
+      expect.objectContaining({ purpose: 'workspace-backed-agent-task', status: 'planned' }),
+    ]);
   });
 
   it('treats dot argument as project discovery and detects an existing .geotech project root', async () => {

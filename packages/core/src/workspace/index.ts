@@ -41,8 +41,10 @@ export {
   routeProjectWorkflowRequest,
   type BuildProjectWorkflowRouterPromptOptions,
   type ProjectWorkflowRouteExecutionMode,
+  type ProjectWorkflowRouteModelCall,
   type ProjectWorkflowRoutePlan,
   type ProjectWorkflowRouteRejectedTask,
+  type ProjectWorkflowRouteSelectionSource,
   type ProjectWorkflowRouterSelection,
   type RouteProjectWorkflowRequestOptions,
 } from './project-workflow-router.js';

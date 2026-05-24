@@ -34,9 +34,12 @@ import {
   persistCaseFileEvidence,
   analyzeWorkspace,
   resolveWorkspaceRoot,
+  buildProjectWorkflowRouterPrompt,
+  generateText,
   routeProjectWorkflowRequest,
   runProjectWorkflow,
   type ProjectManifest,
+  type ProjectWorkflowRouteModelCall,
   type ProjectWorkflowRoutePlan,
   type ProjectWorkflowTask,
   type WorkspaceRoot,
@@ -635,6 +638,61 @@ function relativeArtifactPath(rootPath: string, filePath: string): string {
   return rel && !rel.startsWith('..') ? rel : filePath;
 }
 
+async function requestProjectWorkflowRouteProposal(options: {
+  prompt: string;
+  manifest: ProjectManifest;
+  config: ReturnType<typeof buildLLMConfig> & { skillsEnabled?: boolean };
+}): Promise<{ selection?: string; modelCall: ProjectWorkflowRouteModelCall }> {
+  const routePrompt = buildProjectWorkflowRouterPrompt({
+    prompt: options.prompt,
+    manifest: options.manifest,
+    providerConfig: {
+      provider: options.config.provider,
+      modelId: options.config.modelId,
+      visionModelId: options.config.visionModelId,
+    },
+    compact: true,
+  });
+  const startedAt = Date.now();
+
+  try {
+    const response = await generateText(routePrompt, options.config, {
+      temperature: 0,
+      maxTokens: 500,
+      jsonMode: true,
+      thinkingMode: 'disabled',
+    });
+    return {
+      selection: response.text,
+      modelCall: {
+        type: 'model_call',
+        purpose: 'project-workflow-router',
+        status: 'pass',
+        provider: response.provider,
+        model: response.model,
+        latencyMs: response.latencyMs,
+        usage: response.usage,
+        promptChars: routePrompt.length,
+        outputChars: response.text.length,
+      },
+    };
+  } catch (err) {
+    return {
+      modelCall: {
+        type: 'model_call',
+        purpose: 'project-workflow-router',
+        status: 'failed',
+        provider: options.config.provider,
+        model: options.config.modelId,
+        latencyMs: Date.now() - startedAt,
+        promptChars: routePrompt.length,
+        outputChars: 0,
+        error: err instanceof Error ? err.message : String(err),
+      },
+    };
+  }
+}
+
 function renderProjectAwarePlan(plan: ProjectAwarePlan, flags: { json?: boolean; quiet?: boolean }): void {
   if (flags.json) {
     renderJSON(plan);
@@ -766,7 +824,7 @@ async function renderAndPersistProjectWorkflowRoute(
       : 'Router could not select deterministic workflow tasks; custom question handling required.',
   };
   appendFileSync(plan.artifacts.toolCalls, jsonl([routeToolCall]), 'utf-8');
-  writeFileSync(plan.artifacts.modelCalls, '', 'utf-8');
+  writeFileSync(plan.artifacts.modelCalls, route.modelCalls.length > 0 ? jsonl(route.modelCalls) : '', 'utf-8');
 
   const workflowOutputs: Array<{
     task: ProjectWorkflowTask;
@@ -813,6 +871,7 @@ async function renderAndPersistProjectWorkflowRoute(
     `Prompt: ${route.prompt || '(none)'}`,
     `Route: ${route.tasks.join(', ') || 'needs selection'}`,
     `Confidence: ${Math.round(route.confidence * 100)}%`,
+    `Selection source: ${route.selectionSource}`,
     '',
     '## Router Rationale',
     '',
@@ -2100,6 +2159,7 @@ export function registerAgentCommand(program: Command): void {
     .option('--workspace <dir>', 'Scan a local workspace and attach its manifest summary to the agent task')
     .option('--no-workspace', 'Disable automatic project-aware workspace discovery')
     .option('--task <task>', 'Run a project-aware task: data-quality, ground-model, risk-analysis, anomaly-detection, recommendations, visualization')
+    .option('--route-with-model', 'Let the configured LLM propose a validated workflow route when deterministic routing needs selection')
     .option('--plan-only', 'Scan the workspace, write .geotech project state, and show workflow readiness without calling an LLM')
     .option('--refresh', 'Refresh the deterministic workspace manifest and .geotech project state')
     .option('--trace', 'Write project-agent trace artifacts (enabled by default in project-aware mode)')
@@ -2134,13 +2194,40 @@ export function registerAgentCommand(program: Command): void {
           ...(maxFiles ? { maxFiles } : {}),
           ...(maxDepth ? { maxDepth } : {}),
         });
-        const projectWorkflowRoute = !selectedProjectTask && promptTask
+        let projectWorkflowRoute = !selectedProjectTask && promptTask
           ? routeProjectWorkflowRequest({
               prompt: promptTask,
               manifest: workspaceManifest,
               runId,
             })
           : undefined;
+        if (
+          projectWorkflowRoute?.executionMode === 'needs-selection'
+          && opts.routeWithModel === true
+          && opts.planOnly !== true
+          && !selectedProjectTask
+          && promptTask
+        ) {
+          if (!(await checkQuota('agentCalls'))) return;
+          const routeConfig = withSessionSkillOptIn(buildLLMConfig(), false);
+          const proposal = await requestProjectWorkflowRouteProposal({
+            prompt: promptTask,
+            manifest: workspaceManifest,
+            config: routeConfig,
+          });
+          projectWorkflowRoute = routeProjectWorkflowRequest({
+            prompt: promptTask,
+            manifest: workspaceManifest,
+            runId,
+            providerConfig: {
+              provider: routeConfig.provider,
+              modelId: routeConfig.modelId,
+              visionModelId: routeConfig.visionModelId,
+            },
+            llmSelection: proposal.selection,
+            modelCalls: [proposal.modelCall],
+          });
+        }
         const routedIntent: ProjectAgentIntent = projectWorkflowRoute?.executionMode === 'deterministic-sequence'
           ? {
               schemaVersion: 'geotech.project-agent-intent.v1',
@@ -2163,6 +2250,18 @@ export function registerAgentCommand(program: Command): void {
         writeProjectAwareState(plan, workspaceManifest);
         if (projectWorkflowRoute) {
           writeFileSync(plan.artifacts.workflowRoute, JSON.stringify(projectWorkflowRoute, null, 2), 'utf-8');
+          if (projectWorkflowRoute.modelCalls.length > 0) {
+            const modelRows: unknown[] = [...projectWorkflowRoute.modelCalls];
+            if (plan.executionMode === 'workspace-backed-agent') {
+              modelRows.push({
+                type: 'model_call',
+                status: 'planned',
+                purpose: 'workspace-backed-agent-task',
+                intent: plan.intent.type,
+              });
+            }
+            writeFileSync(plan.artifacts.modelCalls, jsonl(modelRows), 'utf-8');
+          }
         }
 
         if (opts.planOnly === true || (!promptTask && !selectedProjectTask)) {

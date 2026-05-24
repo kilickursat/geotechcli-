@@ -95,6 +95,7 @@ describe('project workflow router', () => {
     expect(route.schemaVersion).toBe('geotech.project-workflow-route-plan.v1');
     expect(route.executionMode).toBe('deterministic-sequence');
     expect(route.tasks).toEqual(['risk-analysis', 'anomaly-detection', 'visualization']);
+    expect(route.selectionSource).toBe('deterministic');
     expect(route.providerContract.providerNeutral).toBe(true);
     expect(route.providerContract.llmRole).toBe('planner-reviewer-only');
     expect(route.providerContract.deterministicExecutionRequired).toBe(true);
@@ -114,6 +115,7 @@ describe('project workflow router', () => {
     });
 
     expect(route.tasks).toEqual(['risk-analysis']);
+    expect(route.selectionSource).toBe('model');
     expect(route.rejectedTasks).toEqual([
       expect.objectContaining({ value: 'invent-fem-result', reason: expect.stringContaining('Allowed tasks') }),
     ]);
@@ -129,7 +131,80 @@ describe('project workflow router', () => {
     });
 
     expect(route.tasks).toEqual(['ground-model', 'visualization']);
+    expect(route.selectionSource).toBe('merged');
     expect(route.executionMode).toBe('deterministic-sequence');
+  });
+
+  it('records validated model route proposal provenance and model-call metadata', () => {
+    const route = routeProjectWorkflowRequest({
+      prompt: 'Please decide which project workflow should run next.',
+      manifest: makeManifest(),
+      llmSelection: '{"tasks":["risk-analysis","visualization"],"rationale":["risk review plus visuals"],"confidence":0.78}',
+      modelCalls: [{
+        type: 'model_call',
+        purpose: 'project-workflow-router',
+        status: 'pass',
+        provider: 'openai-compatible',
+        model: 'router/free',
+        latencyMs: 42,
+        usage: { promptTokens: 12, completionTokens: 8, totalTokens: 20 },
+        promptChars: 1200,
+        outputChars: 92,
+      }],
+      runId: 'run_model_route',
+      now: '2026-05-24T00:00:00.000Z',
+    });
+
+    expect(route.tasks).toEqual(['risk-analysis', 'visualization']);
+    expect(route.executionMode).toBe('deterministic-sequence');
+    expect(route.selectionSource).toBe('model');
+    expect(route.modelCalls).toEqual([
+      expect.objectContaining({ purpose: 'project-workflow-router', status: 'pass', model: 'router/free' }),
+    ]);
+  });
+
+  it('rejects all-unknown model proposals without executing invented tasks', () => {
+    const route = routeProjectWorkflowRequest({
+      prompt: 'Please decide which project workflow should run next.',
+      manifest: makeManifest(),
+      llmSelection: '{"tasks":["invent-fem-result","rewrite-source-files"],"rationale":["bad route"]}',
+      runId: 'run_unknown_model_route',
+      now: '2026-05-24T00:00:00.000Z',
+    });
+
+    expect(route.tasks).toEqual([]);
+    expect(route.executionMode).toBe('needs-selection');
+    expect(route.selectionSource).toBe('model');
+    expect(route.rejectedTasks.map((item) => item.value)).toEqual(['invent-fem-result', 'rewrite-source-files']);
+  });
+
+  it('keeps model-suggested no-evidence routes below the execution gate', () => {
+    const route = routeProjectWorkflowRequest({
+      prompt: 'Please decide which project workflow should run next.',
+      manifest: makeManifest({
+        files: [],
+        summary: {
+          totalFiles: 0,
+          supportedFiles: 0,
+          tabularFiles: 0,
+          pdfFiles: 0,
+          imageFiles: 0,
+          skippedFiles: 0,
+          kinds: {},
+          datasetTypes: {},
+          branches: [],
+          recommendations: [],
+        },
+      }),
+      llmSelection: '{"tasks":["visualization"],"rationale":["model proposed visualization"]}',
+      runId: 'run_model_no_evidence',
+      now: '2026-05-24T00:00:00.000Z',
+    });
+
+    expect(route.tasks).toEqual(['visualization']);
+    expect(route.selectionSource).toBe('model');
+    expect(route.confidence).toBeLessThan(PROJECT_WORKFLOW_ROUTE_MIN_CONFIDENCE);
+    expect(route.executionMode).toBe('needs-selection');
   });
 
   it('keeps unrecognized custom questions in selection/review mode', () => {
@@ -170,6 +245,7 @@ describe('project workflow router', () => {
     expect(route.tasks).toEqual(['visualization']);
     expect(route.confidence).toBeLessThan(PROJECT_WORKFLOW_ROUTE_MIN_CONFIDENCE);
     expect(route.executionMode).toBe('needs-selection');
+    expect(route.selectionSource).toBe('deterministic');
     expect(route.trace.steps[0]?.detail).toMatch(/below the 0\.60 execution gate/i);
     expect(route.modelCalls).toEqual([]);
   });
@@ -210,10 +286,11 @@ describe('project workflow router', () => {
 
   it('parses fenced JSON task selections without executing unknown names', () => {
     const selection = parseProjectWorkflowRouterSelection(`\`\`\`json
-{"tasks":["data-quality","bad-task","visualize"],"rationale":["audit and map"]}
+{"tasks":["data-quality","bad-task","visualize"],"rationale":["audit and map"],"requiresCustomQuestion":true}
 \`\`\``);
 
     expect(selection.tasks).toEqual(['data-quality', 'visualization']);
+    expect(selection.requiresCustomQuestion).toBe(true);
     expect(selection.rejectedTasks).toEqual([
       expect.objectContaining({ value: 'bad-task' }),
     ]);

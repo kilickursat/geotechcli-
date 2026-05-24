@@ -396,6 +396,7 @@ Options:
 --no-workspace              Disable project scan.
 --refresh                   Rebuild manifest and evidence index.
 --task <task>               Non-interactive task selection.
+--route-with-model          Ask the configured hosted/BYOK model for a validated route only when deterministic routing needs selection.
 --plan-only                 Inspect project and propose tasks only.
 --max-files <n>             Limit workspace scan.
 --max-depth <n>             Limit directory recursion.
@@ -617,6 +618,15 @@ The intent router should use:
 - provider capabilities
 - safety/review policy
 ```
+
+Implementation note for the strong-beta route layer:
+
+- Clear prompted workflow intents should stay on the deterministic router fast path and keep `model_calls.jsonl` empty.
+- Ambiguous prompts may opt into `--route-with-model`.
+- Model route output must be strict JSON and can only propose allowed deterministic workflows.
+- Unknown proposed tasks must be recorded as rejected, not executed.
+- Rejected, failed, low-confidence, or no-evidence model proposals must fall back to `custom_question` / workspace-backed agent handling.
+- The LLM may propose or review workflow order only; deterministic GeotechCLI tools own calculations, FEM cases, visualization specs, confidence, and artifacts.
 
 The final intent should be saved:
 
@@ -1216,6 +1226,8 @@ Every `geotech agent` project run should write:
 .geotech/runs/<run_id>/intent.json
 .geotech/runs/<run_id>/plan.json
 ```
+
+`model_calls.jsonl` should always exist for audit consistency. Deterministic discovery, explicit `--task`, and clear recognized workflow routes should leave it empty. `--route-with-model` should append a compact router-proposal row, and fallback to the workspace-backed agent should add the planned/actual agent model-call provenance.
 
 Trace should include:
 
