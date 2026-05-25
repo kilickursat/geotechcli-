@@ -11,6 +11,7 @@ const releases = [
       { type: 'fix', text: 'Kept all recovered report boreholes selectable across integrated ingest evidence, strip-log, extracted-field, map, and A-A section views instead of collapsing to the first structured borehole' },
       { type: 'fix', text: 'Promoted borehole-specific coordinate text from retained OCR/native report evidence into GroundModel map points, including compact latitude/longitude OCR rows and projected easting/northing rows' },
       { type: 'fix', text: 'Kept site-only coordinates out of borehole maps and preserved schematic alignment fallback when recovered borehole coordinates are missing or partial' },
+      { type: 'feat', text: 'Added geotech agent --task calculation-readiness and prompted routing for bearing, settlement, pile, liquefaction, slope, and FEM draft readiness over deterministic GroundModel verifier evidence' },
     ],
   },
   {

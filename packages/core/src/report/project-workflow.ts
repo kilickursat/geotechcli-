@@ -26,9 +26,9 @@ export function buildProjectWorkflowReport(run: ProjectWorkflowRun): GeneratedRe
       title: 'Actions',
       content: run.actions.length
         ? [
-            '| Action | Status | Missing | Recommendation |',
-            '| --- | --- | --- | --- |',
-            ...run.actions.map((action) => `| ${escapeTable(action.label)} | ${action.status} | ${escapeTable(action.missing.join(', ') || '-')} | ${escapeTable(action.recommendation)} |`),
+            '| Action | Status | Command | Missing | Recommendation |',
+            '| --- | --- | --- | --- | --- |',
+            ...run.actions.map((action) => `| ${escapeTable(action.label)} | ${action.status} | ${escapeTable(action.command ?? '-')} | ${escapeTable(action.missing.join(', ') || '-')} | ${escapeTable(action.recommendation)} |`),
           ].join('\n')
         : 'No downstream actions were prepared.',
     },

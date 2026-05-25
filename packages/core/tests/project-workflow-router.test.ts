@@ -135,6 +135,43 @@ describe('project workflow router', () => {
     expect(route.executionMode).toBe('deterministic-sequence');
   });
 
+  it('routes calculation-readiness language to deterministic draft routing', () => {
+    for (const [index, prompt] of [
+      'Check calculation readiness for bearing capacity, settlement, pile, liquefaction, slope, and FEM drafts.',
+      'Check pile readiness.',
+      'Can we run a bearing calculation?',
+      'Which design route is ready?',
+      'Review FEM foundation settlement readiness.',
+      'Review FEM excavation deformation readiness.',
+    ].entries()) {
+      const route = routeProjectWorkflowRequest({
+        prompt,
+        manifest: makeManifest(),
+        runId: `run_calculation_readiness_${index}`,
+        now: '2026-05-24T00:00:00.000Z',
+      });
+
+      expect(route.tasks).toEqual(['calculation-readiness']);
+      expect(route.executionMode).toBe('deterministic-sequence');
+      expect(route.rationale.join(' ')).toMatch(/calculation-readiness/i);
+      expect(route.providerContract.allowedTasks).toContain('calculation-readiness');
+    }
+  });
+
+  it('normalizes model-selected bearing and settlement routes to calculation-readiness', () => {
+    const route = routeProjectWorkflowRequest({
+      prompt: 'Which design workflow is next?',
+      manifest: makeManifest(),
+      llmSelection: '{"tasks":["bearing-capacity","settlement","fem-foundation-settlement","fem-excavation-deformation"],"rationale":["foundation design inputs"]}',
+      runId: 'run_model_calc_route',
+      now: '2026-05-24T00:00:00.000Z',
+    });
+
+    expect(route.tasks).toEqual(['calculation-readiness']);
+    expect(route.rejectedTasks).toEqual([]);
+    expect(route.selectionSource).toBe('model');
+  });
+
   it('records validated model route proposal provenance and model-call metadata', () => {
     const route = routeProjectWorkflowRequest({
       prompt: 'Please decide which project workflow should run next.',

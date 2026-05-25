@@ -5,6 +5,7 @@ import type { ProjectManifest, WorkspaceFileEntry } from './manifest.js';
 export type ProjectWorkflowTask =
   | 'data-quality'
   | 'ground-model'
+  | 'calculation-readiness'
   | 'risk-analysis'
   | 'anomaly-detection'
   | 'recommendations'
@@ -216,6 +217,9 @@ function buildFindings(manifest: ProjectManifest, task: ProjectWorkflowTask): Pr
   if (task === 'ground-model') {
     addGroundModelFindings(manifest, push);
   }
+  if (task === 'calculation-readiness') {
+    addCalculationReadinessFindings(manifest, push);
+  }
   if (task === 'risk-analysis') {
     addRiskFindings(manifest, push);
   }
@@ -306,6 +310,67 @@ function addGroundModelFindings(
   }
 
   addVerifierFindings(manifest.verifier?.findings ?? [], push);
+}
+
+function addCalculationReadinessFindings(
+  manifest: ProjectManifest,
+  push: (finding: Omit<ProjectWorkflowFinding, 'id'>) => void,
+): void {
+  const readiness = manifest.verifier?.calculationReadiness;
+  if (!manifest.groundModel) {
+    push({
+      severity: 'blocking',
+      title: 'GroundModel evidence missing',
+      detail: 'Calculation readiness needs an evidence-bound GroundModel before draft routing can be evaluated.',
+      evidenceIds: [],
+      recommendation: 'Run workspace analysis or ingest project evidence so boreholes, strata, groundwater, and parameters are bound to evidence.',
+    });
+    return;
+  }
+  if (!readiness || readiness.workflows.length === 0) {
+    push({
+      severity: 'blocking',
+      title: 'Calculation readiness not available',
+      detail: 'The workspace manifest does not contain calculation workflow readiness records.',
+      evidenceIds: manifest.groundModel.evidence.map((item) => item.id).slice(0, 8),
+      recommendation: 'Refresh workspace analysis with calculation readiness enabled before asking agents to route calculations.',
+    });
+    return;
+  }
+
+  const ready = readiness.workflows.filter((workflow) => workflow.status === 'ready');
+  const assumptionBound = readiness.workflows.filter((workflow) => workflow.status === 'ready_with_assumptions');
+  const blocked = readiness.workflows.filter((workflow) => workflow.status === 'blocked');
+
+  if (ready.length > 0) {
+    push({
+      severity: 'info',
+      title: 'Calculation routes ready',
+      detail: `${ready.length} workflow(s) have sufficient core evidence: ${ready.map((workflow) => workflow.label).join(', ')}.`,
+      evidenceIds: ready.flatMap((workflow) => workflow.evidenceIds).slice(0, 8),
+      recommendation: 'Prepare opt-in input drafts and require explicit geometry/load user inputs before running deterministic tools.',
+    });
+  }
+
+  if (assumptionBound.length > 0) {
+    push({
+      severity: 'warning',
+      title: 'Calculation routes require assumptions',
+      detail: `${assumptionBound.length} workflow(s) can be drafted only after assumptions or missing user inputs are declared: ${assumptionBound.map((workflow) => workflow.label).join(', ')}.`,
+      evidenceIds: assumptionBound.flatMap((workflow) => workflow.evidenceIds).slice(0, 8),
+      recommendation: 'Keep these routes review-gated and do not let an LLM infer missing geometry, loads, groundwater, or standard assumptions.',
+    });
+  }
+
+  if (blocked.length > 0) {
+    push({
+      severity: ready.length === 0 && assumptionBound.length === 0 ? 'blocking' : 'warning',
+      title: 'Calculation routes blocked',
+      detail: `${blocked.length} workflow(s) are blocked by missing evidence: ${blocked.map((workflow) => `${workflow.label} (${workflow.missing.join(', ') || 'required evidence'})`).join('; ')}.`,
+      evidenceIds: blocked.flatMap((workflow) => workflow.evidenceIds).slice(0, 8),
+      recommendation: 'Collect the missing GroundModel evidence before routing blocked workflows into calculations or FEM drafts.',
+    });
+  }
 }
 
 function addRiskFindings(
@@ -441,7 +506,7 @@ function buildActions(manifest: ProjectManifest, task: ProjectWorkflowTask): Pro
     actions.push({ id: `action_${String(actions.length + 1).padStart(3, '0')}`, ...action });
   };
 
-  if (task === 'recommendations' || task === 'risk-analysis' || task === 'ground-model') {
+  if (task === 'recommendations' || task === 'risk-analysis' || task === 'ground-model' || task === 'calculation-readiness') {
     for (const workflow of manifest.verifier?.calculationReadiness.workflows ?? []) {
       push(actionFromReadiness(workflow));
     }
@@ -659,6 +724,8 @@ function taskTitle(task: ProjectWorkflowTask): string {
       return 'Data quality';
     case 'ground-model':
       return 'Ground-model interpretation';
+    case 'calculation-readiness':
+      return 'Calculation readiness';
     case 'risk-analysis':
       return 'Risk analysis';
     case 'anomaly-detection':

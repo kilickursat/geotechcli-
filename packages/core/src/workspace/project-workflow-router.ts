@@ -95,6 +95,7 @@ export interface BuildProjectWorkflowRouterPromptOptions {
 export const PROJECT_WORKFLOW_ROUTER_TASKS: ProjectWorkflowTask[] = [
   'data-quality',
   'ground-model',
+  'calculation-readiness',
   'risk-analysis',
   'anomaly-detection',
   'recommendations',
@@ -127,6 +128,26 @@ export function normalizeProjectWorkflowRouteTask(value: unknown): ProjectWorkfl
     case 'interpretation':
     case 'stratigraphy':
       return 'ground-model';
+    case 'calculation':
+    case 'calculations':
+    case 'calculation-readiness':
+    case 'calculation-routing':
+    case 'calc-readiness':
+    case 'design-readiness':
+    case 'bearing':
+    case 'bearing-capacity':
+    case 'settlement':
+    case 'pile':
+    case 'pile-capacity':
+    case 'liquefaction':
+    case 'slope':
+    case 'slope-stability':
+    case 'fem-readiness':
+    case 'fem-foundation':
+    case 'fem-foundation-settlement':
+    case 'fem-excavation':
+    case 'fem-excavation-deformation':
+      return 'calculation-readiness';
     case 'risk':
     case 'risks':
     case 'risk-analysis':
@@ -208,9 +229,10 @@ export function inferProjectWorkflowRouteTasks(prompt: string): ProjectWorkflowR
 
   add('data-quality', /\b(?:data quality|inventory|missing data|quality report|duplicate|file audit|data audit)\b/, 'Matched data inventory, quality, missing-data, or duplicate-source language.');
   add('ground-model', /\b(?:ground model|interpret|strata|stratigraphy|lithology|hydrogeology|borehole model)\b/, 'Matched ground-model, interpretation, strata, lithology, or borehole-model language.');
+  add('calculation-readiness', /\b(?:calculation readiness|calculation route|calculation routing|design readiness|design route|bearing(?: capacity| calculation| readiness)?|settlement(?: calculation| readiness)?|pile(?: capacity| calculation| readiness)?|liquefaction(?: calculation| readiness)?|slope(?: stability| calculation| readiness)?|fem(?: draft| readiness| foundation settlement| excavation deformation)?|ready for calculation|ready for design)\b/, 'Matched calculation-readiness, design-readiness, bearing, settlement, pile, liquefaction, slope, or FEM-draft routing language.');
   add('risk-analysis', /\b(?:risk|risks|hazard|hazards|limitation|limitations|uncertainty|mitigation|concern|failure mode)\b/, 'Matched risk, hazard, limitation, uncertainty, or mitigation language.');
   add('anomaly-detection', /\b(?:anomal\w*|conflict|outlier|inconsistent|inconsistency|mismatch|contradiction)\b/, 'Matched anomaly, conflict, outlier, inconsistency, or contradiction language.');
-  add('recommendations', /\b(?:recommend|recommendation|foundation option|advice|next action|what should|design route)\b/, 'Matched recommendation, foundation-option, advice, or next-action language.');
+  add('recommendations', /\b(?:recommend|recommendation|foundation option|advice|next action|what should)\b/, 'Matched recommendation, foundation-option, advice, or next-action language.');
   add('visualization', /\b(?:visual\w*|map|plot|chart|section|profile|strip log|dashboard)\b/, 'Matched visualization, map, plot, chart, profile, or strip-log language.');
 
   return {

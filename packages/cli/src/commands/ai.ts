@@ -87,6 +87,8 @@ function summarizeWorkspaceManifestForAgent(manifest: ProjectManifest): string {
         'Calculation/verifier pre-check:',
         `- Status: ${manifest.verifier.status}`,
         `- Findings: ${manifest.verifier.summary.blocking} blocking, ${manifest.verifier.summary.review} review, ${manifest.verifier.summary.info} info`,
+        `- Calculation routes: ${manifest.verifier.calculationReadiness.summary.ready} ready, ${manifest.verifier.calculationReadiness.summary.readyWithAssumptions} assumption-bound, ${manifest.verifier.calculationReadiness.summary.blocked} blocked`,
+        ...manifest.verifier.calculationReadiness.workflows.slice(0, 8).map((workflow) => `- ${workflow.workflow}: ${workflow.status}; missing=${workflow.missing.join(', ') || 'none'}; command=${workflow.commandTemplate}`),
         ...manifest.verifier.findings.slice(0, 8).map((finding) => `- ${finding.severity}/${finding.code}: ${finding.message}`),
       ].join('\n')
     : '';
@@ -136,6 +138,7 @@ function buildAgentRuntimeContext(
 type ProjectAgentTask =
   | 'data-quality'
   | 'ground-model'
+  | 'calculation-readiness'
   | 'risk-analysis'
   | 'anomaly-detection'
   | 'recommendations'
@@ -200,6 +203,11 @@ const PROJECT_AGENT_TASKS: Array<{ task: ProjectAgentTask; label: string; prompt
     prompt: 'Interpret the evidence-bound GroundModel from the attached workspace manifest. Summarize strata, groundwater, uncertainty, and what engineering workflows are ready.',
   },
   {
+    task: 'calculation-readiness',
+    label: 'Calculation readiness and draft routing',
+    prompt: 'Summarize calculation readiness from the attached workspace manifest. Separate ready, assumption-bound, and blocked bearing, settlement, pile, liquefaction, slope, and FEM draft workflows. Recommend only validated deterministic GeotechCLI commands and missing user inputs.',
+  },
+  {
     task: 'risk-analysis',
     label: 'Risk analysis',
     prompt: 'Prepare a geotechnical risk analysis from the attached workspace manifest. Separate evidence-backed risks from missing-data risks and include review actions.',
@@ -261,6 +269,26 @@ function normalizeProjectTask(value: unknown): ProjectAgentTask | undefined {
     case 'interpretation':
     case 'ground-model-interpretation':
       return 'ground-model';
+    case 'calculation':
+    case 'calculations':
+    case 'calculation-readiness':
+    case 'calculation-routing':
+    case 'calc-readiness':
+    case 'design-readiness':
+    case 'bearing':
+    case 'bearing-capacity':
+    case 'settlement':
+    case 'pile':
+    case 'pile-capacity':
+    case 'liquefaction':
+    case 'slope':
+    case 'slope-stability':
+    case 'fem-readiness':
+    case 'fem-foundation':
+    case 'fem-foundation-settlement':
+    case 'fem-excavation':
+    case 'fem-excavation-deformation':
+      return 'calculation-readiness';
     case 'risk':
     case 'risk-analysis':
       return 'risk-analysis';
@@ -286,7 +314,9 @@ function normalizeProjectTask(value: unknown): ProjectAgentTask | undefined {
 }
 
 function projectTaskPrompt(task: ProjectAgentTask, customPrompt?: string): string {
-  const taskDef = PROJECT_AGENT_TASKS.find((item) => item.task === task) ?? PROJECT_AGENT_TASKS[6];
+  const taskDef = PROJECT_AGENT_TASKS.find((item) => item.task === task)
+    ?? PROJECT_AGENT_TASKS.find((item) => item.task === 'custom-question')
+    ?? PROJECT_AGENT_TASKS[0];
   if (task === 'custom-question' && customPrompt?.trim()) {
     return `Project-aware custom question: ${customPrompt.trim()}`;
   }
@@ -324,6 +354,7 @@ function inferProjectIntent(rawPrompt: string, selectedTask?: ProjectAgentTask):
   };
   add('data-quality', /\b(?:data quality|inventory|missing data|quality report|duplicate)\b/);
   add('ground-model', /\b(?:ground model|interpret|strata|stratigraphy|lithology|hydrogeology)\b/);
+  add('calculation-readiness', /\b(?:calculation readiness|calculation route|calculation routing|design readiness|design route|bearing(?: capacity| calculation| readiness)?|settlement(?: calculation| readiness)?|pile(?: capacity| calculation| readiness)?|liquefaction(?: calculation| readiness)?|slope(?: stability| calculation| readiness)?|fem(?: draft| readiness| foundation settlement| excavation deformation)?|ready for calculation|ready for design)\b/);
   add('risk-analysis', /\b(?:risk|hazard|limitation|uncertainty|mitigation)\b/);
   add('anomaly-detection', /\b(?:anomal\w*|conflict|outlier|inconsistent|inconsistency)\b/);
   add('recommendations', /\b(?:recommend|foundation option|advice|next action)\b/);
@@ -383,6 +414,15 @@ function projectReadinessFromManifest(manifest: ProjectManifest): ProjectAwarePl
       reasons: hasVerifier
         ? [`Verifier status is ${manifest.verifier?.status}; ${manifest.verifier?.summary.review ?? 0} review finding(s), ${manifest.verifier?.summary.blocking ?? 0} blocker(s).`]
         : ['Risk analysis needs GroundModel verification output.'],
+      missing: hasVerifier ? verifierMissing : ['GroundModel verifier output'],
+    },
+    {
+      task: 'calculation-readiness',
+      label: 'Calculation readiness and draft routing',
+      status: readyWorkflowCount > 0 ? 'partially_ready' : hasVerifier ? 'blocked' : 'blocked',
+      reasons: hasVerifier
+        ? [`${readyWorkflowCount} calculation workflow(s) are ready or assumption-bound; ${calculationWorkflows.filter((workflow) => workflow.status === 'blocked').length} blocked.`]
+        : ['Calculation readiness needs GroundModel verifier output.'],
       missing: hasVerifier ? verifierMissing : ['GroundModel verifier output'],
     },
     {
@@ -727,7 +767,7 @@ function renderProjectAwarePlan(plan: ProjectAwarePlan, flags: { json?: boolean;
   }
   console.log('');
   warn('No model-heavy workflow has run yet. Choose a task with --task, or ask a project question with --workspace.');
-  console.log(chalk.gray('  Next actions: geotech agent --task data-quality | --task ground-model | --task risk-analysis | --task anomaly-detection | --task recommendations | --task visualization'));
+  console.log(chalk.gray('  Next actions: geotech agent --task data-quality | --task ground-model | --task calculation-readiness | --task risk-analysis | --task anomaly-detection | --task recommendations | --task visualization'));
   success(`Project state written to ${relativeArtifactPath(plan.workspace.rootPath, join(plan.workspace.rootPath, '.geotech'))}`);
 }
 
@@ -2158,7 +2198,7 @@ export function registerAgentCommand(program: Command): void {
     .option('--project <id>', 'Load and persist context to a stored project')
     .option('--workspace <dir>', 'Scan a local workspace and attach its manifest summary to the agent task')
     .option('--no-workspace', 'Disable automatic project-aware workspace discovery')
-    .option('--task <task>', 'Run a project-aware task: data-quality, ground-model, risk-analysis, anomaly-detection, recommendations, visualization')
+    .option('--task <task>', 'Run a project-aware task: data-quality, ground-model, calculation-readiness, risk-analysis, anomaly-detection, recommendations, visualization')
     .option('--route-with-model', 'Let the configured LLM propose a validated workflow route when deterministic routing needs selection')
     .option('--plan-only', 'Scan the workspace, write .geotech project state, and show workflow readiness without calling an LLM')
     .option('--refresh', 'Refresh the deterministic workspace manifest and .geotech project state')

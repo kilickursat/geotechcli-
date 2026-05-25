@@ -157,7 +157,7 @@ function makeProjectWorkflowRoutePlan(options: {
       purpose: 'project-workflow-routing',
       llmRole: 'planner-reviewer-only',
       deterministicExecutionRequired: true,
-      allowedTasks: ['data-quality', 'ground-model', 'risk-analysis', 'anomaly-detection', 'recommendations', 'visualization'],
+      allowedTasks: ['data-quality', 'ground-model', 'calculation-readiness', 'risk-analysis', 'anomaly-detection', 'recommendations', 'visualization'],
       disallowedActions: ['invent calculation results'],
     },
     trace: {
@@ -286,6 +286,13 @@ describe('agent command skill opt-in', () => {
           runId,
           prompt,
           tasks: ['risk-analysis'],
+        });
+      }
+      if (lower.includes('bearing') || lower.includes('pile') || lower.includes('calculation') || lower.includes('design route')) {
+        return makeProjectWorkflowRoutePlan({
+          runId,
+          prompt,
+          tasks: ['calculation-readiness'],
         });
       }
       return makeProjectWorkflowRoutePlan({
@@ -430,6 +437,7 @@ describe('agent command skill opt-in', () => {
   it.each([
     'data-quality',
     'ground-model',
+    'calculation-readiness',
     'risk-analysis',
     'anomaly-detection',
     'recommendations',
@@ -487,6 +495,26 @@ describe('agent command skill opt-in', () => {
     expect(existsSync(join(workspace, '.geotech', 'runs', selectedRunId, 'workflow_route.json'))).toBe(true);
     expect(existsSync(join(workspace, '.geotech', 'runs', selectedRunId, 'workflow_route_report.md'))).toBe(true);
     expect(readFileSync(join(workspace, '.geotech', 'runs', selectedRunId, 'model_calls.jsonl'), 'utf-8')).toBe('');
+  });
+
+  it('routes prompted calculation-readiness requests through deterministic execution before LLM analysis', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'geotech-agent-calc-route-'));
+    tempDirs.push(workspace);
+    vi.spyOn(process, 'cwd').mockReturnValue(workspace);
+    const program = new Command();
+    registerAgentCommand(program);
+
+    await program.parseAsync(['agent', 'can', 'we', 'run', 'a', 'bearing', 'calculation', '--json'], { from: 'user' });
+
+    expect(coreMocks.routeProjectWorkflowRequest).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: 'can we run a bearing calculation',
+      manifest: expect.any(Object),
+      runId: expect.any(String),
+    }));
+    expect(coreMocks.runProjectWorkflow).toHaveBeenCalledWith(expect.objectContaining({ task: 'calculation-readiness' }));
+    expect(coreMocks.buildLLMConfig).not.toHaveBeenCalled();
+    expect(coreMocks.runAgent).not.toHaveBeenCalled();
+    expect(coreMocks.runSwarm).not.toHaveBeenCalled();
   });
 
   it('falls back to the workspace-backed LLM agent for custom project questions', async () => {

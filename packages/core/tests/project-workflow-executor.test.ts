@@ -217,6 +217,7 @@ describe('runProjectWorkflow', () => {
   it.each<ProjectWorkflowTask>([
     'data-quality',
     'ground-model',
+    'calculation-readiness',
     'risk-analysis',
     'anomaly-detection',
     'recommendations',
@@ -268,6 +269,26 @@ describe('runProjectWorkflow', () => {
 
     expect(run.status).toBe('blocked');
     expect(run.findings.some((finding) => finding.title === 'GroundModel evidence not available')).toBe(true);
+  });
+
+  it('exposes calculation readiness as a deterministic first-class workflow', () => {
+    const run = runProjectWorkflow({
+      manifest: makeManifest(),
+      task: 'calculation-readiness',
+      runId: 'run_calc_ready',
+      now: '2026-05-24T00:00:00.000Z',
+    });
+    const report = buildProjectWorkflowReport(run);
+
+    expect(run.providerContract.llmRole).toBe('none');
+    expect(run.modelCalls).toEqual([]);
+    expect(run.actions.map((action) => action.label)).toContain('Shallow foundation bearing capacity');
+    expect(run.actions.map((action) => action.command)).toContain('geotech bearing --depth <m> --width <m>');
+    expect(run.findings.some((finding) => finding.title === 'Calculation routes ready')).toBe(true);
+    expect(run.findings.some((finding) => finding.title === 'Calculation routes require assumptions')).toBe(true);
+    expect(run.findings.some((finding) => finding.title === 'Calculation routes blocked')).toBe(true);
+    expect(report.fullMarkdown).toContain('| Action | Status | Command | Missing | Recommendation |');
+    expect(report.fullMarkdown).toContain('geotech bearing --depth <m>');
   });
 });
 
