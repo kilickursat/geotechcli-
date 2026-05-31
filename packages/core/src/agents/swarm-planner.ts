@@ -101,7 +101,7 @@ const ROLE_SEEDS: RoleSeed[] = [
     legacyAgent: 'interpretation',
     objective: 'Normalize boreholes, CPT/SPT, lab data, monitoring tables, reports, and image/PDF evidence into structured records.',
     evidenceInputs: ['DocumentEvidencePacket', 'GroundModel evidence refs', 'tabular schemas', 'page evidence summaries'],
-    toolStrategy: ['parse_ags', 'parse_cpt', 'parse_csv', 'ingest_geotech_document', 'list_skills', 'describe_skill'],
+    toolStrategy: ['parse_ags', 'parse_cpt', 'parse_csv', 'analyze_signal_file', 'ingest_geotech_document', 'list_skills', 'describe_skill'],
     preferredSkills: ['site-investigation-data-quality', 'soil-parameter-triangulation', 'borehole-cpt-ground-model'],
     skillKeywords: ['borehole', 'cpt', 'parameter', 'data quality', 'ground model'],
     handoff: 'Structured evidence and unresolved data gaps for GroundModeler.',

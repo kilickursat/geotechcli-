@@ -7,7 +7,10 @@ export {
 } from './router.js';
 export {
   resolveProviderCapabilities,
+  resolveProviderCapabilityProfile,
+  buildProviderReviewGates,
   providerSupportsNativePdfDocuments,
+  isLikelyFreeRoute,
 } from './capabilities.js';
 export { sanitizeUpstreamError } from './util.js';
 export { withRetry } from './middleware/retry.js';
@@ -17,6 +20,10 @@ export type {
   ChatMessage,
   ContentPart,
   ProviderCapabilities,
+  ProviderCapabilityProfile,
+  ProviderCapabilityProfileId,
+  ProviderContextStrategy,
+  ProviderPreprocessingPolicy,
   CompletionRequest,
   CompletionResponse,
   TokenUsage,

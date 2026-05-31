@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   providerSupportsNativePdfDocuments,
+  resolveProviderCapabilityProfile,
   resolveProviderCapabilities,
 } from '../src/llm/capabilities.js';
 
@@ -52,6 +53,30 @@ describe('provider multimodal capabilities', () => {
     expect(capabilities.text).toBe(true);
     expect(capabilities.visionImages).toBe(false);
     expect(capabilities.nativePdfDocuments).toBe(false);
+  });
+
+  it('resolves provider-neutral capability profiles for BYOK routing', () => {
+    const profile = resolveProviderCapabilityProfile({
+      provider: 'openai-compatible',
+      modelId: 'poolside/laguna-m.1:free',
+      visionModelId: '',
+    });
+
+    expect(profile.id).toBe('open-byok');
+    expect(profile.likelyFreeRoute).toBe(true);
+    expect(profile.contextStrategy).toBe('micro');
+    expect(profile.capabilities.visionImages).toBe(false);
+    expect(profile.preprocessingPolicy).toMatchObject({
+      preferNativePdf: false,
+      requirePreprocessedEvidence: true,
+      allowImageInputs: false,
+    });
+    expect(profile.reviewGates).toEqual(expect.arrayContaining([
+      'image-understanding-unavailable',
+      'native-pdf-unavailable-use-preprocessed-evidence',
+      'free-route-capacity-and-feature-variance',
+      'compact-context-required',
+    ]));
   });
 
   it('keeps known multimodal open routes image-capable while still requiring page preprocessing for PDFs', () => {

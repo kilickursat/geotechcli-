@@ -5,8 +5,19 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 const releases = [
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-05-25',
+    date: '2026-05-31',
     tag: `${GEOTECHCLI_VERSION} Release`,
+    changes: [
+      { type: 'feat', text: 'Added npm run benchmark:geotech-corpus as an internal R&D wrapper over the geotechnical document benchmark contract across fixture categories, provider profiles, preprocessing modes, traceability, cache reuse, GroundModel readiness, and FEM execution-boundary guardrails' },
+      { type: 'feat', text: 'Added real-fixture corpus mode for private local PDFs and images supplied through GEOTECHCLI_BENCHMARK_* env vars, including first-pass plus cached-rerun execution and none versus ocr-optimized preprocessing comparison' },
+      { type: 'fix', text: 'Kept private report bytes and local absolute paths out of persisted corpus benchmark JSON while still writing local history, trend, SVG, and HTML summaries for repeatable review' },
+      { type: 'fix', text: 'Promoted review gates into corpus run summaries so benchmark acceptance captures trust boundaries as well as latency, hosted calls, cache hits, traceability, GroundModel readiness, and region quality' },
+    ],
+  },
+  {
+    version: '0.4.77',
+    date: '2026-05-25',
+    tag: '0.4.77 Release',
     changes: [
       { type: 'fix', text: 'Kept all recovered report boreholes selectable across integrated ingest evidence, strip-log, extracted-field, map, and A-A section views instead of collapsing to the first structured borehole' },
       { type: 'fix', text: 'Promoted borehole-specific coordinate text from retained OCR/native report evidence into GroundModel map points, including compact latitude/longitude OCR rows and projected easting/northing rows' },

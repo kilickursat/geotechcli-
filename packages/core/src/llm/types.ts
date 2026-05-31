@@ -76,6 +76,35 @@ export interface ProviderCapabilities {
   jsonMode: boolean;
 }
 
+export type ProviderCapabilityProfileId =
+  | 'hosted-default'
+  | 'direct-zai'
+  | 'premium-byok'
+  | 'open-byok'
+  | 'unknown';
+
+export type ProviderContextStrategy = 'full' | 'compact' | 'micro';
+
+export interface ProviderPreprocessingPolicy {
+  preferNativePdf: boolean;
+  requirePreprocessedEvidence: boolean;
+  allowImageInputs: boolean;
+  allowLayoutOcr: boolean;
+  maxContextStrategy: ProviderContextStrategy;
+}
+
+export interface ProviderCapabilityProfile {
+  id: ProviderCapabilityProfileId;
+  provider: LLMProvider;
+  modelId: string | null;
+  visionModelId: string | null;
+  capabilities: ProviderCapabilities;
+  likelyFreeRoute: boolean;
+  contextStrategy: ProviderContextStrategy;
+  reviewGates: string[];
+  preprocessingPolicy: ProviderPreprocessingPolicy;
+}
+
 export interface ProviderAdapter {
   readonly name: LLMProvider;
   readonly defaultModel: string;

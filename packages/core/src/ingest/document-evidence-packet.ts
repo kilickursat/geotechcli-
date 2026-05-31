@@ -78,6 +78,74 @@ const PageSchema = z.object({
   sourceCategory: z.enum(['native-text', 'layout-ocr', 'vision', 'none']),
   cacheStatus: z.enum(['hit', 'miss', 'stored', 'skipped', 'unavailable']),
   cacheEntryId: z.string().optional(),
+  preprocessing: z.object({
+    sourceCategory: z.enum(['native-text', 'layout-ocr', 'vision', 'none']),
+    cacheStatus: z.enum(['hit', 'miss', 'stored', 'skipped', 'unavailable']),
+    cacheKey: z.string().optional(),
+    fileHash: z.string().optional(),
+    pageHash: z.string().optional(),
+    modelVersion: z.string().optional(),
+    preprocessingVersion: z.string().optional(),
+    schemaVersion: z.number().int().positive().optional(),
+    pipelineVersion: z.string().optional(),
+    policy: z.enum(['none', 'ocr-optimized']).optional(),
+    transformed: z.boolean().optional(),
+    operations: z.array(z.string()).optional(),
+    input: z.object({
+      mimeType: z.string(),
+      byteLength: z.number().int().nonnegative(),
+      width: z.number().int().positive().optional(),
+      height: z.number().int().positive().optional(),
+    }).optional(),
+    output: z.object({
+      mimeType: z.string(),
+      byteLength: z.number().int().nonnegative(),
+      width: z.number().int().positive().optional(),
+      height: z.number().int().positive().optional(),
+    }).optional(),
+    quality: z.object({
+      score: z.number().min(0).max(1),
+      contentCoverageRatio: z.number().min(0).max(1),
+      darkPixelRatio: z.number().min(0).max(1),
+      regionCoverageRatio: z.number().min(0).max(1),
+      regionCount: z.number().int().nonnegative(),
+      cropAssetCount: z.number().int().nonnegative(),
+      deskew: z.object({
+        method: z.literal('projection-profile'),
+        angleDeg: z.number(),
+        confidence: z.number().min(0).max(1),
+        applied: z.boolean(),
+      }),
+      warnings: z.array(z.string()),
+    }).optional(),
+    regionCount: z.number().int().nonnegative().optional(),
+  }).optional(),
+  regions: z.array(z.object({
+    id: z.string(),
+    source: z.enum(['layout-ocr', 'preprocessing']),
+    label: z.string(),
+    pageNumber: z.number().int().positive(),
+    bbox2d: z.tuple([z.number(), z.number(), z.number(), z.number()]).nullable().optional(),
+    coverageRatio: z.number().min(0).max(1).optional(),
+    quality: z.object({
+      score: z.number().min(0).max(1),
+      darkPixelRatio: z.number().min(0).max(1),
+      lineDensity: z.number().min(0).max(1),
+      coverageRatio: z.number().min(0).max(1),
+      warnings: z.array(z.string()),
+    }).optional(),
+    textLength: z.number().int().nonnegative(),
+    hasText: z.boolean(),
+    asset: z.object({
+      mimeType: z.string(),
+      byteLength: z.number().int().nonnegative(),
+      sha256: z.string(),
+      width: z.number().int().positive().optional(),
+      height: z.number().int().positive().optional(),
+      normalized: z.boolean().optional(),
+      cacheRelativePath: z.string().optional(),
+    }).optional(),
+  })).optional(),
   counts: z.object({
     materials: z.number().int().nonnegative(),
     classifications: z.number().int().nonnegative(),
@@ -143,7 +211,7 @@ export const DocumentEvidencePacketSchema = z.object({
   generatedAt: z.string(),
   providerContract: z.object({
     providerNeutral: z.literal(true),
-    purpose: z.literal('byok-document-understanding'),
+    purpose: z.literal('document-evidence-contract'),
     normalizedMethods: z.array(DocumentEvidenceMethodSchema),
     reviewGates: z.array(z.string()),
   }),
@@ -216,7 +284,7 @@ export function buildDocumentEvidencePacket(result: GeotechDocumentIngestResult)
     generatedAt: result.generatedAt,
     providerContract: {
       providerNeutral: true as const,
-      purpose: 'byok-document-understanding' as const,
+      purpose: 'document-evidence-contract' as const,
       normalizedMethods: ['native-pdf-text', 'layout-ocr', 'visual-reasoning', 'hybrid', 'none'] as DocumentEvidenceMethod[],
       reviewGates: buildReviewGates(result),
     },
@@ -375,9 +443,13 @@ export function compileDocumentEvidenceSynthesisPrompt(
   const pageLines = packet.pages
     .slice()
     .sort((left, right) => left.pageNumber - right.pageNumber)
-    .map((page) =>
-      `Page ${page.pageNumber}: ${page.parseStatus}; method=${page.method}; source=${page.rawSource}; class=${page.classification ?? 'unknown'}; confidence=${page.confidence}%; counts m/c/p=${page.counts.materials}/${page.counts.classifications}/${page.counts.parameters}${page.warnings.length > 0 ? `; warnings=${page.warnings.slice(0, 3).join(' | ')}` : ''}`,
-    );
+    .map((page) => {
+      const operations = page.preprocessing?.operations?.slice(0, 4).join('+');
+      const quality = page.preprocessing?.quality?.score != null
+        ? ` quality=${Math.round(page.preprocessing.quality.score * 100)}%`
+        : '';
+      return `Page ${page.pageNumber}: ${page.parseStatus}; method=${page.method}; source=${page.rawSource}; class=${page.classification ?? 'unknown'}; confidence=${page.confidence}%; regions=${page.regions?.length ?? 0}; preprocess=${page.preprocessing?.preprocessingVersion ?? 'none'}${quality}${operations ? ` ops=${operations}` : ''}; counts m/c/p=${page.counts.materials}/${page.counts.classifications}/${page.counts.parameters}${page.warnings.length > 0 ? `; warnings=${page.warnings.slice(0, 3).join(' | ')}` : ''}`;
+    });
   const missingParameters = packet.observations.parameters
     .filter((observation) => observation.reviewStatus === 'missing')
     .map((observation) => formatObservationForSynthesis(observation));
@@ -544,6 +616,10 @@ export function summarizeGeotechDocumentResultForAgent(
 
 function buildEvidencePage(audit: GeotechDocumentPageAudit): DocumentEvidencePacket['pages'][number] {
   const cache = audit.evidenceCache;
+  const sourceCategory = sourceCategoryFromTextHintSource(audit.textHintSource);
+  const cacheStatus = cache?.status ?? 'unavailable';
+  const regions = buildEvidencePageRegions(audit);
+  const preprocessing = cache?.preprocessing;
   return {
     pageNumber: audit.pageNumber,
     classification: audit.classification,
@@ -551,15 +627,86 @@ function buildEvidencePage(audit: GeotechDocumentPageAudit): DocumentEvidencePac
     confidence: normalizeConfidence(audit.confidence),
     method: methodFromTextHintSource(audit.textHintSource),
     rawSource: audit.textHintSource,
-    sourceCategory: sourceCategoryFromTextHintSource(audit.textHintSource),
-    cacheStatus: cache?.status ?? 'unavailable',
+    sourceCategory,
+    cacheStatus,
     ...(cache?.entryId ? { cacheEntryId: cache.entryId } : {}),
+    preprocessing: {
+      sourceCategory,
+      cacheStatus,
+      ...(cache?.cacheKey ? { cacheKey: cache.cacheKey } : {}),
+      ...(cache?.fileHash ? { fileHash: cache.fileHash } : {}),
+      ...(cache?.pageHash ? { pageHash: cache.pageHash } : {}),
+      ...(cache?.modelVersion ? { modelVersion: cache.modelVersion } : {}),
+      ...(cache?.preprocessingVersion ? { preprocessingVersion: cache.preprocessingVersion } : {}),
+      ...(cache?.schemaVersion ? { schemaVersion: cache.schemaVersion } : {}),
+      ...(preprocessing?.pipelineVersion ? { pipelineVersion: preprocessing.pipelineVersion } : {}),
+      ...(preprocessing?.policy ? { policy: preprocessing.policy } : {}),
+      ...(preprocessing ? { transformed: preprocessing.transformed } : {}),
+      ...(preprocessing?.operations.length ? { operations: preprocessing.operations } : {}),
+      ...(preprocessing?.input ? { input: compactImageMetadata(preprocessing.input) } : {}),
+      ...(preprocessing?.output ? { output: compactImageMetadata(preprocessing.output) } : {}),
+      ...(preprocessing?.quality ? { quality: preprocessing.quality } : {}),
+      ...(preprocessing ? { regionCount: preprocessing.regions.length } : {}),
+    },
+    ...(regions.length > 0 ? { regions } : {}),
     counts: {
       materials: audit.materialCount,
       classifications: audit.classificationCount,
       parameters: audit.parameterCount,
     },
     warnings: audit.warnings,
+  };
+}
+
+function buildEvidencePageRegions(audit: GeotechDocumentPageAudit): NonNullable<DocumentEvidencePacket['pages'][number]['regions']> {
+  const preprocessingRegions = (audit.evidenceCache?.preprocessing?.regions ?? []).map((region) => ({
+    id: `p${audit.pageNumber}-preprocess-${region.id}`,
+    source: 'preprocessing' as const,
+    label: region.label,
+    pageNumber: audit.pageNumber,
+    ...(region.bbox2d ? { bbox2d: region.bbox2d } : {}),
+    ...(region.coverageRatio != null ? { coverageRatio: region.coverageRatio } : {}),
+    ...(region.quality ? { quality: region.quality } : {}),
+    ...(region.asset ? { asset: compactRegionAsset(region.asset) } : {}),
+    textLength: 0,
+    hasText: false,
+  }));
+  const layoutRegions = (audit.layoutPages ?? []).flatMap((layoutPage) =>
+    layoutPage.elements.map((element, index) => ({
+      id: `p${audit.pageNumber}-layout-${layoutPage.pageNumber}-${element.index ?? index + 1}`,
+      source: 'layout-ocr' as const,
+      label: element.label,
+      pageNumber: layoutPage.pageNumber,
+      ...(element.bbox2d ? { bbox2d: element.bbox2d } : {}),
+      textLength: element.content.trim().length,
+      hasText: element.content.trim().length > 0,
+    })),
+  );
+  return [...preprocessingRegions, ...layoutRegions];
+}
+
+function compactImageMetadata(
+  metadata: NonNullable<NonNullable<GeotechDocumentPageAudit['evidenceCache']>['preprocessing']>['input'],
+): NonNullable<DocumentEvidencePacket['pages'][number]['preprocessing']>['input'] {
+  return {
+    mimeType: metadata.mimeType,
+    byteLength: Math.max(0, Math.round(metadata.byteLength)),
+    ...(metadata.width != null ? { width: Math.max(1, Math.round(metadata.width)) } : {}),
+    ...(metadata.height != null ? { height: Math.max(1, Math.round(metadata.height)) } : {}),
+  };
+}
+
+function compactRegionAsset(
+  asset: NonNullable<NonNullable<NonNullable<GeotechDocumentPageAudit['evidenceCache']>['preprocessing']>['regions'][number]['asset']>,
+): NonNullable<NonNullable<DocumentEvidencePacket['pages'][number]['regions']>[number]['asset']> {
+  return {
+    mimeType: asset.mimeType,
+    byteLength: Math.max(0, Math.round(asset.byteLength)),
+    sha256: asset.sha256,
+    ...(asset.width != null ? { width: Math.max(1, Math.round(asset.width)) } : {}),
+    ...(asset.height != null ? { height: Math.max(1, Math.round(asset.height)) } : {}),
+    ...(asset.normalized != null ? { normalized: asset.normalized } : {}),
+    ...(asset.cacheRelativePath ? { cacheRelativePath: asset.cacheRelativePath } : {}),
   };
 }
 

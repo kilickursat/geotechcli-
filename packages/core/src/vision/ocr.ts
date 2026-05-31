@@ -4,7 +4,12 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { assessPdfTextQuality } from '../ingest/pdf.js';
 import type { LLMConfig } from '../llm/types.js';
-import { extractPdfPageTextFromBuffer, preprocessVisionImageBuffer } from './preprocess.js';
+import {
+  extractPdfPageTextFromBuffer,
+  preprocessVisionImageBuffer,
+  resolveVisionImagePreprocessPolicy,
+  type VisionImagePreprocessMetadata,
+} from './preprocess.js';
 import {
   parseDocumentLayoutWithGlmOcr,
   supportsGlmOcrLayoutParsing,
@@ -49,6 +54,7 @@ export interface RecoverDocumentTextHintResult {
   warnings: string[];
   latencyMs: number;
   transformed: boolean;
+  preprocessing?: VisionImagePreprocessMetadata;
   layout?: GlmOcrLayoutResult;
 }
 
@@ -159,6 +165,49 @@ async function buildVisionOcrChunkInputs(
   } catch {
     return [];
   }
+}
+
+function buildVisionOcrPreprocessingRegionInputs(
+  preprocessing: VisionImagePreprocessMetadata | undefined,
+): Array<{ buffer: Buffer; mimeType: string; label: string }> {
+  if (!preprocessing) {
+    return [];
+  }
+
+  return preprocessing.regions
+    .filter((region) =>
+      region.id !== 'normalized-full-page'
+      && region.id !== 'original-full-page'
+      && region.asset?.dataBase64
+      && region.asset.mimeType.startsWith('image/'),
+    )
+    .sort((left, right) => regionOcrPriority(left.id, left.label) - regionOcrPriority(right.id, right.label))
+    .flatMap((region) => {
+      const dataBase64 = region.asset?.dataBase64;
+      if (!dataBase64 || !region.asset) {
+        return [];
+      }
+      const buffer = Buffer.from(dataBase64, 'base64');
+      if (buffer.length === 0) {
+        return [];
+      }
+      return [{
+        buffer,
+        mimeType: region.asset.mimeType,
+        label: `Preprocessed region ${region.label}`,
+      }];
+    });
+}
+
+function regionOcrPriority(id: string, label: string): number {
+  const value = `${id} ${label}`.toLowerCase();
+  if (value.includes('table') || value.includes('log-panel')) {
+    return 0;
+  }
+  if (value.includes('content')) {
+    return 1;
+  }
+  return 2;
 }
 
 export function hasLocalTesseractOcr(): boolean {
@@ -331,7 +380,11 @@ export async function recoverDocumentTextHint(
 
   const warnings: string[] = [...nativeTextWarnings];
   const originalBuffer = Buffer.from(options.imageBase64, 'base64');
-  const preprocessed = await preprocessVisionImageBuffer(originalBuffer, options.mimeType, 'ocr-optimized');
+  const preprocessed = await preprocessVisionImageBuffer(
+    originalBuffer,
+    options.mimeType,
+    resolveVisionImagePreprocessPolicy(),
+  );
   warnings.push(...preprocessed.warnings);
 
   const localText = normalizeTextHint(runLocalTesseractOcr(preprocessed.buffer, preprocessed.mimeType));
@@ -342,6 +395,7 @@ export async function recoverDocumentTextHint(
       warnings,
       latencyMs: Date.now() - start,
       transformed: preprocessed.transformed,
+      preprocessing: preprocessed.preprocessing,
     };
   }
 
@@ -377,11 +431,55 @@ export async function recoverDocumentTextHint(
         warnings,
         latencyMs: Date.now() - start,
         transformed: preprocessed.transformed,
+        preprocessing: preprocessed.preprocessing,
       };
     }
 
     if (recoveredVisionText) {
       warnings.push('Vision OCR returned a text hint, but it was too short to trust for document extraction.');
+    }
+
+    const regionInputs = buildVisionOcrPreprocessingRegionInputs(preprocessed.preprocessing);
+    if (regionInputs.length > 0) {
+      const regionTexts: string[] = [];
+
+      for (const regionInput of regionInputs) {
+        try {
+          const regionTranscription = await options.visionTranscribe(
+            regionInput.buffer.toString('base64'),
+            regionInput.mimeType,
+            options.config,
+          );
+          const sanitized = sanitizeVisionOcrText(regionTranscription.text);
+          warnings.push(...regionTranscription.warnings.map((warning) => `${regionInput.label}: ${warning}`));
+          if (sanitized.rejectedReason) {
+            warnings.push(`${regionInput.label}: ${sanitized.rejectedReason}`);
+            continue;
+          }
+          if (sanitized.textHint) {
+            regionTexts.push(sanitized.textHint);
+          }
+        } catch (error) {
+          warnings.push(`${regionInput.label} failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+
+      const combinedRegionText = normalizeTextHint(regionTexts.join('\n'), 4000);
+      if (combinedRegionText && combinedRegionText.length >= minimumLength) {
+        warnings.push(`Recovered OCR text from ${regionInputs.length} preprocessed region crop(s).`);
+        return {
+          textHint: combinedRegionText,
+          source: 'vision-ocr',
+          warnings: [...new Set(warnings)],
+          latencyMs: Date.now() - start,
+          transformed: preprocessed.transformed,
+          preprocessing: preprocessed.preprocessing,
+        };
+      }
+
+      if (combinedRegionText) {
+        warnings.push('Preprocessed region OCR recovered text fragments, but they were still too short to trust for document extraction.');
+      }
     }
 
     const chunkInputs = await buildVisionOcrChunkInputs(preprocessed.buffer, preprocessed.mimeType);
@@ -418,6 +516,7 @@ export async function recoverDocumentTextHint(
           warnings: [...new Set(warnings)],
           latencyMs: Date.now() - start,
           transformed: preprocessed.transformed,
+          preprocessing: preprocessed.preprocessing,
         };
       }
 
@@ -433,5 +532,6 @@ export async function recoverDocumentTextHint(
     warnings: warnings.length > 0 ? warnings : ['No usable OCR text hint was recovered.'],
     latencyMs: Date.now() - start,
     transformed: preprocessed.transformed,
+    preprocessing: preprocessed.preprocessing,
   };
 }

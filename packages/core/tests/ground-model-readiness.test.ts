@@ -133,7 +133,8 @@ describe('GroundModel calculation readiness', () => {
       verification.calculationReadiness.workflows.map((workflow) => [workflow.workflow, workflow]),
     );
 
-    expect(verification.calculationReadiness.summary.ready).toBe(7);
+    expect(verification.calculationReadiness.summary.ready).toBe(8);
+    expect(verification.calculationReadiness.summary.blocked).toBe(6);
     expect(workflows['bearing-capacity']?.status).toBe('ready');
     expect(workflows['bearing-capacity']?.toolName).toBe('calculate_bearing_capacity');
     expect(workflows['settlement']?.toolName).toBe('calculate_schmertmann_settlement');
@@ -143,6 +144,21 @@ describe('GroundModel calculation readiness', () => {
     expect(workflows['fem-excavation-deformation']?.toolName).toBe('prepare_fem_analysis_case');
     expect(workflows['fem-excavation-deformation']?.commandTemplate).toBe('geotech fem draft excavation-deformation --input <json> --case-output <analysis_case.json>');
     expect(workflows['fem-excavation-deformation']?.recommendation).toMatch(/staged-excavation FEM/i);
+    expect(workflows['fem-tunnel-volume-loss-settlement']?.toolName).toBe('prepare_fem_analysis_case');
+    expect(workflows['fem-tunnel-volume-loss-settlement']?.commandTemplate).toBe('geotech fem draft tunnel-volume-loss-settlement --input <json> --case-output <analysis_case.json>');
+    expect(workflows['fem-tunnel-volume-loss-settlement']?.status).toBe('ready');
+    expect(workflows['fem-shaft-deformation']?.status).toBe('blocked');
+    expect(workflows['fem-shaft-deformation']?.missing).toContain('implemented shaft deformation preview backend');
+    expect(workflows['fem-pile-group-elastic-interaction']?.status).toBe('blocked');
+    expect(workflows['fem-pile-group-elastic-interaction']?.missing).toContain('implemented pile-group FEM preview backend');
+    expect(workflows['fem-slope-embankment-deformation']?.status).toBe('blocked');
+    expect(workflows['fem-slope-embankment-deformation']?.missing).toContain('implemented slope/embankment deformation preview backend');
+    expect(workflows['fem-retaining-wall-excavation-support']?.status).toBe('blocked');
+    expect(workflows['fem-retaining-wall-excavation-support']?.missing).toContain('implemented retaining-wall/excavation-support preview backend');
+    expect(workflows['fem-seepage-groundwater-coupling']?.status).toBe('blocked');
+    expect(workflows['fem-seepage-groundwater-coupling']?.missing).toContain('implemented seepage/groundwater coupling preview backend');
+    expect(workflows['fem-staged-settlement-consolidation']?.status).toBe('blocked');
+    expect(workflows['fem-staged-settlement-consolidation']?.missing).toContain('implemented staged settlement/consolidation preview backend');
     expect(workflows['pile-capacity']?.status).toBe('ready');
     expect(workflows['liquefaction']?.present).toContain('SPT N-values');
     expect(workflows['slope-stability']?.evidenceIds).toContain('ev-phi-1');
@@ -185,6 +201,123 @@ describe('GroundModel calculation readiness', () => {
     });
     expect(workflows['fem-excavation-deformation']?.inputDraft?.command).toBe('geotech fem draft excavation-deformation --input <json> --case-output <analysis_case.json>');
     expect(workflows['fem-excavation-deformation']?.inputDraft?.readyToRun).toBe(false);
+    expect(workflows['fem-tunnel-volume-loss-settlement']?.inputDraft?.missingUserInputs).toEqual([
+      'tunnel diameter',
+      'tunnel axis depth',
+      'tunnel alignment length',
+      'volume-loss assumption',
+      'trough-width parameter',
+    ]);
+    expect(workflows['fem-tunnel-volume-loss-settlement']?.inputDraft?.input).toMatchObject({
+      objective: 'tunnel-volume-loss-settlement',
+      useDemoDefaults: false,
+    });
+    expect(workflows['fem-tunnel-volume-loss-settlement']?.inputDraft?.readyToRun).toBe(false);
+    expect(workflows['fem-shaft-deformation']?.inputDraft?.command).toBe('geotech fem draft shaft-deformation --input <json>');
+    expect(workflows['fem-shaft-deformation']?.inputDraft?.command).not.toContain('--case-output');
+    expect(workflows['fem-shaft-deformation']?.inputDraft?.missingUserInputs).toEqual([
+      'shaft diameter/shape',
+      'final depth',
+      'support sequence',
+      'groundwater handling',
+    ]);
+    expect(workflows['fem-shaft-deformation']?.inputDraft?.input).toMatchObject({
+      objective: 'shaft-deformation',
+      useDemoDefaults: false,
+      material: {
+        elasticModulusKpa: 18000,
+        unitWeightKnM3: 18.5,
+        poissonRatio: 0.3,
+      },
+      groundwater: {
+        condition: 'specified',
+        depthM: 1.8,
+      },
+    });
+    expect(workflows['fem-shaft-deformation']?.inputDraft?.readyToRun).toBe(false);
+    expect(workflows['fem-shaft-deformation']?.recommendation).toMatch(/contract-only/i);
+    expect(workflows['fem-shaft-deformation']?.recommendation).toMatch(/do not create a runnable analysis case/i);
+    expect(workflows['fem-pile-group-elastic-interaction']?.inputDraft?.command).toBe('geotech fem draft pile-group-elastic-interaction --input <json>');
+    expect(workflows['fem-pile-group-elastic-interaction']?.inputDraft?.command).not.toContain('--case-output');
+    expect(workflows['fem-pile-group-elastic-interaction']?.inputDraft?.missingUserInputs).toEqual([
+      'pile diameter',
+      'pile length',
+      'pile spacing',
+      'load case',
+      'pile head condition',
+    ]);
+    expect(workflows['fem-pile-group-elastic-interaction']?.inputDraft?.input).toMatchObject({
+      objective: 'pile-group-elastic-interaction',
+      useDemoDefaults: false,
+      material: {
+        elasticModulusKpa: 18000,
+        unitWeightKnM3: 18.5,
+        poissonRatio: 0.3,
+      },
+      groundwater: {
+        condition: 'specified',
+        depthM: 1.8,
+      },
+    });
+    expect(workflows['fem-pile-group-elastic-interaction']?.inputDraft?.readyToRun).toBe(false);
+    expect(workflows['fem-pile-group-elastic-interaction']?.recommendation).toMatch(/planned contract-only route/i);
+    expect(workflows['fem-slope-embankment-deformation']?.inputDraft?.command).toBe('geotech fem draft slope-embankment-deformation --input <json>');
+    expect(workflows['fem-slope-embankment-deformation']?.inputDraft?.missingUserInputs).toEqual([
+      'slope height',
+      'slope angle / embankment geometry',
+      'construction or excavation stages',
+      'surcharge/seismic assumptions',
+      'drainage and groundwater handling',
+    ]);
+    expect(workflows['fem-slope-embankment-deformation']?.inputDraft?.input).toMatchObject({
+      objective: 'slope-embankment-deformation',
+      useDemoDefaults: false,
+    });
+    expect(workflows['fem-slope-embankment-deformation']?.inputDraft?.readyToRun).toBe(false);
+    expect(workflows['fem-slope-embankment-deformation']?.recommendation).toMatch(/planned contract-only route/i);
+    expect(workflows['fem-retaining-wall-excavation-support']?.inputDraft?.command).toBe('geotech fem draft retaining-wall-excavation-support --input <json>');
+    expect(workflows['fem-retaining-wall-excavation-support']?.inputDraft?.missingUserInputs).toEqual([
+      'wall type',
+      'excavation depth',
+      'toe embedment',
+      'prop/anchor levels',
+      'surcharge/load cases',
+      'groundwater and dewatering assumptions',
+    ]);
+    expect(workflows['fem-retaining-wall-excavation-support']?.inputDraft?.input).toMatchObject({
+      objective: 'retaining-wall-excavation-support',
+      useDemoDefaults: false,
+    });
+    expect(workflows['fem-retaining-wall-excavation-support']?.inputDraft?.readyToRun).toBe(false);
+    expect(workflows['fem-retaining-wall-excavation-support']?.recommendation).toMatch(/planned contract-only route/i);
+    expect(workflows['fem-seepage-groundwater-coupling']?.inputDraft?.command).toBe('geotech fem draft seepage-groundwater-coupling --input <json>');
+    expect(workflows['fem-seepage-groundwater-coupling']?.inputDraft?.missingUserInputs).toEqual([
+      'upstream/downstream heads',
+      'piezometric surfaces',
+      'permeability values',
+      'drainage or pump assumptions',
+      'coupling mode and review limits',
+    ]);
+    expect(workflows['fem-seepage-groundwater-coupling']?.inputDraft?.input).toMatchObject({
+      objective: 'seepage-groundwater-coupling',
+      useDemoDefaults: false,
+    });
+    expect(workflows['fem-seepage-groundwater-coupling']?.inputDraft?.readyToRun).toBe(false);
+    expect(workflows['fem-seepage-groundwater-coupling']?.recommendation).toMatch(/planned contract-only route/i);
+    expect(workflows['fem-staged-settlement-consolidation']?.inputDraft?.command).toBe('geotech fem draft staged-settlement-consolidation --input <json>');
+    expect(workflows['fem-staged-settlement-consolidation']?.inputDraft?.missingUserInputs).toEqual([
+      'load or fill stages',
+      'stage durations',
+      'foundation footprint',
+      'drainage path assumptions',
+      'target settlement or monitoring triggers',
+    ]);
+    expect(workflows['fem-staged-settlement-consolidation']?.inputDraft?.input).toMatchObject({
+      objective: 'staged-settlement-consolidation',
+      useDemoDefaults: false,
+    });
+    expect(workflows['fem-staged-settlement-consolidation']?.inputDraft?.readyToRun).toBe(false);
+    expect(workflows['fem-staged-settlement-consolidation']?.recommendation).toMatch(/planned contract-only route/i);
     expect(workflows['pile-capacity']?.inputDraft?.missingUserInputs).toEqual(['pile diameter', 'pile length']);
     expect(workflows['liquefaction']?.inputDraft?.missingUserInputs).toEqual(['PGA', 'earthquake magnitude']);
     expect(workflows['slope-stability']?.inputDraft?.missingUserInputs).toEqual(['slope height', 'slope angle']);
@@ -219,11 +352,18 @@ describe('GroundModel calculation readiness', () => {
       verification.calculationReadiness.workflows.map((workflow) => [workflow.workflow, workflow]),
     );
 
-    expect(verification.calculationReadiness.summary.blocked).toBe(7);
+    expect(verification.calculationReadiness.summary.blocked).toBe(14);
     expect(workflows['bearing-capacity']?.missing).toContain('stratigraphy / bearing stratum');
     expect(workflows['liquefaction']?.missing).toContain('SPT N-values by depth');
     expect(workflows['settlement']?.recommendation).toMatch(/compressibility/i);
     expect(workflows['fem-foundation-settlement']?.missing).toContain('3D ground profile / strata model');
     expect(workflows['fem-excavation-deformation']?.missing).toContain('3D ground profile / excavation strata model');
+    expect(workflows['fem-tunnel-volume-loss-settlement']?.missing).toContain('tunnel influence strata model');
+    expect(workflows['fem-shaft-deformation']?.missing).toContain('implemented shaft deformation preview backend');
+    expect(workflows['fem-pile-group-elastic-interaction']?.missing).toContain('implemented pile-group FEM preview backend');
+    expect(workflows['fem-slope-embankment-deformation']?.missing).toContain('implemented slope/embankment deformation preview backend');
+    expect(workflows['fem-retaining-wall-excavation-support']?.missing).toContain('implemented retaining-wall/excavation-support preview backend');
+    expect(workflows['fem-seepage-groundwater-coupling']?.missing).toContain('implemented seepage/groundwater coupling preview backend');
+    expect(workflows['fem-staged-settlement-consolidation']?.missing).toContain('implemented staged settlement/consolidation preview backend');
   });
 });

@@ -93,6 +93,19 @@ export {
   type GeotechDocumentBenchmarkPage,
 } from './geotech-document-benchmark.js';
 export {
+  buildGeotechBenchmarkCorpusReport,
+  renderGeotechBenchmarkCorpusHtml,
+  renderGeotechBenchmarkCorpusSvg,
+  type GeotechBenchmarkCorpusFixture,
+  type GeotechBenchmarkCorpusFixtureCategory,
+  type GeotechBenchmarkCorpusFixtureExpectations,
+  type GeotechBenchmarkCorpusPreprocessingComparison,
+  type GeotechBenchmarkCorpusReport,
+  type GeotechBenchmarkCorpusReportOptions,
+  type GeotechBenchmarkCorpusRun,
+  type GeotechBenchmarkCorpusRunInput,
+} from './geotech-benchmark-corpus.js';
+export {
   approvePersistedBoreholeIngestReview,
   approvePersistedBoreholeIngestReview as approvePersistedIngestReview,
   listPersistedBoreholeIngestReviewApprovals,
@@ -131,6 +144,7 @@ export {
   type PersistedIngestReviewSummary,
   type PersistedBoreholeIngestReviewRecord,
   type PersistedIngestReviewRecord,
+  type PersistedIngestProviderConfig,
   type PromotedBoreholeIngestReviewItem,
   type PromotedGeotechDocumentIngestReviewItem,
   type PromotedBoreholeIngestReviewResult,

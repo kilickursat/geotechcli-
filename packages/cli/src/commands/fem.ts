@@ -127,6 +127,27 @@ function normalizeFemObjective(value: string): FemRouteObjective {
     case 'pile-group':
     case 'pile-interaction':
       return 'pile-group-elastic-interaction';
+    case 'slope-embankment-deformation':
+    case 'slope-embankment':
+    case 'embankment-deformation':
+    case 'slope-deformation':
+    case 'embankment':
+      return 'slope-embankment-deformation';
+    case 'retaining-wall-excavation-support':
+    case 'retaining-wall':
+    case 'excavation-support':
+    case 'wall-support':
+      return 'retaining-wall-excavation-support';
+    case 'seepage-groundwater-coupling':
+    case 'seepage':
+    case 'groundwater-coupling':
+    case 'groundwater-sensitive':
+      return 'seepage-groundwater-coupling';
+    case 'staged-settlement-consolidation':
+    case 'staged-settlement':
+    case 'consolidation':
+    case 'settlement-consolidation':
+      return 'staged-settlement-consolidation';
     default:
       throw new Error(`Unsupported FEM objective: ${value}`);
   }
@@ -222,9 +243,18 @@ function mergeFemDraftInputs(
   };
 }
 
-function workflowForFemObjective(objective: FemRouteObjective): 'fem-foundation-settlement' | 'fem-excavation-deformation' | null {
+function workflowForFemObjective(
+  objective: FemRouteObjective,
+): 'fem-foundation-settlement' | 'fem-excavation-deformation' | 'fem-tunnel-volume-loss-settlement' | 'fem-shaft-deformation' | 'fem-pile-group-elastic-interaction' | 'fem-slope-embankment-deformation' | 'fem-retaining-wall-excavation-support' | 'fem-seepage-groundwater-coupling' | 'fem-staged-settlement-consolidation' | null {
   if (objective === 'foundation-settlement') return 'fem-foundation-settlement';
   if (objective === 'excavation-deformation') return 'fem-excavation-deformation';
+  if (objective === 'tunnel-volume-loss-settlement') return 'fem-tunnel-volume-loss-settlement';
+  if (objective === 'shaft-deformation') return 'fem-shaft-deformation';
+  if (objective === 'pile-group-elastic-interaction') return 'fem-pile-group-elastic-interaction';
+  if (objective === 'slope-embankment-deformation') return 'fem-slope-embankment-deformation';
+  if (objective === 'retaining-wall-excavation-support') return 'fem-retaining-wall-excavation-support';
+  if (objective === 'seepage-groundwater-coupling') return 'fem-seepage-groundwater-coupling';
+  if (objective === 'staged-settlement-consolidation') return 'fem-staged-settlement-consolidation';
   return null;
 }
 
@@ -235,7 +265,7 @@ async function loadFemWorkspaceBridge(
   if (typeof workspace !== 'string' || !workspace.trim()) return undefined;
   const workflowName = workflowForFemObjective(objective);
   if (!workflowName) {
-    throw new Error(`--workspace FEM prefill is only available for implemented routes: foundation-settlement and excavation-deformation.`);
+    throw new Error(`--workspace FEM prefill is only available for registered FEM routes.`);
   }
   const manifest = await analyzeWorkspace(workspace, { includeCalculationInputDrafts: true });
   if (!manifest.groundModel || !manifest.verifier) {
@@ -256,7 +286,17 @@ function summarizeFemWorkspaceForAgent(
   bridge?: FemGroundModelDraftBridge,
 ): string {
   const femWorkflows = manifest.verifier?.calculationReadiness.workflows
-    .filter((workflow) => workflow.workflow === 'fem-foundation-settlement' || workflow.workflow === 'fem-excavation-deformation')
+    .filter((workflow) =>
+      workflow.workflow === 'fem-foundation-settlement'
+      || workflow.workflow === 'fem-excavation-deformation'
+      || workflow.workflow === 'fem-tunnel-volume-loss-settlement'
+      || workflow.workflow === 'fem-shaft-deformation'
+      || workflow.workflow === 'fem-pile-group-elastic-interaction'
+      || workflow.workflow === 'fem-slope-embankment-deformation'
+      || workflow.workflow === 'fem-retaining-wall-excavation-support'
+      || workflow.workflow === 'fem-seepage-groundwater-coupling'
+      || workflow.workflow === 'fem-staged-settlement-consolidation',
+    )
     ?? [];
   const workflowLines = femWorkflows.map((workflow) => [
     `- ${workflow.workflow}: ${workflow.status} (${workflow.score}/100)`,

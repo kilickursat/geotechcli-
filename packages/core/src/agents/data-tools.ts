@@ -38,6 +38,7 @@ import {
   addAssumption, addArtifact,
 } from '../storage/index.js';
 import { validateReadPath } from './sandbox.js';
+import { buildUnsafeFemArtifactError, detectUnsafeFemArtifactPayload } from './fem-artifact-guards.js';
 import { getToolRuntimeContext } from './tool-runtime.js';
 import { existsSync } from 'node:fs';
 import { basename } from 'node:path';
@@ -1363,6 +1364,23 @@ toolRegistry.register(
     },
   },
   (args): ToolResult => {
+    const unsafeFemCode = detectUnsafeFemArtifactPayload({
+      kind: args.kind,
+      title: args.title,
+      content: args.content,
+      path: args.path,
+      mimeType: args.mimeType,
+      metadata: args.metadata,
+    });
+    if (unsafeFemCode) {
+      return {
+        success: false,
+        data: null,
+        summary: '',
+        error: buildUnsafeFemArtifactError(unsafeFemCode),
+      };
+    }
+
     try {
       addArtifact(String(args.projectId), {
         kind: String(args.kind),
@@ -1396,9 +1414,30 @@ toolRegistry.register(
     },
   },
   (args): ToolResult => {
+    const toolName = String(args.tool);
+    const unsafeFemCode = detectUnsafeFemArtifactPayload({
+      tool: toolName,
+      summary: args.summary,
+      result: args.result,
+      metadata: args.args,
+    });
+    const allowedFemPlanningTool = new Set([
+      'list_fem_capabilities',
+      'prepare_fem_analysis_case',
+      'validate_fem_analysis_case',
+    ]).has(toolName);
+    if (unsafeFemCode && !(allowedFemPlanningTool && unsafeFemCode === 'fem-analysis-case')) {
+      return {
+        success: false,
+        data: null,
+        summary: '',
+        error: buildUnsafeFemArtifactError(unsafeFemCode),
+      };
+    }
+
     try {
       addSimulationResult(String(args.projectId), {
-        tool: String(args.tool),
+        tool: toolName,
         args: (args.args as Record<string, unknown>) ?? {},
         result: args.result ?? null,
         summary: String(args.summary),

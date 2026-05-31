@@ -45,6 +45,7 @@ describe('Swarm tool policy', () => {
     expect(isToolAllowedForAgent('reviewer', 'run_skill')).toBe(false);
     expect(isToolAllowedForAgent('interpretation', 'calculate_bearing_capacity')).toBe(false);
     expect(isToolAllowedForAgent('interpretation', 'ingest_geotech_document')).toBe(true);
+    expect(isToolAllowedForAgent('interpretation', 'analyze_signal_file')).toBe(true);
     expect(isToolAllowedForAgent('interpretation', 'list_persisted_ingest_reviews')).toBe(true);
     expect(isToolAllowedForAgent('interpretation', 'load_persisted_ingest_review')).toBe(true);
     expect(isToolAllowedForAgent('interpretation', 'list_persisted_ingest_review_approvals')).toBe(false);
@@ -60,6 +61,7 @@ describe('Swarm tool policy', () => {
     expect(isToolAllowedForAgent('simulation', 'run_fem_analysis_case')).toBe(false);
     expect(isToolAllowedForAgent('simulation', 'geotech_fem_run')).toBe(false);
     expect(isToolAllowedForAgent('simulation', 'ingest_geotech_document')).toBe(false);
+    expect(isToolAllowedForAgent('simulation', 'analyze_signal_file')).toBe(false);
     expect(isToolAllowedForAgent('simulation', 'list_persisted_ingest_review_approvals')).toBe(false);
     expect(isToolAllowedForAgent('simulation', 'load_persisted_ingest_review_approval')).toBe(false);
     expect(isToolAllowedForAgent('simulation', 'approve_persisted_ingest_review')).toBe(false);
@@ -67,6 +69,7 @@ describe('Swarm tool policy', () => {
     expect(isToolAllowedForAgent('simulation', 'generate_report')).toBe(true);
     expect(isToolAllowedForAgent('simulation', 'query_standards')).toBe(false);
     expect(isToolAllowedForAgent('reviewer', 'generate_report')).toBe(false);
+    expect(isToolAllowedForAgent('reviewer', 'analyze_signal_file')).toBe(false);
     expect(getAllowedToolsForAgent('reviewer')).not.toContain('project_add_assumption');
     expect(getAllowedToolsForAgent('reviewer', true)).not.toContain('run_skill');
   });
@@ -202,7 +205,7 @@ describe('Swarm tool policy', () => {
       {},
     );
 
-    expect(session.reviewPassed).toBe(true);
+    expect(session.reviewPassed).toBe(false);
     expect(executeSpy).toHaveBeenCalledWith('prepare_fem_analysis_case', expect.objectContaining({
       objective: 'excavation-deformation',
     }));
@@ -227,6 +230,16 @@ describe('Swarm tool policy', () => {
         reviewItems: expect.any(Number),
       }),
     });
+    expect(session.reviewBlockers).toContain('fem-validation-review-required');
+    expect(mockedGenerateText).not.toHaveBeenCalled();
+    expect(session.steps).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        agent: 'reviewer',
+        type: 'error',
+        toolName: 'validate_fem_analysis_case',
+        content: expect.stringContaining('requires human review'),
+      }),
+    ]));
 
     const reviewerMessages = mockedGenerateChat.mock.calls[3]?.[0] as Array<{ role: string; content: string }>;
     const reviewerUserPrompt = reviewerMessages.find((message) => message.role === 'user')?.content ?? '';
@@ -234,6 +247,78 @@ describe('Swarm tool policy', () => {
     expect(reviewerUserPrompt).toContain('prepare_fem_analysis_case');
     expect(reviewerUserPrompt).toContain('analysisCase.caseId: excavation-deformation-draft');
     expect(reviewerUserPrompt).toContain('These deterministic tool outputs are the authoritative basis for review');
+  });
+
+  it('fails closed when reviewer approves a contract-only FEM draft', async () => {
+    mockedGenerateChat
+      .mockResolvedValueOnce(
+        response('```handoff\n{"to":"simulation","data":{"task":"prepare shaft FEM readiness"},"summary":"workspace evidence parsed"}\n```'),
+      )
+      .mockResolvedValueOnce(
+        response('```tool\n{"tool":"prepare_fem_analysis_case","args":{"objective":"shaft-deformation","useDemoDefaults":true}}\n```'),
+      )
+      .mockResolvedValueOnce(
+        response('```handoff\n{"to":"reviewer","results":{"summary":"shaft FEM readiness prepared"},"summary":"contract-only FEM draft"}\n```'),
+      )
+      .mockResolvedValueOnce(
+        response('```review\n{"verdict":"APPROVED","notes":["looks acceptable"],"confidence":94}\n```'),
+      );
+
+    mockedGenerateText.mockResolvedValue(response('APPROVED WITH NOTES'));
+
+    const session = await runSwarm(
+      'review a shaft FEM draft',
+      {} as any,
+      () => {},
+      {},
+    );
+
+    expect(session.reviewPassed).toBe(false);
+    expect(session.reviewBlockers).toContain('fem-contract-only:shaft-deformation');
+    expect(session.reviewBlockers).toContain('fem-analysis-case-missing:shaft-deformation');
+    expect(mockedGenerateText).not.toHaveBeenCalled();
+    expect(session.steps).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        agent: 'reviewer',
+        type: 'correction',
+        content: expect.stringContaining('Deterministic tool blockers override reviewer approval'),
+      }),
+    ]));
+    const finalStep = session.steps.at(-1);
+    expect(finalStep?.content).toContain('UNRESOLVED - REVIEW REJECTED');
+    expect(finalStep?.content).toContain('fem-contract-only:shaft-deformation');
+    expect(finalStep?.content).not.toContain('APPROVED WITH NOTES');
+  });
+
+  it('fails closed when reviewer approves blocked FEM validation output', async () => {
+    mockedGenerateChat
+      .mockResolvedValueOnce(
+        response('```handoff\n{"to":"simulation","data":{"task":"validate bad FEM case"},"summary":"workspace evidence parsed"}\n```'),
+      )
+      .mockResolvedValueOnce(
+        response('```handoff\n{"to":"reviewer","results":{"caseFile":{"schemaVersion":"fem-analysis-case.v0"}},"summary":"bad FEM case provided"}\n```'),
+      )
+      .mockResolvedValueOnce(
+        response('```tool\n{"tool":"validate_fem_analysis_case","args":{"caseFile":{"schemaVersion":"fem-analysis-case.v0"}}}\n```'),
+      )
+      .mockResolvedValueOnce(
+        response('```review\n{"verdict":"APPROVED","notes":["validation reviewed"],"confidence":90}\n```'),
+      );
+
+    mockedGenerateText.mockResolvedValue(response('APPROVED WITH NOTES'));
+
+    const session = await runSwarm(
+      'review a malformed FEM analysis case',
+      {} as any,
+      () => {},
+      {},
+    );
+
+    expect(session.reviewPassed).toBe(false);
+    expect(session.reviewBlockers).toContain('fem-validation-blocked');
+    expect(mockedGenerateText).not.toHaveBeenCalled();
+    expect(session.steps.at(-1)?.content).toContain('UNRESOLVED - REVIEW REJECTED');
+    expect(session.steps.at(-1)?.content).toContain('fem-validation-blocked');
   });
 
   it('returns a deterministic final answer when swarm synthesis fails', async () => {
@@ -264,7 +349,7 @@ describe('Swarm tool policy', () => {
     expect(finalStep?.content).toContain('Simulation output');
   });
 
-  it('keeps rejected swarm review status unresolved in final synthesis', async () => {
+  it('keeps rejected swarm review status unresolved without model-written final approval', async () => {
     mockedGenerateChat
       .mockResolvedValueOnce(
         response('```handoff\n{"to":"simulation","data":{"soil":"sand"},"summary":"parsed"}\n```'),
@@ -273,15 +358,15 @@ describe('Swarm tool policy', () => {
         response('```handoff\n{"to":"reviewer","results":{"fos":0.8},"summary":"calculated"}\n```'),
       )
       .mockResolvedValueOnce(
-        response('```review\n{"verdict":"REJECTED","issues":["factor of safety below acceptance"],"corrections":["request missing load case"]}\n```'),
+        response('```review\n{"verdict":"REJECTED","issues":["factor of safety below acceptance"],"corrections":["request missing load case"],"confidence":72}\n```'),
       )
       .mockResolvedValueOnce(
         response('```handoff\n{"to":"reviewer","results":{"fos":0.8},"summary":"still unresolved"}\n```'),
       )
       .mockResolvedValueOnce(
-        response('```review\n{"verdict":"REJECTED","issues":["still below acceptance"],"corrections":["do not approve"]}\n```'),
+        response('```review\n{"verdict":"REJECTED","issues":["still below acceptance"],"corrections":["do not approve"],"confidence":70}\n```'),
       );
-    mockedGenerateText.mockResolvedValue(response('final unresolved report'));
+    mockedGenerateText.mockResolvedValue(response('APPROVED WITH NOTES'));
 
     const session = await runSwarm(
       'review an unsafe slope result',
@@ -291,9 +376,169 @@ describe('Swarm tool policy', () => {
     );
 
     expect(session.reviewPassed).toBe(false);
-    const finalPrompt = mockedGenerateText.mock.calls[0]?.[0] as string;
-    expect(finalPrompt).toContain('Review status: UNRESOLVED - REVIEW REJECTED');
-    expect(finalPrompt).not.toContain('APPROVED WITH NOTES');
+    expect(mockedGenerateText).not.toHaveBeenCalled();
+    const finalStep = session.steps.at(-1);
+    expect(finalStep).toMatchObject({
+      agent: 'orchestrator',
+      type: 'answer',
+    });
+    expect(finalStep?.content).toContain('UNRESOLVED - REVIEW REJECTED');
+    expect(finalStep?.content).toContain('do not approve');
+    expect(finalStep?.content).not.toContain('APPROVED WITH NOTES');
+  });
+
+  it('fails closed when reviewer output omits the required review block', async () => {
+    mockedGenerateChat
+      .mockResolvedValueOnce(
+        response('```handoff\n{"to":"simulation","data":{"soil":"sand"},"summary":"parsed"}\n```'),
+      )
+      .mockResolvedValueOnce(
+        response('```handoff\n{"to":"reviewer","results":{"fos":1.6},"summary":"calculated"}\n```'),
+      )
+      .mockResolvedValueOnce(response('Looks fine to me.'));
+    mockedGenerateText.mockResolvedValue(response('APPROVED WITH NOTES'));
+
+    const session = await runSwarm(
+      'review a shallow foundation result',
+      {} as any,
+      () => {},
+      {},
+    );
+
+    expect(session.reviewPassed).toBe(false);
+    expect(session.reviewBlockers).toContain('review-block-missing');
+    expect(session.steps).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        agent: 'reviewer',
+        type: 'correction',
+        content: expect.stringContaining('BLOCKED REVIEW'),
+      }),
+    ]));
+    expect(mockedGenerateText).not.toHaveBeenCalled();
+    const finalStep = session.steps.at(-1);
+    expect(finalStep?.content).toContain('UNRESOLVED - REVIEW REJECTED');
+    expect(finalStep?.content).toContain('review-block-missing');
+    expect(finalStep?.content).not.toContain('APPROVED WITH NOTES');
+  });
+
+  it('fails closed when reviewer JSON is schema-invalid', async () => {
+    mockedGenerateChat
+      .mockResolvedValueOnce(
+        response('```handoff\n{"to":"simulation","data":{"soil":"sand"},"summary":"parsed"}\n```'),
+      )
+      .mockResolvedValueOnce(
+        response('```handoff\n{"to":"reviewer","results":{"fos":1.6},"summary":"calculated"}\n```'),
+      )
+      .mockResolvedValueOnce(response('```review\n{"verdict":"APPROVED"}\n```'));
+    mockedGenerateText.mockResolvedValue(response('APPROVED WITH NOTES'));
+
+    const session = await runSwarm(
+      'review a shallow foundation result',
+      {} as any,
+      () => {},
+      {},
+    );
+
+    expect(session.reviewPassed).toBe(false);
+    expect(session.reviewBlockers).toContain('review-schema-invalid');
+    expect(mockedGenerateText).not.toHaveBeenCalled();
+    expect(session.steps.at(-1)?.content).toContain('UNRESOLVED - REVIEW REJECTED');
+    expect(session.steps.at(-1)?.content).toContain('review-schema-invalid');
+  });
+
+  it('fails closed when reviewer approval contains contradictory issue fields', async () => {
+    mockedGenerateChat
+      .mockResolvedValueOnce(
+        response('```handoff\n{"to":"simulation","data":{"soil":"sand"},"summary":"parsed"}\n```'),
+      )
+      .mockResolvedValueOnce(
+        response('```handoff\n{"to":"reviewer","results":{"fos":1.6},"summary":"calculated"}\n```'),
+      )
+      .mockResolvedValueOnce(response('```review\n{"verdict":"APPROVED","notes":["ok"],"issues":["still unsafe"],"corrections":["fix it"],"confidence":88}\n```'));
+    mockedGenerateText.mockResolvedValue(response('APPROVED WITH NOTES'));
+
+    const session = await runSwarm(
+      'review a shallow foundation result',
+      {} as any,
+      () => {},
+      {},
+    );
+
+    expect(session.reviewPassed).toBe(false);
+    expect(session.reviewBlockers).toContain('review-schema-invalid');
+    expect(mockedGenerateText).not.toHaveBeenCalled();
+    expect(session.steps.at(-1)?.content).toContain('UNRESOLVED - REVIEW REJECTED');
+  });
+
+  it('fails closed when reviewer emits multiple review blocks', async () => {
+    mockedGenerateChat
+      .mockResolvedValueOnce(
+        response('```handoff\n{"to":"simulation","data":{"soil":"sand"},"summary":"parsed"}\n```'),
+      )
+      .mockResolvedValueOnce(
+        response('```handoff\n{"to":"reviewer","results":{"fos":1.6},"summary":"calculated"}\n```'),
+      )
+      .mockResolvedValueOnce(response('```review\n{"verdict":"REJECTED","issues":["check"],"corrections":["revise"],"confidence":60}\n```\n```review\n{"verdict":"APPROVED","notes":["ok"],"confidence":90}\n```'));
+    mockedGenerateText.mockResolvedValue(response('APPROVED WITH NOTES'));
+
+    const session = await runSwarm(
+      'review a shallow foundation result',
+      {} as any,
+      () => {},
+      {},
+    );
+
+    expect(session.reviewPassed).toBe(false);
+    expect(session.reviewBlockers).toContain('review-block-multiple');
+    expect(mockedGenerateText).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when reviewer contaminates the review block with final-answer text', async () => {
+    mockedGenerateChat
+      .mockResolvedValueOnce(
+        response('```handoff\n{"to":"simulation","data":{"soil":"sand"},"summary":"parsed"}\n```'),
+      )
+      .mockResolvedValueOnce(
+        response('```handoff\n{"to":"reviewer","results":{"fos":1.6},"summary":"calculated"}\n```'),
+      )
+      .mockResolvedValueOnce(response('```review\n{"verdict":"APPROVED","notes":["ok"],"confidence":90}\n```\nFINAL ANSWER: approved for design.'));
+    mockedGenerateText.mockResolvedValue(response('APPROVED WITH NOTES'));
+
+    const session = await runSwarm(
+      'review a shallow foundation result',
+      {} as any,
+      () => {},
+      {},
+    );
+
+    expect(session.reviewPassed).toBe(false);
+    expect(session.reviewBlockers).toContain('review-output-contaminated');
+    expect(mockedGenerateText).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when reviewer JSON is malformed', async () => {
+    mockedGenerateChat
+      .mockResolvedValueOnce(
+        response('```handoff\n{"to":"simulation","data":{"soil":"sand"},"summary":"parsed"}\n```'),
+      )
+      .mockResolvedValueOnce(
+        response('```handoff\n{"to":"reviewer","results":{"fos":1.6},"summary":"calculated"}\n```'),
+      )
+      .mockResolvedValueOnce(response('```review\n{"verdict":"APPROVED",\n```'));
+    mockedGenerateText.mockResolvedValue(response('APPROVED WITH NOTES'));
+
+    const session = await runSwarm(
+      'review a shallow foundation result',
+      {} as any,
+      () => {},
+      {},
+    );
+
+    expect(session.reviewPassed).toBe(false);
+    expect(session.reviewBlockers).toContain('review-json-invalid');
+    expect(mockedGenerateText).not.toHaveBeenCalled();
+    expect(session.steps.at(-1)?.content).toContain('UNRESOLVED - REVIEW REJECTED');
+    expect(session.steps.at(-1)?.content).toContain('review-json-invalid');
   });
 
   it('threads the role-based execution plan into swarm prompts and session output', async () => {

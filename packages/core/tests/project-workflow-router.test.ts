@@ -172,6 +172,32 @@ describe('project workflow router', () => {
     expect(route.selectionSource).toBe('model');
   });
 
+  it('routes monitoring and signal requests to deterministic signal-analysis', () => {
+    for (const [index, prompt] of [
+      'Analyze piezometer and settlement monitoring trends.',
+      'Check inclinometer time-series and trigger levels.',
+      'Review vibration signal records and load-test readings.',
+    ].entries()) {
+      const route = routeProjectWorkflowRequest({
+        prompt,
+        manifest: makeManifest({
+          summary: {
+            ...makeManifest().summary,
+            datasetTypes: { 'monitoring-time-series': 1, 'signal-record': 1 },
+            branches: ['monitoring', 'signal-processing'],
+          },
+        }),
+        runId: `run_signal_route_${index}`,
+        now: '2026-05-24T00:00:00.000Z',
+      });
+
+      expect(route.tasks).toEqual(['signal-analysis']);
+      expect(route.executionMode).toBe('deterministic-sequence');
+      expect(route.rationale.join(' ')).toMatch(/monitoring|signal|time-series/i);
+      expect(route.providerContract.allowedTasks).toContain('signal-analysis');
+    }
+  });
+
   it('records validated model route proposal provenance and model-call metadata', () => {
     const route = routeProjectWorkflowRequest({
       prompt: 'Please decide which project workflow should run next.',

@@ -20,6 +20,7 @@ import { registerFemCommand } from './commands/fem.js';
 import { registerVizCommand } from './commands/viz.js';
 import { registerSkillCommand } from './commands/skill.js';
 import { registerAnalyzeCommand } from './commands/analyze.js';
+import { registerSignalCommand } from './commands/signal.js';
 import {
   registerVisionCommand,
   registerAIClassifyCommand,
@@ -58,6 +59,7 @@ registerFemCommand(program);
 registerVizCommand(program);
 registerIngestCommand(program);
 registerAnalyzeCommand(program);
+registerSignalCommand(program);
 
 // Tunnel engineering
 registerTunnelCommands(program);

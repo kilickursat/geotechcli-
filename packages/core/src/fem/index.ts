@@ -18,12 +18,14 @@ export {
   type PrepareFemAnalysisCaseDraftInput,
 } from './routing.js';
 export {
+  buildFemDraftCandidateFromReadiness,
   buildFemDraftCandidatesFromGroundModel,
   buildFemDraftInputFromReadiness,
   mapGroundModelEvidenceRefs,
   stripPlaceholderFemValues,
   type FemGroundModelDraftCandidate,
   type FemGroundModelDraftBridge,
+  type FemGroundModelExecutionBoundary,
 } from './ground-model-draft.js';
 export { validateFemAnalysisCase, validateFemResultManifest } from './validation.js';
 export { renderFemWebglHtml } from './webgl.js';

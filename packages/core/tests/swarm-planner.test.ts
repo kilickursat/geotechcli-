@@ -101,6 +101,9 @@ describe('skill-aware swarm planner', () => {
     expect(design?.blockedSkills).not.toContain('tunnel-engineering-reviewer');
     expect(design?.toolStrategy).toContain('prepare_fem_analysis_case');
 
+    const data = plan.roles.find((role) => role.role === 'DataEngineer');
+    expect(data?.toolStrategy).toContain('analyze_signal_file');
+
     const risk = plan.roles.find((role) => role.role === 'RiskReviewer');
     expect(risk?.toolStrategy).toContain('validate_fem_analysis_case');
 

@@ -9,8 +9,47 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function extractFindingCodes(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((finding) => (isRecord(finding) && typeof finding.code === 'string' ? finding.code.trim() : ''))
+    .filter(Boolean);
+}
+
 export function extractToolSafetyIssue(data: unknown): ToolSafetyIssue | null {
   if (!isRecord(data)) return null;
+
+  const status = typeof data.status === 'string' ? data.status : '';
+  const blockerCount =
+    typeof data.blockers === 'number' && Number.isFinite(data.blockers)
+      ? data.blockers
+      : 0;
+  const reviewItemCount =
+    typeof data.reviewItems === 'number' && Number.isFinite(data.reviewItems)
+      ? data.reviewItems
+      : 0;
+  const findingCodes = extractFindingCodes(data.findings);
+  const looksLikeFemValidation =
+    findingCodes.some((code) => code.includes('.')) ||
+    typeof data.agentEvidenceSummary === 'string' && /FEM validation/i.test(data.agentEvidenceSummary);
+
+  if (looksLikeFemValidation && (status === 'blocked' || blockerCount > 0 || status === 'review' || reviewItemCount > 0)) {
+    const warnings = findingCodes.length > 0
+      ? findingCodes
+      : [
+        status ? `status:${status}` : '',
+        blockerCount > 0 ? `blockers:${blockerCount}` : '',
+        reviewItemCount > 0 ? `review-items:${reviewItemCount}` : '',
+      ].filter(Boolean);
+
+    return {
+      parseStatus: status || undefined,
+      warnings,
+      message: status === 'review' || reviewItemCount > 0
+        ? `Deterministic FEM validation requires human review before downstream use (${warnings.join('; ') || 'review required'}).`
+        : `Deterministic FEM validation blocked downstream use (${warnings.join('; ') || 'blocked'}).`,
+    };
+  }
 
   if (data.canAutoProceed !== false) return null;
 

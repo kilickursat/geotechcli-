@@ -3,6 +3,7 @@
 import './filesystem-tools.js';
 import './shell-tools.js';
 import './data-tools.js';
+import './signal-tools.js';
 import './fem-tools.js';
 import './deliverable-tools.js';
 import './skill-tools.js';

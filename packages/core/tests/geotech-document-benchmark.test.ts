@@ -79,6 +79,7 @@ function makeResult(
         materialCount: 0,
         classificationCount: 0,
         parameterCount: 0,
+        latencyMs: 5,
         evidenceCache: {
           status: 'hit',
           entryId: 'entry-1',
@@ -102,6 +103,20 @@ function makeResult(
         materialCount: 2,
         classificationCount: 1,
         parameterCount: 2,
+        latencyMs: 80,
+        layoutPages: [{
+          pageNumber: 2,
+          width: 1000,
+          height: 1400,
+          elements: [
+            { index: 1, label: 'table', bbox2d: [0.1, 0.2, 0.8, 0.4], content: 'BH1 table', height: null, width: null },
+            { index: 2, label: 'text', bbox2d: [0.1, 0.5, 0.8, 0.7], content: 'weathered rock', height: null, width: null },
+          ],
+          text: 'BH1 table weathered rock',
+          tables: ['BH1 table'],
+          formulas: [],
+          images: [],
+        }],
         evidenceCache: {
           status: 'stored',
           entryId: 'entry-2',
@@ -113,6 +128,83 @@ function makeResult(
           preprocessingVersion: 'preprocess-v1',
           schemaVersion: 1,
           createdAt: '2026-05-04T00:00:00.000Z',
+          preprocessing: {
+            schemaVersion: 1,
+            pipelineVersion: 'vision-image-preprocess-v2',
+            policy: 'ocr-optimized',
+            transformed: true,
+            input: {
+              mimeType: 'image/jpeg',
+              byteLength: 4096,
+              width: 2400,
+              height: 3200,
+            },
+            output: {
+              mimeType: 'image/png',
+              byteLength: 2048,
+              width: 1350,
+              height: 1800,
+            },
+            operations: [
+              'auto-orient',
+              'deskew-angle-1.25deg',
+              'trim-white-margins-threshold-10',
+              'resize-inside-1800-no-enlarge',
+              'score-preprocessing-regions',
+            ],
+            quality: {
+              score: 0.82,
+              contentCoverageRatio: 0.72,
+              darkPixelRatio: 0.08,
+              regionCoverageRatio: 0.14,
+              regionCount: 1,
+              cropAssetCount: 1,
+              deskew: {
+                method: 'projection-profile',
+                angleDeg: 1.25,
+                confidence: 0.7,
+                applied: true,
+              },
+              warnings: [],
+            },
+            regions: [{
+              id: 'normalized-full-page',
+              source: 'preprocessing',
+              label: 'normalized full page',
+              bbox2d: [0, 0, 1, 1],
+              coverageRatio: 1,
+              quality: {
+                score: 0.78,
+                darkPixelRatio: 0.08,
+                lineDensity: 0.02,
+                coverageRatio: 1,
+                warnings: ['region-covers-full-page'],
+              },
+            }, {
+              id: 'table-log-panel-candidate',
+              source: 'preprocessing',
+              label: 'detected table/log panel candidate',
+              bbox2d: [0.1, 0.2, 0.8, 0.4],
+              coverageRatio: 0.14,
+              quality: {
+                score: 0.91,
+                darkPixelRatio: 0.18,
+                lineDensity: 0.03,
+                coverageRatio: 0.14,
+                warnings: [],
+              },
+              asset: {
+                mimeType: 'image/png',
+                byteLength: 1234,
+                sha256: 'b'.repeat(64),
+                width: 700,
+                height: 240,
+                normalized: true,
+                cacheRelativePath: 'assets/cache-2/table-log-panel-candidate-bbbbbbbbbbbbbbbb.png',
+              },
+            }],
+            warnings: [],
+          },
         },
         warnings: [],
       },
@@ -125,6 +217,7 @@ function makeResult(
         materialCount: 0,
         classificationCount: 0,
         parameterCount: 1,
+        latencyMs: 120,
         evidenceCache: {
           status: 'miss',
           entryId: 'entry-3',
@@ -181,6 +274,15 @@ describe('geotech document benchmark', () => {
         durationMs: 5000,
       },
       generatedAt: '2026-05-04T00:00:06.000Z',
+      providerConfig: {
+        provider: 'openai-compatible',
+        modelId: 'poolside/laguna-m.1:free',
+        visionModelId: '',
+      },
+      fixture: {
+        id: 'site-smoke',
+        category: 'full-geotechnical-report',
+      },
     });
 
     expect(benchmark.kind).toBe('geotech-document-benchmark');
@@ -196,6 +298,83 @@ describe('geotech document benchmark', () => {
       hitRate: 0.333,
       preprocessingVersions: ['preprocess-v1'],
     });
+    expect(benchmark.provider).toMatchObject({
+      provider: 'openai-compatible',
+      profile: 'open-byok',
+      likelyFreeRoute: true,
+      contextStrategy: 'micro',
+      preprocessingPolicy: {
+        requirePreprocessedEvidence: true,
+        allowImageInputs: false,
+      },
+    });
+    expect(benchmark.fixture).toMatchObject({
+      id: 'site-smoke',
+      category: 'full-geotechnical-report',
+    });
+    expect(benchmark.preprocessing).toMatchObject({
+      versions: ['preprocess-v1'],
+      modes: ['ocr-optimized'],
+      pagesWithPreprocessing: 3,
+      pagesWithRegions: 1,
+      totalRegions: 4,
+      preprocessingRegions: 2,
+      layoutRegions: 2,
+      pageRegionCoverage: 0.333,
+      pagesWithPreprocessingMetadata: 1,
+      operationCounts: {
+        'auto-orient': 1,
+        'deskew-angle-1.25deg': 1,
+        'resize-inside-1800-no-enlarge': 1,
+        'score-preprocessing-regions': 1,
+        'trim-white-margins-threshold-10': 1,
+      },
+      regionLabelCounts: {
+        'detected table/log panel candidate': 1,
+        'normalized full page': 1,
+      },
+      persistedRegionAssets: 1,
+      persistedRegionAssetBytes: 1234,
+      pagesDeskewed: 1,
+      averageDeskewAngleDeg: 1.25,
+      averageQualityScore: 0.82,
+      averageRegionQualityScore: 0.845,
+      lowQualityRegions: 0,
+      qualityWarningCounts: {
+        'region-covers-full-page': 1,
+      },
+    });
+    expect(benchmark.latency).toMatchObject({
+      pageLatencyMs: {
+        count: 3,
+        total: 205,
+        average: 68,
+        max: 120,
+      },
+      totalKnownLatencyMs: 455,
+      jobDurationMs: 5000,
+      synthesisLatencyMs: 250,
+    });
+    expect(benchmark.pages[1]).toMatchObject({
+      pageNumber: 2,
+      preprocessingVersion: 'preprocess-v1',
+      preprocessingPipelineVersion: 'vision-image-preprocess-v2',
+      preprocessingPolicy: 'ocr-optimized',
+      preprocessingQualityScore: 0.82,
+      preprocessingDeskewAngleDeg: 1.25,
+      preprocessingDeskewApplied: true,
+      preprocessingQualityWarnings: ['region-covers-full-page'],
+      preprocessingRegionLabels: ['normalized full page', 'detected table/log panel candidate'],
+      preprocessingRegionQualityScores: [0.78, 0.91],
+      preprocessingOperationCount: 5,
+      preprocessingRegionCount: 2,
+      preprocessingAssetCount: 1,
+      preprocessingAssetBytes: 1234,
+      preprocessingLowQualityRegionCount: 0,
+      layoutRegionCount: 2,
+      latencyMs: 80,
+      regionCount: 4,
+    });
     expect(benchmark.hostedCallEstimate).toMatchObject({
       pageExtraction: 2,
       layoutOcr: 1,
@@ -207,10 +386,11 @@ describe('geotech document benchmark', () => {
       parametersWithoutSourcePage: 2,
       directParameterTraceabilityRate: 0.333,
       auditBackedParameterTraceabilityRate: 1,
-      traceabilityRate: 1,
+      traceabilityRate: 0.333,
       sourcePages: [2, 3],
       auditParameterSourcePages: [2, 3],
     });
+    expect(benchmark.groundModelReadiness.gates).toContain('parameter-source-page-gaps');
     expect(benchmark.groundModelReadiness.boreholeIds).toEqual(['BH1', 'BH2']);
     expect(benchmark.groundModelReadiness.maxDepthMeters).toBe(10);
     expect(benchmark.groundModelReadiness.missingCriticalData).toEqual([
@@ -221,6 +401,106 @@ describe('geotech document benchmark', () => {
       'friction angle',
     ]);
     expect(benchmark.groundModelReadiness.gates).toContain('partial-pages-remain');
+    expect(benchmark.femDraftReadiness).toMatchObject({
+      schemaVersion: 1,
+      providerNeutral: true,
+      canAutoProceed: false,
+      candidateRoutes: 9,
+      implementedPreviewRoutes: [
+        'foundation-settlement',
+        'excavation-deformation',
+        'tunnel-volume-loss-settlement',
+      ],
+      contractOnlyRoutes: [
+        'shaft-deformation',
+        'pile-group-elastic-interaction',
+        'slope-embankment-deformation',
+        'retaining-wall-excavation-support',
+        'seepage-groundwater-coupling',
+        'staged-settlement-consolidation',
+      ],
+      agentRunAllowedRoutes: [],
+      agentWebglAllowedRoutes: [],
+      agentResultManifestAllowedRoutes: [],
+      caseOutputAvailableRoutes: [],
+      humanRunCommandAvailableRoutes: [],
+      draftCommandRoutes: [
+        'foundation-settlement',
+        'excavation-deformation',
+        'shaft-deformation',
+        'tunnel-volume-loss-settlement',
+        'pile-group-elastic-interaction',
+        'slope-embankment-deformation',
+        'retaining-wall-excavation-support',
+        'seepage-groundwater-coupling',
+        'staged-settlement-consolidation',
+      ],
+      runCommandRoutes: [
+        'foundation-settlement',
+        'excavation-deformation',
+        'tunnel-volume-loss-settlement',
+      ],
+      staleRunCommandRoutes: [],
+    });
+    expect(benchmark.femDraftReadiness?.gates).toContain('ground-model-parameter-source-page-gaps');
+    expect(benchmark.femDraftReadiness?.routes.every((route) => route.agentRunAllowed === false)).toBe(true);
+    expect(benchmark.femDraftReadiness?.routes.every((route) => route.executionBoundary.agentRunAllowed === false)).toBe(true);
+    expect(benchmark.femDraftReadiness?.routes.every((route) => route.executionBoundary.agentWebglRenderAllowed === false)).toBe(true);
+    expect(benchmark.femDraftReadiness?.routes.every((route) => route.executionBoundary.agentResultManifestAllowed === false)).toBe(true);
+    expect(benchmark.femDraftReadiness?.routes.every((route) => route.executionBoundary.humanReviewRequired === true)).toBe(true);
+    expect(benchmark.femDraftReadiness?.routes.every((route) => route.executionBoundary.caseOutputAvailable === false)).toBe(true);
+    expect(benchmark.femDraftReadiness?.routes.every((route) => route.executionBoundary.humanRunCommandAvailable === false)).toBe(true);
+    expect(benchmark.femDraftReadiness?.routes.every((route) => !/\bfem run\b/i.test(route.recommendedCommand ?? ''))).toBe(true);
+    expect(benchmark.femDraftReadiness?.gates).not.toContain('agent-webgl-route-exposed');
+    expect(benchmark.femDraftReadiness?.gates).not.toContain('agent-result-manifest-route-exposed');
+    expect(benchmark.femDraftReadiness?.gates).not.toContain('unreviewed-case-output-exposed');
+    expect(benchmark.femDraftReadiness?.gates).not.toContain('unreviewed-human-run-command-exposed');
+    const foundationRoute = benchmark.femDraftReadiness?.routes.find((route) => route.objective === 'foundation-settlement');
+    const shaftRoute = benchmark.femDraftReadiness?.routes.find((route) => route.objective === 'shaft-deformation');
+    const pileRoute = benchmark.femDraftReadiness?.routes.find((route) => route.objective === 'pile-group-elastic-interaction');
+    const slopeRoute = benchmark.femDraftReadiness?.routes.find((route) => route.objective === 'slope-embankment-deformation');
+    const retainingRoute = benchmark.femDraftReadiness?.routes.find((route) => route.objective === 'retaining-wall-excavation-support');
+    const seepageRoute = benchmark.femDraftReadiness?.routes.find((route) => route.objective === 'seepage-groundwater-coupling');
+    const stagedRoute = benchmark.femDraftReadiness?.routes.find((route) => route.objective === 'staged-settlement-consolidation');
+    expect(foundationRoute?.executionBoundary).toMatchObject({
+      schemaVersion: 'fem-benchmark-execution-boundary.v1',
+      agentRunAllowed: false,
+      agentWebglRenderAllowed: false,
+      agentResultManifestAllowed: false,
+      humanReviewRequired: true,
+      caseOutputAvailable: false,
+      humanRunCommandAvailable: false,
+      draftCommand: 'geotech fem draft foundation-settlement --input <json> --case-output <analysis_case.json>',
+      humanRunCommandTemplate: 'geotech fem run <analysis_case.json> --experimental',
+    });
+    expect(foundationRoute?.executionBoundary.blockedReasons).toEqual(expect.arrayContaining([
+      'human-review-required',
+      'analysis-case-not-reviewed',
+      'ground-model-parameter-source-page-gaps',
+    ]));
+    expect(shaftRoute?.executionMode).toBe('contract-only');
+    expect(shaftRoute?.requiredEvidence).toContain('shaft geometry');
+    expect(shaftRoute?.requiredUserInputs).toContain('support sequence');
+    expect(shaftRoute?.contractReadiness?.nonRunnableReason).toMatch(/planning contract only/i);
+    expect(shaftRoute?.contractReadiness?.blockedUntil).toContain('acceptance-fixture-approved');
+    expect(shaftRoute?.contractReadiness?.disallowedAgentActions).toContain('run-solver');
+    expect(shaftRoute?.executionBoundary.humanRunCommandTemplate).toBeUndefined();
+    expect(shaftRoute?.executionBoundary.blockedReasons).toContain('solver-or-preview-backend-implemented');
+    expect(pileRoute?.executionMode).toBe('contract-only');
+    expect(pileRoute?.requiredEvidence).toContain('pile layout');
+    expect(pileRoute?.contractReadiness?.disallowedAgentActions).toContain('invent-results');
+    expect(slopeRoute?.executionMode).toBe('contract-only');
+    expect(slopeRoute?.requiredUserInputs).toContain('slope height');
+    expect(slopeRoute?.contractReadiness?.disallowedAgentActions).toContain('render-webgl');
+    expect(retainingRoute?.executionMode).toBe('contract-only');
+    expect(retainingRoute?.requiredUserInputs).toContain('prop/anchor levels');
+    expect(retainingRoute?.contractReadiness?.blockedUntil).toContain('solver-or-preview-backend-implemented');
+    expect(seepageRoute?.executionMode).toBe('contract-only');
+    expect(seepageRoute?.requiredEvidence).toContain('groundwater observations');
+    expect(seepageRoute?.reviewGates).toContain('seepage-solver-not-implemented');
+    expect(stagedRoute?.executionMode).toBe('contract-only');
+    expect(stagedRoute?.requiredEvidence).toContain('compressibility/consolidation parameters');
+    expect(stagedRoute?.contractReadiness?.disallowedAgentActions).toContain('invent-results');
     expect(benchmark.evidenceContract).toMatchObject({
       schemaVersion: 2,
       providerNeutral: true,
@@ -262,8 +542,125 @@ describe('geotech document benchmark', () => {
 
     expect(comparison.delta.cacheHitRate).toBeGreaterThan(0.6);
     expect(comparison.delta.estimatedHostedCalls).toBeLessThan(0);
+    expect(comparison.delta.preprocessing).toMatchObject({
+      modeChanged: false,
+      averageQualityScore: 0,
+      averageRegionQualityScore: 0,
+      pagesDeskewed: 0,
+      persistedRegionAssets: 0,
+    });
     expect(comparison.passed).toBe(true);
     expect(comparison.regressions).toEqual([]);
+  });
+
+  it('reports preprocessing mode and quality deltas between benchmark variants', () => {
+    const baseline = buildGeotechDocumentBenchmark(makeResult(), {
+      label: 'ocr-optimized preprocessing',
+      generatedAt: '2026-05-04T00:00:00.000Z',
+    });
+    const noPreprocessResult = makeResult({
+      pageAudits: makeResult().pageAudits.map((audit) => {
+        if (!audit.evidenceCache?.preprocessing) {
+          return audit;
+        }
+        return {
+          ...audit,
+          evidenceCache: {
+            ...audit.evidenceCache,
+            preprocessingVersion: 'preprocess-none',
+            preprocessing: {
+              ...audit.evidenceCache.preprocessing,
+              policy: 'none',
+              transformed: false,
+              operations: [],
+              regions: [],
+              quality: {
+                score: 0.24,
+                contentCoverageRatio: 0.72,
+                darkPixelRatio: 0.08,
+                regionCoverageRatio: 0,
+                regionCount: 0,
+                cropAssetCount: 0,
+                deskew: {
+                  method: 'projection-profile',
+                  angleDeg: 0,
+                  confidence: 0,
+                  applied: false,
+                },
+                warnings: ['no-log-or-table-crops-detected'],
+              },
+            },
+          },
+        };
+      }),
+    });
+    const current = buildGeotechDocumentBenchmark(noPreprocessResult, {
+      label: 'none preprocessing',
+      generatedAt: '2026-05-04T00:03:00.000Z',
+    });
+
+    const comparison = compareGeotechDocumentBenchmarks(current, baseline, {
+      generatedAt: '2026-05-04T00:03:01.000Z',
+    });
+
+    expect(baseline.preprocessing.modes).toEqual(['ocr-optimized']);
+    expect(current.preprocessing.modes).toEqual(['none']);
+    expect(current.preprocessing.qualityWarningCounts).toEqual({
+      'no-log-or-table-crops-detected': 1,
+    });
+    expect(comparison.delta.preprocessing).toMatchObject({
+      modeChanged: true,
+      averageQualityScore: -0.58,
+      averageRegionQualityScore: -0.845,
+      pagesDeskewed: -1,
+      persistedRegionAssets: -1,
+    });
+  });
+
+  it('fails benchmark comparisons when FEM execution boundaries regress', () => {
+    const baseline = buildGeotechDocumentBenchmark(makeResult(), {
+      label: 'baseline',
+      generatedAt: '2026-05-04T00:00:00.000Z',
+    });
+    const unsafe = JSON.parse(JSON.stringify(baseline)) as typeof baseline;
+    unsafe.label = 'unsafe FEM boundary';
+    const fem = unsafe.femDraftReadiness!;
+    fem.agentRunAllowedRoutes = ['foundation-settlement'];
+    fem.agentWebglAllowedRoutes = ['foundation-settlement'];
+    fem.agentResultManifestAllowedRoutes = ['foundation-settlement'];
+    fem.caseOutputAvailableRoutes = ['foundation-settlement'];
+    fem.humanRunCommandAvailableRoutes = ['foundation-settlement'];
+    fem.staleRunCommandRoutes = ['foundation-settlement'];
+    const foundationRoute = fem.routes.find((route) => route.objective === 'foundation-settlement')!;
+    (foundationRoute as any).agentRunAllowed = true;
+    (foundationRoute as any).recommendedCommand = 'geotech fem run analysis_case.json --experimental';
+    (foundationRoute.executionBoundary as any).agentRunAllowed = true;
+    (foundationRoute.executionBoundary as any).agentWebglRenderAllowed = true;
+    (foundationRoute.executionBoundary as any).agentResultManifestAllowed = true;
+    (foundationRoute.executionBoundary as any).caseOutputAvailable = true;
+    (foundationRoute.executionBoundary as any).humanRunCommandAvailable = true;
+    (foundationRoute.executionBoundary as any).humanReviewRequired = false;
+
+    const comparison = compareGeotechDocumentBenchmarks(unsafe, baseline, {
+      generatedAt: '2026-05-04T00:01:00.000Z',
+    });
+
+    expect(comparison.passed).toBe(false);
+    expect(comparison.regressions).toEqual(expect.arrayContaining([
+      'FEM benchmark exposed agent-run routes: foundation-settlement.',
+      'FEM benchmark exposed agent WebGL routes: foundation-settlement.',
+      'FEM benchmark exposed agent result-manifest routes: foundation-settlement.',
+      'FEM benchmark exposed unreviewed case-output routes: foundation-settlement.',
+      'FEM benchmark exposed unreviewed human-run routes: foundation-settlement.',
+      'FEM benchmark recommended stale run commands: foundation-settlement.',
+      'FEM route foundation-settlement exposed agent solver execution.',
+      'FEM route foundation-settlement exposed agent WebGL rendering.',
+      'FEM route foundation-settlement exposed agent result-manifest creation.',
+      'FEM route foundation-settlement exposed unreviewed case output.',
+      'FEM route foundation-settlement exposed an unreviewed human run command.',
+      'FEM route foundation-settlement no longer requires human review.',
+      'FEM route foundation-settlement recommended a run command instead of a draft command.',
+    ]));
   });
 
   it('uses attributed parameter source pages for direct traceability metrics', () => {
@@ -337,5 +734,49 @@ describe('geotech document benchmark', () => {
       'partial-pages-remain',
       'low-confidence',
     ]);
+    expect(fixture.femDraftReadiness).toMatchObject({
+      schemaVersion: 1,
+      providerNeutral: true,
+      canAutoProceed: false,
+      candidateRoutes: 9,
+      implementedPreviewRoutes: [
+        'foundation-settlement',
+        'excavation-deformation',
+        'tunnel-volume-loss-settlement',
+      ],
+      contractOnlyRoutes: [
+        'shaft-deformation',
+        'pile-group-elastic-interaction',
+        'slope-embankment-deformation',
+        'retaining-wall-excavation-support',
+        'seepage-groundwater-coupling',
+        'staged-settlement-consolidation',
+      ],
+      agentRunAllowedRoutes: [],
+      agentWebglAllowedRoutes: [],
+      agentResultManifestAllowedRoutes: [],
+      caseOutputAvailableRoutes: [],
+      humanRunCommandAvailableRoutes: [],
+      staleRunCommandRoutes: [],
+    });
+    expect(fixture.femDraftReadiness.gates).toEqual(expect.arrayContaining([
+      'ground-model-missing-spt-n-values',
+      'ground-model-partial-pages-remain',
+      'ground-model-low-confidence',
+      'missing-spt-n-values',
+    ]));
+    expect(fixture.femDraftReadiness.routes).toHaveLength(9);
+    expect(fixture.femDraftReadiness.routes.every((route: any) => route.agentRunAllowed === false)).toBe(true);
+    expect(fixture.femDraftReadiness.routes.every((route: any) => route.executionBoundary.agentRunAllowed === false)).toBe(true);
+    expect(fixture.femDraftReadiness.routes.every((route: any) => route.executionBoundary.agentWebglRenderAllowed === false)).toBe(true);
+    expect(fixture.femDraftReadiness.routes.every((route: any) => route.executionBoundary.agentResultManifestAllowed === false)).toBe(true);
+    expect(fixture.femDraftReadiness.routes.every((route: any) => route.executionBoundary.humanReviewRequired === true)).toBe(true);
+    expect(fixture.femDraftReadiness.routes.every((route: any) => route.executionBoundary.caseOutputAvailable === false)).toBe(true);
+    expect(fixture.femDraftReadiness.routes.every((route: any) => route.executionBoundary.humanRunCommandAvailable === false)).toBe(true);
+    expect(fixture.femDraftReadiness.routes.every((route: any) => !/\bfem run\b/i.test(route.recommendedCommand ?? ''))).toBe(true);
+    expect(fixture.femDraftReadiness.routes.find((route: any) => route.objective === 'shaft-deformation')?.contractReadiness.disallowedAgentActions).toContain('render-webgl');
+    expect(fixture.femDraftReadiness.routes.find((route: any) => route.objective === 'pile-group-elastic-interaction')?.contractReadiness.disallowedAgentActions).toContain('invent-results');
+    expect(fixture.femDraftReadiness.routes.find((route: any) => route.objective === 'seepage-groundwater-coupling')?.reviewGates).toContain('seepage-solver-not-implemented');
+    expect(fixture.femDraftReadiness.routes.find((route: any) => route.objective === 'staged-settlement-consolidation')?.requiredEvidence).toContain('compressibility/consolidation parameters');
   });
 });

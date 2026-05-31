@@ -1,0 +1,135 @@
+{
+  "kind": "geotech-document-benchmark",
+  "schemaVersion": 1,
+  "generatedAt": "2026-05-31T00:00:00.000Z",
+  "label": "small lab table cached benchmark",
+  "source": {
+    "fileName": "small-lab-table.fixture.pdf",
+    "inputKind": "pdf",
+    "totalPages": 1,
+    "successfulPages": 1,
+    "failedPages": 0
+  },
+  "document": {
+    "class": "lab-report",
+    "title": "Laboratory Test Summary",
+    "parseStatus": "parsed",
+    "confidence": 80,
+    "reviewRequired": true,
+    "canAutoProceed": false
+  },
+  "pageOutcomes": {
+    "totalAudited": 1,
+    "parsed": 1,
+    "partial": 0,
+    "failed": 0,
+    "failedPages": 0,
+    "warningPages": 0,
+    "averageConfidence": 80
+  },
+  "pageClasses": {
+    "table-heavy": 1
+  },
+  "extractionSources": {
+    "native-text": 0,
+    "pdfjs-text": 0,
+    "local-ocr": 0,
+    "vision-ocr": 0,
+    "vision-visual": 0,
+    "glm-ocr": 1,
+    "none": 0
+  },
+  "hostedCallEstimate": {
+    "pageExtraction": 0,
+    "layoutOcr": 0,
+    "vision": 0,
+    "nativeOrPdfText": 0,
+    "skippedOrUnavailable": 0
+  },
+  "evidenceCache": {
+    "totalAudited": 1,
+    "hit": 1,
+    "miss": 0,
+    "stored": 0,
+    "skipped": 0,
+    "unavailable": 0,
+    "hitRate": 1,
+    "modelVersions": ["fixture-cached"],
+    "preprocessingVersions": ["page-evidence-preprocess-v4"],
+    "schemaVersions": [1]
+  },
+  "latency": {
+    "pageLatencyMs": {
+      "count": 1,
+      "total": 70,
+      "average": 70,
+      "max": 70
+    },
+    "totalKnownLatencyMs": 70
+  },
+  "retainedSignals": {
+    "materials": 3,
+    "classifications": 2,
+    "parameters": 6,
+    "risks": 1,
+    "recommendations": 1,
+    "contentChunks": 1,
+    "synthesisGroundModelItems": 0
+  },
+  "traceability": {
+    "parametersWithSourcePage": 6,
+    "parametersWithoutSourcePage": 0,
+    "directParameterTraceabilityRate": 1,
+    "auditBackedParameterTraceabilityRate": 1,
+    "traceabilityRate": 1,
+    "sourcePages": [1],
+    "auditParameterSourcePages": [1],
+    "reviewFindings": 1,
+    "warnings": 0
+  },
+  "groundModelReadiness": {
+    "status": "not_ready",
+    "score": 45,
+    "boreholeIds": [],
+    "maxDepthMeters": null,
+    "materialKinds": ["soil"],
+    "hasGroundModelSynthesis": false,
+    "missingCriticalData": ["borehole logs", "groundwater level"],
+    "gates": ["no-boreholes-detected", "no-maximum-depth", "no-ground-model-synthesis"]
+  },
+  "femDraftReadiness": {
+    "schemaVersion": 1,
+    "providerNeutral": true,
+    "canAutoProceed": false,
+    "candidateRoutes": 0,
+    "implementedPreviewRoutes": [],
+    "contractOnlyRoutes": [],
+    "agentRunAllowedRoutes": [],
+    "agentWebglAllowedRoutes": [],
+    "agentResultManifestAllowedRoutes": [],
+    "caseOutputAvailableRoutes": [],
+    "humanRunCommandAvailableRoutes": [],
+    "draftCommandRoutes": [],
+    "runCommandRoutes": [],
+    "staleRunCommandRoutes": [],
+    "gates": ["human-review-required"],
+    "routes": []
+  },
+  "evidenceContract": {
+    "schemaVersion": 2,
+    "providerNeutral": true,
+    "pages": 1,
+    "observations": {
+      "materials": 3,
+      "classifications": 2,
+      "parameters": 6,
+      "total": 11
+    },
+    "methodCounts": {
+      "layout-ocr": 11
+    },
+    "sourcePages": [1],
+    "reviewGateCount": 1
+  },
+  "pages": []
+}

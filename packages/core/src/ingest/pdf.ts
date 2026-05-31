@@ -5,6 +5,7 @@ import {
   encodeRawRasterToPng,
   preprocessVisionImageBuffer,
   renderPdfPageToImageBuffer,
+  resolveVisionImagePreprocessPolicy,
 } from '../vision/preprocess.js';
 
 export type PdfPageClassification =
@@ -306,7 +307,7 @@ export async function renderPdfPageImage(
     : Buffer.from(input);
   const renderedPage = await renderPdfPageToImageBuffer(buffer, pageNumber, {
     scale: options?.scale,
-    preprocessPolicy: 'ocr-optimized',
+    preprocessPolicy: resolveVisionImagePreprocessPolicy(),
   });
 
   if (!renderedPage) {

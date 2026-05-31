@@ -250,6 +250,124 @@ describe('registerFemCommand', () => {
     expect(payload.warnings.join(' ')).toMatch(/no solver/i);
   });
 
+  it('keeps planned FEM routes contract-only and refuses case-output artifacts', async () => {
+    const registerFemCommand = await loadRegisterFemCommand();
+    const program = new Command();
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-fem-planned-route-'));
+    tempDirs.push(dir);
+    const casePath = join(dir, 'planned_analysis_case.json');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    program.exitOverride();
+    registerFemCommand(program);
+
+    await program.parseAsync([
+      'fem',
+      'draft',
+      'shaft-deformation',
+      '--demo-defaults',
+      '--json',
+    ], { from: 'user' });
+
+    const payload = JSON.parse(collectLogText(logSpy).trim());
+    expect(payload.kind).toBe('geotech-fem-draft-result');
+    expect(payload.objective).toBe('shaft-deformation');
+    expect(payload.draft.implemented).toBe(false);
+    expect(payload.draft.capability.executionMode).toBe('contract-only');
+    expect(payload.draft.capability.agentRunAllowed).toBe(false);
+    expect(payload.draft.recommendedAction).toBe('contract-only');
+    expect(payload.draft.recommendedCommand).toBe('geotech fem draft shaft-deformation --input <json>');
+    expect(payload.draft.analysisCase).toBeUndefined();
+    expect(payload.draft.contractReadiness.nonRunnableReason).toMatch(/No deterministic backend/i);
+    expect(payload.draft.contractReadiness.disallowedAgentActions).toContain('run-solver');
+    expect(payload.warnings.join(' ')).toMatch(/planned-only/i);
+
+    await expect(
+      program.parseAsync([
+        'fem',
+        'draft',
+        'pile-group-elastic-interaction',
+        '--demo-defaults',
+        '--case-output',
+        casePath,
+        '--json',
+      ], { from: 'user' }),
+    ).rejects.toThrow(/Cannot write --case-output.*no analysisCase/i);
+    expect(existsSync(casePath)).toBe(false);
+
+    const shaftCasePath = join(dir, 'shaft_planned_analysis_case.json');
+    await expect(
+      program.parseAsync([
+        'fem',
+        'draft',
+        'pit-deformation',
+        '--demo-defaults',
+        '--case-output',
+        shaftCasePath,
+        '--json',
+      ], { from: 'user' }),
+    ).rejects.toThrow(/Cannot write --case-output.*no analysisCase/i);
+    expect(existsSync(shaftCasePath)).toBe(false);
+  });
+
+  it('keeps pile-group aliases contract-only without run commands', async () => {
+    const registerFemCommand = await loadRegisterFemCommand();
+    const program = new Command();
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    program.exitOverride();
+    registerFemCommand(program);
+
+    await program.parseAsync([
+      'fem',
+      'draft',
+      'pile-group',
+      '--demo-defaults',
+      '--json',
+    ], { from: 'user' });
+
+    const payload = JSON.parse(collectLogText(logSpy).trim());
+    expect(payload.kind).toBe('geotech-fem-draft-result');
+    expect(payload.objective).toBe('pile-group-elastic-interaction');
+    expect(payload.draft.implemented).toBe(false);
+    expect(payload.draft.recommendedAction).toBe('contract-only');
+    expect(payload.draft.recommendedCommand).toBe('geotech fem draft pile-group-elastic-interaction --input <json>');
+    expect(payload.draft.analysisCase).toBeUndefined();
+    expect(payload.draft.contractReadiness.requiredUserInputs).toContain('pile spacing');
+    expect(payload.draft.contractReadiness.disallowedAgentActions).toContain('invent-results');
+  });
+
+  it('keeps expanded planned FEM aliases contract-only without analysis cases', async () => {
+    const registerFemCommand = await loadRegisterFemCommand();
+
+    for (const [alias, objective, expectedInput] of [
+      ['slope-embankment', 'slope-embankment-deformation', 'slope height'],
+      ['retaining-wall', 'retaining-wall-excavation-support', 'prop/anchor levels'],
+      ['groundwater-sensitive', 'seepage-groundwater-coupling', 'piezometric surfaces'],
+      ['staged-settlement', 'staged-settlement-consolidation', 'stage durations'],
+    ] as const) {
+      const program = new Command();
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      program.exitOverride();
+      registerFemCommand(program);
+
+      await program.parseAsync([
+        'fem',
+        'draft',
+        alias,
+        '--json',
+      ], { from: 'user' });
+
+      const payload = JSON.parse(collectLogText(logSpy).trim());
+      expect(payload.objective).toBe(objective);
+      expect(payload.draft.implemented).toBe(false);
+      expect(payload.draft.recommendedAction).toBe('contract-only');
+      expect(payload.draft.recommendedCommand).toBe(`geotech fem draft ${objective} --input <json>`);
+      expect(payload.draft.analysisCase).toBeUndefined();
+      expect(payload.draft.contractReadiness.requiredUserInputs).toContain(expectedInput);
+      expect(payload.draft.contractReadiness.disallowedAgentActions).toContain('render-webgl');
+      logSpy.mockRestore();
+    }
+  });
+
   it('prefills FEM draft inputs from workspace GroundModel readiness without auto-running', async () => {
     coreMocks.analyzeWorkspace.mockResolvedValue(makeFemWorkspaceManifest());
     const registerFemCommand = await loadRegisterFemCommand();
@@ -278,6 +396,73 @@ describe('registerFemCommand', () => {
     expect(payload.workspace.bridge.input.material.elasticModulusKpa).toBe(25_000);
     expect(payload.workspace.bridge.input.groundwater.depthM).toBe(2.1);
     expect(payload.warnings.join(' ')).toMatch(/GroundModel prefilled material/i);
+  });
+
+  it('prefills contract-only shaft FEM readiness from workspace evidence without creating a case', async () => {
+    const manifest = makeFemWorkspaceManifest();
+    manifest.verifier.calculationReadiness.workflows.push({
+      workflow: 'fem-shaft-deformation',
+      label: 'Planned shaft deformation contract draft',
+      status: 'blocked',
+      score: 55,
+      toolName: 'prepare_fem_analysis_case',
+      commandTemplate: 'geotech fem draft shaft-deformation --input <json>',
+      present: ['strata profile', 'groundwater condition'],
+      missing: ['implemented shaft deformation preview backend'],
+      assumptions: ['contract-only route'],
+      evidenceIds: ['ev-es-1', 'ev-gw-1'],
+      recommendation: 'Shaft deformation is a planned contract-only FEM route.',
+      inputDraft: {
+        workflow: 'fem-shaft-deformation',
+        toolName: 'prepare_fem_analysis_case',
+        command: 'geotech fem draft shaft-deformation --input <json>',
+        input: {
+          objective: 'shaft-deformation',
+          useDemoDefaults: false,
+          material: {
+            elasticModulusKpa: 25_000,
+            unitWeightKnM3: 18.7,
+            poissonRatio: 0.3,
+          },
+          groundwater: {
+            condition: 'specified',
+            depthM: 2.1,
+            note: 'Groundwater from GroundModel evidence; shaft route remains contract-only.',
+          },
+        },
+        missingUserInputs: ['shaft diameter/shape', 'final depth', 'support sequence', 'groundwater handling'],
+        assumptions: ['contract-only route'],
+        evidenceIds: ['ev-es-1', 'ev-gw-1'],
+        readyToRun: false,
+      },
+    });
+    coreMocks.analyzeWorkspace.mockResolvedValue(manifest);
+    const registerFemCommand = await loadRegisterFemCommand();
+    const program = new Command();
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    program.exitOverride();
+    registerFemCommand(program);
+
+    await program.parseAsync([
+      'fem',
+      'draft',
+      'shaft',
+      '--workspace',
+      'C:/site-data',
+      '--json',
+    ], { from: 'user' });
+
+    const payload = JSON.parse(collectLogText(logSpy).trim());
+    expect(payload.objective).toBe('shaft-deformation');
+    expect(payload.workspace.bridge.objective).toBe('shaft-deformation');
+    expect(payload.workspace.bridge.input.material.elasticModulusKpa).toBe(25_000);
+    expect(payload.workspace.bridge.input.groundwater.depthM).toBe(2.1);
+    expect(payload.draft.recommendedAction).toBe('contract-only');
+    expect(payload.draft.analysisCase).toBeUndefined();
+    expect(payload.draft.recommendedCommand).toBe('geotech fem draft shaft-deformation --input <json>');
+    expect(payload.draft.evidenceRefs.map((item: { id: string }) => item.id)).toEqual(['ev-es-1', 'ev-gw-1']);
+    expect(payload.draft.contractReadiness.blockedUntil).toContain('solver-or-preview-backend-implemented');
+    expect(payload.warnings.join(' ')).toMatch(/Workspace GroundModel prefilled material/i);
   });
 
   it('does not write a run-ready analysis case from workspace prefill alone', async () => {
@@ -340,6 +525,92 @@ describe('registerFemCommand', () => {
     expect(payload.draft.recommendedAction).toBe('run-reviewed-case');
     expect(payload.draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental');
     expect(payload.draft.analysisCase.geometry.raft.lengthM).toBe(11);
+    expect(payload.draft.analysisCase.materials[0].elasticModulusKpa).toBe(25_000);
+    expect(payload.draft.analysisCase.groundwater.depthM).toBe(2.1);
+    expect(caseFile.evidenceRefs.map((item: { id: string }) => item.id)).toEqual(['ev-es-1', 'ev-gw-1']);
+  });
+
+  it('uses workspace readiness to prefill tunnel FEM draft evidence before explicit tunnel inputs', async () => {
+    const manifest = makeFemWorkspaceManifest();
+    manifest.verifier.calculationReadiness.workflows.push({
+      workflow: 'fem-tunnel-volume-loss-settlement',
+      label: 'Experimental FEM tunnel volume-loss settlement draft',
+      status: 'ready',
+      score: 100,
+      toolName: 'prepare_fem_analysis_case',
+      commandTemplate: 'geotech fem draft tunnel-volume-loss-settlement --input <json> --case-output <analysis_case.json>',
+      present: ['ground profile'],
+      missing: [],
+      assumptions: [],
+      evidenceIds: ['ev-es-1', 'ev-gw-1'],
+      recommendation: 'Prepare an experimental tunnel settlement draft.',
+      inputDraft: {
+        workflow: 'fem-tunnel-volume-loss-settlement',
+        toolName: 'prepare_fem_analysis_case',
+        command: 'geotech fem draft tunnel-volume-loss-settlement --input <json> --case-output <analysis_case.json>',
+        input: {
+          objective: 'tunnel-volume-loss-settlement',
+          useDemoDefaults: false,
+          material: {
+            elasticModulusKpa: 25_000,
+            unitWeightKnM3: 18.7,
+            poissonRatio: 0.3,
+          },
+          groundwater: {
+            condition: 'specified',
+            depthM: 2.1,
+            note: 'Groundwater from GroundModel evidence.',
+          },
+        },
+        missingUserInputs: [
+          'tunnel diameter',
+          'tunnel axis depth',
+          'tunnel alignment length',
+          'tunnel volume loss',
+          'trough width parameter',
+        ],
+        assumptions: [],
+        evidenceIds: ['ev-es-1', 'ev-gw-1'],
+        readyToRun: false,
+      },
+    });
+    coreMocks.analyzeWorkspace.mockResolvedValue(manifest);
+    const registerFemCommand = await loadRegisterFemCommand();
+    const program = new Command();
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-fem-workspace-tunnel-'));
+    tempDirs.push(dir);
+    const casePath = join(dir, 'tunnel.analysis_case.json');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    program.exitOverride();
+    registerFemCommand(program);
+
+    await program.parseAsync([
+      'fem',
+      'draft',
+      'tunnel-volume-loss-settlement',
+      '--workspace',
+      'C:/site-data',
+      '--tunnel-diameter',
+      '6',
+      '--tunnel-depth',
+      '18',
+      '--tunnel-length',
+      '60',
+      '--volume-loss',
+      '1.2',
+      '--trough-width',
+      '0.5',
+      '--case-output',
+      casePath,
+      '--json',
+    ], { from: 'user' });
+
+    const payload = JSON.parse(collectLogText(logSpy).trim());
+    const caseFile = JSON.parse(await readFile(casePath, 'utf-8'));
+    expect(payload.workspace.bridge.objective).toBe('tunnel-volume-loss-settlement');
+    expect(payload.draft.recommendedAction).toBe('run-reviewed-case');
+    expect(payload.draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental');
+    expect(payload.draft.analysisCase.geometry.tunnel.diameterM).toBe(6);
     expect(payload.draft.analysisCase.materials[0].elasticModulusKpa).toBe(25_000);
     expect(payload.draft.analysisCase.groundwater.depthM).toBe(2.1);
     expect(caseFile.evidenceRefs.map((item: { id: string }) => item.id)).toEqual(['ev-es-1', 'ev-gw-1']);

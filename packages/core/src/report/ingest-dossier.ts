@@ -709,6 +709,18 @@ function summarizeFemPrefill(candidate: FemGroundModelDraftCandidate): string {
   ]).join(', ') || '-';
 }
 
+function summarizeFemExecutionBoundary(candidate: FemGroundModelDraftCandidate): string {
+  const boundary = candidate.executionBoundary;
+  return uniqueStrings([
+    boundary.executionMode.replace(/-/g, ' '),
+    boundary.humanReviewRequired ? 'human review required' : undefined,
+    boundary.agentRunAllowed === false ? 'agent run disabled' : undefined,
+    boundary.agentWebglRenderAllowed === false ? 'agent WebGL disabled' : undefined,
+    boundary.caseOutputAvailable ? 'case output available after review' : 'draft only',
+    boundary.humanRunCommand ? `human run: ${boundary.humanRunCommand}` : undefined,
+  ]).join('; ') || 'review boundary unavailable';
+}
+
 function buildFemDraftRoutingTable(candidates: FemGroundModelDraftCandidate[]): IngestDossierTable | undefined {
   if (candidates.length === 0) {
     return undefined;
@@ -717,7 +729,7 @@ function buildFemDraftRoutingTable(candidates: FemGroundModelDraftCandidate[]): 
   return {
     title: 'FEM draft routing',
     description: 'Review-gated FEM candidate routes derived from the GroundModel. These prepare inputs only; a human must review geometry, loads, staging, and then explicitly run geotech fem run if appropriate.',
-    columns: ['Route', 'Readiness', 'Score', 'Prefilled evidence', 'Missing user inputs', 'Review gates', 'Draft command'],
+    columns: ['Route', 'Readiness', 'Score', 'Prefilled evidence', 'Missing user inputs', 'Review gates', 'Execution boundary', 'Draft command'],
     rows: candidates.map((candidate) => [
       candidate.draft.capability.label,
       candidate.status.replace(/_/g, ' '),
@@ -725,6 +737,7 @@ function buildFemDraftRoutingTable(candidates: FemGroundModelDraftCandidate[]): 
       displayTableText(summarizeFemPrefill(candidate), 120),
       displayTableText(candidate.missingUserInputs.join(', ') || 'review required', 160),
       displayTableText(candidate.reviewGates.join(', ') || 'review required', 180),
+      displayTableText(summarizeFemExecutionBoundary(candidate), 220),
       displayTableText(candidate.command, 180),
     ]),
   };

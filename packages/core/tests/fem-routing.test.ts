@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildFemDraftCandidateFromReadiness,
   buildFemDraftCandidatesFromGroundModel,
   buildFemDraftInputFromReadiness,
   listFemCapabilities,
@@ -25,9 +26,15 @@ describe('FEM routing contract', () => {
       'shaft-deformation',
       'tunnel-volume-loss-settlement',
       'pile-group-elastic-interaction',
+      'slope-embankment-deformation',
+      'retaining-wall-excavation-support',
+      'seepage-groundwater-coupling',
+      'staged-settlement-consolidation',
     ]);
     expect(capabilities.find((capability) => capability.objective === 'foundation-settlement')?.status).toBe('implemented-demo');
     expect(capabilities.find((capability) => capability.objective === 'excavation-deformation')?.status).toBe('implemented-demo');
+    expect(capabilities.find((capability) => capability.objective === 'foundation-settlement')?.executionMode).toBe('human-reviewed-preview');
+    expect(capabilities.find((capability) => capability.objective === 'foundation-settlement')?.agentRunAllowed).toBe(false);
     expect(capabilities.find((capability) => capability.objective === 'excavation-deformation')?.command).toBe('geotech fem draft excavation-deformation --input <json> --case-output <analysis_case.json>');
     expect(capabilities.find((capability) => capability.objective === 'excavation-deformation')?.demoCommand).toBe('geotech fem demo excavation --experimental');
     expect(capabilities.find((capability) => capability.objective === 'excavation-deformation')?.runCommandTemplate).toBe('geotech fem run <analysis_case.json> --experimental');
@@ -35,6 +42,17 @@ describe('FEM routing contract', () => {
     expect(capabilities.find((capability) => capability.objective === 'tunnel-volume-loss-settlement')?.command).toBe('geotech fem draft tunnel-volume-loss-settlement --input <json> --case-output <analysis_case.json>');
     expect(capabilities.find((capability) => capability.objective === 'tunnel-volume-loss-settlement')?.demoCommand).toBe('geotech fem demo tunnel --experimental');
     expect(capabilities.find((capability) => capability.objective === 'tunnel-volume-loss-settlement')?.reviewGates).toContain('not-fem-solver');
+    expect(capabilities.find((capability) => capability.objective === 'shaft-deformation')?.executionMode).toBe('contract-only');
+    expect(capabilities.find((capability) => capability.objective === 'shaft-deformation')?.agentRunAllowed).toBe(false);
+    expect(capabilities.find((capability) => capability.objective === 'shaft-deformation')?.runCommandTemplate).toBeUndefined();
+    expect(capabilities.find((capability) => capability.objective === 'pile-group-elastic-interaction')?.executionMode).toBe('contract-only');
+    expect(capabilities.find((capability) => capability.objective === 'pile-group-elastic-interaction')?.agentRunAllowed).toBe(false);
+    expect(capabilities.find((capability) => capability.objective === 'pile-group-elastic-interaction')?.runCommandTemplate).toBeUndefined();
+    expect(capabilities.find((capability) => capability.objective === 'slope-embankment-deformation')?.executionMode).toBe('contract-only');
+    expect(capabilities.find((capability) => capability.objective === 'retaining-wall-excavation-support')?.requiredUserInputs).toContain('prop/anchor levels');
+    expect(capabilities.find((capability) => capability.objective === 'seepage-groundwater-coupling')?.reviewGates).toContain('seepage-solver-not-implemented');
+    expect(capabilities.find((capability) => capability.objective === 'staged-settlement-consolidation')?.requiredEvidence).toContain('compressibility/consolidation parameters');
+    expect(capabilities.every((capability) => capability.agentRunAllowed === false)).toBe(true);
   });
 
   it('prepares foundation settlement drafts only from explicit inputs or demo defaults', () => {
@@ -74,6 +92,26 @@ describe('FEM routing contract', () => {
     expect(draft.analysisCase?.materials[0]?.elasticModulusKpa).toBe(42_000);
     expect(draft.validation?.status).toBe('review');
     expect(draft.reviewGates).toContain('not-design-calculation');
+  });
+
+  it('does not recommend FEM run commands when a prepared draft is blocked by validation', () => {
+    const draft = prepareFemAnalysisCaseDraft({
+      objective: 'foundation-settlement',
+      geometry: {
+        raftLengthM: 10,
+        raftWidthM: 7,
+        domainDepthM: Number.NaN,
+      },
+      load: {
+        pressureKpa: 180,
+      },
+    });
+
+    expect(draft.validation?.status).toBe('blocked');
+    expect(draft.recommendedAction).toBe('collect-inputs');
+    expect(draft.recommendedCommand).toBe('geotech fem draft foundation-settlement --input <json> --case-output <analysis_case.json>');
+    expect(draft.recommendedCommand).not.toContain('fem run');
+    expect(draft.missingUserInputs).toContain('geometry.domain.depth.non-finite');
   });
 
   it('prepares excavation deformation drafts without allowing auto-proceed', () => {
@@ -116,6 +154,26 @@ describe('FEM routing contract', () => {
     expect(draft.analysisCase?.loads[0]?.target).toBe('excavation_surcharge');
     expect(draft.validation?.status).toBe('review');
     expect(draft.reviewGates).toContain('not-design-calculation');
+  });
+
+  it('keeps malformed excavation staging inputs as blocked draft inputs instead of throwing', () => {
+    const draft = prepareFemAnalysisCaseDraft({
+      objective: 'excavation-deformation',
+      geometry: {
+        excavationLengthM: 22,
+        excavationWidthM: 14,
+        excavationFinalDepthM: 9,
+      },
+      excavation: {
+        stageDepthsM: ['not-a-depth'] as any,
+      },
+      load: { pressureKpa: 25 },
+    });
+
+    expect(draft.recommendedAction).toBe('collect-inputs');
+    expect(draft.analysisCase).toBeUndefined();
+    expect(draft.missingUserInputs).toContain('valid excavation stage depths');
+    expect(draft.recommendedCommand).toBe('geotech fem draft excavation-deformation --input <json> --case-output <analysis_case.json>');
   });
 
   it('prepares tunnel volume-loss settlement drafts without pretending it is production FEM', () => {
@@ -167,10 +225,67 @@ describe('FEM routing contract', () => {
     const draft = prepareFemAnalysisCaseDraft({ objective: 'shaft-deformation' });
 
     expect(draft.implemented).toBe(false);
+    expect(draft.capability.executionMode).toBe('contract-only');
+    expect(draft.capability.agentRunAllowed).toBe(false);
     expect(draft.recommendedAction).toBe('contract-only');
     expect(draft.analysisCase).toBeUndefined();
+    expect(draft.recommendedCommand).toBe('geotech fem draft shaft-deformation --input <json>');
     expect(draft.missingUserInputs).toContain('shaft diameter/shape');
     expect(draft.reviewGates).toContain('planned-only');
+    expect(draft.reviewGates).toContain('agent-run-disabled');
+    expect(draft.reviewGates).toContain('solver-backend-not-implemented');
+    expect(draft.contractReadiness).toMatchObject({
+      schemaVersion: 'fem-contract-readiness.v1',
+      routeState: 'planned-contract-only',
+      requiredEvidence: ['shaft geometry', 'stratigraphy', 'groundwater condition', 'support assumptions'],
+      requiredUserInputs: ['shaft diameter/shape', 'final depth', 'support sequence', 'groundwater handling'],
+      allowedAgentActions: ['list-capability', 'draft-input-contract', 'validate-user-inputs', 'summarize-readiness'],
+      disallowedAgentActions: ['run-solver', 'create-analysis-case', 'render-webgl', 'invent-results'],
+    });
+    expect(draft.contractReadiness?.nonRunnableReason).toMatch(/No deterministic backend/i);
+    expect(draft.contractReadiness?.blockedUntil).toContain('solver-or-preview-backend-implemented');
+
+    const pileGroup = prepareFemAnalysisCaseDraft({
+      objective: 'pile-group-elastic-interaction',
+      useDemoDefaults: true,
+    });
+    expect(pileGroup.implemented).toBe(false);
+    expect(pileGroup.capability.executionMode).toBe('contract-only');
+    expect(pileGroup.capability.agentRunAllowed).toBe(false);
+    expect(pileGroup.recommendedAction).toBe('contract-only');
+    expect(pileGroup.analysisCase).toBeUndefined();
+    expect(pileGroup.recommendedCommand).toBe('geotech fem draft pile-group-elastic-interaction --input <json>');
+    expect(pileGroup.contractReadiness?.requiredEvidence).toContain('pile layout');
+    expect(pileGroup.contractReadiness?.requiredUserInputs).toContain('pile spacing');
+    expect(pileGroup.contractReadiness?.reviewGates).toContain('human-review-required');
+
+    const seepage = prepareFemAnalysisCaseDraft({ objective: 'seepage-groundwater-coupling' });
+    expect(seepage.implemented).toBe(false);
+    expect(seepage.recommendedAction).toBe('contract-only');
+    expect(seepage.analysisCase).toBeUndefined();
+    expect(seepage.recommendedCommand).toBe('geotech fem draft seepage-groundwater-coupling --input <json>');
+    expect(seepage.contractReadiness?.disallowedAgentActions).toContain('render-webgl');
+
+    for (const [objective, expectedInput] of [
+      ['slope-embankment-deformation', 'slope height'],
+      ['retaining-wall-excavation-support', 'prop/anchor levels'],
+      ['staged-settlement-consolidation', 'stage durations'],
+    ] as const) {
+      const planned = prepareFemAnalysisCaseDraft({ objective });
+      expect(planned.implemented).toBe(false);
+      expect(planned.capability.executionMode).toBe('contract-only');
+      expect(planned.capability.agentRunAllowed).toBe(false);
+      expect(planned.recommendedAction).toBe('contract-only');
+      expect(planned.analysisCase).toBeUndefined();
+      expect(planned.recommendedCommand).toBe(`geotech fem draft ${objective} --input <json>`);
+      expect(planned.missingUserInputs).toContain(expectedInput);
+      expect(planned.contractReadiness?.disallowedAgentActions).toEqual([
+        'run-solver',
+        'create-analysis-case',
+        'render-webgl',
+        'invent-results',
+      ]);
+    }
   });
 
   it('bridges GroundModel readiness into FEM draft inputs without converting placeholders into values', () => {
@@ -333,6 +448,127 @@ describe('FEM routing contract', () => {
     });
   });
 
+  it('exposes a human run boundary only after explicit GroundModel FEM inputs validate', () => {
+    const groundModel: GroundModel = {
+      schemaVersion: 'ground-model.v1',
+      generatedAt: '2026-05-19T00:00:00.000Z',
+      project: { rootPath: 'C:/site' },
+      coordinateSystem: { kind: 'unknown', warnings: [] },
+      boreholes: [],
+      strata: [],
+      groundwater: [],
+      labTests: [],
+      parameters: [],
+      monitoringSeries: [],
+      rejectedObservations: [],
+      warnings: [],
+      stats: {
+        boreholes: 1,
+        sptTests: 0,
+        strata: 1,
+        groundwaterObservations: 1,
+        labTests: 0,
+        parameters: 2,
+        monitoringSeries: 0,
+        evidenceRefs: 2,
+        rejectedObservations: 0,
+      },
+      evidence: [
+        {
+          id: 'ev-es-1',
+          sourceType: 'tabular-cell',
+          sourcePath: 'lab.csv',
+          location: { filePath: 'lab.csv', rowNumber: 3, columnName: 'Es', cellRef: 'C3' },
+          method: 'csv-sample',
+          confidence: 0.88,
+          normalizedValue: 32000,
+          unit: 'kPa',
+          warnings: [],
+        },
+        {
+          id: 'ev-gw-1',
+          sourceType: 'pdf-page',
+          sourcePath: 'report.pdf',
+          location: { filePath: 'report.pdf', pageNumber: 12 },
+          method: 'pdf-text',
+          confidence: 0.82,
+          normalizedValue: 3.4,
+          unit: 'm',
+          warnings: [],
+        },
+      ],
+    };
+    const workflow: GroundModelCalculationReadiness = {
+      workflow: 'fem-foundation-settlement',
+      label: 'Experimental FEM foundation settlement draft',
+      status: 'ready',
+      score: 100,
+      toolName: 'prepare_fem_analysis_case',
+      commandTemplate: 'geotech fem draft foundation-settlement --input <json> --case-output <analysis_case.json>',
+      present: ['strata profile', 'elastic modulus', 'unit weight', 'groundwater'],
+      missing: [],
+      assumptions: ['review raft level and service pressure'],
+      evidenceIds: ['ev-es-1', 'ev-gw-1'],
+      recommendation: 'Prepare an experimental FEM foundation settlement draft.',
+      inputDraft: {
+        workflow: 'fem-foundation-settlement',
+        toolName: 'prepare_fem_analysis_case',
+        command: 'geotech fem draft foundation-settlement --input <json> --case-output <analysis_case.json>',
+        input: {
+          objective: 'foundation-settlement',
+          useDemoDefaults: false,
+          geometry: {
+            raftLengthM: 12,
+            raftWidthM: 9,
+            raftThicknessM: 0.7,
+            domainLengthM: 42,
+            domainWidthM: 34,
+            domainDepthM: 18,
+          },
+          load: {
+            pressureKpa: 165,
+          },
+          material: {
+            elasticModulusKpa: 32_000,
+            unitWeightKnM3: 18.7,
+            poissonRatio: 0.29,
+          },
+          groundwater: {
+            condition: 'specified',
+            depthM: 3.4,
+            note: 'Groundwater from evidence.',
+          },
+        },
+        missingUserInputs: [],
+        assumptions: ['review raft level and service pressure'],
+        evidenceIds: ['ev-es-1', 'ev-gw-1'],
+        readyToRun: false,
+      },
+    };
+
+    const candidate = buildFemDraftCandidateFromReadiness(workflow, groundModel);
+
+    expect(candidate.canAutoProceed).toBe(false);
+    expect(candidate.command).toBe('geotech fem draft foundation-settlement --input <json> --case-output <analysis_case.json>');
+    expect(candidate.draft.recommendedAction).toBe('run-reviewed-case');
+    expect(candidate.draft.validation?.status).toBe('review');
+    expect(candidate.draft.analysisCase?.geometry.raft?.lengthM).toBe(12);
+    expect(candidate.draft.analysisCase?.loads[0]?.pressureKpa).toBe(165);
+    expect(candidate.draft.analysisCase?.materials[0]?.evidenceRefs.map((item) => item.id)).toEqual(['ev-es-1', 'ev-gw-1']);
+    expect(candidate.executionBoundary).toMatchObject({
+      schemaVersion: 'fem-ground-model-execution-boundary.v1',
+      executionMode: 'human-reviewed-preview',
+      agentRunAllowed: false,
+      agentWebglRenderAllowed: false,
+      agentResultManifestAllowed: false,
+      humanReviewRequired: true,
+      caseOutputAvailable: true,
+      draftCommand: 'geotech fem draft foundation-settlement --input <json> --case-output <analysis_case.json>',
+      humanRunCommand: 'geotech fem run <analysis_case.json> --experimental',
+      blockedReasons: [],
+    });
+  });
+
   it('builds review-gated FEM draft candidates directly from a GroundModel', () => {
     const groundModel: GroundModel = {
       schemaVersion: 'ground-model.v1',
@@ -435,23 +671,91 @@ describe('FEM routing contract', () => {
     const candidates = buildFemDraftCandidatesFromGroundModel(groundModel);
     const foundation = candidates.find((candidate) => candidate.workflow === 'fem-foundation-settlement');
     const excavation = candidates.find((candidate) => candidate.workflow === 'fem-excavation-deformation');
+    const tunnel = candidates.find((candidate) => candidate.workflow === 'fem-tunnel-volume-loss-settlement');
+    const shaft = candidates.find((candidate) => candidate.workflow === 'fem-shaft-deformation');
+    const pileGroup = candidates.find((candidate) => candidate.workflow === 'fem-pile-group-elastic-interaction');
+    const seepage = candidates.find((candidate) => candidate.workflow === 'fem-seepage-groundwater-coupling');
 
-    expect(candidates.map((candidate) => candidate.schemaVersion)).toEqual([
-      'fem-ground-model-draft-candidate.v1',
-      'fem-ground-model-draft-candidate.v1',
-    ]);
+    expect(candidates).toHaveLength(9);
+    expect(candidates.every((candidate) => candidate.schemaVersion === 'fem-ground-model-draft-candidate.v1')).toBe(true);
     expect(foundation?.canAutoProceed).toBe(false);
     expect(foundation?.draft.canAutoProceed).toBe(false);
     expect(foundation?.bridge.input.material?.elasticModulusKpa).toBe(18000);
     expect(foundation?.bridge.input.groundwater?.depthM).toBe(1.8);
     expect(foundation?.missingUserInputs).toEqual(['raft length', 'raft width', 'service pressure']);
     expect(foundation?.draft.analysisCase).toBeUndefined();
+    expect(foundation?.executionBoundary).toMatchObject({
+      schemaVersion: 'fem-ground-model-execution-boundary.v1',
+      executionMode: 'human-reviewed-preview',
+      agentRunAllowed: false,
+      agentWebglRenderAllowed: false,
+      agentResultManifestAllowed: false,
+      humanReviewRequired: true,
+      caseOutputAvailable: false,
+      draftCommand: 'geotech fem draft foundation-settlement --input <json> --case-output <analysis_case.json>',
+    });
+    expect(foundation?.executionBoundary.humanRunCommand).toBeUndefined();
+    expect(foundation?.executionBoundary.blockedReasons).toContain('raft length');
     expect(excavation?.missingUserInputs).toEqual(['excavation length', 'excavation width', 'final excavation depth']);
     expect(excavation?.command).toBe('geotech fem draft excavation-deformation --input <json> --case-output <analysis_case.json>');
+    expect(excavation?.executionBoundary.humanRunCommand).toBeUndefined();
+    expect(excavation?.executionBoundary.blockedReasons).toContain('excavation length');
+    expect(tunnel?.objective).toBe('tunnel-volume-loss-settlement');
+    expect(tunnel?.missingUserInputs).toEqual([
+      'tunnel diameter',
+      'tunnel axis depth',
+      'tunnel alignment length',
+      'tunnel volume loss',
+      'trough width parameter',
+    ]);
+    expect(tunnel?.draft.recommendedAction).toBe('collect-inputs');
+    expect(tunnel?.draft.analysisCase).toBeUndefined();
+    expect(tunnel?.executionBoundary.humanRunCommand).toBeUndefined();
+    expect(tunnel?.executionBoundary.blockedReasons).toContain('tunnel diameter');
+    expect(shaft?.status).toBe('blocked');
+    expect(shaft?.draft.capability.executionMode).toBe('contract-only');
+    expect(shaft?.draft.recommendedAction).toBe('contract-only');
+    expect(shaft?.draft.analysisCase).toBeUndefined();
+    expect(shaft?.draft.recommendedCommand).toBe('geotech fem draft shaft-deformation --input <json>');
+    expect(shaft?.executionBoundary).toMatchObject({
+      executionMode: 'contract-only',
+      agentRunAllowed: false,
+      agentWebglRenderAllowed: false,
+      agentResultManifestAllowed: false,
+      caseOutputAvailable: false,
+      draftCommand: 'geotech fem draft shaft-deformation --input <json>',
+    });
+    expect(shaft?.executionBoundary.draftCommand).not.toContain('--case-output');
+    expect(shaft?.executionBoundary.humanRunCommand).toBeUndefined();
+    expect(shaft?.executionBoundary.blockedReasons).toEqual(expect.arrayContaining([
+      'solver-or-preview-backend-implemented',
+      'solver-backend-not-implemented',
+      'agent-run-disabled',
+    ]));
+    expect(pileGroup?.status).toBe('blocked');
+    expect(pileGroup?.draft.capability.executionMode).toBe('contract-only');
+    expect(pileGroup?.draft.recommendedAction).toBe('contract-only');
+    expect(pileGroup?.draft.analysisCase).toBeUndefined();
+    expect(pileGroup?.draft.recommendedCommand).toBe('geotech fem draft pile-group-elastic-interaction --input <json>');
+    expect(pileGroup?.executionBoundary).toMatchObject({
+      executionMode: 'contract-only',
+      agentRunAllowed: false,
+      agentWebglRenderAllowed: false,
+      agentResultManifestAllowed: false,
+      caseOutputAvailable: false,
+      draftCommand: 'geotech fem draft pile-group-elastic-interaction --input <json>',
+    });
+    expect(seepage?.draft.capability.executionMode).toBe('contract-only');
+    expect(seepage?.draft.contractReadiness?.requiredUserInputs).toContain('piezometric surfaces');
+    expect(seepage?.executionBoundary.draftCommand).toBe('geotech fem draft seepage-groundwater-coupling --input <json>');
     expect(candidates.every((candidate) => candidate.command.startsWith('geotech fem draft '))).toBe(true);
     expect(candidates.every((candidate) => !/\bfem run\b/i.test(candidate.command))).toBe(true);
-    expect(candidates.every((candidate) => candidate.draft.recommendedAction === 'collect-inputs')).toBe(true);
+    expect(candidates.every((candidate) => ['collect-inputs', 'contract-only'].includes(candidate.draft.recommendedAction))).toBe(true);
     expect(candidates.every((candidate) => candidate.draft.analysisCase == null)).toBe(true);
+    expect(candidates.every((candidate) => candidate.executionBoundary.agentRunAllowed === false)).toBe(true);
+    expect(candidates.every((candidate) => candidate.executionBoundary.agentWebglRenderAllowed === false)).toBe(true);
+    expect(candidates.every((candidate) => candidate.executionBoundary.agentResultManifestAllowed === false)).toBe(true);
+    expect(candidates.every((candidate) => candidate.executionBoundary.humanRunCommand == null)).toBe(true);
   });
 
   it('wires FEM tools into single-agent registry and swarm role allowlists', async () => {
@@ -487,6 +791,7 @@ describe('FEM routing contract', () => {
     expect(draftResult.success).toBe(true);
     expect(draftResult.summary).toContain('auto-proceed: no');
     expect((draftResult.data as any).agentEvidenceSummary).toContain('canAutoProceed: no');
+    expect((draftResult.data as any).agentEvidenceSummary).toContain('agent run allowed: no');
 
     const validationResult = await toolRegistry.execute('validate_fem_analysis_case', {
       caseFile: { schemaVersion: 'fem-analysis-case.v0' },
@@ -494,6 +799,33 @@ describe('FEM routing contract', () => {
     expect(validationResult.success).toBe(true);
     expect((validationResult.data as any).status).toBe('blocked');
     expect((validationResult.data as any).agentEvidenceSummary).toContain('FEM validation: blocked');
+
+    const manifestWrite = await toolRegistry.execute('write_file', {
+      path: '__tmp-fem-result-manifest.json',
+      content: JSON.stringify({ schemaVersion: 'fem-result-manifest.v0' }),
+    });
+    expect(manifestWrite.success).toBe(false);
+    expect(manifestWrite.error).toMatch(/Blocked unsafe FEM artifact/);
+
+    const webglArtifact = await toolRegistry.execute('project_add_artifact', {
+      projectId: 'demo-project',
+      kind: 'html',
+      title: 'FEM WebGL output',
+      content: '<canvas id="glcanvas"></canvas><script>const MANIFEST={"schemaVersion":"fem-result-manifest.v0"}</script>',
+      mimeType: 'text/html',
+    });
+    expect(webglArtifact.success).toBe(false);
+    expect(webglArtifact.error).toMatch(/Blocked unsafe FEM artifact/);
+
+    const inventedFemResult = await toolRegistry.execute('project_save_result', {
+      projectId: 'demo-project',
+      tool: 'run_fem_solver',
+      summary: 'Invented FEM solver output',
+      result: { backend: 'invented', visualization: {}, mesh: {} },
+    });
+    expect(inventedFemResult.success).toBe(false);
+    expect(inventedFemResult.error).toMatch(/Blocked unsafe FEM artifact/);
+
   });
 
   it('keeps provider prompts explicit that LLMs route FEM but do not invent FEM math', () => {

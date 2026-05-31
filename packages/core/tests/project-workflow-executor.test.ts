@@ -221,6 +221,7 @@ describe('runProjectWorkflow', () => {
     'risk-analysis',
     'anomaly-detection',
     'recommendations',
+    'signal-analysis',
     'visualization',
   ])('runs %s without model calls', (task) => {
     const run = runProjectWorkflow({
@@ -256,6 +257,104 @@ describe('runProjectWorkflow', () => {
       'lab-parameters-depth',
     ]);
     expect(run.charts[0]?.series[0]?.points[0]).toMatchObject({ label: 'BH-01', evidenceIds: ['ev-coord'] });
+  });
+
+  it('routes monitoring sources into deterministic signal-analysis commands', () => {
+    const groundModel = makeGroundModel();
+    groundModel.monitoringSeries = [{
+      sourcePath: 'monitoring/settlement.csv',
+      kind: 'settlement',
+      sampleCount: 3,
+      evidenceIds: ['ev-monitoring'],
+      confidence: 0.86,
+      warnings: [],
+    }];
+    groundModel.stats = {
+      ...groundModel.stats,
+      monitoringSeries: 1,
+      evidenceRefs: groundModel.stats.evidenceRefs + 1,
+    };
+    const manifest = makeManifest({
+      files: [
+        ...makeManifest().files,
+        {
+          path: 'monitoring/settlement.csv',
+          absolutePath: 'C:/project/monitoring/settlement.csv',
+          name: 'settlement.csv',
+          extension: '.csv',
+          sizeBytes: 96,
+          modifiedAt: '2026-05-24T00:00:00.000Z',
+          classification: {
+            kind: 'csv',
+            datasetType: 'monitoring-time-series',
+            branches: ['monitoring', 'settlement'],
+            confidence: 0.88,
+            signals: ['filename:monitoring', 'schema:monitoring-time-series'],
+            warnings: [],
+          },
+          schemas: [{
+            sourceName: 'monitoring/settlement.csv',
+            rowCount: 3,
+            sampledRowCount: 3,
+            columnCount: 3,
+            datasetType: 'monitoring-time-series',
+            branches: ['monitoring', 'settlement'],
+            confidence: 0.86,
+            warnings: [],
+            detected: {
+              depthColumns: [],
+              timeColumns: ['timestamp'],
+              coordinateColumns: [],
+              boreholeIdColumns: [],
+              sampleIdColumns: [],
+              sptColumns: [],
+              cptColumns: [],
+              labColumns: [],
+              monitoringColumns: ['settlement_mm'],
+            },
+            columns: [
+              { name: 'timestamp', normalizedName: 'timestamp', type: 'date', roles: ['date'], nonEmptyCount: 3, numericCount: 0, examples: ['2026-01-01'] },
+              { name: 'instrument_id', normalizedName: 'instrumentid', type: 'text', roles: ['test_id'], nonEmptyCount: 3, numericCount: 0, examples: ['SM-1'] },
+              { name: 'settlement_mm', normalizedName: 'settlementmm', type: 'number', roles: ['settlement'], unit: 'mm', nonEmptyCount: 3, numericCount: 3, examples: ['0'] },
+            ],
+          }],
+        },
+      ],
+      summary: {
+        ...makeManifest().summary,
+        totalFiles: 3,
+        supportedFiles: 3,
+        tabularFiles: 3,
+        kinds: { csv: 3 },
+        datasetTypes: { 'spt-profile': 1, 'coordinate-table': 1, 'monitoring-time-series': 1 },
+        branches: ['foundation', 'monitoring', 'settlement', 'site'],
+      },
+      groundModel,
+    });
+
+    const run = runProjectWorkflow({
+      manifest,
+      task: 'signal-analysis',
+      runId: 'run_signal',
+      now: '2026-05-24T00:00:00.000Z',
+    });
+
+    expect(run.providerContract.llmRole).toBe('none');
+    expect(run.modelCalls).toEqual([]);
+    expect(run.status).toBe('review');
+    expect(run.actions[0]).toMatchObject({
+      label: 'Analyze monitoring/settlement.csv',
+      status: 'ready',
+      command: 'geotech signal analyze monitoring/settlement.csv --type settlement',
+      evidenceIds: ['ev-monitoring'],
+    });
+    expect(run.findings.some((finding) => finding.title === 'Thresholds require project assumptions')).toBe(true);
+    expect(run.charts.map((chart) => chart.id)).toEqual(['signal-source-coverage']);
+    expect(run.charts[0]?.series[0]?.points[0]).toMatchObject({
+      y: 3,
+      label: 'monitoring/settlement.csv (settlement)',
+      evidenceIds: ['ev-monitoring'],
+    });
   });
 
   it('blocks GroundModel-dependent workflows when no GroundModel is available', () => {

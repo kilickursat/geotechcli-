@@ -9,6 +9,7 @@ export type ProjectWorkflowTask =
   | 'risk-analysis'
   | 'anomaly-detection'
   | 'recommendations'
+  | 'signal-analysis'
   | 'visualization';
 
 export type ProjectWorkflowStatus = 'pass' | 'review' | 'blocked';
@@ -113,7 +114,11 @@ export function runProjectWorkflow(options: RunProjectWorkflowOptions): ProjectW
   const runId = options.runId ?? `workflow_${generatedAt.replace(/\D/g, '').slice(0, 17)}`;
   const findings = buildFindings(options.manifest, options.task);
   const actions = buildActions(options.manifest, options.task);
-  const charts = options.task === 'visualization' ? buildVisualizationCharts(options.manifest) : [];
+  const charts = options.task === 'visualization'
+    ? buildVisualizationCharts(options.manifest)
+    : options.task === 'signal-analysis'
+      ? buildSignalAnalysisCharts(options.manifest)
+      : [];
   const status = deriveWorkflowStatus(options.manifest, findings, charts, options.task);
   const summary = buildSummary(options.manifest, options.task, status, findings, actions, charts);
   const taskLabel = taskTitle(options.task);
@@ -130,9 +135,11 @@ export function runProjectWorkflow(options: RunProjectWorkflowOptions): ProjectW
   if (charts.length > 0) {
     toolCalls.push({
       type: 'tool_call',
-      tool: 'viz.project_chart_specs',
+      tool: options.task === 'signal-analysis' ? 'signal.project_chart_specs' : 'viz.project_chart_specs',
       status: 'pass',
-      summary: `${charts.length} deterministic chart spec(s) prepared from GroundModel evidence.`,
+      summary: options.task === 'signal-analysis'
+        ? `${charts.length} deterministic signal coverage chart spec(s) prepared from monitoring evidence.`
+        : `${charts.length} deterministic chart spec(s) prepared from GroundModel evidence.`,
     });
   }
 
@@ -228,6 +235,9 @@ function buildFindings(manifest: ProjectManifest, task: ProjectWorkflowTask): Pr
   }
   if (task === 'recommendations') {
     addRecommendationFindings(manifest, push);
+  }
+  if (task === 'signal-analysis') {
+    addSignalAnalysisFindings(manifest, push);
   }
   if (task === 'visualization') {
     addVisualizationFindings(manifest, push);
@@ -457,6 +467,61 @@ function addRecommendationFindings(
   }
 }
 
+function addSignalAnalysisFindings(
+  manifest: ProjectManifest,
+  push: (finding: Omit<ProjectWorkflowFinding, 'id'>) => void,
+): void {
+  const sources = signalAnalysisSources(manifest);
+  if (sources.length === 0) {
+    push({
+      severity: 'blocking',
+      title: 'No monitoring or signal files detected',
+      detail: 'The workspace manifest does not contain CSV/TSV/XLSX monitoring, signal, piezometer, inclinometer, settlement, vibration, or load-test evidence.',
+      evidenceIds: [],
+      recommendation: 'Add monitoring or signal files, then run geotech agent --task signal-analysis or geotech signal analyze <file>.',
+    });
+    return;
+  }
+
+  const typeCounts = countBy(sources.map((source) => source.signalType));
+  push({
+    severity: 'info',
+    title: 'Signal analysis sources detected',
+    detail: `${sources.length} deterministic signal source(s) are ready for geotech signal analyze: ${Object.entries(typeCounts).map(([type, count]) => `${type}=${count}`).join(', ')}.`,
+    evidenceIds: sources.flatMap((source) => source.evidenceIds).slice(0, 8),
+    recommendation: 'Run the generated geotech signal analyze commands with project-specific thresholds and expected interval assumptions.',
+  });
+
+  if (sources.some((source) => source.signalType === 'unknown')) {
+    push({
+      severity: 'warning',
+      title: 'Some signal source types are uncertain',
+      detail: 'At least one monitoring file could not be confidently classified as settlement, piezometer, inclinometer, vibration, or load-test data from filename/schema evidence alone.',
+      evidenceIds: sources.filter((source) => source.signalType === 'unknown').flatMap((source) => source.evidenceIds).slice(0, 8),
+      recommendation: 'Use --type with geotech signal analyze after confirming the instrument type.',
+    });
+  }
+
+  push({
+    severity: 'warning',
+    title: 'Thresholds require project assumptions',
+    detail: 'Signal threshold and rate flags are not applied automatically because alarm limits vary by project, instrument, units, and contractual trigger levels.',
+    evidenceIds: sources.flatMap((source) => source.evidenceIds).slice(0, 8),
+    recommendation: 'Declare project-specific --threshold, --rate-threshold, and --expected-interval-hours values before treating flags as engineering triggers.',
+  });
+
+  for (const source of sources.filter((item) => item.warnings.length > 0).slice(0, 6)) {
+    push({
+      severity: 'warning',
+      title: `Signal source warning: ${source.label}`,
+      detail: source.warnings.join('; '),
+      evidenceIds: source.evidenceIds,
+      source: source.file.path,
+      recommendation: 'Review this source before relying on trend, rate, or missing-interval output.',
+    });
+  }
+}
+
 function addVisualizationFindings(
   manifest: ProjectManifest,
   push: (finding: Omit<ProjectWorkflowFinding, 'id'>) => void,
@@ -530,6 +595,32 @@ function buildActions(manifest: ProjectManifest, task: ProjectWorkflowTask): Pro
       evidenceIds: manifest.groundModel?.rejectedObservations.flatMap((item) => item.evidenceIds).slice(0, 8) ?? [],
       recommendation: 'Use source-page/evidence review before promoting anomalies into project decisions.',
     });
+  }
+
+  if (task === 'signal-analysis') {
+    const sources = signalAnalysisSources(manifest);
+    for (const source of sources.slice(0, 12)) {
+      push({
+        label: `Analyze ${source.label}`,
+        status: source.confidence >= 0.6 ? 'ready' : 'needs_input',
+        command: source.command,
+        missing: source.signalType === 'unknown' ? ['instrument/signal type'] : [],
+        evidenceIds: source.evidenceIds,
+        recommendation: source.signalType === 'unknown'
+          ? 'Confirm instrument type, then rerun with --type before using trend output.'
+          : 'Run this deterministic signal analysis command with project trigger thresholds when available.',
+      });
+    }
+
+    if (sources.length === 0) {
+      push({
+        label: 'Add monitoring or signal data',
+        status: 'blocked',
+        missing: ['monitoring/signal CSV, TSV, or XLSX evidence'],
+        evidenceIds: [],
+        recommendation: 'Add settlement, piezometer, inclinometer, vibration, or load-test files before signal analysis.',
+      });
+    }
   }
 
   if (task === 'visualization') {
@@ -658,6 +749,32 @@ function buildVisualizationCharts(manifest: ProjectManifest): ProjectWorkflowCha
   return charts;
 }
 
+function buildSignalAnalysisCharts(manifest: ProjectManifest): ProjectWorkflowChartSpec[] {
+  const sources = signalAnalysisSources(manifest);
+  if (sources.length === 0) return [];
+
+  return [{
+    id: 'signal-source-coverage',
+    title: 'Signal Source Coverage',
+    kind: 'table',
+    xLabel: 'Source',
+    yLabel: 'Sample rows',
+    series: [{
+      id: 'signal-sources',
+      label: 'Monitoring and signal sources',
+      points: sources.map((source, index) => ({
+        x: index + 1,
+        y: source.sampleCount,
+        label: `${source.label} (${source.signalType})`,
+        evidenceIds: source.evidenceIds,
+      })),
+    }],
+    warnings: sources
+      .filter((source) => source.signalType === 'unknown')
+      .map((source) => `${source.label}: signal type requires manual confirmation.`),
+  }];
+}
+
 function numericDepthParameters(model: GroundModel): Array<[string, GroundModelParameter[]]> {
   const grouped = new Map<string, GroundModelParameter[]>();
   for (const parameter of model.parameters) {
@@ -687,7 +804,10 @@ function buildSummary(
     `Findings: ${findings.filter((item) => item.severity === 'blocking').length} blocking, ${findings.filter((item) => item.severity === 'risk').length} risk, ${findings.filter((item) => item.severity === 'warning').length} warning, ${findings.filter((item) => item.severity === 'info').length} info.`,
     actions.length > 0 ? `Actions prepared: ${actions.length}.` : 'No downstream action routes were prepared.',
     charts.length > 0 ? `Visualization chart specs prepared: ${charts.length}.` : 'No visualization chart specs were prepared.',
-  ];
+    task === 'signal-analysis'
+      ? `Signal sources: ${signalAnalysisSources(manifest).length} monitoring/signal file or sheet source(s) routed to deterministic geotech signal analyze commands.`
+      : '',
+  ].filter(Boolean);
 }
 
 function deriveWorkflowStatus(
@@ -698,6 +818,7 @@ function deriveWorkflowStatus(
 ): ProjectWorkflowStatus {
   if (findings.some((finding) => finding.severity === 'blocking')) return 'blocked';
   if (task === 'visualization' && charts.length === 0) return 'blocked';
+  if (task === 'signal-analysis' && signalAnalysisSources(manifest).length === 0) return 'blocked';
   if (manifest.verifier?.status === 'blocking') return 'blocked';
   if (findings.some((finding) => finding.severity === 'risk' || finding.severity === 'warning')) return 'review';
   if (manifest.verifier?.status === 'review') return 'review';
@@ -732,9 +853,130 @@ function taskTitle(task: ProjectWorkflowTask): string {
       return 'Anomaly detection';
     case 'recommendations':
       return 'Recommendations';
+    case 'signal-analysis':
+      return 'Signal analysis';
     case 'visualization':
       return 'Visualization';
   }
+}
+
+interface SignalAnalysisSource {
+  file: WorkspaceFileEntry;
+  label: string;
+  signalType: 'settlement' | 'piezometer' | 'inclinometer' | 'vibration' | 'load-test' | 'unknown';
+  sampleCount: number;
+  confidence: number;
+  evidenceIds: string[];
+  warnings: string[];
+  command: string;
+}
+
+function signalAnalysisSources(manifest: ProjectManifest): SignalAnalysisSource[] {
+  const sources: SignalAnalysisSource[] = [];
+  const seen = new Set<string>();
+  const monitoringBySource = new Map(
+    (manifest.groundModel?.monitoringSeries ?? []).map((series) => [
+      `${series.sourcePath}#${series.sheetName ?? ''}`,
+      series,
+    ]),
+  );
+
+  for (const file of manifest.files) {
+    const schemas = file.schemas ?? [];
+    const matchingSchemas = schemas.filter((schema) => isSignalDatasetType(schema.datasetType));
+
+    if (matchingSchemas.length > 0) {
+      for (const schema of matchingSchemas) {
+        const key = `${file.path}#${schema.sheetName ?? ''}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const monitoring = monitoringBySource.get(key);
+        const type = signalTypeFromSchema(file, schema);
+        sources.push({
+          file,
+          label: schema.sheetName ? `${file.path}#${schema.sheetName}` : file.path,
+          signalType: type,
+          sampleCount: schema.rowCount,
+          confidence: Math.min(file.classification.confidence, schema.confidence),
+          evidenceIds: monitoring?.evidenceIds ?? [`file:${file.path}`],
+          warnings: [...file.classification.warnings, ...schema.warnings],
+          command: buildSignalAnalyzeCommand(file.path, type, schema.sheetName),
+        });
+      }
+      continue;
+    }
+
+    if (isSignalDatasetType(file.classification.datasetType)) {
+      const key = `${file.path}#`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const monitoring = monitoringBySource.get(key);
+      const type = signalTypeFromFile(file);
+      sources.push({
+        file,
+        label: file.path,
+        signalType: type,
+        sampleCount: monitoring?.sampleCount ?? 0,
+        confidence: file.classification.confidence,
+        evidenceIds: monitoring?.evidenceIds ?? [`file:${file.path}`],
+        warnings: file.classification.warnings,
+        command: buildSignalAnalyzeCommand(file.path, type),
+      });
+    }
+  }
+
+  return sources;
+}
+
+function isSignalDatasetType(datasetType: string): boolean {
+  return datasetType === 'monitoring-time-series' || datasetType === 'signal-record' || datasetType === 'pile-load-test';
+}
+
+function signalTypeFromSchema(
+  file: WorkspaceFileEntry,
+  schema: NonNullable<WorkspaceFileEntry['schemas']>[number],
+): SignalAnalysisSource['signalType'] {
+  if (schema.datasetType === 'pile-load-test' || file.classification.datasetType === 'pile-load-test') return 'load-test';
+  const roleSet = new Set(schema.columns.flatMap((column) => column.roles));
+  if (roleSet.has('settlement')) return 'settlement';
+  if (roleSet.has('pore_pressure')) return 'piezometer';
+  if (roleSet.has('inclination')) return 'inclinometer';
+  if (roleSet.has('vibration')) return 'vibration';
+  return signalTypeFromFile(file);
+}
+
+function signalTypeFromFile(file: WorkspaceFileEntry): SignalAnalysisSource['signalType'] {
+  const text = [file.path, file.classification.datasetType, ...file.classification.signals].join(' ').toLowerCase();
+  if (/\b(load[-_\s]?test|pile[-_\s]?load)\b/.test(text)) return 'load-test';
+  if (/\b(settlement|heave|subsidence)\b/.test(text)) return 'settlement';
+  if (/\b(piezometer|pore[-_\s]?pressure|groundwater|water[-_\s]?level)\b/.test(text)) return 'piezometer';
+  if (/\b(inclinometer|inclination|tilt|deflection)\b/.test(text)) return 'inclinometer';
+  if (/\b(vibration|accelerometer|seismic|fft|psd)\b/.test(text)) return 'vibration';
+  return 'unknown';
+}
+
+function buildSignalAnalyzeCommand(
+  path: string,
+  type: SignalAnalysisSource['signalType'],
+  sheetName?: string,
+): string {
+  return [
+    'geotech signal analyze',
+    quoteCommandArg(path),
+    sheetName ? `--sheet ${quoteCommandArg(sheetName)}` : '',
+    type !== 'unknown' ? `--type ${type}` : '',
+  ].filter(Boolean).join(' ');
+}
+
+function quoteCommandArg(value: string): string {
+  return /^[A-Za-z0-9._/:-]+$/.test(value) ? value : `"${value.replace(/"/g, '\\"')}"`;
+}
+
+function countBy(values: string[]): Record<string, number> {
+  return values.reduce<Record<string, number>>((acc, value) => {
+    acc[value] = (acc[value] ?? 0) + 1;
+    return acc;
+  }, {});
 }
 
 function slug(value: string): string {

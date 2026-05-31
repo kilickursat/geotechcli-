@@ -29,7 +29,10 @@
         "visualReasoningPages": 7,
         "directVisualPages": 7
       },
-      "missingCriticalData": ["SPT N-values", "friction angle"],
+      "missingCriticalData": [
+        "SPT N-values",
+        "friction angle"
+      ],
       "reviewGates": [
         "parse-status-partial",
         "partial-pages-remain",
@@ -78,16 +81,740 @@
     "directParameterTraceabilityRate": 1,
     "auditBackedParameterTraceabilityRate": 1,
     "traceabilityRate": 1,
-    "sourcePages": [5, 11, 16, 17, 18, 19, 20, 21, 23, 26, 27, 28, 29, 30, 33, 34]
+    "sourcePages": [
+      5,
+      11,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      23,
+      26,
+      27,
+      28,
+      29,
+      30,
+      33,
+      34
+    ]
   },
   "groundModelReadiness": {
     "status": "needs_engineering_review",
     "score": 61,
-    "boreholeIds": ["BH1", "BH2", "BH3"],
+    "boreholeIds": [
+      "BH1",
+      "BH2",
+      "BH3"
+    ],
     "maxDepthMeters": 10,
     "hasGroundModelSynthesis": true,
-    "missingCriticalData": ["SPT N-values"],
-    "gates": ["missing-spt-n-values", "partial-pages-remain", "low-confidence"]
+    "missingCriticalData": [
+      "SPT N-values"
+    ],
+    "gates": [
+      "missing-spt-n-values",
+      "partial-pages-remain",
+      "low-confidence"
+    ]
+  },
+  "femDraftReadiness": {
+    "schemaVersion": 1,
+    "providerNeutral": true,
+    "canAutoProceed": false,
+    "candidateRoutes": 9,
+    "implementedPreviewRoutes": [
+      "foundation-settlement",
+      "excavation-deformation",
+      "tunnel-volume-loss-settlement"
+    ],
+    "contractOnlyRoutes": [
+      "shaft-deformation",
+      "pile-group-elastic-interaction",
+      "slope-embankment-deformation",
+      "retaining-wall-excavation-support",
+      "seepage-groundwater-coupling",
+      "staged-settlement-consolidation"
+    ],
+    "agentRunAllowedRoutes": [],
+    "agentWebglAllowedRoutes": [],
+    "agentResultManifestAllowedRoutes": [],
+    "caseOutputAvailableRoutes": [],
+    "humanRunCommandAvailableRoutes": [],
+    "draftCommandRoutes": [
+      "foundation-settlement",
+      "excavation-deformation",
+      "shaft-deformation",
+      "tunnel-volume-loss-settlement",
+      "pile-group-elastic-interaction",
+      "slope-embankment-deformation",
+      "retaining-wall-excavation-support",
+      "seepage-groundwater-coupling",
+      "staged-settlement-consolidation"
+    ],
+    "runCommandRoutes": [
+      "foundation-settlement",
+      "excavation-deformation",
+      "tunnel-volume-loss-settlement"
+    ],
+    "staleRunCommandRoutes": [],
+    "gates": [
+      "ground-model-missing-spt-n-values",
+      "ground-model-partial-pages-remain",
+      "ground-model-low-confidence",
+      "missing-spt-n-values"
+    ],
+    "routes": [
+      {
+        "objective": "foundation-settlement",
+        "status": "implemented-demo",
+        "executionMode": "human-reviewed-preview",
+        "agentRunAllowed": false,
+        "executionBoundary": {
+          "schemaVersion": "fem-benchmark-execution-boundary.v1",
+          "agentRunAllowed": false,
+          "agentWebglRenderAllowed": false,
+          "agentResultManifestAllowed": false,
+          "humanReviewRequired": true,
+          "caseOutputAvailable": false,
+          "humanRunCommandAvailable": false,
+          "draftCommand": "geotech fem draft foundation-settlement --input <json> --case-output <analysis_case.json>",
+          "humanRunCommandTemplate": "geotech fem run <analysis_case.json> --experimental",
+          "blockedReasons": [
+            "ground-model-missing-spt-n-values",
+            "ground-model-partial-pages-remain",
+            "ground-model-low-confidence",
+            "missing-spt-n-values",
+            "experimental-only",
+            "linear-elastic-only",
+            "groundwater-not-coupled",
+            "not-design-calculation",
+            "human-review-required",
+            "analysis-case-not-reviewed"
+          ]
+        },
+        "recommendedCommand": "geotech fem draft foundation-settlement --input <json> --case-output <analysis_case.json>",
+        "runCommandTemplate": "geotech fem run <analysis_case.json> --experimental",
+        "readinessStatus": "needs_engineering_review",
+        "readinessScore": 61,
+        "requiredEvidence": [
+          "GroundModel strata",
+          "elastic modulus or SPT/lab correlation basis",
+          "unit weight",
+          "groundwater assumption"
+        ],
+        "requiredUserInputs": [
+          "raft length",
+          "raft width",
+          "service pressure",
+          "foundation level / embedment"
+        ],
+        "reviewGates": [
+          "experimental-only",
+          "linear-elastic-only",
+          "groundwater-not-coupled",
+          "not-design-calculation"
+        ],
+        "limitations": [
+          "No plasticity, consolidation, construction staging, or pore pressure coupling."
+        ]
+      },
+      {
+        "objective": "excavation-deformation",
+        "status": "implemented-demo",
+        "executionMode": "human-reviewed-preview",
+        "agentRunAllowed": false,
+        "executionBoundary": {
+          "schemaVersion": "fem-benchmark-execution-boundary.v1",
+          "agentRunAllowed": false,
+          "agentWebglRenderAllowed": false,
+          "agentResultManifestAllowed": false,
+          "humanReviewRequired": true,
+          "caseOutputAvailable": false,
+          "humanRunCommandAvailable": false,
+          "draftCommand": "geotech fem draft excavation-deformation --input <json> --case-output <analysis_case.json>",
+          "humanRunCommandTemplate": "geotech fem run <analysis_case.json> --experimental",
+          "blockedReasons": [
+            "ground-model-missing-spt-n-values",
+            "ground-model-partial-pages-remain",
+            "ground-model-low-confidence",
+            "missing-spt-n-values",
+            "experimental-only",
+            "unsupported-wall-design",
+            "groundwater-coupling-required-review",
+            "not-basal-heave-verification",
+            "not-design-calculation",
+            "human-review-required",
+            "analysis-case-not-reviewed"
+          ]
+        },
+        "recommendedCommand": "geotech fem draft excavation-deformation --input <json> --case-output <analysis_case.json>",
+        "runCommandTemplate": "geotech fem run <analysis_case.json> --experimental",
+        "readinessStatus": "needs_engineering_review",
+        "readinessScore": 61,
+        "requiredEvidence": [
+          "stratigraphy",
+          "groundwater condition",
+          "wall geometry",
+          "support levels",
+          "elastic stiffness basis"
+        ],
+        "requiredUserInputs": [
+          "excavation length",
+          "excavation width",
+          "final depth",
+          "stage depths",
+          "wall/support assumptions"
+        ],
+        "reviewGates": [
+          "experimental-only",
+          "unsupported-wall-design",
+          "groundwater-coupling-required-review",
+          "not-basal-heave-verification",
+          "not-design-calculation"
+        ],
+        "limitations": [
+          "No wall design, basal heave design, seepage, consolidation, or nonlinear soil response."
+        ]
+      },
+      {
+        "objective": "shaft-deformation",
+        "status": "planned",
+        "executionMode": "contract-only",
+        "agentRunAllowed": false,
+        "executionBoundary": {
+          "schemaVersion": "fem-benchmark-execution-boundary.v1",
+          "agentRunAllowed": false,
+          "agentWebglRenderAllowed": false,
+          "agentResultManifestAllowed": false,
+          "humanReviewRequired": true,
+          "caseOutputAvailable": false,
+          "humanRunCommandAvailable": false,
+          "draftCommand": "geotech fem draft shaft-deformation --input <json>",
+          "blockedReasons": [
+            "ground-model-missing-spt-n-values",
+            "ground-model-partial-pages-remain",
+            "ground-model-low-confidence",
+            "missing-spt-n-values",
+            "planned-only",
+            "not-design-calculation",
+            "deterministic-analysis-case-schema-accepted",
+            "solver-or-preview-backend-implemented",
+            "result-manifest-validator-implemented",
+            "webgl-renderer-smoke-added",
+            "acceptance-fixture-approved",
+            "human-review-required",
+            "analysis-case-not-reviewed"
+          ]
+        },
+        "recommendedCommand": "geotech fem draft shaft-deformation --input <json>",
+        "readinessStatus": "needs_engineering_review",
+        "readinessScore": 61,
+        "requiredEvidence": [
+          "shaft geometry",
+          "stratigraphy",
+          "groundwater condition",
+          "support assumptions"
+        ],
+        "requiredUserInputs": [
+          "shaft diameter/shape",
+          "final depth",
+          "support sequence",
+          "groundwater handling"
+        ],
+        "reviewGates": [
+          "planned-only",
+          "not-design-calculation"
+        ],
+        "limitations": [
+          "No production solver or code acceptance check is available yet."
+        ],
+        "contractReadiness": {
+          "nonRunnableReason": "Shaft / pit deformation preview is registered as a planning contract only. No deterministic backend, analysis-case writer, or WebGL result renderer is available for this route yet.",
+          "blockedUntil": [
+            "deterministic-analysis-case-schema-accepted",
+            "solver-or-preview-backend-implemented",
+            "result-manifest-validator-implemented",
+            "webgl-renderer-smoke-added",
+            "acceptance-fixture-approved"
+          ],
+          "allowedAgentActions": [
+            "list-capability",
+            "draft-input-contract",
+            "validate-user-inputs",
+            "summarize-readiness"
+          ],
+          "disallowedAgentActions": [
+            "run-solver",
+            "create-analysis-case",
+            "render-webgl",
+            "invent-results"
+          ]
+        }
+      },
+      {
+        "objective": "tunnel-volume-loss-settlement",
+        "status": "implemented-demo",
+        "executionMode": "human-reviewed-preview",
+        "agentRunAllowed": false,
+        "executionBoundary": {
+          "schemaVersion": "fem-benchmark-execution-boundary.v1",
+          "agentRunAllowed": false,
+          "agentWebglRenderAllowed": false,
+          "agentResultManifestAllowed": false,
+          "humanReviewRequired": true,
+          "caseOutputAvailable": false,
+          "humanRunCommandAvailable": false,
+          "draftCommand": "geotech fem draft tunnel-volume-loss-settlement --input <json> --case-output <analysis_case.json>",
+          "humanRunCommandTemplate": "geotech fem run <analysis_case.json> --experimental",
+          "blockedReasons": [
+            "ground-model-missing-spt-n-values",
+            "ground-model-partial-pages-remain",
+            "ground-model-low-confidence",
+            "missing-spt-n-values",
+            "experimental-only",
+            "volume-loss-assumption-review",
+            "not-fem-solver",
+            "not-design-calculation",
+            "human-review-required",
+            "analysis-case-not-reviewed"
+          ]
+        },
+        "recommendedCommand": "geotech fem draft tunnel-volume-loss-settlement --input <json> --case-output <analysis_case.json>",
+        "runCommandTemplate": "geotech fem run <analysis_case.json> --experimental",
+        "readinessStatus": "needs_engineering_review",
+        "readinessScore": 61,
+        "requiredEvidence": [
+          "tunnel geometry",
+          "cover depth",
+          "ground class",
+          "volume-loss assumption"
+        ],
+        "requiredUserInputs": [
+          "diameter",
+          "axis depth",
+          "alignment",
+          "volume loss",
+          "trough width parameter"
+        ],
+        "reviewGates": [
+          "experimental-only",
+          "volume-loss-assumption-review",
+          "not-fem-solver",
+          "not-design-calculation"
+        ],
+        "limitations": [
+          "Empirical preview only; not a tunnel lining or ground loss design model."
+        ]
+      },
+      {
+        "objective": "pile-group-elastic-interaction",
+        "status": "planned",
+        "executionMode": "contract-only",
+        "agentRunAllowed": false,
+        "executionBoundary": {
+          "schemaVersion": "fem-benchmark-execution-boundary.v1",
+          "agentRunAllowed": false,
+          "agentWebglRenderAllowed": false,
+          "agentResultManifestAllowed": false,
+          "humanReviewRequired": true,
+          "caseOutputAvailable": false,
+          "humanRunCommandAvailable": false,
+          "draftCommand": "geotech fem draft pile-group-elastic-interaction --input <json>",
+          "blockedReasons": [
+            "ground-model-missing-spt-n-values",
+            "ground-model-partial-pages-remain",
+            "ground-model-low-confidence",
+            "missing-spt-n-values",
+            "planned-only",
+            "pile-soil-interface-review",
+            "not-design-calculation",
+            "deterministic-analysis-case-schema-accepted",
+            "solver-or-preview-backend-implemented",
+            "result-manifest-validator-implemented",
+            "webgl-renderer-smoke-added",
+            "acceptance-fixture-approved",
+            "human-review-required",
+            "analysis-case-not-reviewed"
+          ]
+        },
+        "recommendedCommand": "geotech fem draft pile-group-elastic-interaction --input <json>",
+        "readinessStatus": "needs_engineering_review",
+        "readinessScore": 61,
+        "requiredEvidence": [
+          "pile layout",
+          "pile geometry",
+          "stratigraphy",
+          "stiffness/capacity basis"
+        ],
+        "requiredUserInputs": [
+          "pile diameter",
+          "pile length",
+          "pile spacing",
+          "load case",
+          "pile head condition"
+        ],
+        "reviewGates": [
+          "planned-only",
+          "pile-soil-interface-review",
+          "not-design-calculation"
+        ],
+        "limitations": [
+          "No pile group solver or code acceptance check is available yet."
+        ],
+        "contractReadiness": {
+          "nonRunnableReason": "Pile group elastic interaction preview is registered as a planning contract only. No deterministic backend, analysis-case writer, or WebGL result renderer is available for this route yet.",
+          "blockedUntil": [
+            "deterministic-analysis-case-schema-accepted",
+            "solver-or-preview-backend-implemented",
+            "result-manifest-validator-implemented",
+            "webgl-renderer-smoke-added",
+            "acceptance-fixture-approved"
+          ],
+          "allowedAgentActions": [
+            "list-capability",
+            "draft-input-contract",
+            "validate-user-inputs",
+            "summarize-readiness"
+          ],
+          "disallowedAgentActions": [
+            "run-solver",
+            "create-analysis-case",
+            "render-webgl",
+            "invent-results"
+          ]
+        }
+      },
+      {
+        "objective": "slope-embankment-deformation",
+        "status": "planned",
+        "executionMode": "contract-only",
+        "agentRunAllowed": false,
+        "executionBoundary": {
+          "schemaVersion": "fem-benchmark-execution-boundary.v1",
+          "agentRunAllowed": false,
+          "agentWebglRenderAllowed": false,
+          "agentResultManifestAllowed": false,
+          "humanReviewRequired": true,
+          "caseOutputAvailable": false,
+          "humanRunCommandAvailable": false,
+          "draftCommand": "geotech fem draft slope-embankment-deformation --input <json>",
+          "blockedReasons": [
+            "ground-model-missing-spt-n-values",
+            "ground-model-partial-pages-remain",
+            "ground-model-low-confidence",
+            "missing-spt-n-values",
+            "planned-only",
+            "slope-stability-precheck-required",
+            "not-limit-equilibrium-check",
+            "not-design-calculation",
+            "deterministic-analysis-case-schema-accepted",
+            "solver-or-preview-backend-implemented",
+            "result-manifest-validator-implemented",
+            "webgl-renderer-smoke-added",
+            "acceptance-fixture-approved",
+            "human-review-required",
+            "analysis-case-not-reviewed"
+          ]
+        },
+        "recommendedCommand": "geotech fem draft slope-embankment-deformation --input <json>",
+        "readinessStatus": "needs_engineering_review",
+        "readinessScore": 61,
+        "requiredEvidence": [
+          "slope/embankment geometry",
+          "stratigraphy",
+          "strength or stiffness basis",
+          "groundwater condition",
+          "loading or construction stage evidence"
+        ],
+        "requiredUserInputs": [
+          "slope height",
+          "slope angle / embankment geometry",
+          "construction or excavation stages",
+          "surcharge/seismic assumptions",
+          "drainage and groundwater handling"
+        ],
+        "reviewGates": [
+          "planned-only",
+          "slope-stability-precheck-required",
+          "not-limit-equilibrium-check",
+          "not-design-calculation"
+        ],
+        "limitations": [
+          "No slope deformation FEM backend, stability verification, or acceptance check is available yet."
+        ],
+        "contractReadiness": {
+          "nonRunnableReason": "Slope / embankment deformation preview is registered as a planning contract only. No deterministic backend, analysis-case writer, or WebGL result renderer is available for this route yet.",
+          "blockedUntil": [
+            "deterministic-analysis-case-schema-accepted",
+            "solver-or-preview-backend-implemented",
+            "result-manifest-validator-implemented",
+            "webgl-renderer-smoke-added",
+            "acceptance-fixture-approved"
+          ],
+          "allowedAgentActions": [
+            "list-capability",
+            "draft-input-contract",
+            "validate-user-inputs",
+            "summarize-readiness"
+          ],
+          "disallowedAgentActions": [
+            "run-solver",
+            "create-analysis-case",
+            "render-webgl",
+            "invent-results"
+          ]
+        }
+      },
+      {
+        "objective": "retaining-wall-excavation-support",
+        "status": "planned",
+        "executionMode": "contract-only",
+        "agentRunAllowed": false,
+        "executionBoundary": {
+          "schemaVersion": "fem-benchmark-execution-boundary.v1",
+          "agentRunAllowed": false,
+          "agentWebglRenderAllowed": false,
+          "agentResultManifestAllowed": false,
+          "humanReviewRequired": true,
+          "caseOutputAvailable": false,
+          "humanRunCommandAvailable": false,
+          "draftCommand": "geotech fem draft retaining-wall-excavation-support --input <json>",
+          "blockedReasons": [
+            "ground-model-missing-spt-n-values",
+            "ground-model-partial-pages-remain",
+            "ground-model-low-confidence",
+            "missing-spt-n-values",
+            "planned-only",
+            "wall-design-not-implemented",
+            "basal-heave-not-verified",
+            "seepage-not-solved",
+            "not-design-calculation",
+            "deterministic-analysis-case-schema-accepted",
+            "solver-or-preview-backend-implemented",
+            "result-manifest-validator-implemented",
+            "webgl-renderer-smoke-added",
+            "acceptance-fixture-approved",
+            "human-review-required",
+            "analysis-case-not-reviewed"
+          ]
+        },
+        "recommendedCommand": "geotech fem draft retaining-wall-excavation-support --input <json>",
+        "readinessStatus": "needs_engineering_review",
+        "readinessScore": 61,
+        "requiredEvidence": [
+          "retaining wall geometry",
+          "excavation stages",
+          "support or anchor assumptions",
+          "stratigraphy",
+          "groundwater/dewatering condition",
+          "strength and stiffness basis"
+        ],
+        "requiredUserInputs": [
+          "wall type",
+          "excavation depth",
+          "toe embedment",
+          "prop/anchor levels",
+          "surcharge/load cases",
+          "groundwater and dewatering assumptions"
+        ],
+        "reviewGates": [
+          "planned-only",
+          "wall-design-not-implemented",
+          "basal-heave-not-verified",
+          "seepage-not-solved",
+          "not-design-calculation"
+        ],
+        "limitations": [
+          "No retaining wall design, basal heave, anchor design, or seepage solver is available yet."
+        ],
+        "contractReadiness": {
+          "nonRunnableReason": "Retaining wall / excavation support preview is registered as a planning contract only. No deterministic backend, analysis-case writer, or WebGL result renderer is available for this route yet.",
+          "blockedUntil": [
+            "deterministic-analysis-case-schema-accepted",
+            "solver-or-preview-backend-implemented",
+            "result-manifest-validator-implemented",
+            "webgl-renderer-smoke-added",
+            "acceptance-fixture-approved"
+          ],
+          "allowedAgentActions": [
+            "list-capability",
+            "draft-input-contract",
+            "validate-user-inputs",
+            "summarize-readiness"
+          ],
+          "disallowedAgentActions": [
+            "run-solver",
+            "create-analysis-case",
+            "render-webgl",
+            "invent-results"
+          ]
+        }
+      },
+      {
+        "objective": "seepage-groundwater-coupling",
+        "status": "planned",
+        "executionMode": "contract-only",
+        "agentRunAllowed": false,
+        "executionBoundary": {
+          "schemaVersion": "fem-benchmark-execution-boundary.v1",
+          "agentRunAllowed": false,
+          "agentWebglRenderAllowed": false,
+          "agentResultManifestAllowed": false,
+          "humanReviewRequired": true,
+          "caseOutputAvailable": false,
+          "humanRunCommandAvailable": false,
+          "draftCommand": "geotech fem draft seepage-groundwater-coupling --input <json>",
+          "blockedReasons": [
+            "ground-model-missing-spt-n-values",
+            "ground-model-partial-pages-remain",
+            "ground-model-low-confidence",
+            "missing-spt-n-values",
+            "planned-only",
+            "seepage-solver-not-implemented",
+            "hydraulic-boundary-review-required",
+            "not-design-calculation",
+            "deterministic-analysis-case-schema-accepted",
+            "solver-or-preview-backend-implemented",
+            "result-manifest-validator-implemented",
+            "webgl-renderer-smoke-added",
+            "acceptance-fixture-approved",
+            "human-review-required",
+            "analysis-case-not-reviewed"
+          ]
+        },
+        "recommendedCommand": "geotech fem draft seepage-groundwater-coupling --input <json>",
+        "readinessStatus": "needs_engineering_review",
+        "readinessScore": 61,
+        "requiredEvidence": [
+          "groundwater observations",
+          "permeability or hydrogeology basis",
+          "stratigraphy",
+          "hydraulic boundary conditions",
+          "drainage/dewatering assumptions"
+        ],
+        "requiredUserInputs": [
+          "upstream/downstream heads",
+          "piezometric surfaces",
+          "permeability values",
+          "drainage or pump assumptions",
+          "coupling mode and review limits"
+        ],
+        "reviewGates": [
+          "planned-only",
+          "seepage-solver-not-implemented",
+          "hydraulic-boundary-review-required",
+          "not-design-calculation"
+        ],
+        "limitations": [
+          "No seepage solver, transient flow, piping, uplift, or coupled consolidation backend is available yet."
+        ],
+        "contractReadiness": {
+          "nonRunnableReason": "Seepage / groundwater-sensitive deformation preview is registered as a planning contract only. No deterministic backend, analysis-case writer, or WebGL result renderer is available for this route yet.",
+          "blockedUntil": [
+            "deterministic-analysis-case-schema-accepted",
+            "solver-or-preview-backend-implemented",
+            "result-manifest-validator-implemented",
+            "webgl-renderer-smoke-added",
+            "acceptance-fixture-approved"
+          ],
+          "allowedAgentActions": [
+            "list-capability",
+            "draft-input-contract",
+            "validate-user-inputs",
+            "summarize-readiness"
+          ],
+          "disallowedAgentActions": [
+            "run-solver",
+            "create-analysis-case",
+            "render-webgl",
+            "invent-results"
+          ]
+        }
+      },
+      {
+        "objective": "staged-settlement-consolidation",
+        "status": "planned",
+        "executionMode": "contract-only",
+        "agentRunAllowed": false,
+        "executionBoundary": {
+          "schemaVersion": "fem-benchmark-execution-boundary.v1",
+          "agentRunAllowed": false,
+          "agentWebglRenderAllowed": false,
+          "agentResultManifestAllowed": false,
+          "humanReviewRequired": true,
+          "caseOutputAvailable": false,
+          "humanRunCommandAvailable": false,
+          "draftCommand": "geotech fem draft staged-settlement-consolidation --input <json>",
+          "blockedReasons": [
+            "ground-model-missing-spt-n-values",
+            "ground-model-partial-pages-remain",
+            "ground-model-low-confidence",
+            "missing-spt-n-values",
+            "planned-only",
+            "consolidation-backend-not-implemented",
+            "time-rate-review-required",
+            "not-design-calculation",
+            "deterministic-analysis-case-schema-accepted",
+            "solver-or-preview-backend-implemented",
+            "result-manifest-validator-implemented",
+            "webgl-renderer-smoke-added",
+            "acceptance-fixture-approved",
+            "human-review-required",
+            "analysis-case-not-reviewed"
+          ]
+        },
+        "recommendedCommand": "geotech fem draft staged-settlement-consolidation --input <json>",
+        "readinessStatus": "needs_engineering_review",
+        "readinessScore": 61,
+        "requiredEvidence": [
+          "compressibility/consolidation parameters",
+          "stratigraphy",
+          "groundwater or drainage condition",
+          "load/stage evidence",
+          "settlement monitoring if available"
+        ],
+        "requiredUserInputs": [
+          "load or fill stages",
+          "stage durations",
+          "foundation footprint",
+          "drainage path assumptions",
+          "target settlement or monitoring triggers"
+        ],
+        "reviewGates": [
+          "planned-only",
+          "consolidation-backend-not-implemented",
+          "time-rate-review-required",
+          "not-design-calculation"
+        ],
+        "limitations": [
+          "No time-dependent FEM/consolidation backend, creep model, or monitoring calibration solver is available yet."
+        ],
+        "contractReadiness": {
+          "nonRunnableReason": "Staged settlement / consolidation preview is registered as a planning contract only. No deterministic backend, analysis-case writer, or WebGL result renderer is available for this route yet.",
+          "blockedUntil": [
+            "deterministic-analysis-case-schema-accepted",
+            "solver-or-preview-backend-implemented",
+            "result-manifest-validator-implemented",
+            "webgl-renderer-smoke-added",
+            "acceptance-fixture-approved"
+          ],
+          "allowedAgentActions": [
+            "list-capability",
+            "draft-input-contract",
+            "validate-user-inputs",
+            "summarize-readiness"
+          ],
+          "disallowedAgentActions": [
+            "run-solver",
+            "create-analysis-case",
+            "render-webgl",
+            "invent-results"
+          ]
+        }
+      }
+    ]
   },
   "evidenceContract": {
     "schemaVersion": 2,
@@ -106,7 +833,42 @@
       "hybrid": 0,
       "none": 0
     },
-    "sourcePages": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34],
+    "sourcePages": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34
+    ],
     "reviewGateCount": 3
   }
 }

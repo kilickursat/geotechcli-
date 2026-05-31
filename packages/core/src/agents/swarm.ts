@@ -1,4 +1,5 @@
 import type { LLMConfig, CompletionResponse } from '../llm/types.js';
+import { z } from 'zod';
 import { generateText, generateChat } from '../llm/router.js';
 import { toolRegistry, type ToolResult } from './tools.js';
 import { validateToolArgs, formatViolations } from './guardrails.js';
@@ -46,6 +47,7 @@ export interface SwarmSession {
   totalLatencyMs: number;
   reviewPassed: boolean;
   corrections: string[];
+  reviewBlockers: string[];
 }
 
 export type SwarmCallback = (step: SwarmStep) => void;
@@ -58,6 +60,7 @@ const ROLE_TOOL_ALLOWLIST = {
     'scan_project',
     'parse_ags',
     'parse_cpt',
+    'analyze_signal_file',
     'ingest_geotech_document',
     'start_geotech_ingest_job',
     'get_geotech_ingest_job',
@@ -173,7 +176,7 @@ YOU HANDLE:
 - Reading borehole logs, AGS files, CPT data from disk
 - Ingesting geotechnical PDFs and images into structured borehole or geotech-document outputs
 - Classifying soils (USCS, AASHTO) and rocks (RMR, Q-system)
-- Parsing CSV sensor data and site investigation reports
+- Parsing CSV/XLSX monitoring data with deterministic signal-analysis tools
 - Scanning project directories to inventory available data
 - Looking up relevant standards for classification methods
 - Saving structured datasets, derived parameters, and assumptions into project memory when a project context is available
@@ -295,7 +298,7 @@ function orchestratorPrompt(config: LLMConfig): string {
 
 You coordinate three specialist agents:
 1. INTERPRETATION AGENT - reads data, classifies soils/rocks, structures input
-2. SIMULATION AGENT - runs calculations, executes numerical models
+2. SIMULATION AGENT - uses deterministic calculation tools and prepares or validates FEM case contracts; it does not run FEM/WebGL previews or invent solver results
 3. REVIEWER AGENT - safety checks, standards compliance, sanity validation
 
 For the given task, produce the FINAL engineering report by synthesizing all agent outputs.
@@ -592,6 +595,185 @@ async function runAgentLoop(
 
 const MAX_REVIEW_CYCLES = 2;
 
+const ReviewerApprovalSchema = z.object({
+  verdict: z.literal('APPROVED'),
+  notes: z.array(z.string()),
+  confidence: z.number().min(0).max(100),
+  blockers: z.array(z.string()).optional(),
+}).strict();
+
+const ReviewerRejectionSchema = z.object({
+  verdict: z.literal('REJECTED'),
+  issues: z.array(z.string()),
+  corrections: z.array(z.string()),
+  confidence: z.number().min(0).max(100),
+  blockers: z.array(z.string()).optional(),
+}).strict();
+
+const ReviewerDecisionSchema = z.discriminatedUnion('verdict', [
+  ReviewerApprovalSchema,
+  ReviewerRejectionSchema,
+]);
+
+type ReviewerDecision = z.infer<typeof ReviewerDecisionSchema>;
+
+type ParsedReviewerDecision =
+  | { status: 'approved'; decision: Extract<ReviewerDecision, { verdict: 'APPROVED' }> }
+  | { status: 'rejected'; decision: Extract<ReviewerDecision, { verdict: 'REJECTED' }> }
+  | { status: 'blocked'; blockers: string[]; raw: string };
+
+function parseReviewerDecision(output: string): ParsedReviewerDecision {
+  const reviewBlocks = [...output.matchAll(/```review\s*\n?([\s\S]*?)\n?```/g)];
+  if (reviewBlocks.length === 0) {
+    return {
+      status: 'blocked',
+      blockers: ['review-block-missing'],
+      raw: output.slice(0, 500),
+    };
+  }
+  if (reviewBlocks.length > 1) {
+    return {
+      status: 'blocked',
+      blockers: ['review-block-multiple'],
+      raw: output.slice(0, 500),
+    };
+  }
+
+  const outsideReview = output.replace(/```review\s*\n?[\s\S]*?\n?```/g, '').trim();
+  if (/```(?:tool|handoff|answer)|\bfinal answer\b/i.test(outsideReview)) {
+    return {
+      status: 'blocked',
+      blockers: ['review-output-contaminated'],
+      raw: output.slice(0, 500),
+    };
+  }
+  const reviewBlock = reviewBlocks[0]!;
+  const reviewJson = reviewBlock[1] ?? '';
+
+  let parsedJson: unknown;
+  try {
+    parsedJson = JSON.parse(reviewJson);
+  } catch {
+    return {
+      status: 'blocked',
+      blockers: ['review-json-invalid'],
+      raw: reviewJson.slice(0, 500),
+    };
+  }
+
+  const parsed = ReviewerDecisionSchema.safeParse(parsedJson);
+  if (!parsed.success) {
+    return {
+      status: 'blocked',
+      blockers: [
+        'review-schema-invalid',
+        ...parsed.error.issues.slice(0, 4).map((issue) => `${issue.path.join('.') || 'root'}:${issue.message}`),
+      ],
+      raw: reviewJson.slice(0, 500),
+    };
+  }
+
+  if (
+    parsed.data.verdict === 'APPROVED'
+    && Array.isArray(parsed.data.blockers)
+    && parsed.data.blockers.length > 0
+  ) {
+    return {
+      status: 'blocked',
+      blockers: ['approved-review-contained-blockers', ...parsed.data.blockers],
+      raw: reviewJson.slice(0, 500),
+    };
+  }
+
+  return parsed.data.verdict === 'APPROVED'
+    ? { status: 'approved', decision: parsed.data }
+    : { status: 'rejected', decision: parsed.data };
+}
+
+function collectDeterministicReviewBlockers(...contexts: Array<Record<string, unknown> | undefined>): string[] {
+  const blockers: string[] = [];
+  for (const context of contexts) {
+    if (!context) continue;
+
+    const femDraft = context.prepare_fem_analysis_case;
+    if (isRecord(femDraft)) {
+      const objective = typeof femDraft.objective === 'string' ? femDraft.objective : 'unknown-objective';
+      const recommendedAction = typeof femDraft.recommendedAction === 'string' ? femDraft.recommendedAction : '';
+      const capability = isRecord(femDraft.capability) ? femDraft.capability : {};
+      const executionMode = typeof capability.executionMode === 'string' ? capability.executionMode : '';
+      const analysisCase = femDraft.analysisCase;
+      const validation = isRecord(femDraft.validation) ? femDraft.validation : undefined;
+      const validationStatus = typeof validation?.status === 'string' ? validation.status : '';
+      const validationReviewItems =
+        typeof validation?.reviewItems === 'number' && Number.isFinite(validation.reviewItems)
+          ? validation.reviewItems
+          : 0;
+      const missingInputs = Array.isArray(femDraft.missingUserInputs)
+        ? femDraft.missingUserInputs.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+        : [];
+
+      if (executionMode === 'contract-only' || recommendedAction === 'contract-only') {
+        blockers.push(`fem-contract-only:${objective}`);
+      }
+      if (recommendedAction === 'collect-inputs' || missingInputs.length > 0) {
+        blockers.push(`fem-missing-inputs:${objective}`);
+      }
+      if (!isRecord(analysisCase)) {
+        blockers.push(`fem-analysis-case-missing:${objective}`);
+      }
+      if (validationStatus === 'blocked') {
+        blockers.push(`fem-validation-blocked:${objective}`);
+      }
+      if (validationStatus === 'review' || validationReviewItems > 0) {
+        blockers.push(`fem-validation-review-required:${objective}`);
+      }
+    }
+
+    const femValidation = context.validate_fem_analysis_case;
+    if (isRecord(femValidation)) {
+      const status = typeof femValidation.status === 'string' ? femValidation.status : '';
+      const blockerCount = typeof femValidation.blockers === 'number' && Number.isFinite(femValidation.blockers)
+        ? femValidation.blockers
+        : 0;
+      const reviewItemCount = typeof femValidation.reviewItems === 'number' && Number.isFinite(femValidation.reviewItems)
+        ? femValidation.reviewItems
+        : 0;
+      if (status === 'blocked' || blockerCount > 0) {
+        blockers.push('fem-validation-blocked');
+      }
+      if (status === 'review' || reviewItemCount > 0) {
+        blockers.push('fem-validation-review-required');
+      }
+    }
+  }
+
+  return [...new Set(blockers)];
+}
+
+function buildUnresolvedSwarmAnswer(input: {
+  task: string;
+  interpretationOutput: string;
+  simulationOutput: string;
+  corrections: string[];
+  reviewBlockers: string[];
+}): string {
+  return [
+    'UNRESOLVED - REVIEW REJECTED',
+    '',
+    'The swarm result is not approved for engineering use. A reviewer either rejected the result or failed the required review contract, so GeotechCLI is returning a deterministic unresolved summary instead of a model-written approval.',
+    '',
+    `Task: ${input.task}`,
+    `Corrections required: ${input.corrections.length > 0 ? input.corrections.join('; ') : 'None recorded'}`,
+    `Review blockers: ${input.reviewBlockers.length > 0 ? input.reviewBlockers.join('; ') : 'None recorded'}`,
+    '',
+    'Interpretation output:',
+    input.interpretationOutput,
+    '',
+    'Simulation output:',
+    input.simulationOutput,
+  ].join('\n');
+}
+
 export async function runSwarm(
   task: string,
   config: LLMConfig,
@@ -605,6 +787,7 @@ export async function runSwarm(
     totalLatencyMs: 0,
     reviewPassed: false,
     corrections: [],
+    reviewBlockers: [],
   };
 
   const trackStep = (step: SwarmStep) => {
@@ -770,64 +953,83 @@ export async function runSwarm(
     session.totalLatencyMs += reviewResult.latency;
     session.context = { ...session.context, reviewer: reviewResult.context };
 
-    const reviewBlock = reviewResult.output.match(/```review\s*\n?([\s\S]*?)\n?```/);
-    if (!reviewBlock) {
-      session.reviewPassed = true;
+    const reviewerDecision = parseReviewerDecision(reviewResult.output);
+    if (reviewerDecision.status === 'blocked') {
+      session.reviewPassed = false;
+      session.reviewBlockers = reviewerDecision.blockers;
+      session.corrections = reviewerDecision.blockers;
       trackStep({
         agent: 'reviewer',
-        type: 'review',
-        content: reviewResult.output.slice(0, 200),
+        type: 'correction',
+        content: `BLOCKED REVIEW. Blockers: ${reviewerDecision.blockers.join('; ')}. Raw: ${reviewerDecision.raw}`,
         timestamp: Date.now(),
       });
       break;
     }
 
-    try {
-      const verdict = JSON.parse(reviewBlock[1]);
-      if (verdict.verdict === 'APPROVED') {
-        session.reviewPassed = true;
+    if (reviewerDecision.status === 'approved') {
+      const deterministicBlockers = collectDeterministicReviewBlockers(simResult.context, reviewResult.context);
+      if (deterministicBlockers.length > 0) {
+        session.reviewPassed = false;
+        session.reviewBlockers = deterministicBlockers;
+        session.corrections = deterministicBlockers;
         trackStep({
           agent: 'reviewer',
-          type: 'review',
-          content: `APPROVED (confidence: ${verdict.confidence ?? '?'}%). Notes: ${(verdict.notes ?? []).join('; ') || 'None'}`,
+          type: 'correction',
+          content: `BLOCKED REVIEW. Deterministic tool blockers override reviewer approval: ${deterministicBlockers.join('; ')}`,
           timestamp: Date.now(),
         });
         break;
       }
-
-      session.corrections = verdict.corrections ?? [];
-      trackStep({
-        agent: 'reviewer',
-        type: 'correction',
-        content: `REJECTED. Issues: ${(verdict.issues ?? []).join('; ')}. Corrections: ${session.corrections.join('; ')}`,
-        timestamp: Date.now(),
-      });
-
-      if (cycle === MAX_REVIEW_CYCLES - 1) {
-        trackStep({
-          agent: 'orchestrator',
-          type: 'thought',
-          content: 'Max review cycles reached. Proceeding with noted issues.',
-          timestamp: Date.now(),
-        });
-      }
-    } catch {
       session.reviewPassed = true;
       trackStep({
         agent: 'reviewer',
         type: 'review',
-        content: reviewResult.output.slice(0, 200),
+        content: `APPROVED (confidence: ${reviewerDecision.decision.confidence}%). Notes: ${reviewerDecision.decision.notes.join('; ') || 'None'}`,
         timestamp: Date.now(),
       });
       break;
     }
+
+    session.corrections = reviewerDecision.decision.corrections;
+    trackStep({
+      agent: 'reviewer',
+      type: 'correction',
+      content: `REJECTED. Issues: ${reviewerDecision.decision.issues.join('; ')}. Corrections: ${session.corrections.join('; ')}`,
+      timestamp: Date.now(),
+    });
+
+    if (cycle === MAX_REVIEW_CYCLES - 1) {
+      trackStep({
+        agent: 'orchestrator',
+        type: 'thought',
+        content: 'Max review cycles reached. Proceeding with noted issues.',
+        timestamp: Date.now(),
+      });
+    }
+  }
+
+  if (!session.reviewPassed) {
+    trackStep({
+      agent: 'orchestrator',
+      type: 'answer',
+      content: buildUnresolvedSwarmAnswer({
+        task,
+        interpretationOutput: interpData,
+        simulationOutput: simOutput,
+        corrections: session.corrections,
+        reviewBlockers: session.reviewBlockers,
+      }),
+      timestamp: Date.now(),
+    });
+    return session;
   }
 
   trackStep({ agent: 'orchestrator', type: 'thought', content: 'Synthesizing final report from all agents.', timestamp: Date.now() });
 
   try {
     const finalResult = await generateText(
-      `${promptContextBlock}Task: ${task}\n\nInterpretation output:\n${interpData}\n\nSimulation output:\n${simOutput}\n\nReview status: ${session.reviewPassed ? 'APPROVED' : 'UNRESOLVED - REVIEW REJECTED'}\nCorrections applied: ${session.corrections.length > 0 ? session.corrections.join('; ') : 'None'}\n\nSynthesize the final engineering report. Include what evidence remained blocked and which role owned each unresolved action.`,
+      `${promptContextBlock}Task: ${task}\n\nInterpretation output:\n${interpData}\n\nSimulation output:\n${simOutput}\n\nReview status: APPROVED\nCorrections applied: ${session.corrections.length > 0 ? session.corrections.join('; ') : 'None'}\nReview blockers: None\n\nSynthesize the final engineering report. Include what evidence remained blocked and which role owned each unresolved action.`,
       config,
       { systemPrompt: orchestratorPrompt(config), temperature: 0.2, maxTokens: getHostedSwarmMaxTokens(config, 'final') },
     );
@@ -841,6 +1043,7 @@ export async function runSwarm(
       '',
       `Review status: ${session.reviewPassed ? 'APPROVED' : 'UNRESOLVED - REVIEW REJECTED'}`,
       `Corrections applied: ${session.corrections.length > 0 ? session.corrections.join('; ') : 'None'}`,
+      `Review blockers: ${session.reviewBlockers.length > 0 ? session.reviewBlockers.join('; ') : 'None'}`,
       '',
       'Interpretation output:',
       interpData,

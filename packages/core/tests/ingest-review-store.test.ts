@@ -365,6 +365,27 @@ describe('ingest review persistence', () => {
     expect(direct?.summary.confidence).toBe(68);
   });
 
+  it('persists provider capability metadata without storing credentials', () => {
+    const project = createProject('Provider Review Project');
+    const record = persistBoreholeIngestReview(project.meta.id, makeGeotechDocumentResult(), {
+      providerConfig: {
+        provider: 'openai-compatible',
+        modelId: 'openrouter/free-model',
+        visionModelId: 'openrouter/free-vision',
+      },
+    });
+
+    expect(record.providerConfig).toEqual({
+      provider: 'openai-compatible',
+      modelId: 'openrouter/free-model',
+      visionModelId: 'openrouter/free-vision',
+    });
+    expect(JSON.stringify(record)).not.toContain('apiKey');
+
+    const direct = loadPersistedBoreholeIngestReview(project.meta.id, record.datasetName);
+    expect(direct?.providerConfig).toEqual(record.providerConfig);
+  });
+
   it('records approval as a separate audit trail and exposes it when loading reviews', () => {
     const project = createProject('Approved Review Project');
     const review = persistBoreholeIngestReview(project.meta.id, makeIngestResult({

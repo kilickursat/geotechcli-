@@ -9,6 +9,7 @@ import {
   buildPageEvidenceCacheKey,
   buildPageEvidenceModelVersion,
   buildPageEvidencePreprocessingVersion,
+  getPageEvidenceCacheAssetPath,
   getPageEvidenceCachePath,
   hashBuffer,
   hashString,
@@ -69,6 +70,9 @@ describe('page evidence cache', () => {
       preprocessingVersion,
       schemaVersion: PAGE_EVIDENCE_CACHE_SCHEMA_VERSION,
     }));
+    expect(buildPageEvidencePreprocessingVersion(llmConfig, undefined, 'none')).not.toBe(
+      buildPageEvidencePreprocessingVersion(llmConfig, undefined, 'ocr-optimized'),
+    );
     expect(key).toHaveLength(64);
   });
 
@@ -138,7 +142,7 @@ describe('page evidence cache', () => {
         ...parts,
         preprocessingVersion: buildPageEvidencePreprocessingVersion(
           llmConfig,
-          'page-evidence-preprocess-v3',
+          'page-evidence-preprocess-v5',
         ),
       })).toBeNull();
 
@@ -167,6 +171,161 @@ describe('page evidence cache', () => {
       parseStatus: 'parsed',
       confidence: 91,
     }));
+  });
+
+  it('persists preprocessing metadata for page-region evidence and cache auditability', () => {
+    const parts = buildParts();
+    const cropAsset = Buffer.from('synthetic cropped panel asset', 'utf-8');
+    writePageEvidenceCache(parts, {
+      textHint: 'Recovered OCR text after normalization.',
+      source: 'vision-ocr',
+      warnings: [],
+      transformed: true,
+      preprocessing: {
+        schemaVersion: 1,
+        pipelineVersion: 'vision-image-preprocess-v2',
+        policy: 'ocr-optimized',
+        transformed: true,
+        input: {
+          mimeType: 'image/jpeg',
+          byteLength: 4096,
+          width: 2400,
+          height: 3200,
+        },
+        output: {
+          mimeType: 'image/png',
+          byteLength: 2048,
+          width: 1350,
+          height: 1800,
+        },
+        operations: ['auto-orient', 'trim-white-margins-threshold-10', 'resize-inside-1800-no-enlarge'],
+        quality: {
+          score: 0.84,
+          contentCoverageRatio: 0.72,
+          darkPixelRatio: 0.08,
+          regionCoverageRatio: 0.25,
+          regionCount: 1,
+          cropAssetCount: 1,
+          deskew: {
+            method: 'projection-profile',
+            angleDeg: -1.5,
+            confidence: 0.72,
+            applied: true,
+          },
+          warnings: [],
+        },
+        regions: [{
+          id: 'normalized-full-page',
+          source: 'preprocessing',
+          label: 'normalized full page',
+          bbox2d: [0, 0, 1, 1],
+          coverageRatio: 1,
+          quality: {
+            score: 0.75,
+            darkPixelRatio: 0.08,
+            lineDensity: 0.01,
+            coverageRatio: 1,
+            warnings: ['region-covers-full-page'],
+          },
+        }, {
+          id: 'table-log-panel-candidate',
+          source: 'preprocessing',
+          label: 'detected table/log panel candidate',
+          bbox2d: [0.1, 0.1, 0.6, 0.6],
+          coverageRatio: 0.25,
+          quality: {
+            score: 0.9,
+            darkPixelRatio: 0.2,
+            lineDensity: 0.04,
+            coverageRatio: 0.25,
+            warnings: [],
+          },
+          asset: {
+            mimeType: 'image/png',
+            byteLength: cropAsset.length,
+            sha256: '0'.repeat(64),
+            width: 640,
+            height: 480,
+            normalized: true,
+            dataBase64: cropAsset.toString('base64'),
+          },
+        }],
+        warnings: [],
+      },
+      createdAt: '2026-05-03T00:00:00.000Z',
+    });
+
+    const cached = readPageEvidenceCache(parts);
+    const asset = cached?.preprocessing?.regions.find((region) => region.id === 'table-log-panel-candidate')?.asset;
+    expect(cached?.preprocessing).toMatchObject({
+      pipelineVersion: 'vision-image-preprocess-v2',
+      policy: 'ocr-optimized',
+      transformed: true,
+      output: {
+        mimeType: 'image/png',
+        width: 1350,
+        height: 1800,
+      },
+      operations: ['auto-orient', 'trim-white-margins-threshold-10', 'resize-inside-1800-no-enlarge'],
+      quality: {
+        score: 0.84,
+        contentCoverageRatio: 0.72,
+        darkPixelRatio: 0.08,
+        regionCoverageRatio: 0.25,
+        regionCount: 1,
+        cropAssetCount: 1,
+        deskew: {
+          method: 'projection-profile',
+          angleDeg: -1.5,
+          confidence: 0.72,
+          applied: true,
+        },
+        warnings: [],
+      },
+      regions: [{
+        id: 'normalized-full-page',
+        source: 'preprocessing',
+        label: 'normalized full page',
+        bbox2d: [0, 0, 1, 1],
+        coverageRatio: 1,
+        quality: {
+          score: 0.75,
+          darkPixelRatio: 0.08,
+          lineDensity: 0.01,
+          coverageRatio: 1,
+          warnings: ['region-covers-full-page'],
+        },
+      }, {
+        id: 'table-log-panel-candidate',
+        source: 'preprocessing',
+        label: 'detected table/log panel candidate',
+        bbox2d: [0.1, 0.1, 0.6, 0.6],
+        coverageRatio: 0.25,
+        quality: {
+          score: 0.9,
+          darkPixelRatio: 0.2,
+          lineDensity: 0.04,
+          coverageRatio: 0.25,
+          warnings: [],
+        },
+        asset: {
+          mimeType: 'image/png',
+          byteLength: cropAsset.length,
+          sha256: hashBuffer(cropAsset),
+          width: 640,
+          height: 480,
+          normalized: true,
+          cacheRelativePath: expect.stringMatching(/^assets\//),
+        },
+      }],
+    });
+    expect(asset?.cacheRelativePath).toBeTruthy();
+    expect(readFileSync(getPageEvidenceCacheAssetPath(asset!.cacheRelativePath!))).toEqual(cropAsset);
+
+    const raw = JSON.parse(readFileSync(getPageEvidenceCachePath(parts), 'utf-8'));
+    const rawAsset = raw.preprocessing.regions.find((region: any) => region.id === 'table-log-panel-candidate').asset;
+    expect(rawAsset.dataBase64).toBeUndefined();
+    expect(rawAsset.cacheRelativePath).toBe(asset?.cacheRelativePath);
   });
 
   it('persists compact GLM-OCR layout pages without storing full provider payloads', () => {

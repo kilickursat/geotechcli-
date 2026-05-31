@@ -34,6 +34,7 @@ import { inspectPdfDocument, type PdfDocumentInspection } from './pdf.js';
 type PersistedIngestResult = BoreholeDocumentIngestResult | GeotechDocumentIngestResult;
 type PersistedReviewFinding = BoreholeIngestFinding | GeotechDocumentFinding;
 type PersistedDocumentType = PersistedIngestResult['documentType'];
+export type PersistedIngestProviderConfig = Pick<LLMConfig, 'provider' | 'modelId' | 'visionModelId'>;
 type GeotechIngestJobStatus = 'queued' | 'running' | 'completed' | 'failed';
 type PromotionDatasetRole =
   | 'raw-borehole'
@@ -82,12 +83,14 @@ export interface PersistedBoreholeIngestReviewRecord {
   result: PersistedIngestResult;
   summary: PersistedBoreholeIngestReviewSummary;
   sourceStamps: PersistedIngestSourceStamps;
+  providerConfig?: PersistedIngestProviderConfig;
   approval?: PersistedBoreholeIngestReviewApprovalRecord;
 }
 
 export interface PersistBoreholeIngestReviewOptions {
   title?: string;
   sourceStamps?: Partial<PersistedIngestSourceStamps>;
+  providerConfig?: PersistedIngestProviderConfig;
 }
 
 export interface PersistedBoreholeIngestReviewApprovalRecord {
@@ -339,6 +342,32 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function asOptionalString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function normalizeProviderConfig(value: unknown): PersistedIngestProviderConfig | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const provider = asOptionalString(value.provider) as LLMConfig['provider'] | undefined;
+  if (!provider) {
+    return undefined;
+  }
+  return {
+    provider,
+    modelId: asOptionalString(value.modelId),
+    visionModelId: asOptionalString(value.visionModelId),
+  };
+}
+
+function sanitizeProviderConfig(value: PersistedIngestProviderConfig | undefined): PersistedIngestProviderConfig | undefined {
+  if (!value?.provider) {
+    return undefined;
+  }
+  return {
+    provider: value.provider,
+    modelId: asOptionalString(value.modelId),
+    visionModelId: asOptionalString(value.visionModelId),
+  };
 }
 
 function sanitizeToken(value: string): string {
@@ -1016,6 +1045,7 @@ function normalizeReviewRecord(value: unknown): PersistedBoreholeIngestReviewRec
     result,
     summary: buildSummary(result),
     sourceStamps: normalizeSourceStamps(value.sourceStamps) ?? buildSourceStampsForResult(result),
+    providerConfig: normalizeProviderConfig(value.providerConfig),
   };
 }
 
@@ -1655,6 +1685,7 @@ export function persistBoreholeIngestReview(
     result,
     summary: buildSummary(result),
     sourceStamps,
+    providerConfig: sanitizeProviderConfig(options?.providerConfig),
   };
 
   saveNamedDataset(projectId, {
@@ -2053,6 +2084,7 @@ function runIngestForJob(
       const persistedReview = record.request.persistReview
         ? persistBoreholeIngestReview(record.projectId, result, {
             title: record.request.reviewTitle,
+            providerConfig: options.config,
           })
         : undefined;
 
@@ -2076,6 +2108,7 @@ function runIngestForJob(
     const persistedReview = record.request.persistReview
       ? persistBoreholeIngestReview(record.projectId, result, {
           title: record.request.reviewTitle,
+          providerConfig: options.config,
         })
       : undefined;
 

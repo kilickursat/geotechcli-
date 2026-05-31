@@ -13,6 +13,7 @@ const coreMocks = vi.hoisted(() => ({
   routeProjectWorkflowRequest: vi.fn(),
   runProjectWorkflow: vi.fn(),
   buildProjectWorkflowReport: vi.fn(),
+  analyzeSignalFile: vi.fn(),
   runAgent: vi.fn(),
   runSwarm: vi.fn(),
 }));
@@ -37,6 +38,7 @@ vi.mock('@geotechcli/core', () => ({
   routeProjectWorkflowRequest: coreMocks.routeProjectWorkflowRequest,
   runProjectWorkflow: coreMocks.runProjectWorkflow,
   buildProjectWorkflowReport: coreMocks.buildProjectWorkflowReport,
+  analyzeSignalFile: coreMocks.analyzeSignalFile,
   runAgent: coreMocks.runAgent,
   runSwarm: coreMocks.runSwarm,
   analyzeWorkspace: coreMocks.analyzeWorkspace,
@@ -91,10 +93,10 @@ function makeSwarmSession(answer = 'done') {
   };
 }
 
-function makeProjectWorkflowRun(task = 'risk-analysis') {
+function makeProjectWorkflowRun(task = 'risk-analysis', runId = 'run_test') {
   return {
     schemaVersion: 'geotech.project-workflow-run.v1',
-    runId: 'run_test',
+    runId,
     task,
     generatedAt: new Date().toISOString(),
     status: 'review',
@@ -157,7 +159,7 @@ function makeProjectWorkflowRoutePlan(options: {
       purpose: 'project-workflow-routing',
       llmRole: 'planner-reviewer-only',
       deterministicExecutionRequired: true,
-      allowedTasks: ['data-quality', 'ground-model', 'calculation-readiness', 'risk-analysis', 'anomaly-detection', 'recommendations', 'visualization'],
+      allowedTasks: ['data-quality', 'ground-model', 'calculation-readiness', 'risk-analysis', 'anomaly-detection', 'recommendations', 'signal-analysis', 'visualization'],
       disallowedActions: ['invent calculation results'],
     },
     trace: {
@@ -247,6 +249,96 @@ function makeWorkspaceManifest() {
   };
 }
 
+function makeSignalWorkspaceManifest(workspace: string, signalPath: string) {
+  return {
+    schemaVersion: 'workspace-manifest.v1',
+    generatedAt: new Date().toISOString(),
+    rootPath: workspace,
+    files: [
+      {
+        path: 'monitoring/settlement.csv',
+        absolutePath: signalPath,
+        name: 'settlement.csv',
+        extension: '.csv',
+        sizeBytes: 128,
+        modifiedAt: new Date().toISOString(),
+        classification: {
+          kind: 'csv',
+          datasetType: 'monitoring-time-series',
+          branches: ['monitoring'],
+          confidence: 0.88,
+          signals: ['settlement', 'time-series'],
+          warnings: [],
+        },
+        schemas: [
+          {
+            sheetName: undefined,
+            datasetType: 'monitoring-time-series',
+            confidence: 0.9,
+            rowCount: 3,
+            columns: [
+              { name: 'date', normalizedName: 'date', roles: ['timestamp'], confidence: 0.95, sampleValues: ['2026-01-01'] },
+              { name: 'settlement_mm', normalizedName: 'settlementmm', roles: ['settlement', 'value'], confidence: 0.95, sampleValues: ['1.2'] },
+              { name: 'instrument', normalizedName: 'instrument', roles: ['instrument_id'], confidence: 0.9, sampleValues: ['SM-1'] },
+            ],
+            warnings: [],
+          },
+        ],
+      },
+    ],
+    warnings: [],
+    summary: {
+      totalFiles: 1,
+      supportedFiles: 1,
+      tabularFiles: 1,
+      pdfFiles: 0,
+      imageFiles: 0,
+      skippedFiles: 0,
+      kinds: { csv: 1 },
+      datasetTypes: { 'monitoring-time-series': 1 },
+      branches: ['monitoring'],
+      recommendations: ['Monitoring data detected. Use geotech signal analyze for deterministic trend review.'],
+    },
+  };
+}
+
+function makeSignalAnalyzeResult(signalPath: string) {
+  return {
+    schemaVersion: 'signal-analysis.v0',
+    source: {
+      path: signalPath,
+      format: 'csv',
+      rowsAnalyzed: 2,
+      rowsRejected: 0,
+    },
+    signalType: 'settlement',
+    columns: {
+      timestamp: 'date',
+      value: 'settlement_mm',
+      instrumentId: 'instrument',
+    },
+    trendSummary: [{
+      seriesId: 'SM-1',
+      label: 'SM-1',
+      count: 2,
+      firstValue: 1.2,
+      lastValue: 1.7,
+      min: 1.2,
+      max: 1.7,
+      mean: 1.45,
+      delta: 0.5,
+      slope: 0.5,
+      slopeUnit: 'per-day',
+      direction: 'increasing',
+    }],
+    thresholdFlags: [],
+    missingIntervals: [],
+    rateOfChange: [{ seriesId: 'SM-1', unit: 'per-day', min: 0.5, max: 0.5, mean: 0.5, latest: 0.5 }],
+    series: [{ id: 'SM-1', label: 'SM-1', x: ['2026-01-01', '2026-01-02'], y: [1.2, 1.7], points: [] }],
+    warnings: [],
+  };
+}
+
 describe('agent command skill opt-in', () => {
   let tempDirs: string[] = [];
 
@@ -270,7 +362,7 @@ describe('agent command skill opt-in', () => {
     coreMocks.runSwarm.mockResolvedValue(makeSwarmSession());
     coreMocks.analyzeWorkspace.mockResolvedValue(makeWorkspaceManifest());
     coreMocks.resolveWorkspaceRoot.mockImplementation(makeWorkspaceRoot);
-    coreMocks.runProjectWorkflow.mockImplementation(({ task }) => makeProjectWorkflowRun(task));
+    coreMocks.runProjectWorkflow.mockImplementation(({ task, runId }) => makeProjectWorkflowRun(task, runId));
     coreMocks.buildProjectWorkflowReport.mockImplementation((run) => makeProjectWorkflowReport(run.task));
     coreMocks.routeProjectWorkflowRequest.mockImplementation(({ prompt, runId }) => {
       const lower = String(prompt ?? '').toLowerCase();
@@ -293,6 +385,13 @@ describe('agent command skill opt-in', () => {
           runId,
           prompt,
           tasks: ['calculation-readiness'],
+        });
+      }
+      if (lower.includes('piezometer') || lower.includes('monitoring') || lower.includes('time-series') || lower.includes('vibration')) {
+        return makeProjectWorkflowRoutePlan({
+          runId,
+          prompt,
+          tasks: ['signal-analysis'],
         });
       }
       return makeProjectWorkflowRoutePlan({
@@ -434,6 +533,56 @@ describe('agent command skill opt-in', () => {
     expect(readFileSync(join(geotechPlanDirs, runId, 'model_calls.jsonl'), 'utf-8')).toBe('');
   });
 
+  it('persists deterministic signal analysis artifacts for explicit signal project tasks', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'geotech-agent-signal-task-'));
+    tempDirs.push(workspace);
+    const signalPath = join(workspace, 'monitoring', 'settlement.csv');
+    mkdirSync(dirname(signalPath), { recursive: true });
+    writeFileSync(signalPath, 'date,instrument,settlement_mm\n2026-01-01,SM-1,1.2\n2026-01-02,SM-1,1.7\n', 'utf-8');
+    coreMocks.analyzeWorkspace.mockResolvedValueOnce(makeSignalWorkspaceManifest(workspace, signalPath));
+    coreMocks.analyzeSignalFile.mockResolvedValueOnce(makeSignalAnalyzeResult(signalPath));
+    const program = new Command();
+    registerAgentCommand(program);
+
+    await program.parseAsync([
+      'agent',
+      '--workspace',
+      workspace,
+      '--task',
+      'signal-analysis',
+      '--json',
+    ], { from: 'user' });
+
+    expect(coreMocks.analyzeSignalFile).toHaveBeenCalledWith(signalPath, expect.objectContaining({
+      type: 'settlement',
+      maxRows: 5000,
+    }));
+    expect(coreMocks.buildLLMConfig).not.toHaveBeenCalled();
+    expect(coreMocks.runAgent).not.toHaveBeenCalled();
+    expect(coreMocks.runSwarm).not.toHaveBeenCalled();
+
+    const runRoot = join(workspace, '.geotech', 'runs');
+    const runId = readdirSync(runRoot).find((entry) => existsSync(join(runRoot, entry, 'workflow_result.json')));
+    expect(runId).toBeTruthy();
+    const runDir = join(runRoot, runId ?? '');
+    const signalDir = join(runDir, 'signals');
+    expect(existsSync(join(signalDir, 'index.json'))).toBe(true);
+    const analysisFiles = readdirSync(signalDir).filter((entry) => entry.endsWith('.analysis.json'));
+    expect(analysisFiles).toHaveLength(1);
+    const index = JSON.parse(readFileSync(join(signalDir, 'index.json'), 'utf-8'));
+    expect(index.sources[0]).toMatchObject({
+      source: 'monitoring/settlement.csv',
+      status: 'pass',
+      signalType: 'settlement',
+      rowsAnalyzed: 2,
+    });
+    const result = JSON.parse(readFileSync(join(runDir, 'workflow_result.json'), 'utf-8'));
+    expect(result.artifacts.some((artifact: { path: string }) => artifact.path.includes('signals'))).toBe(true);
+    expect(result.summary.join(' ')).toContain('Signal analyses persisted: 1/1');
+    expect(readFileSync(join(runDir, 'tool_calls.jsonl'), 'utf-8')).toContain('signal.analyze_file');
+    expect(readFileSync(join(runDir, 'model_calls.jsonl'), 'utf-8')).toBe('');
+  });
+
   it.each([
     'data-quality',
     'ground-model',
@@ -441,6 +590,7 @@ describe('agent command skill opt-in', () => {
     'risk-analysis',
     'anomaly-detection',
     'recommendations',
+    'signal-analysis',
     'visualization',
   ])('keeps explicit %s project task provider-neutral', async (projectTask) => {
     const workspace = mkdtempSync(join(tmpdir(), `geotech-agent-${projectTask}-`));
@@ -458,6 +608,41 @@ describe('agent command skill opt-in', () => {
     ], { from: 'user' });
 
     expect(coreMocks.runProjectWorkflow).toHaveBeenCalledWith(expect.objectContaining({ task: projectTask }));
+    expect(coreMocks.buildLLMConfig).not.toHaveBeenCalled();
+    expect(coreMocks.runAgent).not.toHaveBeenCalled();
+    expect(coreMocks.runSwarm).not.toHaveBeenCalled();
+  });
+
+  it('normalizes explicit FEM route task aliases to calculation readiness', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'geotech-agent-fem-alias-'));
+    tempDirs.push(workspace);
+
+    const aliases = [
+      'fem-tunnel-volume-loss-settlement',
+      'fem-shaft-deformation',
+      'fem-pile-group-elastic-interaction',
+      'fem-slope-embankment-deformation',
+      'fem-retaining-wall-excavation-support',
+      'fem-seepage-groundwater-coupling',
+      'fem-staged-settlement-consolidation',
+    ];
+
+    for (const alias of aliases) {
+      const program = new Command();
+      registerAgentCommand(program);
+
+      await program.parseAsync([
+        'agent',
+        '--workspace',
+        workspace,
+        '--task',
+        alias,
+        '--json',
+      ], { from: 'user' });
+    }
+
+    const tasks = coreMocks.runProjectWorkflow.mock.calls.map((call) => call[0]?.task);
+    expect(tasks.slice(-aliases.length)).toEqual(aliases.map(() => 'calculation-readiness'));
     expect(coreMocks.buildLLMConfig).not.toHaveBeenCalled();
     expect(coreMocks.runAgent).not.toHaveBeenCalled();
     expect(coreMocks.runSwarm).not.toHaveBeenCalled();
@@ -515,6 +700,68 @@ describe('agent command skill opt-in', () => {
     expect(coreMocks.buildLLMConfig).not.toHaveBeenCalled();
     expect(coreMocks.runAgent).not.toHaveBeenCalled();
     expect(coreMocks.runSwarm).not.toHaveBeenCalled();
+  });
+
+  it('routes prompted monitoring requests through deterministic signal-analysis before LLM analysis', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'geotech-agent-signal-route-'));
+    tempDirs.push(workspace);
+    vi.spyOn(process, 'cwd').mockReturnValue(workspace);
+    const program = new Command();
+    registerAgentCommand(program);
+
+    await program.parseAsync(['agent', 'analyze', 'piezometer', 'monitoring', 'time-series', '--json'], { from: 'user' });
+
+    expect(coreMocks.routeProjectWorkflowRequest).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: 'analyze piezometer monitoring time-series',
+      manifest: expect.any(Object),
+      runId: expect.any(String),
+    }));
+    expect(coreMocks.runProjectWorkflow).toHaveBeenCalledWith(expect.objectContaining({ task: 'signal-analysis' }));
+    expect(coreMocks.buildLLMConfig).not.toHaveBeenCalled();
+    expect(coreMocks.runAgent).not.toHaveBeenCalled();
+    expect(coreMocks.runSwarm).not.toHaveBeenCalled();
+    const runRoot = join(workspace, '.geotech', 'runs');
+    const runId = readdirSync(runRoot).find((entry) => existsSync(join(runRoot, entry, 'workflow_route.json')));
+    expect(runId).toBeTruthy();
+    const route = JSON.parse(readFileSync(join(runRoot, runId ?? '', 'workflow_route.json'), 'utf-8'));
+    expect(route.tasks).toEqual(['signal-analysis']);
+  });
+
+  it('persists signal analysis artifacts for routed monitoring project prompts', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'geotech-agent-signal-route-artifacts-'));
+    tempDirs.push(workspace);
+    const signalPath = join(workspace, 'monitoring', 'settlement.csv');
+    mkdirSync(dirname(signalPath), { recursive: true });
+    writeFileSync(signalPath, 'date,instrument,settlement_mm\n2026-01-01,SM-1,1.2\n2026-01-02,SM-1,1.7\n', 'utf-8');
+    vi.spyOn(process, 'cwd').mockReturnValue(workspace);
+    coreMocks.analyzeWorkspace.mockResolvedValueOnce(makeSignalWorkspaceManifest(workspace, signalPath));
+    coreMocks.analyzeSignalFile.mockResolvedValueOnce(makeSignalAnalyzeResult(signalPath));
+    const program = new Command();
+    registerAgentCommand(program);
+
+    await program.parseAsync(['agent', 'analyze', 'settlement', 'monitoring', 'time-series', '--json'], { from: 'user' });
+
+    expect(coreMocks.routeProjectWorkflowRequest).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: 'analyze settlement monitoring time-series',
+      manifest: expect.any(Object),
+      runId: expect.any(String),
+    }));
+    expect(coreMocks.runProjectWorkflow).toHaveBeenCalledWith(expect.objectContaining({ task: 'signal-analysis' }));
+    expect(coreMocks.analyzeSignalFile).toHaveBeenCalledWith(signalPath, expect.objectContaining({
+      type: 'settlement',
+      maxRows: 5000,
+    }));
+    expect(coreMocks.buildLLMConfig).not.toHaveBeenCalled();
+    expect(coreMocks.runAgent).not.toHaveBeenCalled();
+    expect(coreMocks.runSwarm).not.toHaveBeenCalled();
+
+    const runRoot = join(workspace, '.geotech', 'runs');
+    const runId = readdirSync(runRoot).find((entry) => existsSync(join(runRoot, entry, 'workflow_route.json')));
+    expect(runId).toBeTruthy();
+    const signalDir = join(runRoot, runId ?? '', 'signals');
+    expect(existsSync(join(signalDir, 'index.json'))).toBe(true);
+    expect(readdirSync(signalDir).filter((entry) => entry.endsWith('.analysis.json'))).toHaveLength(1);
+    expect(readFileSync(join(runRoot, runId ?? '', 'model_calls.jsonl'), 'utf-8')).toBe('');
   });
 
   it('falls back to the workspace-backed LLM agent for custom project questions', async () => {

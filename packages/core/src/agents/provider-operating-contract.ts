@@ -1,5 +1,10 @@
-import type { LLMConfig, ProviderCapabilities } from '../llm/types.js';
-import { resolveProviderCapabilities } from '../llm/capabilities.js';
+import type {
+  LLMConfig,
+  ProviderCapabilities,
+  ProviderCapabilityProfileId,
+  ProviderContextStrategy,
+} from '../llm/types.js';
+import { resolveProviderCapabilityProfile } from '../llm/capabilities.js';
 
 export type AgentOperatingTask =
   | 'single-agent'
@@ -16,9 +21,9 @@ export interface ProviderOperatingContract {
   modelId: string | null;
   visionModelId: string | null;
   capabilities: ProviderCapabilities;
-  profile: 'hosted-default' | 'direct-zai' | 'premium-byok' | 'open-byok' | 'unknown';
+  profile: ProviderCapabilityProfileId;
   likelyFreeRoute: boolean;
-  contextStrategy: 'full' | 'compact' | 'micro';
+  contextStrategy: ProviderContextStrategy;
   reviewGates: string[];
   prompt: string;
 }
@@ -32,17 +37,14 @@ export function buildProviderOperatingContract(
   config: Pick<LLMConfig, 'provider' | 'modelId' | 'visionModelId'>,
   options: BuildProviderOperatingContractOptions = {},
 ): ProviderOperatingContract {
-  const capabilities = resolveProviderCapabilities(config);
-  const modelId = normalizeModel(config.modelId);
-  const visionModelId = normalizeModel(config.visionModelId);
-  const profile = resolveProfile(config.provider);
-  const likelyFreeRoute = isLikelyFreeRoute(modelId) || isLikelyFreeRoute(visionModelId);
-  const contextStrategy = likelyFreeRoute
-    ? 'micro'
-    : profile === 'open-byok'
-      ? 'compact'
-      : 'full';
-  const reviewGates = buildReviewGates(capabilities, likelyFreeRoute, contextStrategy);
+  const capabilityProfile = resolveProviderCapabilityProfile(config);
+  const capabilities = capabilityProfile.capabilities;
+  const modelId = capabilityProfile.modelId;
+  const visionModelId = capabilityProfile.visionModelId;
+  const profile = capabilityProfile.id;
+  const likelyFreeRoute = capabilityProfile.likelyFreeRoute;
+  const contextStrategy = capabilityProfile.contextStrategy;
+  const reviewGates = capabilityProfile.reviewGates;
   const prompt = renderProviderOperatingPrompt({
     provider: config.provider,
     modelId,
@@ -74,38 +76,6 @@ export function buildProviderOperatingPrompt(
   options: BuildProviderOperatingContractOptions = {},
 ): string {
   return buildProviderOperatingContract(config, options).prompt;
-}
-
-function resolveProfile(provider: LLMConfig['provider']): ProviderOperatingContract['profile'] {
-  switch (provider) {
-    case 'hosted-beta':
-      return 'hosted-default';
-    case 'zhipu':
-      return 'direct-zai';
-    case 'openai':
-    case 'anthropic':
-      return 'premium-byok';
-    case 'openai-compatible':
-    case 'huggingface':
-      return 'open-byok';
-    default:
-      return 'unknown';
-  }
-}
-
-function buildReviewGates(
-  capabilities: ProviderCapabilities,
-  likelyFreeRoute: boolean,
-  contextStrategy: ProviderOperatingContract['contextStrategy'],
-): string[] {
-  return [
-    capabilities.text ? null : 'text-generation-unavailable',
-    capabilities.visionImages ? null : 'image-understanding-unavailable',
-    capabilities.nativePdfDocuments ? null : 'native-pdf-unavailable-use-preprocessed-evidence',
-    capabilities.jsonMode ? null : 'strict-json-unavailable-validate-output',
-    likelyFreeRoute ? 'free-route-capacity-and-feature-variance' : null,
-    contextStrategy !== 'full' ? 'compact-context-required' : null,
-  ].filter((value): value is string => value != null);
 }
 
 function renderProviderOperatingPrompt(input: {
@@ -171,7 +141,7 @@ function renderProviderOperatingPrompt(input: {
     capabilityLine,
     reviewGateLine,
     '',
-    'This contract makes hosted GLM, BYOK paid models, free OpenRouter routes, Hugging Face, and local OpenAI-compatible models work against the same GeotechCLI behavior.',
+    'This contract makes hosted defaults, BYOK paid models, free routed providers, Hugging Face-compatible backends, and local OpenAI-compatible models work against the same GeotechCLI behavior.',
     '',
     ...coreRules.map((rule) => `- ${rule}`),
     ...freeRouteRules.map((rule) => `- ${rule}`),
@@ -199,13 +169,4 @@ function taskSpecificRule(task: AgentOperatingTask): string {
     default:
       return 'Single-agent task: use tools and evidence packets before reasoning; ask for missing inputs when the task cannot be safely completed.';
   }
-}
-
-function normalizeModel(value: string | null | undefined): string | null {
-  const normalized = value?.trim();
-  return normalized ? normalized : null;
-}
-
-function isLikelyFreeRoute(value: string | null): boolean {
-  return Boolean(value && /(?:^|[:/_-])free(?:$|[:/_-])/i.test(value));
 }

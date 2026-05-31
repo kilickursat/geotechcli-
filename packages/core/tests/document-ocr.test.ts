@@ -208,4 +208,57 @@ describe('document text recovery', () => {
     expect(result.warnings.join(' ')).toMatch(/chunking a dense document image/i);
     expect(visionTranscribe).toHaveBeenCalledTimes(3);
   });
+
+  it('tries detected preprocessing region crops before generic dense-page chunking', async () => {
+    const svg = `
+      <svg width="900" height="1100" xmlns="http://www.w3.org/2000/svg">
+        <rect width="900" height="1100" fill="white"/>
+        <g stroke="black" stroke-width="3">
+          <rect x="120" y="100" width="400" height="400" fill="none"/>
+          <line x1="120" y1="200" x2="520" y2="200"/>
+          <line x1="120" y1="300" x2="520" y2="300"/>
+          <line x1="120" y1="400" x2="520" y2="400"/>
+          <line x1="220" y1="100" x2="220" y2="500"/>
+          <line x1="320" y1="100" x2="320" y2="500"/>
+          <line x1="420" y1="100" x2="420" y2="500"/>
+        </g>
+        <g fill="black">
+          <rect x="650" y="850" width="120" height="10"/>
+          <rect x="650" y="875" width="90" height="10"/>
+        </g>
+      </svg>
+    `;
+    const imageBuffer = await sharp(Buffer.from(svg)).png().toBuffer();
+    const visionTranscribe = vi.fn()
+      .mockResolvedValueOnce({
+        text: 'short',
+        warnings: [],
+        usedFallback: false,
+        latencyMs: 20,
+      })
+      .mockResolvedValueOnce({
+        text: 'BH-12 depth 0.0 to 2.0 m silty sand SPT N 12 groundwater not reported',
+        warnings: [],
+        usedFallback: false,
+        latencyMs: 30,
+      });
+
+    const result = await recoverDocumentTextHint({
+      imageBase64: imageBuffer.toString('base64'),
+      mimeType: 'image/png',
+      config: {
+        provider: 'hosted-beta',
+        apiKey: '',
+      },
+      allowLayoutOcr: false,
+      visionTranscribe,
+    });
+
+    expect(result.source).toBe('vision-ocr');
+    expect(result.textHint).toMatch(/BH-12 depth/i);
+    expect(result.warnings.join(' ')).toMatch(/preprocessed region crop/i);
+    expect(result.warnings.join(' ')).not.toMatch(/chunking a dense document image/i);
+    expect(result.preprocessing?.regions.some((region) => region.id === 'table-log-panel-candidate' && region.asset?.dataBase64)).toBe(true);
+    expect(visionTranscribe).toHaveBeenCalledTimes(2);
+  });
 });

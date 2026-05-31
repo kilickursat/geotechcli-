@@ -2,6 +2,7 @@ import { readFileSync, readdirSync, writeFileSync, existsSync, statSync } from '
 import { basename, extname, join, relative, resolve } from 'node:path';
 import { toolRegistry, type ToolResult } from './tools.js';
 import { validateEnumerationPath, validateReadPath, validateWritePath } from './sandbox.js';
+import { buildUnsafeFemArtifactError, detectUnsafeFemArtifactPayload } from './fem-artifact-guards.js';
 
 // ---------------------------------------------------------------------------
 // File reading (sandboxed)
@@ -197,6 +198,19 @@ toolRegistry.register(
 
     if (content.length > 10 * 1024 * 1024) {
       return { success: false, data: null, summary: '', error: 'Content exceeds 10 MB write limit.' };
+    }
+
+    const unsafeFemCode = detectUnsafeFemArtifactPayload({
+      path: args.path,
+      content,
+    });
+    if (unsafeFemCode) {
+      return {
+        success: false,
+        data: null,
+        summary: '',
+        error: buildUnsafeFemArtifactError(unsafeFemCode),
+      };
     }
 
     try {

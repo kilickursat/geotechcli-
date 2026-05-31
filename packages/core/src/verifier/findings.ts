@@ -13,6 +13,13 @@ export type GroundModelCalculationWorkflow =
   | 'settlement'
   | 'fem-foundation-settlement'
   | 'fem-excavation-deformation'
+  | 'fem-tunnel-volume-loss-settlement'
+  | 'fem-shaft-deformation'
+  | 'fem-pile-group-elastic-interaction'
+  | 'fem-slope-embankment-deformation'
+  | 'fem-retaining-wall-excavation-support'
+  | 'fem-seepage-groundwater-coupling'
+  | 'fem-staged-settlement-consolidation'
   | 'pile-capacity'
   | 'liquefaction'
   | 'slope-stability';
@@ -204,6 +211,13 @@ function assessCalculationReadiness(
     assessSettlementReadiness(model, context, profile, options),
     assessFemFoundationSettlementReadiness(model, context, profile, options),
     assessFemExcavationDeformationReadiness(model, context, profile, options),
+    assessFemTunnelVolumeLossReadiness(model, context, profile, options),
+    assessFemShaftDeformationReadiness(model, context, profile, options),
+    assessFemPileGroupInteractionReadiness(model, context, profile, options),
+    assessFemSlopeEmbankmentDeformationReadiness(model, context, profile, options),
+    assessFemRetainingWallExcavationSupportReadiness(model, context, profile, options),
+    assessFemSeepageGroundwaterCouplingReadiness(model, context, profile, options),
+    assessFemStagedSettlementConsolidationReadiness(model, context, profile, options),
     assessPileReadiness(model, context, profile, options),
     assessLiquefactionReadiness(model, context, profile, options),
     assessSlopeReadiness(model, context, profile, options),
@@ -301,6 +315,296 @@ function assessFemExcavationDeformationReadiness(
     recommendation: context.hasStrata && context.hasDepthCoverage && context.hasStrengthOrSpt
       ? 'Prepare an experimental staged-excavation FEM draft only after the user declares excavation geometry, construction stages, support levels, surcharge, and groundwater handling. Do not run production excavation design from inferred values.'
       : 'Add excavation-relevant strata depth coverage plus strength, SPT, or stiffness evidence before preparing an FEM staged-excavation case.',
+  }, model, context, profile, options);
+}
+
+function assessFemTunnelVolumeLossReadiness(
+  model: GroundModel,
+  context: EvidenceContext,
+  profile: StandardProfileAssumptions | null,
+  options: VerifyGroundModelOptions,
+): GroundModelCalculationReadiness {
+  return buildWorkflowReadiness({
+    workflow: 'fem-tunnel-volume-loss-settlement',
+    label: 'Experimental tunnel volume-loss settlement draft',
+    toolName: 'prepare_fem_analysis_case',
+    commandTemplate: 'geotech fem draft tunnel-volume-loss-settlement --input <json> --case-output <analysis_case.json>',
+    coreMissing: [
+      ...missingWhen(!context.hasStrata, 'tunnel influence strata model'),
+      ...missingWhen(!context.hasDepthCoverage, 'cover-depth and layer depth coverage'),
+      ...missingWhen(!context.hasSettlementBasis, 'stiffness, compressibility, lab index, or SPT correlation evidence'),
+    ],
+    assumptionMissing: [
+      ...missingWhen(!context.hasUnitWeight, 'unit weight'),
+      ...missingWhen(!context.hasGroundwater, 'groundwater condition'),
+    ],
+    present: [
+      ...presentWhen(context.hasStrata, 'strata profile'),
+      ...presentWhen(context.hasDepthCoverage, 'depth coverage'),
+      ...presentWhen(context.hasSettlementBasis, 'stiffness/compressibility basis'),
+      ...presentWhen(context.hasUnitWeight, 'unit weight'),
+      ...presentWhen(context.hasGroundwater, 'groundwater condition'),
+    ],
+    evidenceIds: collectEvidenceIds(
+      context.strataEvidenceIds,
+      context.compressibilityEvidenceIds,
+      context.labIndexEvidenceIds,
+      context.sptEvidenceIds,
+      context.unitWeightEvidenceIds,
+      context.groundwaterEvidenceIds,
+    ),
+    recommendation: context.hasStrata && context.hasDepthCoverage && context.hasSettlementBasis
+      ? 'Prepare an experimental tunnel volume-loss settlement draft only after the user declares tunnel diameter, cover depth, alignment length, volume-loss assumption, and trough-width parameter. Do not treat it as a tunnel lining, face-stability, or production FEM solver.'
+      : 'Add tunnel-influence strata depth coverage plus stiffness/compressibility, lab index, or SPT evidence before preparing a tunnel settlement draft.',
+  }, model, context, profile, options);
+}
+
+function assessFemShaftDeformationReadiness(
+  model: GroundModel,
+  context: EvidenceContext,
+  profile: StandardProfileAssumptions | null,
+  options: VerifyGroundModelOptions,
+): GroundModelCalculationReadiness {
+  return buildWorkflowReadiness({
+    workflow: 'fem-shaft-deformation',
+    label: 'Planned shaft deformation contract draft',
+    toolName: 'prepare_fem_analysis_case',
+    commandTemplate: 'geotech fem draft shaft-deformation --input <json>',
+    coreMissing: [
+      'implemented shaft deformation preview backend',
+      ...missingWhen(!context.hasStrata, 'shaft influence strata model'),
+      ...missingWhen(!context.hasDepthCoverage, 'shaft depth coverage'),
+      ...missingWhen(!context.hasStrengthOrSpt, 'strength, stiffness, or SPT evidence for shaft deformation review'),
+    ],
+    assumptionMissing: [
+      ...missingWhen(!context.hasUnitWeight, 'unit weight'),
+      ...missingWhen(!context.hasGroundwater, 'groundwater condition'),
+    ],
+    present: [
+      ...presentWhen(context.hasStrata, 'strata profile'),
+      ...presentWhen(context.hasDepthCoverage, 'depth coverage'),
+      ...presentWhen(context.hasStrength, 'direct shear-strength parameters'),
+      ...presentWhen(!context.hasStrength && context.hasSpt, 'SPT profile for deformation correlations'),
+      ...presentWhen(context.hasSettlementBasis, 'stiffness/compressibility basis'),
+      ...presentWhen(context.hasUnitWeight, 'unit weight'),
+      ...presentWhen(context.hasGroundwater, 'groundwater condition'),
+    ],
+    evidenceIds: collectEvidenceIds(
+      context.strataEvidenceIds,
+      context.strengthEvidenceIds,
+      context.sptEvidenceIds,
+      context.compressibilityEvidenceIds,
+      context.labIndexEvidenceIds,
+      context.unitWeightEvidenceIds,
+      context.groundwaterEvidenceIds,
+    ),
+    recommendation: 'Shaft deformation is a planned contract-only FEM route. Use this readiness record to collect shaft geometry, support sequence, and evidence, but do not create a runnable analysis case or WebGL result yet.',
+  }, model, context, profile, options);
+}
+
+function assessFemPileGroupInteractionReadiness(
+  model: GroundModel,
+  context: EvidenceContext,
+  profile: StandardProfileAssumptions | null,
+  options: VerifyGroundModelOptions,
+): GroundModelCalculationReadiness {
+  return buildWorkflowReadiness({
+    workflow: 'fem-pile-group-elastic-interaction',
+    label: 'Planned pile-group elastic interaction contract draft',
+    toolName: 'prepare_fem_analysis_case',
+    commandTemplate: 'geotech fem draft pile-group-elastic-interaction --input <json>',
+    coreMissing: [
+      'implemented pile-group FEM preview backend',
+      ...missingWhen(!context.hasBoreholes && !context.hasStrata, 'borehole/strata profile'),
+      ...missingWhen(!context.hasDepthCoverage, 'pile influence depth coverage'),
+      ...missingWhen(!context.hasStrengthOrSpt, 'strength, stiffness, or SPT evidence for pile-soil interaction review'),
+    ],
+    assumptionMissing: [
+      ...missingWhen(!context.hasGroundwater, 'groundwater condition'),
+    ],
+    present: [
+      ...presentWhen(context.hasBoreholes, 'boreholes'),
+      ...presentWhen(context.hasStrata, 'strata profile'),
+      ...presentWhen(context.hasDepthCoverage, 'depth coverage'),
+      ...presentWhen(context.hasStrength, 'direct strength parameters'),
+      ...presentWhen(!context.hasStrength && context.hasSpt, 'SPT profile for pile correlations'),
+      ...presentWhen(context.hasSettlementBasis, 'stiffness/compressibility basis'),
+      ...presentWhen(context.hasGroundwater, 'groundwater condition'),
+    ],
+    evidenceIds: collectEvidenceIds(
+      context.boreholeEvidenceIds,
+      context.strataEvidenceIds,
+      context.strengthEvidenceIds,
+      context.sptEvidenceIds,
+      context.compressibilityEvidenceIds,
+      context.labIndexEvidenceIds,
+      context.groundwaterEvidenceIds,
+    ),
+    recommendation: 'Pile-group FEM interaction is a planned contract-only route. Use deterministic pile-capacity tools for current design checks and collect pile layout, head condition, stiffness, and load cases before any future FEM preview.',
+  }, model, context, profile, options);
+}
+
+function assessFemSlopeEmbankmentDeformationReadiness(
+  model: GroundModel,
+  context: EvidenceContext,
+  profile: StandardProfileAssumptions | null,
+  options: VerifyGroundModelOptions,
+): GroundModelCalculationReadiness {
+  return buildWorkflowReadiness({
+    workflow: 'fem-slope-embankment-deformation',
+    label: 'Planned slope / embankment deformation contract draft',
+    toolName: 'prepare_fem_analysis_case',
+    commandTemplate: 'geotech fem draft slope-embankment-deformation --input <json>',
+    coreMissing: [
+      'implemented slope/embankment deformation preview backend',
+      ...missingWhen(!context.hasStrata, 'slope or embankment strata model'),
+      ...missingWhen(!context.hasDepthCoverage, 'slope/embankment influence depth coverage'),
+      ...missingWhen(!context.hasStrengthOrSpt, 'strength, stiffness, or SPT evidence for slope deformation review'),
+    ],
+    assumptionMissing: [
+      ...missingWhen(!context.hasUnitWeight, 'unit weight'),
+      ...missingWhen(!context.hasGroundwater, 'groundwater or drainage condition'),
+    ],
+    present: [
+      ...presentWhen(context.hasStrata, 'strata profile'),
+      ...presentWhen(context.hasDepthCoverage, 'depth coverage'),
+      ...presentWhen(context.hasStrength, 'direct shear-strength parameters'),
+      ...presentWhen(!context.hasStrength && context.hasSpt, 'SPT profile for deformation correlations'),
+      ...presentWhen(context.hasSettlementBasis, 'stiffness/compressibility basis'),
+      ...presentWhen(context.hasUnitWeight, 'unit weight'),
+      ...presentWhen(context.hasGroundwater, 'groundwater condition'),
+    ],
+    evidenceIds: collectEvidenceIds(
+      context.strataEvidenceIds,
+      context.strengthEvidenceIds,
+      context.sptEvidenceIds,
+      context.compressibilityEvidenceIds,
+      context.labIndexEvidenceIds,
+      context.unitWeightEvidenceIds,
+      context.groundwaterEvidenceIds,
+    ),
+    recommendation: 'Slope/embankment FEM deformation is a planned contract-only route. Use deterministic slope-stability and settlement checks first, collect staged geometry and drainage assumptions, and do not create a runnable FEM case or WebGL result yet.',
+  }, model, context, profile, options);
+}
+
+function assessFemRetainingWallExcavationSupportReadiness(
+  model: GroundModel,
+  context: EvidenceContext,
+  profile: StandardProfileAssumptions | null,
+  options: VerifyGroundModelOptions,
+): GroundModelCalculationReadiness {
+  return buildWorkflowReadiness({
+    workflow: 'fem-retaining-wall-excavation-support',
+    label: 'Planned retaining wall / excavation support contract draft',
+    toolName: 'prepare_fem_analysis_case',
+    commandTemplate: 'geotech fem draft retaining-wall-excavation-support --input <json>',
+    coreMissing: [
+      'implemented retaining-wall/excavation-support preview backend',
+      ...missingWhen(!context.hasStrata, 'retaining wall excavation strata model'),
+      ...missingWhen(!context.hasDepthCoverage, 'wall toe and excavation influence depth coverage'),
+      ...missingWhen(!context.hasStrengthOrSpt, 'strength, stiffness, or SPT evidence for wall movement review'),
+    ],
+    assumptionMissing: [
+      ...missingWhen(!context.hasUnitWeight, 'unit weight'),
+      ...missingWhen(!context.hasGroundwater, 'groundwater/dewatering condition'),
+    ],
+    present: [
+      ...presentWhen(context.hasStrata, 'strata profile'),
+      ...presentWhen(context.hasDepthCoverage, 'depth coverage'),
+      ...presentWhen(context.hasStrength, 'direct shear-strength parameters'),
+      ...presentWhen(!context.hasStrength && context.hasSpt, 'SPT profile for wall deformation correlations'),
+      ...presentWhen(context.hasSettlementBasis, 'stiffness/compressibility basis'),
+      ...presentWhen(context.hasUnitWeight, 'unit weight'),
+      ...presentWhen(context.hasGroundwater, 'groundwater condition'),
+    ],
+    evidenceIds: collectEvidenceIds(
+      context.strataEvidenceIds,
+      context.strengthEvidenceIds,
+      context.sptEvidenceIds,
+      context.compressibilityEvidenceIds,
+      context.labIndexEvidenceIds,
+      context.unitWeightEvidenceIds,
+      context.groundwaterEvidenceIds,
+    ),
+    recommendation: 'Retaining wall/excavation support FEM is a planned contract-only route. Use deterministic earth-pressure, excavation, and groundwater checks first, collect wall/support geometry, and do not create a runnable FEM case or WebGL result yet.',
+  }, model, context, profile, options);
+}
+
+function assessFemSeepageGroundwaterCouplingReadiness(
+  model: GroundModel,
+  context: EvidenceContext,
+  profile: StandardProfileAssumptions | null,
+  options: VerifyGroundModelOptions,
+): GroundModelCalculationReadiness {
+  return buildWorkflowReadiness({
+    workflow: 'fem-seepage-groundwater-coupling',
+    label: 'Planned seepage / groundwater coupling contract draft',
+    toolName: 'prepare_fem_analysis_case',
+    commandTemplate: 'geotech fem draft seepage-groundwater-coupling --input <json>',
+    coreMissing: [
+      'implemented seepage/groundwater coupling preview backend',
+      ...missingWhen(!context.hasStrata, 'hydrostratigraphy / seepage strata model'),
+      ...missingWhen(!context.hasGroundwater, 'groundwater observations or piezometric evidence'),
+    ],
+    assumptionMissing: [
+      ...missingWhen(!context.hasUnitWeight, 'unit weight'),
+      ...missingWhen(!context.hasFinesOrGradation && !context.hasLabIndex, 'permeability, gradation, or hydrogeology basis'),
+    ],
+    present: [
+      ...presentWhen(context.hasStrata, 'strata profile'),
+      ...presentWhen(context.hasGroundwater, 'groundwater condition'),
+      ...presentWhen(context.hasFinesOrGradation, 'gradation/fines evidence for seepage review'),
+      ...presentWhen(context.hasLabIndex, 'lab index parameters for permeability screening'),
+      ...presentWhen(context.hasUnitWeight, 'unit weight'),
+    ],
+    evidenceIds: collectEvidenceIds(
+      context.strataEvidenceIds,
+      context.groundwaterEvidenceIds,
+      context.finesEvidenceIds,
+      context.labIndexEvidenceIds,
+      context.unitWeightEvidenceIds,
+    ),
+    recommendation: 'Seepage/groundwater-coupled FEM is a planned contract-only route. Collect hydraulic boundary conditions, permeability basis, and dewatering assumptions before any future coupled preview; do not create a runnable FEM case or WebGL result yet.',
+  }, model, context, profile, options);
+}
+
+function assessFemStagedSettlementConsolidationReadiness(
+  model: GroundModel,
+  context: EvidenceContext,
+  profile: StandardProfileAssumptions | null,
+  options: VerifyGroundModelOptions,
+): GroundModelCalculationReadiness {
+  return buildWorkflowReadiness({
+    workflow: 'fem-staged-settlement-consolidation',
+    label: 'Planned staged settlement / consolidation contract draft',
+    toolName: 'prepare_fem_analysis_case',
+    commandTemplate: 'geotech fem draft staged-settlement-consolidation --input <json>',
+    coreMissing: [
+      'implemented staged settlement/consolidation preview backend',
+      ...missingWhen(!context.hasStrata, 'settlement/consolidation strata model'),
+      ...missingWhen(!context.hasSettlementBasis, 'compressibility, consolidation, lab index, or SPT correlation evidence'),
+    ],
+    assumptionMissing: [
+      ...missingWhen(!context.hasUnitWeight, 'unit weight'),
+      ...missingWhen(!context.hasGroundwater, 'groundwater/drainage condition'),
+    ],
+    present: [
+      ...presentWhen(context.hasStrata, 'strata profile'),
+      ...presentWhen(context.hasCompressibility, 'compressibility or consolidation parameters'),
+      ...presentWhen(!context.hasCompressibility && context.hasLabIndex, 'lab index parameters for settlement correlations'),
+      ...presentWhen(!context.hasCompressibility && !context.hasLabIndex && context.hasSpt, 'SPT profile for stiffness correlations'),
+      ...presentWhen(context.hasUnitWeight, 'unit weight'),
+      ...presentWhen(context.hasGroundwater, 'groundwater condition'),
+    ],
+    evidenceIds: collectEvidenceIds(
+      context.strataEvidenceIds,
+      context.compressibilityEvidenceIds,
+      context.labIndexEvidenceIds,
+      context.sptEvidenceIds,
+      context.unitWeightEvidenceIds,
+      context.groundwaterEvidenceIds,
+    ),
+    recommendation: 'Staged settlement/consolidation FEM is a planned contract-only route. Use deterministic settlement/consolidation tools first, collect load stages and drainage assumptions, and do not create a runnable FEM case or WebGL result yet.',
   }, model, context, profile, options);
 }
 
@@ -660,6 +964,163 @@ function buildCalculationInputDraft(
           : { condition: 'not_modelled', note: 'Groundwater not present in GroundModel; explicit excavation groundwater review required.' },
       };
       command = 'geotech fem draft excavation-deformation --input <json> --case-output <analysis_case.json>';
+      break;
+    }
+    case 'fem-tunnel-volume-loss-settlement': {
+      missingUserInputs.push(
+        'tunnel diameter',
+        'tunnel axis depth',
+        'tunnel alignment length',
+        'volume-loss assumption',
+        'trough-width parameter',
+      );
+      draftInput = {
+        objective: 'tunnel-volume-loss-settlement',
+        useDemoDefaults: false,
+        material: {
+          elasticModulusKpa: findNumericParameter(model, /elastic|modulus|\bes\b/i) ?? estimateElasticModulusFromSpt(model),
+          unitWeightKnM3: unitWeight,
+          poissonRatio: 0.3,
+        },
+        geometry: {
+          tunnelDiameterM: '<m>',
+          tunnelAxisDepthM: '<m bgl>',
+          tunnelLengthM: '<m>',
+          tunnelVolumeLossPercent: '<percent>',
+          troughWidthParameterK: '<K>',
+        },
+        groundwater: groundwaterDepth != null
+          ? { condition: 'specified', depthM: groundwaterDepth, note: 'Groundwater depth from GroundModel evidence; tunnel seepage and pore-pressure coupling still require review.' }
+          : { condition: 'not_modelled', note: 'Groundwater not present in GroundModel; explicit tunnel groundwater review required.' },
+      };
+      command = 'geotech fem draft tunnel-volume-loss-settlement --input <json> --case-output <analysis_case.json>';
+      break;
+    }
+    case 'fem-shaft-deformation': {
+      missingUserInputs.push('shaft diameter/shape', 'final depth', 'support sequence', 'groundwater handling');
+      draftInput = {
+        objective: 'shaft-deformation',
+        useDemoDefaults: false,
+        material: {
+          elasticModulusKpa: findNumericParameter(model, /elastic|modulus|\bes\b/i) ?? estimateElasticModulusFromSpt(model),
+          unitWeightKnM3: unitWeight,
+          poissonRatio: 0.3,
+        },
+        groundwater: groundwaterDepth != null
+          ? { condition: 'specified', depthM: groundwaterDepth, note: 'Groundwater depth from GroundModel evidence; shaft route remains contract-only.' }
+          : { condition: 'not_modelled', note: 'Groundwater not present in GroundModel; shaft route remains contract-only.' },
+      };
+      command = 'geotech fem draft shaft-deformation --input <json>';
+      break;
+    }
+    case 'fem-pile-group-elastic-interaction': {
+      missingUserInputs.push('pile diameter', 'pile length', 'pile spacing', 'load case', 'pile head condition');
+      draftInput = {
+        objective: 'pile-group-elastic-interaction',
+        useDemoDefaults: false,
+        material: {
+          elasticModulusKpa: findNumericParameter(model, /elastic|modulus|\bes\b/i) ?? estimateElasticModulusFromSpt(model),
+          unitWeightKnM3: unitWeight,
+          poissonRatio: 0.3,
+        },
+        groundwater: groundwaterDepth != null
+          ? { condition: 'specified', depthM: groundwaterDepth, note: 'Groundwater depth from GroundModel evidence; pile-group FEM route remains contract-only.' }
+          : { condition: 'not_modelled', note: 'Groundwater not present in GroundModel; pile-group FEM route remains contract-only.' },
+      };
+      command = 'geotech fem draft pile-group-elastic-interaction --input <json>';
+      break;
+    }
+    case 'fem-slope-embankment-deformation': {
+      missingUserInputs.push(
+        'slope height',
+        'slope angle / embankment geometry',
+        'construction or excavation stages',
+        'surcharge/seismic assumptions',
+        'drainage and groundwater handling',
+      );
+      draftInput = {
+        objective: 'slope-embankment-deformation',
+        useDemoDefaults: false,
+        material: {
+          elasticModulusKpa: findNumericParameter(model, /elastic|modulus|\bes\b/i) ?? estimateElasticModulusFromSpt(model),
+          unitWeightKnM3: unitWeight,
+          poissonRatio: 0.3,
+        },
+        groundwater: groundwaterDepth != null
+          ? { condition: 'specified', depthM: groundwaterDepth, note: 'Groundwater depth from GroundModel evidence; slope/embankment route remains contract-only.' }
+          : { condition: 'not_modelled', note: 'Groundwater not present in GroundModel; slope/embankment route remains contract-only.' },
+      };
+      command = 'geotech fem draft slope-embankment-deformation --input <json>';
+      break;
+    }
+    case 'fem-retaining-wall-excavation-support': {
+      missingUserInputs.push(
+        'wall type',
+        'excavation depth',
+        'toe embedment',
+        'prop/anchor levels',
+        'surcharge/load cases',
+        'groundwater and dewatering assumptions',
+      );
+      draftInput = {
+        objective: 'retaining-wall-excavation-support',
+        useDemoDefaults: false,
+        material: {
+          elasticModulusKpa: findNumericParameter(model, /elastic|modulus|\bes\b/i) ?? estimateElasticModulusFromSpt(model),
+          unitWeightKnM3: unitWeight,
+          poissonRatio: 0.3,
+        },
+        groundwater: groundwaterDepth != null
+          ? { condition: 'specified', depthM: groundwaterDepth, note: 'Groundwater depth from GroundModel evidence; retaining-wall route remains contract-only.' }
+          : { condition: 'not_modelled', note: 'Groundwater not present in GroundModel; retaining-wall route remains contract-only.' },
+      };
+      command = 'geotech fem draft retaining-wall-excavation-support --input <json>';
+      break;
+    }
+    case 'fem-seepage-groundwater-coupling': {
+      missingUserInputs.push(
+        'upstream/downstream heads',
+        'piezometric surfaces',
+        'permeability values',
+        'drainage or pump assumptions',
+        'coupling mode and review limits',
+      );
+      draftInput = {
+        objective: 'seepage-groundwater-coupling',
+        useDemoDefaults: false,
+        material: {
+          elasticModulusKpa: findNumericParameter(model, /elastic|modulus|\bes\b/i) ?? estimateElasticModulusFromSpt(model),
+          unitWeightKnM3: unitWeight,
+          poissonRatio: 0.3,
+        },
+        groundwater: groundwaterDepth != null
+          ? { condition: 'specified', depthM: groundwaterDepth, note: 'Groundwater depth from GroundModel evidence; seepage route remains contract-only.' }
+          : { condition: 'not_modelled', note: 'Groundwater not present in GroundModel; seepage route remains contract-only.' },
+      };
+      command = 'geotech fem draft seepage-groundwater-coupling --input <json>';
+      break;
+    }
+    case 'fem-staged-settlement-consolidation': {
+      missingUserInputs.push(
+        'load or fill stages',
+        'stage durations',
+        'foundation footprint',
+        'drainage path assumptions',
+        'target settlement or monitoring triggers',
+      );
+      draftInput = {
+        objective: 'staged-settlement-consolidation',
+        useDemoDefaults: false,
+        material: {
+          elasticModulusKpa: findNumericParameter(model, /elastic|modulus|\bes\b/i) ?? estimateElasticModulusFromSpt(model),
+          unitWeightKnM3: unitWeight,
+          poissonRatio: 0.3,
+        },
+        groundwater: groundwaterDepth != null
+          ? { condition: 'specified', depthM: groundwaterDepth, note: 'Groundwater depth from GroundModel evidence; staged settlement route remains contract-only.' }
+          : { condition: 'not_modelled', note: 'Groundwater not present in GroundModel; staged settlement route remains contract-only.' },
+      };
+      command = 'geotech fem draft staged-settlement-consolidation --input <json>';
       break;
     }
     case 'pile-capacity':

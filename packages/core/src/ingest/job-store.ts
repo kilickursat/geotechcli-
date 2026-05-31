@@ -203,6 +203,11 @@ function asOptionalNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
+function asRatio(value: unknown): number | undefined {
+  const parsed = asOptionalNumber(value);
+  return parsed == null ? undefined : Math.max(0, Math.min(1, Math.round(parsed * 1000) / 1000));
+}
+
 function isPersistedIngestJobStatus(value: unknown): value is PersistedIngestJobStatus {
   return value === 'queued' || value === 'running' || value === 'completed' || value === 'failed' || value === 'canceled';
 }
@@ -253,8 +258,216 @@ function normalizeEvidenceCacheAudit(value: unknown): GeotechDocumentPageEvidenc
     preprocessingVersion,
     schemaVersion,
     createdAt: asOptionalString(value.createdAt),
+    preprocessing: normalizePreprocessingMetadata(value.preprocessing),
     reason: asOptionalString(value.reason),
   };
+}
+
+function normalizePreprocessingMetadata(value: unknown): GeotechDocumentPageEvidenceCacheAudit['preprocessing'] {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const schemaVersion = asOptionalNumber(value.schemaVersion);
+  const pipelineVersion = asOptionalString(value.pipelineVersion);
+  const policy = asOptionalString(value.policy);
+  const transformed = typeof value.transformed === 'boolean' ? value.transformed : undefined;
+  const input = normalizePreprocessingImageMetadata(value.input);
+  const output = normalizePreprocessingImageMetadata(value.output);
+  const quality = normalizePreprocessingQuality(value.quality);
+  if (
+    schemaVersion !== 1
+    || !pipelineVersion
+    || (policy !== 'none' && policy !== 'ocr-optimized')
+    || transformed === undefined
+    || !input
+    || !output
+  ) {
+    return undefined;
+  }
+
+  return {
+    schemaVersion: 1,
+    pipelineVersion,
+    policy,
+    transformed,
+    input,
+    output,
+    operations: normalizeStringArray(value.operations),
+    regions: normalizePreprocessingRegions(value.regions),
+    ...(quality ? { quality } : {}),
+    warnings: normalizeStringArray(value.warnings),
+  };
+}
+
+function normalizePreprocessingImageMetadata(value: unknown): NonNullable<GeotechDocumentPageEvidenceCacheAudit['preprocessing']>['input'] | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const mimeType = asOptionalString(value.mimeType);
+  const byteLength = asOptionalNumber(value.byteLength);
+  if (!mimeType || byteLength == null || byteLength < 0) {
+    return undefined;
+  }
+
+  const width = asOptionalNumber(value.width);
+  const height = asOptionalNumber(value.height);
+  return {
+    mimeType,
+    byteLength: Math.round(byteLength),
+    ...(width != null ? { width: Math.round(width) } : {}),
+    ...(height != null ? { height: Math.round(height) } : {}),
+  };
+}
+
+function normalizePreprocessingRegions(value: unknown): NonNullable<GeotechDocumentPageEvidenceCacheAudit['preprocessing']>['regions'] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((entry): NonNullable<GeotechDocumentPageEvidenceCacheAudit['preprocessing']>['regions'] => {
+    if (!isRecord(entry)) {
+      return [];
+    }
+    const id = asOptionalString(entry.id);
+    const label = asOptionalString(entry.label);
+    const source = asOptionalString(entry.source);
+    if (!id || !label || source !== 'preprocessing') {
+      return [];
+    }
+    const bbox2d = normalizeBbox(entry.bbox2d);
+    const coverageRatio = asOptionalNumber(entry.coverageRatio);
+    const asset = normalizePreprocessingRegionAsset(entry.asset);
+    const quality = normalizePreprocessingRegionQuality(entry.quality);
+    return [{
+      id,
+      source: 'preprocessing',
+      label,
+      ...(bbox2d ? { bbox2d } : {}),
+      ...(coverageRatio != null ? { coverageRatio: Math.max(0, Math.min(1, coverageRatio)) } : {}),
+      ...(quality ? { quality } : {}),
+      ...(asset ? { asset } : {}),
+    }];
+  });
+}
+
+function normalizePreprocessingRegionAsset(value: unknown): NonNullable<NonNullable<GeotechDocumentPageEvidenceCacheAudit['preprocessing']>['regions'][number]['asset']> | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const mimeType = asOptionalString(value.mimeType);
+  const byteLength = asOptionalNumber(value.byteLength);
+  const sha256 = asOptionalString(value.sha256);
+  if (!mimeType || byteLength == null || byteLength < 0 || !sha256 || !/^[a-f0-9]{64}$/i.test(sha256)) {
+    return undefined;
+  }
+
+  const width = asOptionalNumber(value.width);
+  const height = asOptionalNumber(value.height);
+  const cacheRelativePath = asOptionalString(value.cacheRelativePath);
+  return {
+    mimeType,
+    byteLength: Math.round(byteLength),
+    sha256: sha256.toLowerCase(),
+    ...(width != null ? { width: Math.round(width) } : {}),
+    ...(height != null ? { height: Math.round(height) } : {}),
+    ...(typeof value.normalized === 'boolean' ? { normalized: value.normalized } : {}),
+    ...(cacheRelativePath ? { cacheRelativePath } : {}),
+  };
+}
+
+function normalizePreprocessingQuality(value: unknown): NonNullable<GeotechDocumentPageEvidenceCacheAudit['preprocessing']>['quality'] | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const score = asRatio(value.score);
+  const contentCoverageRatio = asRatio(value.contentCoverageRatio);
+  const darkPixelRatio = asRatio(value.darkPixelRatio);
+  const regionCoverageRatio = asRatio(value.regionCoverageRatio);
+  const regionCount = asOptionalNumber(value.regionCount);
+  const cropAssetCount = asOptionalNumber(value.cropAssetCount);
+  const deskew = normalizePreprocessingDeskew(value.deskew);
+  if (
+    score == null
+    || contentCoverageRatio == null
+    || darkPixelRatio == null
+    || regionCoverageRatio == null
+    || regionCount == null
+    || cropAssetCount == null
+    || !deskew
+  ) {
+    return undefined;
+  }
+  return {
+    score,
+    contentCoverageRatio,
+    darkPixelRatio,
+    regionCoverageRatio,
+    regionCount: Math.max(0, Math.round(regionCount)),
+    cropAssetCount: Math.max(0, Math.round(cropAssetCount)),
+    deskew,
+    warnings: normalizeStringArray(value.warnings),
+  };
+}
+
+function normalizePreprocessingDeskew(value: unknown): NonNullable<NonNullable<GeotechDocumentPageEvidenceCacheAudit['preprocessing']>['quality']>['deskew'] | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const method = asOptionalString(value.method);
+  const angleDeg = asOptionalNumber(value.angleDeg);
+  const confidence = asRatio(value.confidence);
+  const applied = typeof value.applied === 'boolean' ? value.applied : undefined;
+  if (method !== 'projection-profile' || angleDeg == null || confidence == null || applied === undefined) {
+    return undefined;
+  }
+  return {
+    method,
+    angleDeg: Math.round(angleDeg * 100) / 100,
+    confidence,
+    applied,
+  };
+}
+
+function normalizePreprocessingRegionQuality(value: unknown): NonNullable<GeotechDocumentPageEvidenceCacheAudit['preprocessing']>['regions'][number]['quality'] | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const score = asRatio(value.score);
+  const darkPixelRatio = asRatio(value.darkPixelRatio);
+  const lineDensity = asRatio(value.lineDensity);
+  const coverageRatio = asRatio(value.coverageRatio);
+  if (score == null || darkPixelRatio == null || lineDensity == null || coverageRatio == null) {
+    return undefined;
+  }
+  return {
+    score,
+    darkPixelRatio,
+    lineDensity,
+    coverageRatio,
+    warnings: normalizeStringArray(value.warnings),
+  };
+}
+
+function normalizeBbox(value: unknown): [number, number, number, number] | undefined {
+  if (!Array.isArray(value) || value.length !== 4) {
+    return undefined;
+  }
+  const numbers = value.map((item) => asOptionalNumber(item));
+  return numbers.every((item) => item != null)
+    ? numbers as [number, number, number, number]
+    : undefined;
+}
+
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return [...new Set(value.flatMap((item) => {
+    const normalized = asOptionalString(item);
+    return normalized ? [normalized] : [];
+  }))];
 }
 
 function normalizePageCheckpoint(value: unknown, index: number, now: string): PersistedIngestJobPageCheckpoint | null {

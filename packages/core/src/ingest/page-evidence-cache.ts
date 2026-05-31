@@ -5,9 +5,13 @@ import { dirname, join } from 'node:path';
 import type { LLMConfig } from '../llm/types.js';
 import type { DocumentTextHintSource } from '../vision/ocr.js';
 import type { GlmOcrLayoutPage, GlmOcrLayoutElement } from '../vision/layout-ocr.js';
+import {
+  resolveVisionImagePreprocessPolicy,
+  type VisionImagePreprocessMetadata,
+} from '../vision/preprocess.js';
 
 export const PAGE_EVIDENCE_CACHE_SCHEMA_VERSION = 2;
-export const PAGE_EVIDENCE_PREPROCESSING_VERSION = 'page-evidence-preprocess-v2';
+export const PAGE_EVIDENCE_PREPROCESSING_VERSION = 'page-evidence-preprocess-v4';
 
 const CACHE_DIR_NAME = 'page-evidence-cache';
 
@@ -25,6 +29,7 @@ export interface PageEvidenceCacheEntry {
   source: DocumentTextHintSource;
   warnings: string[];
   transformed: boolean;
+  preprocessing?: VisionImagePreprocessMetadata;
   layoutSummary?: string;
   layoutPages?: GlmOcrLayoutPage[];
   extractionResult?: unknown;
@@ -36,6 +41,7 @@ export interface WritePageEvidenceCacheInput {
   source: DocumentTextHintSource;
   warnings?: string[];
   transformed: boolean;
+  preprocessing?: VisionImagePreprocessMetadata | null;
   layoutSummary?: string | null;
   layoutPages?: GlmOcrLayoutPage[] | null;
   extractionResult?: unknown;
@@ -69,9 +75,11 @@ export function buildPageEvidenceModelVersion(config: ModelVersionConfig): strin
 export function buildPageEvidencePreprocessingVersion(
   config: PreprocessingVersionConfig,
   pipelineVersion = PAGE_EVIDENCE_PREPROCESSING_VERSION,
+  preprocessingMode = resolveVisionImagePreprocessPolicy(),
 ): string {
   return `preprocess-${hashString(canonicalJson({
     pipelineVersion,
+    preprocessingMode,
     provider: config.provider,
     baseUrl: normalizeOptionalString(config.baseUrl),
   })).slice(0, 24)}`;
@@ -97,6 +105,13 @@ export function getPageEvidenceCachePath(parts: PageEvidenceCacheKeyParts): stri
   return join(getPageEvidenceCacheDir(), `${buildPageEvidenceCacheKey(parts)}.json`);
 }
 
+export function getPageEvidenceCacheAssetPath(cacheRelativePath: string): string {
+  const normalized = cacheRelativePath
+    .split(/[\\/]+/)
+    .filter(Boolean);
+  return join(getPageEvidenceCacheDir(), ...normalized);
+}
+
 export function readPageEvidenceCache(parts: PageEvidenceCacheKeyParts): PageEvidenceCacheEntry | null {
   const cachePath = getPageEvidenceCachePath(parts);
   if (!existsSync(cachePath)) {
@@ -116,7 +131,7 @@ export function writePageEvidenceCache(
   evidence: WritePageEvidenceCacheInput,
   options: WritePageEvidenceCacheOptions = {},
 ): PageEvidenceCacheEntry {
-  const entry = buildCompactEntry(evidence, options.now);
+  const entry = buildCompactEntry(evidence, options.now, parts);
   const cachePath = getPageEvidenceCachePath(parts);
   atomicWriteJson(cachePath, entry);
   return entry;
@@ -164,6 +179,7 @@ function atomicWriteJson(filePath: string, value: unknown): void {
 function buildCompactEntry(
   evidence: WritePageEvidenceCacheInput,
   now: (() => Date) | undefined,
+  parts?: PageEvidenceCacheKeyParts,
 ): PageEvidenceCacheEntry {
   const entry: PageEvidenceCacheEntry = {
     source: evidence.source,
@@ -180,6 +196,11 @@ function buildCompactEntry(
   const layoutSummary = normalizeOptionalString(evidence.layoutSummary);
   if (layoutSummary) {
     entry.layoutSummary = layoutSummary;
+  }
+
+  const preprocessing = normalizePreprocessingMetadata(evidence.preprocessing, parts);
+  if (preprocessing) {
+    entry.preprocessing = preprocessing;
   }
 
   const layoutPages = normalizeLayoutPages(evidence.layoutPages);
@@ -231,6 +252,11 @@ function parsePageEvidenceCacheEntry(value: unknown): PageEvidenceCacheEntry | n
   const layoutSummary = normalizeOptionalString(value.layoutSummary);
   if (layoutSummary) {
     entry.layoutSummary = layoutSummary;
+  }
+
+  const preprocessing = normalizePreprocessingMetadata(value.preprocessing);
+  if (preprocessing) {
+    entry.preprocessing = preprocessing;
   }
 
   const layoutPages = normalizeLayoutPages(value.layoutPages);
@@ -298,6 +324,238 @@ function normalizeLayoutPages(value: unknown): GlmOcrLayoutPage[] {
   });
 }
 
+function normalizePreprocessingMetadata(
+  value: unknown,
+  parts?: PageEvidenceCacheKeyParts,
+): VisionImagePreprocessMetadata | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const schemaVersion = normalizeNullableNumber(value.schemaVersion);
+  const pipelineVersion = normalizeOptionalString(value.pipelineVersion);
+  const policy = normalizeOptionalString(value.policy);
+  const transformed = typeof value.transformed === 'boolean' ? value.transformed : null;
+  const input = normalizePreprocessImageMetadata(value.input);
+  const output = normalizePreprocessImageMetadata(value.output);
+  const quality = normalizePreprocessQuality(value.quality);
+  if (
+    schemaVersion !== 1
+    || !pipelineVersion
+    || (policy !== 'none' && policy !== 'ocr-optimized')
+    || transformed == null
+    || !input
+    || !output
+  ) {
+    return undefined;
+  }
+
+  return {
+    schemaVersion: 1,
+    pipelineVersion,
+    policy,
+    transformed,
+    input,
+    output,
+    operations: normalizeStringArray(value.operations),
+    regions: normalizePreprocessRegions(value.regions, parts),
+    ...(quality ? { quality } : {}),
+    warnings: normalizeWarnings(Array.isArray(value.warnings) ? value.warnings : []),
+  };
+}
+
+function normalizePreprocessImageMetadata(value: unknown): VisionImagePreprocessMetadata['input'] | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const mimeType = normalizeOptionalString(value.mimeType);
+  const byteLength = normalizeNullableNumber(value.byteLength);
+  if (!mimeType || byteLength == null || byteLength < 0) {
+    return undefined;
+  }
+  const width = normalizeNullableNumber(value.width);
+  const height = normalizeNullableNumber(value.height);
+  return {
+    mimeType,
+    byteLength: Math.round(byteLength),
+    ...(width != null ? { width: Math.round(width) } : {}),
+    ...(height != null ? { height: Math.round(height) } : {}),
+  };
+}
+
+function normalizePreprocessRegions(
+  value: unknown,
+  parts?: PageEvidenceCacheKeyParts,
+): VisionImagePreprocessMetadata['regions'] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((entry): VisionImagePreprocessMetadata['regions'] => {
+    if (!isRecord(entry)) {
+      return [];
+    }
+    const id = normalizeOptionalString(entry.id);
+    const label = normalizeOptionalString(entry.label);
+    const source = normalizeOptionalString(entry.source);
+    if (!id || !label || source !== 'preprocessing') {
+      return [];
+    }
+    const coverageRatio = normalizeNullableNumber(entry.coverageRatio);
+    const bbox2d = normalizeLayoutBbox(entry.bbox2d);
+    const asset = normalizePreprocessRegionAsset(entry.asset, parts, id);
+    const quality = normalizePreprocessRegionQuality(entry.quality);
+    return [{
+      id,
+      source: 'preprocessing',
+      label,
+      ...(bbox2d ? { bbox2d } : {}),
+      ...(coverageRatio != null ? { coverageRatio: Math.max(0, Math.min(1, coverageRatio)) } : {}),
+      ...(quality ? { quality } : {}),
+      ...(asset ? { asset } : {}),
+    }];
+  });
+}
+
+function normalizePreprocessRegionAsset(
+  value: unknown,
+  parts: PageEvidenceCacheKeyParts | undefined,
+  regionId: string,
+): NonNullable<VisionImagePreprocessMetadata['regions'][number]['asset']> | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const dataBase64 = normalizeOptionalString(value.dataBase64);
+  if (dataBase64 && parts) {
+    const buffer = Buffer.from(dataBase64, 'base64');
+    if (buffer.length === 0) {
+      return undefined;
+    }
+    const sha256 = hashBuffer(buffer);
+    const cacheRelativePath = buildRegionAssetRelativePath(parts, regionId, sha256);
+    const assetPath = getPageEvidenceCacheAssetPath(cacheRelativePath);
+    ensureParentDir(assetPath);
+    writeFileSync(assetPath, buffer);
+    const width = normalizeNullableNumber(value.width);
+    const height = normalizeNullableNumber(value.height);
+    return {
+      mimeType: 'image/png',
+      byteLength: buffer.length,
+      sha256,
+      ...(width != null ? { width: Math.round(width) } : {}),
+      ...(height != null ? { height: Math.round(height) } : {}),
+      ...(typeof value.normalized === 'boolean' ? { normalized: value.normalized } : {}),
+      cacheRelativePath,
+    };
+  }
+
+  const mimeType = normalizeOptionalString(value.mimeType);
+  const byteLength = normalizeNullableNumber(value.byteLength);
+  const sha256 = normalizeOptionalString(value.sha256);
+  if (!mimeType || byteLength == null || byteLength < 0 || !/^[a-f0-9]{64}$/i.test(sha256)) {
+    return undefined;
+  }
+  const width = normalizeNullableNumber(value.width);
+  const height = normalizeNullableNumber(value.height);
+  const cacheRelativePath = normalizeOptionalString(value.cacheRelativePath);
+  return {
+    mimeType,
+    byteLength: Math.round(byteLength),
+    sha256: sha256.toLowerCase(),
+    ...(width != null ? { width: Math.round(width) } : {}),
+    ...(height != null ? { height: Math.round(height) } : {}),
+    ...(typeof value.normalized === 'boolean' ? { normalized: value.normalized } : {}),
+    ...(cacheRelativePath ? { cacheRelativePath } : {}),
+  };
+}
+
+function normalizePreprocessQuality(value: unknown): VisionImagePreprocessMetadata['quality'] | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const score = normalizeRatioNumber(value.score);
+  const contentCoverageRatio = normalizeRatioNumber(value.contentCoverageRatio);
+  const darkPixelRatio = normalizeRatioNumber(value.darkPixelRatio);
+  const regionCoverageRatio = normalizeRatioNumber(value.regionCoverageRatio);
+  const regionCount = normalizeNullableNumber(value.regionCount);
+  const cropAssetCount = normalizeNullableNumber(value.cropAssetCount);
+  const deskew = normalizePreprocessDeskew(value.deskew);
+  if (
+    score == null
+    || contentCoverageRatio == null
+    || darkPixelRatio == null
+    || regionCoverageRatio == null
+    || regionCount == null
+    || cropAssetCount == null
+    || !deskew
+  ) {
+    return undefined;
+  }
+  return {
+    score,
+    contentCoverageRatio,
+    darkPixelRatio,
+    regionCoverageRatio,
+    regionCount: Math.max(0, Math.round(regionCount)),
+    cropAssetCount: Math.max(0, Math.round(cropAssetCount)),
+    deskew,
+    warnings: normalizeStringArray(value.warnings),
+  };
+}
+
+function normalizePreprocessDeskew(value: unknown): NonNullable<VisionImagePreprocessMetadata['quality']>['deskew'] | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const method = normalizeOptionalString(value.method);
+  const angleDeg = normalizeNullableNumber(value.angleDeg);
+  const confidence = normalizeRatioNumber(value.confidence);
+  const applied = typeof value.applied === 'boolean' ? value.applied : null;
+  if (method !== 'projection-profile' || angleDeg == null || confidence == null || applied == null) {
+    return undefined;
+  }
+  return {
+    method,
+    angleDeg: Math.round(angleDeg * 100) / 100,
+    confidence,
+    applied,
+  };
+}
+
+function normalizePreprocessRegionQuality(value: unknown): VisionImagePreprocessMetadata['regions'][number]['quality'] | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const score = normalizeRatioNumber(value.score);
+  const darkPixelRatio = normalizeRatioNumber(value.darkPixelRatio);
+  const lineDensity = normalizeRatioNumber(value.lineDensity);
+  const coverageRatio = normalizeRatioNumber(value.coverageRatio);
+  if (score == null || darkPixelRatio == null || lineDensity == null || coverageRatio == null) {
+    return undefined;
+  }
+  return {
+    score,
+    darkPixelRatio,
+    lineDensity,
+    coverageRatio,
+    warnings: normalizeStringArray(value.warnings),
+  };
+}
+
+function buildRegionAssetRelativePath(
+  parts: PageEvidenceCacheKeyParts,
+  regionId: string,
+  sha256: string,
+): string {
+  const key = buildPageEvidenceCacheKey(parts);
+  const safeRegionId = regionId
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48) || 'region';
+  return `assets/${key}/${safeRegionId}-${sha256.slice(0, 16)}.png`;
+}
+
 function normalizeLayoutElements(value: unknown): GlmOcrLayoutElement[] {
   if (!Array.isArray(value)) {
     return [];
@@ -349,6 +607,11 @@ function normalizeStringArray(value: unknown): string[] {
 function normalizeNullableNumber(value: unknown): number | null {
   const parsed = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeRatioNumber(value: unknown): number | null {
+  const parsed = normalizeNullableNumber(value);
+  return parsed == null ? null : Math.max(0, Math.min(1, Math.round(parsed * 1000) / 1000));
 }
 
 function normalizePositiveInteger(value: unknown): number | null {

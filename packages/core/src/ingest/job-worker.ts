@@ -263,6 +263,7 @@ function buildWorkerPageEvidenceCacheAudit(
     preprocessingVersion: context.parts.preprocessingVersion,
     schemaVersion: context.parts.schemaVersion ?? PAGE_EVIDENCE_CACHE_SCHEMA_VERSION,
     createdAt: entry?.createdAt,
+    preprocessing: entry?.preprocessing,
     reason,
   };
 }
@@ -1685,6 +1686,7 @@ async function processGeotechDocumentPage(
   let pageTextHint: string | undefined;
   let ocrSource: PersistedIngestJobPageCheckpoint['ocrSource'] = 'none';
   let ocrWarnings: string[] = [];
+  let ocrPreprocessing = cachedEvidence?.preprocessing;
   let textRecoveryAttempted = false;
   const cachedResult = asCachedGeotechDocumentInsight(cachedEvidence?.extractionResult);
   if (cachedResult) {
@@ -1735,6 +1737,7 @@ async function processGeotechDocumentPage(
       pageTextHint = normalizeTextHint(recovery.textHint);
       ocrSource = recovery.source;
       ocrWarnings = recovery.warnings;
+      ocrPreprocessing = recovery.preprocessing;
       if (recovery.layout) {
         ocrWarnings = uniqueStrings([
           ...ocrWarnings,
@@ -1797,6 +1800,7 @@ async function processGeotechDocumentPage(
       source: ocrSource ?? 'none',
       warnings: ocrWarnings,
       transformed: false,
+      preprocessing: ocrPreprocessing,
       extractionResult: result,
     }, dependencies.now);
     evidenceCache = stored.entry
@@ -1808,6 +1812,7 @@ async function processGeotechDocumentPage(
       source: ocrSource ?? 'none',
       warnings: ocrWarnings,
       transformed: cachedEvidence.transformed,
+      preprocessing: ocrPreprocessing,
       layoutSummary: cachedEvidence.layoutSummary,
       extractionResult: result,
       createdAt: cachedEvidence.createdAt,

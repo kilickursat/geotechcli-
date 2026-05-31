@@ -32,6 +32,27 @@ function normalizeObjective(value: unknown): FemRouteObjective | undefined {
     case 'pile-group':
     case 'pile-interaction':
       return 'pile-group-elastic-interaction';
+    case 'slope-embankment-deformation':
+    case 'slope-embankment':
+    case 'embankment-deformation':
+    case 'slope-deformation':
+    case 'embankment':
+      return 'slope-embankment-deformation';
+    case 'retaining-wall-excavation-support':
+    case 'retaining-wall':
+    case 'excavation-support':
+    case 'wall-support':
+      return 'retaining-wall-excavation-support';
+    case 'seepage-groundwater-coupling':
+    case 'seepage':
+    case 'groundwater-coupling':
+    case 'groundwater-sensitive':
+      return 'seepage-groundwater-coupling';
+    case 'staged-settlement-consolidation':
+    case 'staged-settlement':
+    case 'consolidation':
+    case 'settlement-consolidation':
+      return 'staged-settlement-consolidation';
     default:
       return undefined;
   }
@@ -41,6 +62,8 @@ function summarizeFemDraftForAgent(draft: FemAnalysisCaseDraft): string {
   return [
     `FEM objective: ${draft.objective}`,
     `implemented: ${draft.implemented ? 'yes' : 'no'}`,
+    `execution mode: ${draft.capability.executionMode}`,
+    `agent run allowed: ${draft.capability.agentRunAllowed ? 'yes' : 'no'}`,
     `recommended action: ${draft.recommendedAction}`,
     `canAutoProceed: ${draft.canAutoProceed ? 'yes' : 'no'}`,
     `missing inputs: ${draft.missingUserInputs.join(', ') || 'none'}`,
@@ -76,6 +99,10 @@ toolRegistry.register(
             'shaft-deformation',
             'tunnel-volume-loss-settlement',
             'pile-group-elastic-interaction',
+            'slope-embankment-deformation',
+            'retaining-wall-excavation-support',
+            'seepage-groundwater-coupling',
+            'staged-settlement-consolidation',
           ],
           description: 'Optional FEM objective filter.',
         },
@@ -90,7 +117,7 @@ toolRegistry.register(
       data: {
         schemaVersion: 'fem-capability-list.v1',
         capabilities,
-        operatingRule: 'LLMs may plan and review FEM routes, but FEM math must come from geotechCLI deterministic contracts, validators, and approved solvers.',
+        operatingRule: 'LLMs may plan and review FEM routes, but FEM math must come from geotechCLI deterministic contracts, validators, and approved solvers. Agent tool calls cannot run FEM; only a human-reviewed CLI run with --experimental can execute implemented preview routes.',
       },
       summary: `FEM capabilities: ${capabilities.map((item) => `${item.objective} (${item.status})`).join(', ') || 'none'}.`,
     };
@@ -114,6 +141,10 @@ toolRegistry.register(
             'shaft-deformation',
             'tunnel-volume-loss-settlement',
             'pile-group-elastic-interaction',
+            'slope-embankment-deformation',
+            'retaining-wall-excavation-support',
+            'seepage-groundwater-coupling',
+            'staged-settlement-consolidation',
           ],
           description: 'FEM objective to route.',
         },
@@ -125,22 +156,76 @@ toolRegistry.register(
         geometry: {
           type: 'object',
           description: 'Explicit geometry inputs. For foundation-settlement: raftLengthM, raftWidthM, raftThicknessM, domainLengthM, domainWidthM, domainDepthM. For excavation-deformation: excavationLengthM, excavationWidthM, excavationFinalDepthM, wallToeDepthM, plus optional domain dimensions. For tunnel-volume-loss-settlement: tunnelDiameterM, tunnelAxisDepthM, tunnelLengthM, tunnelVolumeLossPercent, troughWidthParameterK, optional tunnelCenterXM/tunnelCenterYM, plus optional domain dimensions.',
+          additionalProperties: false,
+          properties: {
+            raftLengthM: { type: 'number' },
+            raftWidthM: { type: 'number' },
+            raftThicknessM: { type: 'number' },
+            domainLengthM: { type: 'number' },
+            domainWidthM: { type: 'number' },
+            domainDepthM: { type: 'number' },
+            excavationLengthM: { type: 'number' },
+            excavationWidthM: { type: 'number' },
+            excavationFinalDepthM: { type: 'number' },
+            wallToeDepthM: { type: 'number' },
+            tunnelDiameterM: { type: 'number' },
+            tunnelAxisDepthM: { type: 'number' },
+            tunnelLengthM: { type: 'number' },
+            tunnelCenterXM: { type: 'number' },
+            tunnelCenterYM: { type: 'number' },
+            tunnelVolumeLossPercent: { type: 'number' },
+            troughWidthParameterK: { type: 'number' },
+          },
         },
         load: {
           type: 'object',
           description: 'Explicit load inputs. For foundation-settlement: raft pressureKpa. For excavation-deformation: surcharge pressureKpa.',
+          additionalProperties: false,
+          properties: {
+            pressureKpa: { type: 'number' },
+          },
         },
         excavation: {
           type: 'object',
           description: 'Excavation staging inputs: stageDepthsM, supportLevelsM, wallType.',
+          additionalProperties: false,
+          properties: {
+            stageDepthsM: {
+              type: 'array',
+              items: { type: 'number' },
+            },
+            supportLevelsM: {
+              type: 'array',
+              items: { type: 'number' },
+            },
+            wallType: {
+              type: 'string',
+              enum: ['diaphragm_wall', 'secant_pile_wall', 'soldier_pile_lagging', 'unsupported_screening'],
+            },
+          },
         },
         material: {
           type: 'object',
           description: 'Explicit material inputs: elasticModulusKpa, poissonRatio, unitWeightKnM3.',
+          additionalProperties: false,
+          properties: {
+            elasticModulusKpa: { type: 'number' },
+            poissonRatio: { type: 'number' },
+            unitWeightKnM3: { type: 'number' },
+          },
         },
         groundwater: {
           type: 'object',
           description: 'Groundwater assumption: condition, depthM, note.',
+          additionalProperties: false,
+          properties: {
+            condition: {
+              type: 'string',
+              enum: ['not_modelled', 'below_domain', 'specified'],
+            },
+            depthM: { type: 'number' },
+            note: { type: 'string' },
+          },
         },
         evidenceRefs: {
           type: 'array',

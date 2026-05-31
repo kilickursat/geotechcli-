@@ -38,10 +38,13 @@ import {
   generateText,
   routeProjectWorkflowRequest,
   runProjectWorkflow,
+  analyzeSignalFile,
   type ProjectManifest,
+  type ProjectWorkflowRun,
   type ProjectWorkflowRouteModelCall,
   type ProjectWorkflowRoutePlan,
   type ProjectWorkflowTask,
+  type SignalAnalysisType,
   type WorkspaceRoot,
   type GeneratedReport,
   type AgentStep,
@@ -142,6 +145,7 @@ type ProjectAgentTask =
   | 'risk-analysis'
   | 'anomaly-detection'
   | 'recommendations'
+  | 'signal-analysis'
   | 'visualization'
   | 'custom-question';
 
@@ -223,6 +227,11 @@ const PROJECT_AGENT_TASKS: Array<{ task: ProjectAgentTask; label: string; prompt
     prompt: 'Prepare preliminary geotechnical recommendations from the attached workspace manifest. Clearly mark what is evidence-backed, assumption-bound, or blocked by missing inputs.',
   },
   {
+    task: 'signal-analysis',
+    label: 'Signal analysis',
+    prompt: 'Route monitoring, instrumentation, settlement, piezometer, inclinometer, vibration, and load-test files into deterministic geotech signal analyze commands. Summarize available sources, missing threshold assumptions, and review gates without inventing signal metrics.',
+  },
+  {
     task: 'visualization',
     label: 'Visualizations and maps',
     prompt: 'Plan deterministic geotechnical visualizations from the attached workspace manifest. Include maps, strip logs, SPT-depth plots, lab charts, groundwater plots, and blocked CRS/data gates.',
@@ -288,6 +297,26 @@ function normalizeProjectTask(value: unknown): ProjectAgentTask | undefined {
     case 'fem-foundation-settlement':
     case 'fem-excavation':
     case 'fem-excavation-deformation':
+    case 'fem-tunnel':
+    case 'fem-tunnel-settlement':
+    case 'fem-tunnel-volume-loss-settlement':
+    case 'fem-shaft':
+    case 'fem-shaft-deformation':
+    case 'fem-pile-group':
+    case 'fem-pile-group-elastic-interaction':
+    case 'fem-slope':
+    case 'fem-slope-embankment':
+    case 'fem-slope-embankment-deformation':
+    case 'fem-embankment':
+    case 'fem-retaining-wall':
+    case 'fem-retaining-wall-excavation-support':
+    case 'fem-excavation-support':
+    case 'fem-seepage':
+    case 'fem-seepage-groundwater-coupling':
+    case 'fem-groundwater-coupling':
+    case 'fem-staged-settlement':
+    case 'fem-staged-settlement-consolidation':
+    case 'fem-consolidation':
       return 'calculation-readiness';
     case 'risk':
     case 'risk-analysis':
@@ -300,6 +329,24 @@ function normalizeProjectTask(value: unknown): ProjectAgentTask | undefined {
     case 'recommendations':
     case 'foundation-recommendations':
       return 'recommendations';
+    case 'signal':
+    case 'signals':
+    case 'signal-analysis':
+    case 'signal-analytics':
+    case 'monitoring':
+    case 'monitoring-analysis':
+    case 'time-series':
+    case 'timeseries':
+    case 'instrumentation':
+    case 'piezometer':
+    case 'piezometers':
+    case 'inclinometer':
+    case 'inclinometers':
+    case 'vibration':
+    case 'load-test':
+    case 'load-tests':
+    case 'pile-load-test':
+      return 'signal-analysis';
     case 'viz':
     case 'visualize':
     case 'visualization':
@@ -354,10 +401,11 @@ function inferProjectIntent(rawPrompt: string, selectedTask?: ProjectAgentTask):
   };
   add('data-quality', /\b(?:data quality|inventory|missing data|quality report|duplicate)\b/);
   add('ground-model', /\b(?:ground model|interpret|strata|stratigraphy|lithology|hydrogeology)\b/);
-  add('calculation-readiness', /\b(?:calculation readiness|calculation route|calculation routing|design readiness|design route|bearing(?: capacity| calculation| readiness)?|settlement(?: calculation| readiness)?|pile(?: capacity| calculation| readiness)?|liquefaction(?: calculation| readiness)?|slope(?: stability| calculation| readiness)?|fem(?: draft| readiness| foundation settlement| excavation deformation)?|ready for calculation|ready for design)\b/);
+  add('calculation-readiness', /\b(?:calculation readiness|calculation route|calculation routing|design readiness|design route|bearing(?: capacity| calculation| readiness)?|settlement(?: calculation| readiness| design| route| workflow)|pile(?: capacity| calculation| readiness)?|liquefaction(?: calculation| readiness)?|slope(?: stability| calculation| readiness)?|fem(?: draft| readiness| foundation settlement| excavation deformation)?|ready for calculation|ready for design)\b/);
   add('risk-analysis', /\b(?:risk|hazard|limitation|uncertainty|mitigation)\b/);
   add('anomaly-detection', /\b(?:anomal\w*|conflict|outlier|inconsistent|inconsistency)\b/);
   add('recommendations', /\b(?:recommend|foundation option|advice|next action)\b/);
+  add('signal-analysis', /\b(?:signal analysis|signal analytics|monitoring analysis|time[-\s]?series|instrumentation|piezometer|pore pressure|inclinometer|vibration|accelerometer|settlement monitoring|monitoring trend|threshold|trigger level|load[-\s]?test)\b/);
   add('visualization', /\b(?:visual\w*|map|plot|chart|section|profile|strip log)\b/);
 
   const uniqueTasks = [...new Set(tasks)];
@@ -383,6 +431,9 @@ function projectReadinessFromManifest(manifest: ProjectManifest): ProjectAwarePl
   const hasGroundModel = Boolean(manifest.groundModel && manifest.groundModel.stats.evidenceRefs > 0);
   const hasCoordinates = Boolean(manifest.groundModel?.map?.points?.length);
   const hasVerifier = Boolean(manifest.verifier);
+  const signalSources = (manifest.summary.datasetTypes['monitoring-time-series'] ?? 0)
+    + (manifest.summary.datasetTypes['signal-record'] ?? 0)
+    + (manifest.summary.datasetTypes['pile-load-test'] ?? 0);
   const calculationWorkflows = manifest.verifier?.calculationReadiness.workflows ?? [];
   const readyWorkflowCount = calculationWorkflows.filter((workflow) => workflow.status !== 'blocked').length;
   const verifierMissing = calculationWorkflows.flatMap((workflow) => workflow.missing).slice(0, 8);
@@ -442,6 +493,15 @@ function projectReadinessFromManifest(manifest: ProjectManifest): ProjectAwarePl
         ? [`${readyWorkflowCount} calculation workflow(s) are ready or ready with assumptions.`]
         : ['No downstream calculation workflow is ready yet.'],
       missing: verifierMissing,
+    },
+    {
+      task: 'signal-analysis',
+      label: 'Signal analysis',
+      status: signalSources > 0 ? 'partially_ready' : 'blocked',
+      reasons: signalSources > 0
+        ? [`${signalSources} monitoring/signal/load-test source(s) can be routed into deterministic signal analysis.`]
+        : ['Signal analysis needs settlement, piezometer, inclinometer, vibration, load-test, or time-series data.'],
+      missing: signalSources > 0 ? ['project-specific thresholds / trigger levels'] : ['monitoring/signal CSV, TSV, or XLSX files'],
     },
     {
       task: 'visualization',
@@ -678,6 +738,196 @@ function relativeArtifactPath(rootPath: string, filePath: string): string {
   return rel && !rel.startsWith('..') ? rel : filePath;
 }
 
+type SignalWorkflowSource = {
+  file: ProjectManifest['files'][number];
+  label: string;
+  signalType: SignalAnalysisType;
+  sheetName?: string;
+};
+
+const SIGNAL_WORKFLOW_DATASET_TYPES = new Set(['monitoring-time-series', 'signal-record', 'pile-load-test']);
+
+function detectSignalWorkflowSources(manifest: ProjectManifest): SignalWorkflowSource[] {
+  const sources: SignalWorkflowSource[] = [];
+  const seen = new Set<string>();
+
+  for (const file of manifest.files) {
+    const schemas = file.schemas ?? [];
+    const matchingSchemas = schemas.filter((schema) => SIGNAL_WORKFLOW_DATASET_TYPES.has(schema.datasetType));
+    if (matchingSchemas.length > 0) {
+      for (const schema of matchingSchemas) {
+        const key = `${file.absolutePath}#${schema.sheetName ?? ''}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        sources.push({
+          file,
+          label: schema.sheetName ? `${file.path}#${schema.sheetName}` : file.path,
+          signalType: inferSignalWorkflowType(file, schema),
+          sheetName: schema.sheetName,
+        });
+      }
+      continue;
+    }
+
+    if (SIGNAL_WORKFLOW_DATASET_TYPES.has(file.classification.datasetType)) {
+      const key = `${file.absolutePath}#`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      sources.push({
+        file,
+        label: file.path,
+        signalType: inferSignalWorkflowType(file),
+      });
+    }
+  }
+
+  return sources;
+}
+
+function inferSignalWorkflowType(
+  file: ProjectManifest['files'][number],
+  schema?: NonNullable<ProjectManifest['files'][number]['schemas']>[number],
+): SignalAnalysisType {
+  if (schema?.datasetType === 'pile-load-test' || file.classification.datasetType === 'pile-load-test') return 'load-test';
+  const roles = new Set(schema?.columns.flatMap((column) => column.roles) ?? []);
+  if (roles.has('settlement')) return 'settlement';
+  if (roles.has('pore_pressure')) return 'piezometer';
+  if (roles.has('inclination')) return 'inclinometer';
+  if (roles.has('vibration')) return 'vibration';
+
+  const text = [file.path, file.classification.datasetType, ...file.classification.signals].join(' ').toLowerCase();
+  if (/\b(load[-_\s]?test|pile[-_\s]?load)\b/.test(text)) return 'load-test';
+  if (/\b(settlement|heave|subsidence)\b/.test(text)) return 'settlement';
+  if (/\b(piezometer|pore[-_\s]?pressure|groundwater|water[-_\s]?level)\b/.test(text)) return 'piezometer';
+  if (/\b(inclinometer|inclination|tilt|deflection)\b/.test(text)) return 'inclinometer';
+  if (/\b(vibration|accelerometer|seismic|fft|psd)\b/.test(text)) return 'vibration';
+  return 'unknown';
+}
+
+function signalArtifactSlug(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 64) || 'signal';
+}
+
+async function persistSignalAnalysisArtifacts(options: {
+  plan: ProjectAwarePlan;
+  manifest: ProjectManifest;
+  workflowRun: ProjectWorkflowRun;
+  runDir: string;
+}): Promise<void> {
+  if (options.workflowRun.task !== 'signal-analysis') return;
+
+  const sources = detectSignalWorkflowSources(options.manifest).slice(0, 12);
+  if (sources.length === 0) return;
+
+  const signalDir = join(options.runDir, 'signals');
+  mkdirSync(signalDir, { recursive: true });
+  const indexEntries: Array<Record<string, unknown>> = [];
+  let successCount = 0;
+  let failureCount = 0;
+
+  for (const [index, source] of sources.entries()) {
+    const artifactPath = join(
+      signalDir,
+      `${String(index + 1).padStart(2, '0')}-${signalArtifactSlug(source.label)}.analysis.json`,
+    );
+    const analyzeOptions = {
+      ...(source.signalType !== 'unknown' ? { type: source.signalType } : {}),
+      ...(source.sheetName ? { sheetName: source.sheetName } : {}),
+      maxRows: 5000,
+    };
+
+    try {
+      const result = await analyzeSignalFile(source.file.absolutePath, analyzeOptions);
+      writeFileSync(artifactPath, JSON.stringify(result, null, 2), 'utf-8');
+      successCount += 1;
+
+      const relativePath = relativeArtifactPath(options.plan.workspace.rootPath, artifactPath);
+      const status = result.warnings.length > 0 ? 'review' : 'pass';
+      indexEntries.push({
+        source: source.file.path,
+        absolutePath: source.file.absolutePath,
+        sheetName: source.sheetName,
+        status,
+        signalType: result.signalType,
+        rowsAnalyzed: result.source.rowsAnalyzed,
+        rowsRejected: result.source.rowsRejected,
+        series: result.series.length,
+        thresholdFlags: result.thresholdFlags.length,
+        missingIntervals: result.missingIntervals.length,
+        warnings: result.warnings,
+        artifact: relativePath,
+      });
+      options.workflowRun.artifacts.push({
+        kind: 'json',
+        path: relativePath,
+        description: `Deterministic signal analysis for ${source.label}`,
+      });
+      options.workflowRun.trace.steps.push({
+        type: 'tool_call',
+        name: 'signal.analyze_file',
+        status,
+        detail: `Analyzed ${source.label} into ${relativePath}.`,
+      });
+      options.workflowRun.toolCalls.push({
+        type: 'tool_call',
+        tool: 'signal.analyze_file',
+        status,
+        summary: `Analyzed ${source.label}: ${result.source.rowsAnalyzed} rows, ${result.series.length} series, ${result.thresholdFlags.length} threshold flag(s), ${result.missingIntervals.length} missing interval(s).`,
+      });
+    } catch (err) {
+      failureCount += 1;
+      const message = err instanceof Error ? err.message : String(err);
+      indexEntries.push({
+        source: source.file.path,
+        absolutePath: source.file.absolutePath,
+        sheetName: source.sheetName,
+        status: 'blocked',
+        signalType: source.signalType,
+        error: message,
+      });
+      options.workflowRun.trace.steps.push({
+        type: 'tool_call',
+        name: 'signal.analyze_file',
+        status: 'blocked',
+        detail: `Could not analyze ${source.label}: ${message}`,
+      });
+      options.workflowRun.toolCalls.push({
+        type: 'tool_call',
+        tool: 'signal.analyze_file',
+        status: 'blocked',
+        summary: `Could not analyze ${source.label}: ${message}`,
+      });
+    }
+  }
+
+  if (failureCount > 0) {
+    options.workflowRun.status = successCount > 0 && options.workflowRun.status !== 'blocked' ? 'review' : 'blocked';
+  }
+
+  const indexPath = join(signalDir, 'index.json');
+  const indexPayload = {
+    schemaVersion: 'geotech.signal-analysis-artifact-index.v1',
+    generatedAt: options.workflowRun.generatedAt,
+    runId: options.workflowRun.runId,
+    task: options.workflowRun.task,
+    sources: indexEntries,
+  };
+  writeFileSync(indexPath, JSON.stringify(indexPayload, null, 2), 'utf-8');
+  const relativeIndexPath = relativeArtifactPath(options.plan.workspace.rootPath, indexPath);
+  options.workflowRun.artifacts.push({
+    kind: 'json',
+    path: relativeIndexPath,
+    description: 'Deterministic signal analysis artifact index',
+  });
+  options.workflowRun.summary.push(`Signal analyses persisted: ${successCount}/${sources.length} source(s) under ${relativeArtifactPath(options.plan.workspace.rootPath, signalDir)}.`);
+  options.workflowRun.toolCalls.push({
+    type: 'tool_call',
+    tool: 'signal.analysis_artifacts',
+    status: failureCount > 0 ? 'review' : 'pass',
+    summary: `Persisted ${successCount}/${sources.length} deterministic signal analysis artifact(s).`,
+  });
+}
+
 async function requestProjectWorkflowRouteProposal(options: {
   prompt: string;
   manifest: ProjectManifest;
@@ -767,7 +1017,7 @@ function renderProjectAwarePlan(plan: ProjectAwarePlan, flags: { json?: boolean;
   }
   console.log('');
   warn('No model-heavy workflow has run yet. Choose a task with --task, or ask a project question with --workspace.');
-  console.log(chalk.gray('  Next actions: geotech agent --task data-quality | --task ground-model | --task calculation-readiness | --task risk-analysis | --task anomaly-detection | --task recommendations | --task visualization'));
+  console.log(chalk.gray('  Next actions: geotech agent --task data-quality | --task ground-model | --task calculation-readiness | --task risk-analysis | --task anomaly-detection | --task recommendations | --task signal-analysis | --task visualization'));
   success(`Project state written to ${relativeArtifactPath(plan.workspace.rootPath, join(plan.workspace.rootPath, '.geotech'))}`);
 }
 
@@ -783,11 +1033,12 @@ async function renderAndPersistProjectWorkflow(
     runId: plan.runId,
     now: plan.project.generatedAt,
   });
-  const report = buildProjectWorkflowReport(workflowRun);
   const runDir = join(plan.workspace.rootPath, '.geotech', 'runs', plan.runId);
   const resultPath = join(runDir, 'workflow_result.json');
   const reportPath = join(runDir, 'workflow_report.md');
   const tracePath = join(runDir, 'workflow_trace.json');
+  await persistSignalAnalysisArtifacts({ plan, manifest, workflowRun, runDir });
+  const report = buildProjectWorkflowReport(workflowRun);
 
   writeFileSync(resultPath, JSON.stringify(workflowRun, null, 2), 'utf-8');
   writeFileSync(reportPath, report.fullMarkdown, 'utf-8');
@@ -883,12 +1134,13 @@ async function renderAndPersistProjectWorkflowRoute(
       runId: workflowRunId,
       now: plan.project.generatedAt,
     });
-    const report = buildProjectWorkflowReport(workflowRun);
     const runDir = join(plan.workspace.rootPath, '.geotech', 'runs', workflowRun.runId);
     mkdirSync(runDir, { recursive: true });
     const resultPath = join(runDir, 'workflow_result.json');
     const reportPath = join(runDir, 'workflow_report.md');
     const tracePath = join(runDir, 'workflow_trace.json');
+    await persistSignalAnalysisArtifacts({ plan, manifest, workflowRun, runDir });
+    const report = buildProjectWorkflowReport(workflowRun);
 
     writeFileSync(resultPath, JSON.stringify(workflowRun, null, 2), 'utf-8');
     writeFileSync(reportPath, report.fullMarkdown, 'utf-8');
@@ -2191,14 +2443,14 @@ function renderSwarmStep(step: SwarmStep, json: boolean, quiet: boolean = false)
 
 export function registerAgentCommand(program: Command): void {
   const cmd = new Command('agent')
-    .description('Agentic AI - reasons about your problem and executes real calculations')
+    .description('Agentic AI - routes evidence into deterministic tools; FEM execution remains human-invoked and experimental')
     .argument('[task...]', 'Engineering task in natural language')
     .option('--swarm', 'Use the role-based multi-agent swarm planner and specialist review loop')
     .option('--skills', 'Enable installed skill tools for this session')
     .option('--project <id>', 'Load and persist context to a stored project')
     .option('--workspace <dir>', 'Scan a local workspace and attach its manifest summary to the agent task')
     .option('--no-workspace', 'Disable automatic project-aware workspace discovery')
-    .option('--task <task>', 'Run a project-aware task: data-quality, ground-model, calculation-readiness, risk-analysis, anomaly-detection, recommendations, visualization')
+    .option('--task <task>', 'Run a project-aware task: data-quality, ground-model, calculation-readiness, risk-analysis, anomaly-detection, recommendations, signal-analysis, visualization')
     .option('--route-with-model', 'Let the configured LLM propose a validated workflow route when deterministic routing needs selection')
     .option('--plan-only', 'Scan the workspace, write .geotech project state, and show workflow readiness without calling an LLM')
     .option('--refresh', 'Refresh the deterministic workspace manifest and .geotech project state')

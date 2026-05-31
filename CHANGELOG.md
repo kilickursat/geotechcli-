@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.78] - 2026-05-31
+
+### Trust-First Corpus Benchmark Foundation
+
+- Added `npm run benchmark:geotech-corpus` as an internal R&D wrapper over the geotechnical document benchmark contract, covering fixture categories, provider profiles, preprocessing modes, traceability, cache reuse, GroundModel readiness, and FEM execution-boundary guardrails.
+- Added real-fixture corpus mode for private local PDFs/images supplied through `GEOTECHCLI_BENCHMARK_*` env vars, with first-pass plus cached-rerun execution, `none` versus `ocr-optimized` preprocessing comparison, default skipping for absent private fixtures, and `--required` failure gates.
+- Added local corpus history/trend JSON and HTML outputs, review-gate reporting, and private-path redaction so benchmark results remain comparable without committing report bytes or local absolute paths.
+
 ## [0.4.77] - 2026-05-25
 
 ### Integrated Ingest Borehole Map Retention

@@ -992,22 +992,58 @@ describe('ingest dossier HTML', () => {
     expect(dossier.femDraftCandidates?.map((candidate) => candidate.workflow)).toEqual([
       'fem-foundation-settlement',
       'fem-excavation-deformation',
+      'fem-tunnel-volume-loss-settlement',
+      'fem-shaft-deformation',
+      'fem-pile-group-elastic-interaction',
+      'fem-slope-embankment-deformation',
+      'fem-retaining-wall-excavation-support',
+      'fem-seepage-groundwater-coupling',
+      'fem-staged-settlement-consolidation',
     ]);
     expect(dossier.femDraftCandidates?.every((candidate) => candidate.canAutoProceed === false)).toBe(true);
     expect(dossier.femDraftCandidates?.every((candidate) => candidate.command.startsWith('geotech fem draft '))).toBe(true);
     expect(dossier.femDraftCandidates?.every((candidate) => !/\bfem run\b/i.test(candidate.command))).toBe(true);
-    expect(dossier.femDraftCandidates?.every((candidate) => candidate.draft.recommendedAction === 'collect-inputs')).toBe(true);
+    expect(dossier.femDraftCandidates?.every((candidate) => ['collect-inputs', 'contract-only'].includes(candidate.draft.recommendedAction))).toBe(true);
     expect(dossier.femDraftCandidates?.every((candidate) => candidate.draft.analysisCase == null)).toBe(true);
     expect(dossier.femDraftCandidates?.[0]?.draft.analysisCase).toBeUndefined();
-    expect(dossier.tables.find((table) => table.title === 'FEM draft routing')?.rows[0]).toEqual(expect.arrayContaining([
+    expect(dossier.femDraftCandidates?.find((candidate) => candidate.workflow === 'fem-shaft-deformation')?.draft.capability.executionMode).toBe('contract-only');
+    expect(dossier.femDraftCandidates?.find((candidate) => candidate.workflow === 'fem-pile-group-elastic-interaction')?.draft.capability.executionMode).toBe('contract-only');
+    expect(dossier.femDraftCandidates?.find((candidate) => candidate.workflow === 'fem-slope-embankment-deformation')?.draft.capability.executionMode).toBe('contract-only');
+    expect(dossier.femDraftCandidates?.find((candidate) => candidate.workflow === 'fem-retaining-wall-excavation-support')?.draft.capability.executionMode).toBe('contract-only');
+    expect(dossier.femDraftCandidates?.find((candidate) => candidate.workflow === 'fem-seepage-groundwater-coupling')?.draft.capability.executionMode).toBe('contract-only');
+    expect(dossier.femDraftCandidates?.find((candidate) => candidate.workflow === 'fem-staged-settlement-consolidation')?.draft.capability.executionMode).toBe('contract-only');
+    const femRoutingTable = dossier.tables.find((table) => table.title === 'FEM draft routing');
+    expect(femRoutingTable?.columns).toEqual([
+      'Route',
+      'Readiness',
+      'Score',
+      'Prefilled evidence',
+      'Missing user inputs',
+      'Review gates',
+      'Execution boundary',
+      'Draft command',
+    ]);
+    expect(femRoutingTable?.rows[0]).toEqual(expect.arrayContaining([
       'Foundation / raft settlement preview',
       'ready with assumptions',
       expect.stringMatching(/raft length/),
+      expect.stringMatching(/human reviewed preview.*human review required.*agent run disabled.*agent Web\s?GL disabled.*draft only/i),
       'geotech fem draft foundation-settlement --input <json> --case-output <analysis_case.json>',
     ]));
     expect(html).toContain('Source report evidence');
     expect(html).toContain('FEM draft routing');
+    expect(html).toContain('Execution boundary');
+    expect(html).toContain('agent run disabled');
+    expect(html).toMatch(/agent Web\s?GL disabled/);
+    expect(html).toContain('draft only');
     expect(html).toContain('Foundation / raft settlement preview');
+    expect(html).toContain('Tunnel volume-loss settlement preview');
+    expect(html).toContain('Shaft / pit deformation preview');
+    expect(html).toContain('Pile group elastic interaction preview');
+    expect(html).toContain('Slope / embankment deformation preview');
+    expect(html).toContain('Retaining wall / excavation support preview');
+    expect(html).toContain('Seepage / groundwater-sensitive deformation preview');
+    expect(html).toContain('Staged settlement / consolidation preview');
     expect(html).toContain('geotech fem draft foundation-settlement');
     expect(html).toContain('Validated strip log');
     expect(html).toContain('Extracted fields');

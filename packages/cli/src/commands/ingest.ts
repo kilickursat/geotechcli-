@@ -62,6 +62,7 @@ function formatMaybe(value: string | number | null | undefined, suffix = ''): st
 }
 
 type IngestPresentationFormat = 'plain' | 'html' | 'benchmark';
+type BenchmarkProviderConfig = Pick<ReturnType<typeof buildLLMConfig>, 'provider' | 'modelId' | 'visionModelId'>;
 
 function resolveIngestPresentationFormat(value: unknown): IngestPresentationFormat {
   const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -200,6 +201,7 @@ function writeGeotechBenchmark(
     sourceLabel: string;
     job?: GeotechDocumentBenchmarkJobContext;
     durationMs?: number;
+    providerConfig?: BenchmarkProviderConfig;
   },
 ): void {
   if (!isGeotechDocumentIngestOutput(result)) {
@@ -209,6 +211,7 @@ function writeGeotechBenchmark(
   const benchmark = buildGeotechDocumentBenchmark(result, {
     label: options.sourceLabel,
     job: options.job ?? (options.durationMs != null ? { durationMs: options.durationMs } : undefined),
+    providerConfig: options.providerConfig,
   });
 
   if (options.outputPath) {
@@ -225,6 +228,9 @@ function renderGeotechBenchmarkSummary(benchmark: ReturnType<typeof buildGeotech
   heading('Geotechnical Ingest Benchmark');
   keyValue('Source', benchmark.source.fileName ?? benchmark.source.filePath ?? benchmark.label ?? 'Unknown');
   keyValue('Pages processed', `${benchmark.source.successfulPages}/${benchmark.source.totalPages}`);
+  if (benchmark.provider) {
+    keyValue('Provider profile', `${benchmark.provider.provider}/${benchmark.provider.profile} (${benchmark.provider.contextStrategy})`);
+  }
   keyValue('Review confidence', `${benchmark.document.confidence}%`);
   if (benchmark.document.confidenceBreakdown) {
     keyValue(
@@ -237,6 +243,10 @@ function renderGeotechBenchmarkSummary(benchmark: ReturnType<typeof buildGeotech
     );
   }
   keyValue('Cache hit rate', `${Math.round(benchmark.evidenceCache.hitRate * 100)}%`);
+  keyValue(
+    'Region evidence coverage',
+    `${Math.round(benchmark.preprocessing.pageRegionCoverage * 100)}% (${benchmark.preprocessing.totalRegions} region(s))`,
+  );
   keyValue(
     'Estimated hosted calls',
     String(
@@ -1069,6 +1079,7 @@ function buildPersistedReviewDossierDetails(
 function persistProjectIngestReview(
   projectId: string,
   result: ProjectBackedIngestResult,
+  providerConfig?: BenchmarkProviderConfig,
 ): {
   datasetName: string;
   reviewId: string;
@@ -1078,13 +1089,14 @@ function persistProjectIngestReview(
   const persist = persistBoreholeIngestReview as unknown as (
     targetProjectId: string,
     ingestResult: ProjectBackedIngestResult,
+    options?: { providerConfig?: BenchmarkProviderConfig },
   ) => {
     datasetName: string;
     reviewId: string;
     createdAt?: string;
   };
 
-  return persist(projectId, result);
+  return persist(projectId, result, { providerConfig });
 }
 
 function createPersistedReviewDryRun(
@@ -1515,6 +1527,7 @@ type NormalizedIngestJobRecord = {
     chunkExtractionConcurrency: number;
   };
   request: {
+    providerConfig?: BenchmarkProviderConfig;
     projectId?: string;
     overrideBoreholeId?: string;
   };
@@ -1577,6 +1590,7 @@ function normalizeIngestJobRecord(value: unknown): NormalizedIngestJobRecord | n
   const source = isRecord(value.source) ? value.source : null;
   const processing = isRecord(value.processing) ? value.processing : null;
   const request = isRecord(value.request) ? value.request : {};
+  const config = isRecord(value.config) ? value.config : {};
   const execution = isRecord(value.execution) ? value.execution : {};
   const checkpoints = isRecord(value.checkpoints) ? value.checkpoints : null;
   if (
@@ -1697,6 +1711,7 @@ function normalizeIngestJobRecord(value: unknown): NormalizedIngestJobRecord | n
       chunkExtractionConcurrency: asOptionalPositiveInteger(processing.chunkExtractionConcurrency) ?? 0,
     },
     request: {
+      providerConfig: asBenchmarkProviderConfig(config),
       projectId: asOptionalTrimmedString(request.projectId),
       overrideBoreholeId: asOptionalTrimmedString(request.overrideBoreholeId),
     },
@@ -1711,6 +1726,26 @@ function normalizeIngestJobRecord(value: unknown): NormalizedIngestJobRecord | n
     pageCounts,
     pages,
     result,
+  };
+}
+
+function asBenchmarkProviderConfig(value: { provider?: unknown; modelId?: unknown; visionModelId?: unknown }): BenchmarkProviderConfig | undefined {
+  const provider = asOptionalTrimmedString(value.provider) as BenchmarkProviderConfig['provider'] | undefined;
+  if (
+    provider !== 'hosted-beta'
+    && provider !== 'zhipu'
+    && provider !== 'openai'
+    && provider !== 'anthropic'
+    && provider !== 'openai-compatible'
+    && provider !== 'huggingface'
+  ) {
+    return undefined;
+  }
+
+  return {
+    provider,
+    modelId: asOptionalTrimmedString(value.modelId),
+    visionModelId: asOptionalTrimmedString(value.visionModelId),
   };
 }
 
@@ -2283,6 +2318,7 @@ export function registerIngestCommand(program: Command): void {
               outputPath: flags.output,
               sourceLabel: completedResult.source.fileName ?? completedResult.source.filePath ?? completedJob.jobId,
               job: buildBenchmarkJobContext(completedJob),
+              providerConfig: completedJob.request.providerConfig,
             });
           } else if (wantsHtmlDossier) {
             const htmlDossier = writeHtmlDossier(completedResult, {
@@ -2400,7 +2436,7 @@ export function registerIngestCommand(program: Command): void {
             : null;
 
         const persistedReview = opts.project
-          ? persistProjectIngestReview(String(opts.project), result)
+          ? persistProjectIngestReview(String(opts.project), result, asBenchmarkProviderConfig(config))
           : null;
 
         spinner?.succeed(boreholeResult
@@ -2426,6 +2462,7 @@ export function registerIngestCommand(program: Command): void {
             outputPath: flags.output,
             sourceLabel: result.source.fileName ?? result.source.filePath ?? filePath,
             durationMs: ingestDurationMs,
+            providerConfig: asBenchmarkProviderConfig(config),
           });
           return;
         } else if (boreholeResult) {
@@ -2548,6 +2585,7 @@ export function registerIngestCommand(program: Command): void {
           writeGeotechBenchmark(record.result, {
             outputPath: flags.output,
             sourceLabel: record.result.source.fileName ?? record.result.source.filePath ?? record.title,
+            providerConfig: record.providerConfig,
           });
         } else {
           renderPersistedReviewRecord(record, resolvedProjectId);
@@ -2872,6 +2910,7 @@ export function registerIngestCommand(program: Command): void {
           outputPath: flags.output,
           sourceLabel: completedResult.source.fileName ?? completedResult.source.filePath ?? normalized.jobId,
           job: buildBenchmarkJobContext(normalized),
+          providerConfig: normalized.request.providerConfig,
         });
       } else if (wantsHtmlDossier) {
         const htmlDossier = writeHtmlDossier(completedResult, {
@@ -2965,6 +3004,7 @@ export function registerIngestCommand(program: Command): void {
           outputPath: flags.output,
           sourceLabel: completedResult.source.fileName ?? completedResult.source.filePath ?? normalized.jobId,
           job: buildBenchmarkJobContext(normalized),
+          providerConfig: normalized.request.providerConfig,
         });
       } else if (wantsHtmlDossier) {
         const htmlDossier = writeHtmlDossier(completedResult, {

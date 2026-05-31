@@ -1,4 +1,11 @@
-import type { LLMConfig, LLMProvider, ProviderCapabilities } from './types.js';
+import type {
+  LLMConfig,
+  LLMProvider,
+  ProviderCapabilities,
+  ProviderCapabilityProfile,
+  ProviderCapabilityProfileId,
+  ProviderContextStrategy,
+} from './types.js';
 
 const PDF_NATIVE_MODEL_PATTERNS = [
   /qwen/i,
@@ -52,6 +59,32 @@ function openRouteLooksTextOnly(model: string | undefined): boolean {
   }
 
   return KNOWN_TEXT_ONLY_OPEN_ROUTE_PATTERNS.some((pattern) => pattern.test(model));
+}
+
+function normalizeModel(value: string | null | undefined): string | null {
+  const normalized = value?.trim();
+  return normalized ? normalized : null;
+}
+
+function resolveProfileId(provider: LLMProvider): ProviderCapabilityProfileId {
+  switch (provider) {
+    case 'hosted-beta':
+      return 'hosted-default';
+    case 'zhipu':
+      return 'direct-zai';
+    case 'openai':
+    case 'anthropic':
+      return 'premium-byok';
+    case 'openai-compatible':
+    case 'huggingface':
+      return 'open-byok';
+    default:
+      return 'unknown';
+  }
+}
+
+export function isLikelyFreeRoute(value: string | null | undefined): boolean {
+  return Boolean(value && /(?:^|[:/_-])free(?:$|[:/_-])/i.test(value));
 }
 
 function baseCapabilitiesForProvider(provider: LLMProvider): ProviderCapabilities {
@@ -131,6 +164,59 @@ export function resolveProviderCapabilities(
   }
 
   return base;
+}
+
+export function buildProviderReviewGates(
+  capabilities: ProviderCapabilities,
+  likelyFreeRoute: boolean,
+  contextStrategy: ProviderContextStrategy,
+): string[] {
+  return [
+    capabilities.text ? null : 'text-generation-unavailable',
+    capabilities.visionImages ? null : 'image-understanding-unavailable',
+    capabilities.nativePdfDocuments ? null : 'native-pdf-unavailable-use-preprocessed-evidence',
+    capabilities.jsonMode ? null : 'strict-json-unavailable-validate-output',
+    likelyFreeRoute ? 'free-route-capacity-and-feature-variance' : null,
+    contextStrategy !== 'full' ? 'compact-context-required' : null,
+  ].filter((value): value is string => value != null);
+}
+
+export function resolveProviderCapabilityProfile(
+  config: Pick<LLMConfig, 'provider' | 'modelId' | 'visionModelId'>,
+  options?: { model?: string },
+): ProviderCapabilityProfile {
+  const modelId = normalizeModel(config.modelId);
+  const visionModelId = normalizeModel(config.visionModelId);
+  const resolvedModel = normalizeModel(options?.model) ?? visionModelId ?? modelId;
+  const capabilities = resolveProviderCapabilities(config, options);
+  const id = resolveProfileId(config.provider);
+  const likelyFreeRoute = isLikelyFreeRoute(modelId)
+    || isLikelyFreeRoute(visionModelId)
+    || isLikelyFreeRoute(resolvedModel);
+  const contextStrategy: ProviderContextStrategy = likelyFreeRoute
+    ? 'micro'
+    : id === 'open-byok'
+      ? 'compact'
+      : 'full';
+  const reviewGates = buildProviderReviewGates(capabilities, likelyFreeRoute, contextStrategy);
+
+  return {
+    id,
+    provider: config.provider,
+    modelId,
+    visionModelId,
+    capabilities,
+    likelyFreeRoute,
+    contextStrategy,
+    reviewGates,
+    preprocessingPolicy: {
+      preferNativePdf: capabilities.nativePdfDocuments,
+      requirePreprocessedEvidence: !capabilities.nativePdfDocuments,
+      allowImageInputs: capabilities.visionImages,
+      allowLayoutOcr: config.provider === 'hosted-beta' || config.provider === 'zhipu',
+      maxContextStrategy: contextStrategy,
+    },
+  };
 }
 
 export function providerSupportsNativePdfDocuments(

@@ -15,6 +15,7 @@ import {
 } from '../vision/geotech-document.js';
 import { transcribeDocumentImageText } from '../vision/index.js';
 import { recoverDocumentTextHint, type DocumentTextHintSource } from '../vision/ocr.js';
+import type { VisionImagePreprocessMetadata } from '../vision/preprocess.js';
 import type { GlmOcrLayoutPage } from '../vision/layout-ocr.js';
 import type { PdfDocumentInspection, PdfPageClassification } from './pdf.js';
 import type { IngestSegmentationSummary } from './segmentation.js';
@@ -72,6 +73,7 @@ export interface GeotechDocumentPageEvidenceCacheAudit {
   preprocessingVersion: string;
   schemaVersion: number;
   createdAt?: string;
+  preprocessing?: VisionImagePreprocessMetadata;
   reason?: string;
 }
 
@@ -84,6 +86,7 @@ export interface GeotechDocumentPageAudit {
   materialCount: number;
   classificationCount: number;
   parameterCount: number;
+  latencyMs?: number;
   layoutPages?: GlmOcrLayoutPage[];
   evidenceCache?: GeotechDocumentPageEvidenceCacheAudit;
   warnings: string[];
@@ -377,6 +380,7 @@ function buildPageEvidenceCacheAudit(
     preprocessingVersion: context.parts.preprocessingVersion,
     schemaVersion: context.parts.schemaVersion ?? PAGE_EVIDENCE_CACHE_SCHEMA_VERSION,
     createdAt: entry?.createdAt,
+    preprocessing: entry?.preprocessing,
     reason,
   };
 }
@@ -2269,6 +2273,7 @@ export async function ingestGeotechDocument(
         let recoveryWarnings = cachedEvidence?.warnings ?? [];
         let recoverySource: DocumentTextHintSource = textHintSource;
         let recoveryTransformed = cachedEvidence?.transformed ?? false;
+        let recoveryPreprocessing = cachedEvidence?.preprocessing;
         let layoutSummary = cachedEvidence?.layoutSummary;
         let layoutPages = cachedEvidence?.layoutPages;
 
@@ -2293,6 +2298,7 @@ export async function ingestGeotechDocument(
           recoveryWarnings = recovery.warnings;
           recoverySource = recovery.source;
           recoveryTransformed = recovery.transformed;
+          recoveryPreprocessing = recovery.preprocessing;
           layoutPages = recovery.layout
             ? normalizeRecoveredLayoutPages(recovery.layout.pages, page.pageNumber)
             : undefined;
@@ -2332,6 +2338,7 @@ export async function ingestGeotechDocument(
             source: textHintSource,
             warnings: recoveryWarnings,
             transformed: recoveryTransformed,
+            preprocessing: recoveryPreprocessing,
             layoutSummary,
             layoutPages,
             extractionResult: result,
@@ -2345,6 +2352,7 @@ export async function ingestGeotechDocument(
             source: textHintSource,
             warnings: recoveryWarnings,
             transformed: recoveryTransformed,
+            preprocessing: recoveryPreprocessing,
             layoutSummary,
             layoutPages,
             extractionResult: result,
@@ -2407,6 +2415,7 @@ export async function ingestGeotechDocument(
           materialCount: settled.result.materials.length,
           classificationCount: settled.result.classifications.length,
           parameterCount: settled.result.parameters.length,
+          ...(Number.isFinite(settled.result.latencyMs) ? { latencyMs: Math.max(0, Math.round(settled.result.latencyMs)) } : {}),
           ...(settled.layoutPages?.length ? { layoutPages: settled.layoutPages } : {}),
           evidenceCache: settled.evidenceCache,
           warnings: uniqueStrings([
@@ -2448,6 +2457,7 @@ export async function ingestGeotechDocument(
       materialCount: result.materials.length,
       classificationCount: result.classifications.length,
       parameterCount: result.parameters.length,
+      ...(Number.isFinite(result.latencyMs) ? { latencyMs: Math.max(0, Math.round(result.latencyMs)) } : {}),
       warnings: result.warnings,
     });
   }

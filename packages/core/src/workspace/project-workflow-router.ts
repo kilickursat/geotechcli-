@@ -99,6 +99,7 @@ export const PROJECT_WORKFLOW_ROUTER_TASKS: ProjectWorkflowTask[] = [
   'risk-analysis',
   'anomaly-detection',
   'recommendations',
+  'signal-analysis',
   'visualization',
 ];
 
@@ -147,6 +148,26 @@ export function normalizeProjectWorkflowRouteTask(value: unknown): ProjectWorkfl
     case 'fem-foundation-settlement':
     case 'fem-excavation':
     case 'fem-excavation-deformation':
+    case 'fem-tunnel':
+    case 'fem-tunnel-settlement':
+    case 'fem-tunnel-volume-loss-settlement':
+    case 'fem-shaft':
+    case 'fem-shaft-deformation':
+    case 'fem-pile-group':
+    case 'fem-pile-group-elastic-interaction':
+    case 'fem-slope':
+    case 'fem-slope-embankment':
+    case 'fem-slope-embankment-deformation':
+    case 'fem-embankment':
+    case 'fem-retaining-wall':
+    case 'fem-retaining-wall-excavation-support':
+    case 'fem-excavation-support':
+    case 'fem-seepage':
+    case 'fem-seepage-groundwater-coupling':
+    case 'fem-groundwater-coupling':
+    case 'fem-staged-settlement':
+    case 'fem-staged-settlement-consolidation':
+    case 'fem-consolidation':
       return 'calculation-readiness';
     case 'risk':
     case 'risks':
@@ -167,6 +188,24 @@ export function normalizeProjectWorkflowRouteTask(value: unknown): ProjectWorkfl
     case 'next-actions':
     case 'foundation-recommendations':
       return 'recommendations';
+    case 'signal':
+    case 'signals':
+    case 'signal-analysis':
+    case 'signal-analytics':
+    case 'monitoring':
+    case 'monitoring-analysis':
+    case 'time-series':
+    case 'timeseries':
+    case 'instrumentation':
+    case 'piezometer':
+    case 'piezometers':
+    case 'inclinometer':
+    case 'inclinometers':
+    case 'vibration':
+    case 'load-test':
+    case 'load-tests':
+    case 'pile-load-test':
+      return 'signal-analysis';
     case 'viz':
     case 'visualize':
     case 'visualization':
@@ -229,10 +268,11 @@ export function inferProjectWorkflowRouteTasks(prompt: string): ProjectWorkflowR
 
   add('data-quality', /\b(?:data quality|inventory|missing data|quality report|duplicate|file audit|data audit)\b/, 'Matched data inventory, quality, missing-data, or duplicate-source language.');
   add('ground-model', /\b(?:ground model|interpret|strata|stratigraphy|lithology|hydrogeology|borehole model)\b/, 'Matched ground-model, interpretation, strata, lithology, or borehole-model language.');
-  add('calculation-readiness', /\b(?:calculation readiness|calculation route|calculation routing|design readiness|design route|bearing(?: capacity| calculation| readiness)?|settlement(?: calculation| readiness)?|pile(?: capacity| calculation| readiness)?|liquefaction(?: calculation| readiness)?|slope(?: stability| calculation| readiness)?|fem(?: draft| readiness| foundation settlement| excavation deformation)?|ready for calculation|ready for design)\b/, 'Matched calculation-readiness, design-readiness, bearing, settlement, pile, liquefaction, slope, or FEM-draft routing language.');
+  add('calculation-readiness', /\b(?:calculation readiness|calculation route|calculation routing|design readiness|design route|bearing(?: capacity| calculation| readiness)?|settlement(?: calculation| readiness| design| route| workflow)|pile(?: capacity| calculation| readiness)?|liquefaction(?: calculation| readiness)?|slope(?: stability| calculation| readiness)?|retaining wall|excavation support|seepage|groundwater coupling|consolidation|embankment|fem(?: draft| readiness| foundation settlement| excavation deformation| tunnel| shaft| pile group| slope| embankment| retaining wall| excavation support| seepage| groundwater| staged settlement| consolidation)?|ready for calculation|ready for design)\b/, 'Matched calculation-readiness, design-readiness, bearing, settlement, pile, liquefaction, slope, retaining, seepage, consolidation, or FEM-draft routing language.');
   add('risk-analysis', /\b(?:risk|risks|hazard|hazards|limitation|limitations|uncertainty|mitigation|concern|failure mode)\b/, 'Matched risk, hazard, limitation, uncertainty, or mitigation language.');
   add('anomaly-detection', /\b(?:anomal\w*|conflict|outlier|inconsistent|inconsistency|mismatch|contradiction)\b/, 'Matched anomaly, conflict, outlier, inconsistency, or contradiction language.');
   add('recommendations', /\b(?:recommend|recommendation|foundation option|advice|next action|what should)\b/, 'Matched recommendation, foundation-option, advice, or next-action language.');
+  add('signal-analysis', /\b(?:signal analysis|signal analytics|monitoring analysis|time[-\s]?series|instrumentation|piezometer|pore pressure|inclinometer|vibration|accelerometer|settlement monitoring|monitoring trend|threshold|trigger level|load[-\s]?test)\b/, 'Matched monitoring, signal, piezometer, inclinometer, vibration, load-test, threshold, or time-series language.');
   add('visualization', /\b(?:visual\w*|map|plot|chart|section|profile|strip log|dashboard)\b/, 'Matched visualization, map, plot, chart, profile, or strip-log language.');
 
   return {

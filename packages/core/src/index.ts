@@ -20,6 +20,7 @@ export * from './ingest/index.js';
 // Workspace intelligence
 export * from './workspace/index.js';
 export * from './tabular/index.js';
+export * from './signal/index.js';
 export * from './evidence/index.js';
 export * from './ground-model/index.js';
 export * from './verifier/index.js';

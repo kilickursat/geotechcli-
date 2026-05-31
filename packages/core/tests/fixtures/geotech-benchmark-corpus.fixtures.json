@@ -1,0 +1,140 @@
+{
+  "kind": "geotech-benchmark-corpus-registry",
+  "schemaVersion": 1,
+  "fixtures": [
+    {
+      "id": "geotechnical-investigation-v1",
+      "category": "full-geotechnical-report",
+      "sourceType": "cached-benchmark",
+      "source": "GeotechnicalInvestigationReport (1).pdf",
+      "input": {
+        "env": "GEOTECHCLI_BENCHMARK_PDF"
+      },
+      "baseline": "geotechnical-investigation-benchmark.v1.json",
+      "description": "Canonical cached geotechnical investigation report benchmark used for local report-ingest guardrails.",
+      "expectations": {
+        "minSuccessfulPageRate": 1,
+        "maxFailedPages": 0,
+        "minCacheHitRate": 0.95,
+        "minTraceabilityRate": 0.95,
+        "minGroundModelReadinessScore": 55,
+        "maxEstimatedHostedCalls": 0,
+        "maxParametersWithoutSourcePage": 1,
+        "requireFemExecutionBoundarySafe": true,
+        "expectedBoreholeIds": ["BH1", "BH2", "BH3"],
+        "requiredPreprocessingModes": ["none", "ocr-optimized"],
+        "requiredProviderProfiles": ["hosted-beta", "open-byok-text-evidence"]
+      }
+    },
+    {
+      "id": "borehole-log-small-v1",
+      "category": "borehole-log",
+      "sourceType": "cached-benchmark",
+      "source": "small-borehole-log.fixture.pdf",
+      "input": {
+        "env": "GEOTECHCLI_BENCHMARK_BOREHOLE_PDF"
+      },
+      "baseline": "geotech-corpus/borehole-log-small.benchmark.json",
+      "description": "Small in-repo borehole-log benchmark fixture for strip-log, depth, and region-crop guardrails.",
+      "expectations": {
+        "minSuccessfulPageRate": 1,
+        "maxFailedPages": 0,
+        "minCacheHitRate": 0.95,
+        "minTraceabilityRate": 0.9,
+        "minGroundModelReadinessScore": 55,
+        "maxEstimatedHostedCalls": 0,
+        "requireFemExecutionBoundarySafe": true,
+        "expectedBoreholeIds": ["BH1"],
+        "requiredPreprocessingModes": ["none", "ocr-optimized"],
+        "requiredProviderProfiles": ["hosted-beta", "open-byok-text-evidence"]
+      }
+    },
+    {
+      "id": "cpt-table-small-v1",
+      "category": "cpt-table",
+      "sourceType": "cached-benchmark",
+      "source": "small-cpt-table.fixture.pdf",
+      "input": {
+        "env": "GEOTECHCLI_BENCHMARK_CPT_PDF"
+      },
+      "baseline": "geotech-corpus/cpt-table-small.benchmark.json",
+      "description": "Small in-repo CPT table benchmark fixture for qc/fs/u2 traceability and table crop guardrails.",
+      "expectations": {
+        "minSuccessfulPageRate": 1,
+        "maxFailedPages": 0,
+        "minCacheHitRate": 0.95,
+        "minTraceabilityRate": 0.9,
+        "maxEstimatedHostedCalls": 0,
+        "requireFemExecutionBoundarySafe": true,
+        "requiredPreprocessingModes": ["none", "ocr-optimized"],
+        "requiredProviderProfiles": ["hosted-beta", "open-byok-text-evidence"]
+      }
+    },
+    {
+      "id": "lab-table-small-v1",
+      "category": "lab-table",
+      "sourceType": "cached-benchmark",
+      "source": "small-lab-table.fixture.pdf",
+      "input": {
+        "env": "GEOTECHCLI_BENCHMARK_LAB_PDF"
+      },
+      "baseline": "geotech-corpus/lab-table-small.benchmark.json",
+      "description": "Small in-repo lab-table benchmark fixture for Atterberg, moisture, density, and strength table guardrails.",
+      "expectations": {
+        "minSuccessfulPageRate": 1,
+        "maxFailedPages": 0,
+        "minCacheHitRate": 0.95,
+        "minTraceabilityRate": 0.9,
+        "maxEstimatedHostedCalls": 0,
+        "requireFemExecutionBoundarySafe": true,
+        "requiredPreprocessingModes": ["none", "ocr-optimized"],
+        "requiredProviderProfiles": ["hosted-beta", "open-byok-text-evidence"]
+      }
+    },
+    {
+      "id": "mixed-scanned-small-v1",
+      "category": "mixed-scanned-pdf",
+      "sourceType": "cached-benchmark",
+      "source": "small-mixed-scanned-report.fixture.pdf",
+      "input": {
+        "env": "GEOTECHCLI_BENCHMARK_MIXED_SCANNED_PDF"
+      },
+      "baseline": "geotech-corpus/mixed-scanned-small.benchmark.json",
+      "description": "Small in-repo mixed scanned/digital report benchmark fixture used to exercise preprocessing-mode and provider-profile comparisons.",
+      "expectations": {
+        "minSuccessfulPageRate": 1,
+        "maxFailedPages": 0,
+        "minCacheHitRate": 0.95,
+        "minTraceabilityRate": 0.9,
+        "minGroundModelReadinessScore": 50,
+        "maxEstimatedHostedCalls": 0,
+        "requireFemExecutionBoundarySafe": true,
+        "requiredPreprocessingModes": ["none", "ocr-optimized"],
+        "requiredProviderProfiles": ["hosted-beta", "open-byok-text-evidence"]
+      }
+    },
+    {
+      "id": "malformed-scanned-v1",
+      "category": "malformed-scanned-pdf",
+      "sourceType": "cached-benchmark",
+      "source": "small-malformed-scanned.fixture.pdf",
+      "input": {
+        "env": "GEOTECHCLI_BENCHMARK_MALFORMED_SCANNED_PDF"
+      },
+      "baseline": "geotech-corpus/malformed-scanned-small.benchmark.json",
+      "description": "Small in-repo malformed scanned report benchmark fixture that should remain review-gated while preserving usable source evidence.",
+      "expectations": {
+        "minSuccessfulPageRate": 0.66,
+        "maxFailedPages": 1,
+        "minCacheHitRate": 0.66,
+        "minTraceabilityRate": 0.5,
+        "minGroundModelReadinessScore": 35,
+        "maxEstimatedHostedCalls": 0,
+        "requireFemExecutionBoundarySafe": true,
+        "requiredPreprocessingModes": ["none", "ocr-optimized"],
+        "requiredProviderProfiles": ["hosted-beta", "open-byok-text-evidence"],
+        "knownLimitations": ["Intentionally partial malformed-scan fixture; passing means review gates and retained evidence survived, not that extraction is design-ready."]
+      }
+    }
+  ]
+}

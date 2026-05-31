@@ -26,6 +26,19 @@ export interface FemGroundModelDraftBridge {
   summary: string;
 }
 
+export interface FemGroundModelExecutionBoundary {
+  schemaVersion: 'fem-ground-model-execution-boundary.v1';
+  executionMode: FemAnalysisCaseDraft['capability']['executionMode'];
+  agentRunAllowed: false;
+  agentWebglRenderAllowed: false;
+  agentResultManifestAllowed: false;
+  humanReviewRequired: true;
+  caseOutputAvailable: boolean;
+  draftCommand: string;
+  humanRunCommand?: string;
+  blockedReasons: string[];
+}
+
 export interface FemGroundModelDraftCandidate {
   schemaVersion: 'fem-ground-model-draft-candidate.v1';
   objective: FemRouteObjective;
@@ -39,6 +52,7 @@ export interface FemGroundModelDraftCandidate {
   evidenceIds: string[];
   bridge: FemGroundModelDraftBridge;
   draft: FemAnalysisCaseDraft;
+  executionBoundary: FemGroundModelExecutionBoundary;
 }
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -77,6 +91,13 @@ function asWallType(value: unknown): PrepareFemAnalysisCaseDraftInput['excavatio
 function objectiveForWorkflow(workflow: GroundModelCalculationReadiness['workflow']): FemRouteObjective | null {
   if (workflow === 'fem-foundation-settlement') return 'foundation-settlement';
   if (workflow === 'fem-excavation-deformation') return 'excavation-deformation';
+  if (workflow === 'fem-tunnel-volume-loss-settlement') return 'tunnel-volume-loss-settlement';
+  if (workflow === 'fem-shaft-deformation') return 'shaft-deformation';
+  if (workflow === 'fem-pile-group-elastic-interaction') return 'pile-group-elastic-interaction';
+  if (workflow === 'fem-slope-embankment-deformation') return 'slope-embankment-deformation';
+  if (workflow === 'fem-retaining-wall-excavation-support') return 'retaining-wall-excavation-support';
+  if (workflow === 'fem-seepage-groundwater-coupling') return 'seepage-groundwater-coupling';
+  if (workflow === 'fem-staged-settlement-consolidation') return 'staged-settlement-consolidation';
   return null;
 }
 
@@ -126,6 +147,13 @@ export function stripPlaceholderFemValues(input: PrepareFemAnalysisCaseDraftInpu
       excavationWidthM: toFiniteNumber(input.geometry.excavationWidthM),
       excavationFinalDepthM: toFiniteNumber(input.geometry.excavationFinalDepthM),
       wallToeDepthM: toFiniteNumber(input.geometry.wallToeDepthM),
+      tunnelDiameterM: toFiniteNumber(input.geometry.tunnelDiameterM),
+      tunnelAxisDepthM: toFiniteNumber(input.geometry.tunnelAxisDepthM),
+      tunnelLengthM: toFiniteNumber(input.geometry.tunnelLengthM),
+      tunnelCenterXM: toFiniteNumber(input.geometry.tunnelCenterXM),
+      tunnelCenterYM: toFiniteNumber(input.geometry.tunnelCenterYM),
+      tunnelVolumeLossPercent: toFiniteNumber(input.geometry.tunnelVolumeLossPercent),
+      troughWidthParameterK: toFiniteNumber(input.geometry.troughWidthParameterK),
     } : undefined,
     excavation: input.excavation ? {
       stageDepthsM: toFiniteNumberArray(input.excavation.stageDepthsM),
@@ -173,6 +201,13 @@ function normalizeReadinessInput(
       excavationWidthM: geometry.excavationWidthM as number,
       excavationFinalDepthM: geometry.excavationFinalDepthM as number,
       wallToeDepthM: geometry.wallToeDepthM as number,
+      tunnelDiameterM: geometry.tunnelDiameterM as number,
+      tunnelAxisDepthM: geometry.tunnelAxisDepthM as number,
+      tunnelLengthM: geometry.tunnelLengthM as number,
+      tunnelCenterXM: geometry.tunnelCenterXM as number,
+      tunnelCenterYM: geometry.tunnelCenterYM as number,
+      tunnelVolumeLossPercent: geometry.tunnelVolumeLossPercent as number,
+      troughWidthParameterK: geometry.troughWidthParameterK as number,
     },
     excavation: {
       stageDepthsM: excavation.stageDepthsM as number[],
@@ -239,6 +274,40 @@ export function buildFemDraftInputFromReadiness(
   };
 }
 
+function buildExecutionBoundary(
+  command: string,
+  draft: FemAnalysisCaseDraft,
+): FemGroundModelExecutionBoundary {
+  const caseOutputAvailable = draft.analysisCase != null && draft.validation?.status !== 'blocked';
+  const humanRunCommand = draft.recommendedAction === 'run-reviewed-case'
+    ? draft.recommendedCommand
+    : undefined;
+  const blockedReasons = [
+    ...draft.missingUserInputs,
+    ...(draft.contractReadiness?.blockedUntil ?? []),
+    ...draft.reviewGates.filter((gate) =>
+      gate === 'missing-user-inputs'
+      || gate === 'planned-only'
+      || gate === 'solver-backend-not-implemented'
+      || gate === 'agent-run-disabled'
+      || gate === 'human-review-required'
+    ),
+  ];
+
+  return {
+    schemaVersion: 'fem-ground-model-execution-boundary.v1',
+    executionMode: draft.capability.executionMode,
+    agentRunAllowed: false,
+    agentWebglRenderAllowed: false,
+    agentResultManifestAllowed: false,
+    humanReviewRequired: true,
+    caseOutputAvailable,
+    draftCommand: command,
+    ...(humanRunCommand ? { humanRunCommand } : {}),
+    blockedReasons: [...new Set(blockedReasons)],
+  };
+}
+
 export function buildFemDraftCandidatesFromGroundModel(
   groundModel: GroundModel,
 ): FemGroundModelDraftCandidate[] {
@@ -247,25 +316,39 @@ export function buildFemDraftCandidatesFromGroundModel(
     .filter((workflow) =>
       workflow.workflow === 'fem-foundation-settlement'
       || workflow.workflow === 'fem-excavation-deformation'
+      || workflow.workflow === 'fem-tunnel-volume-loss-settlement'
+      || workflow.workflow === 'fem-shaft-deformation'
+      || workflow.workflow === 'fem-pile-group-elastic-interaction'
+      || workflow.workflow === 'fem-slope-embankment-deformation'
+      || workflow.workflow === 'fem-retaining-wall-excavation-support'
+      || workflow.workflow === 'fem-seepage-groundwater-coupling'
+      || workflow.workflow === 'fem-staged-settlement-consolidation'
     )
-    .map((workflow) => {
-      const bridge = buildFemDraftInputFromReadiness(workflow, groundModel);
-      const draft = prepareFemAnalysisCaseDraft(bridge.input);
-      return {
-        schemaVersion: 'fem-ground-model-draft-candidate.v1',
-        objective: bridge.objective,
-        workflow: workflow.workflow,
-        status: workflow.status,
-        score: workflow.score,
-        command: workflow.inputDraft?.command ?? workflow.commandTemplate,
-        canAutoProceed: false,
-        missingUserInputs: draft.missingUserInputs.length > 0
-          ? draft.missingUserInputs
-          : bridge.readiness.missingUserInputs,
-        reviewGates: draft.reviewGates,
-        evidenceIds: bridge.readiness.evidenceIds,
-        bridge,
-        draft,
-      };
-    });
+    .map((workflow) => buildFemDraftCandidateFromReadiness(workflow, groundModel));
+}
+
+export function buildFemDraftCandidateFromReadiness(
+  workflow: GroundModelCalculationReadiness,
+  groundModel: GroundModel,
+): FemGroundModelDraftCandidate {
+  const bridge = buildFemDraftInputFromReadiness(workflow, groundModel);
+  const draft = prepareFemAnalysisCaseDraft(bridge.input);
+  const command = workflow.inputDraft?.command ?? workflow.commandTemplate;
+  return {
+    schemaVersion: 'fem-ground-model-draft-candidate.v1',
+    objective: bridge.objective,
+    workflow: workflow.workflow,
+    status: workflow.status,
+    score: workflow.score,
+    command,
+    canAutoProceed: false,
+    missingUserInputs: draft.missingUserInputs.length > 0
+      ? draft.missingUserInputs
+      : bridge.readiness.missingUserInputs,
+    reviewGates: draft.reviewGates,
+    evidenceIds: bridge.readiness.evidenceIds,
+    bridge,
+    draft,
+    executionBoundary: buildExecutionBoundary(command, draft),
+  };
 }

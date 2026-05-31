@@ -1656,7 +1656,13 @@ describe('registerIngestCommand', () => {
     expect(output).toContain('Page failures:');
     expect(output).toContain('Warnings:');
     expect(output).toContain('First borehole summary (BH-REVIEW):');
-    expect(coreMocks.persistBoreholeIngestReview).toHaveBeenCalledWith('demo-project', ingestResult);
+    expect(coreMocks.persistBoreholeIngestReview).toHaveBeenCalledWith('demo-project', ingestResult, {
+      providerConfig: {
+        provider: 'openai-compatible',
+        modelId: undefined,
+        visionModelId: 'glm-5v-turbo',
+      },
+    });
     expect(uiMocks.error).toHaveBeenCalledWith('Page 2: Provider timeout blocked page extraction.');
     expect(uiMocks.warn).toHaveBeenCalledWith('Page 1 | Borehole BH-REVIEW: Merged borehole data is partial.');
     expect(uiMocks.info).toHaveBeenCalledWith('Document: Recovered OCR text should be verified.');
@@ -2421,7 +2427,13 @@ describe('registerIngestCommand', () => {
     expect(output).toContain('Recommendations:');
     expect(output).toContain('Review findings:');
     expect(coreMocks.ingestGeotechDocument).toHaveBeenCalledTimes(1);
-    expect(coreMocks.persistBoreholeIngestReview).toHaveBeenCalledWith('demo-project', ingestResult);
+    expect(coreMocks.persistBoreholeIngestReview).toHaveBeenCalledWith('demo-project', ingestResult, {
+      providerConfig: {
+        provider: 'openai-compatible',
+        modelId: undefined,
+        visionModelId: 'glm-5v-turbo',
+      },
+    });
     expect(uiMocks.warn).toHaveBeenCalledWith(
       'Page 1 | Material weathered shale: Weathered shale parameters should be spot-checked before reuse.',
     );
