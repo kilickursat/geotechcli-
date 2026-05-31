@@ -73,6 +73,9 @@ describe('page evidence cache', () => {
     expect(buildPageEvidencePreprocessingVersion(llmConfig, undefined, 'none')).not.toBe(
       buildPageEvidencePreprocessingVersion(llmConfig, undefined, 'ocr-optimized'),
     );
+    expect(buildPageEvidencePreprocessingVersion(llmConfig, undefined, 'region-v2')).not.toBe(
+      buildPageEvidencePreprocessingVersion(llmConfig, undefined, 'ocr-optimized'),
+    );
     expect(key).toHaveLength(64);
   });
 

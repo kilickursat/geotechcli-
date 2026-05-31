@@ -22,7 +22,7 @@
         "maxParametersWithoutSourcePage": 1,
         "requireFemExecutionBoundarySafe": true,
         "expectedBoreholeIds": ["BH1", "BH2", "BH3"],
-        "requiredPreprocessingModes": ["none", "ocr-optimized"],
+        "requiredPreprocessingModes": ["none", "ocr-optimized", "region-v2"],
         "requiredProviderProfiles": ["hosted-beta", "open-byok-text-evidence"]
       }
     },
@@ -45,7 +45,7 @@
         "maxEstimatedHostedCalls": 0,
         "requireFemExecutionBoundarySafe": true,
         "expectedBoreholeIds": ["BH1"],
-        "requiredPreprocessingModes": ["none", "ocr-optimized"],
+        "requiredPreprocessingModes": ["none", "ocr-optimized", "region-v2"],
         "requiredProviderProfiles": ["hosted-beta", "open-byok-text-evidence"]
       }
     },
@@ -66,7 +66,7 @@
         "minTraceabilityRate": 0.9,
         "maxEstimatedHostedCalls": 0,
         "requireFemExecutionBoundarySafe": true,
-        "requiredPreprocessingModes": ["none", "ocr-optimized"],
+        "requiredPreprocessingModes": ["none", "ocr-optimized", "region-v2"],
         "requiredProviderProfiles": ["hosted-beta", "open-byok-text-evidence"]
       }
     },
@@ -87,7 +87,7 @@
         "minTraceabilityRate": 0.9,
         "maxEstimatedHostedCalls": 0,
         "requireFemExecutionBoundarySafe": true,
-        "requiredPreprocessingModes": ["none", "ocr-optimized"],
+        "requiredPreprocessingModes": ["none", "ocr-optimized", "region-v2"],
         "requiredProviderProfiles": ["hosted-beta", "open-byok-text-evidence"]
       }
     },
@@ -109,7 +109,7 @@
         "minGroundModelReadinessScore": 50,
         "maxEstimatedHostedCalls": 0,
         "requireFemExecutionBoundarySafe": true,
-        "requiredPreprocessingModes": ["none", "ocr-optimized"],
+        "requiredPreprocessingModes": ["none", "ocr-optimized", "region-v2"],
         "requiredProviderProfiles": ["hosted-beta", "open-byok-text-evidence"]
       }
     },
@@ -131,7 +131,7 @@
         "minGroundModelReadinessScore": 35,
         "maxEstimatedHostedCalls": 0,
         "requireFemExecutionBoundarySafe": true,
-        "requiredPreprocessingModes": ["none", "ocr-optimized"],
+        "requiredPreprocessingModes": ["none", "ocr-optimized", "region-v2"],
         "requiredProviderProfiles": ["hosted-beta", "open-byok-text-evidence"],
         "knownLimitations": ["Intentionally partial malformed-scan fixture; passing means review gates and retained evidence survived, not that extraction is design-ready."]
       }

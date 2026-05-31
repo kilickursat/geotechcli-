@@ -342,7 +342,7 @@ function normalizePreprocessingMetadata(
   if (
     schemaVersion !== 1
     || !pipelineVersion
-    || (policy !== 'none' && policy !== 'ocr-optimized')
+    || (policy !== 'none' && policy !== 'ocr-optimized' && policy !== 'region-v2')
     || transformed == null
     || !input
     || !output
@@ -511,7 +511,12 @@ function normalizePreprocessDeskew(value: unknown): NonNullable<VisionImagePrepr
   const angleDeg = normalizeNullableNumber(value.angleDeg);
   const confidence = normalizeRatioNumber(value.confidence);
   const applied = typeof value.applied === 'boolean' ? value.applied : null;
-  if (method !== 'projection-profile' || angleDeg == null || confidence == null || applied == null) {
+  if (
+    (method !== 'projection-profile' && method !== 'projection-profile-fine')
+    || angleDeg == null
+    || confidence == null
+    || applied == null
+  ) {
     return undefined;
   }
   return {

@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.79] - 2026-05-31
+
+### Region-Level Preprocessing V2
+
+- Added explicit `region-v2` PDF/image preprocessing mode with fine-pass deskew metadata, higher-resolution normalized pages, smarter table and borehole/log strip crop candidates, region quality scoring, and mode-aware cache compatibility.
+- Routed `region-v2` table/log crop assets into OCR before full-page vision OCR so borehole and table evidence gets a tighter first extraction target while preserving provider-neutral fallback behavior.
+- Extended corpus benchmarks to compare `none`, `ocr-optimized`, and `region-v2` by default, including region quality, persisted crop assets, deskew, hosted-call, traceability, and GroundModel readiness deltas.
+
 ## [0.4.78] - 2026-05-31
 
 ### Trust-First Corpus Benchmark Foundation

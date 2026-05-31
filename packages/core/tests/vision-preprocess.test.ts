@@ -125,4 +125,54 @@ describe('vision image preprocessing', () => {
     expect(cropRegions.length).toBeGreaterThanOrEqual(2);
     expect(cropRegions.every((region) => region.asset?.normalized === true)).toBe(true);
   });
+
+  it('supports region-v2 fine deskew and borehole/table crop scoring', async () => {
+    const svg = `
+      <svg width="1300" height="1100" xmlns="http://www.w3.org/2000/svg">
+        <rect width="1300" height="1100" fill="white"/>
+        <g stroke="black" stroke-width="4" fill="none">
+          <rect x="90" y="90" width="270" height="860"/>
+          <line x1="90" y1="230" x2="360" y2="230"/>
+          <line x1="90" y1="370" x2="360" y2="370"/>
+          <line x1="90" y1="510" x2="360" y2="510"/>
+          <line x1="90" y1="650" x2="360" y2="650"/>
+          <line x1="90" y1="790" x2="360" y2="790"/>
+          <line x1="180" y1="90" x2="180" y2="950"/>
+          <line x1="270" y1="90" x2="270" y2="950"/>
+          <rect x="500" y="130" width="660" height="420"/>
+          <line x1="500" y1="235" x2="1160" y2="235"/>
+          <line x1="500" y1="340" x2="1160" y2="340"/>
+          <line x1="500" y1="445" x2="1160" y2="445"/>
+          <line x1="665" y1="130" x2="665" y2="550"/>
+          <line x1="830" y1="130" x2="830" y2="550"/>
+          <line x1="995" y1="130" x2="995" y2="550"/>
+        </g>
+      </svg>
+    `;
+    const input = await sharp(Buffer.from(svg))
+      .rotate(-1.4, { background: '#ffffff' })
+      .png()
+      .toBuffer();
+
+    const result = await preprocessVisionImageBuffer(input, 'image/png', 'region-v2');
+
+    expect(result.preprocessing.policy).toBe('region-v2');
+    expect(result.preprocessing.quality?.deskew.method).toBe('projection-profile-fine');
+    expect(result.preprocessing.operations).toEqual(expect.arrayContaining([
+      'resize-inside-2200-no-enlarge',
+      'detect-region-v2-borehole-log-strip',
+      'detect-region-v2-table-panel',
+      'score-preprocessing-regions',
+      'normalize-region-crop-assets',
+    ]));
+    expect(result.preprocessing.operations.some((operation) =>
+      operation === 'projection-profile-fine-deskew'
+      || operation === 'projection-profile-fine-deskew-not-applied',
+    )).toBe(true);
+    const regionV2Crops = result.preprocessing.regions.filter((region) => region.id.startsWith('region-v2-'));
+    expect(regionV2Crops.length).toBeGreaterThanOrEqual(2);
+    expect(regionV2Crops.every((region) => region.asset?.normalized === true)).toBe(true);
+    expect(regionV2Crops.every((region) => (region.quality?.score ?? 0) > 0.4)).toBe(true);
+    expect(result.preprocessing.quality?.regionCount).toBeGreaterThanOrEqual(regionV2Crops.length);
+  });
 });

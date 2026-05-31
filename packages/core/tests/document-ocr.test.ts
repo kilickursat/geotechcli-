@@ -261,4 +261,67 @@ describe('document text recovery', () => {
     expect(result.preprocessing?.regions.some((region) => region.id === 'table-log-panel-candidate' && region.asset?.dataBase64)).toBe(true);
     expect(visionTranscribe).toHaveBeenCalledTimes(2);
   });
+
+  it('routes region-v2 crops into vision OCR before full-page extraction', async () => {
+    const previousMode = process.env.GEOTECHCLI_PREPROCESSING_MODE;
+    process.env.GEOTECHCLI_PREPROCESSING_MODE = 'region-v2';
+    const svg = `
+      <svg width="1100" height="1000" xmlns="http://www.w3.org/2000/svg">
+        <rect width="1100" height="1000" fill="white"/>
+        <g stroke="black" stroke-width="4" fill="none">
+          <rect x="90" y="90" width="280" height="790"/>
+          <line x1="90" y1="220" x2="370" y2="220"/>
+          <line x1="90" y1="350" x2="370" y2="350"/>
+          <line x1="90" y1="480" x2="370" y2="480"/>
+          <line x1="90" y1="610" x2="370" y2="610"/>
+          <line x1="90" y1="740" x2="370" y2="740"/>
+          <line x1="180" y1="90" x2="180" y2="880"/>
+          <line x1="280" y1="90" x2="280" y2="880"/>
+          <rect x="510" y="120" width="470" height="380"/>
+          <line x1="510" y1="245" x2="980" y2="245"/>
+          <line x1="510" y1="370" x2="980" y2="370"/>
+          <line x1="665" y1="120" x2="665" y2="500"/>
+          <line x1="820" y1="120" x2="820" y2="500"/>
+        </g>
+      </svg>
+    `;
+    const imageBuffer = await sharp(Buffer.from(svg)).png().toBuffer();
+    const visionTranscribe = vi.fn().mockResolvedValue({
+      text: 'BH-01 0.0 to 2.0 m fill 2.0 to 5.0 m clay SPT N 12 groundwater not reported',
+      warnings: [],
+      usedFallback: false,
+      latencyMs: 30,
+    });
+
+    try {
+      const result = await recoverDocumentTextHint({
+        imageBase64: imageBuffer.toString('base64'),
+        mimeType: 'image/png',
+        config: {
+          provider: 'hosted-beta',
+          apiKey: '',
+        },
+        allowLayoutOcr: false,
+        visionTranscribe,
+      });
+
+      expect(result.source).toBe('vision-ocr');
+      expect(result.preprocessing?.policy).toBe('region-v2');
+      expect(result.textHint).toMatch(/BH-01/);
+      expect(result.warnings.join(' ')).toMatch(/preprocessed region crop/i);
+      expect(result.preprocessing?.regions.some((region) => region.id.startsWith('region-v2-') && region.asset?.dataBase64)).toBe(true);
+      const regionAssetCount = result.preprocessing?.regions.filter((region) =>
+        region.id !== 'normalized-full-page'
+        && region.id !== 'original-full-page'
+        && region.asset?.dataBase64,
+      ).length ?? 0;
+      expect(visionTranscribe).toHaveBeenCalledTimes(regionAssetCount);
+    } finally {
+      if (previousMode === undefined) {
+        delete process.env.GEOTECHCLI_PREPROCESSING_MODE;
+      } else {
+        process.env.GEOTECHCLI_PREPROCESSING_MODE = previousMode;
+      }
+    }
+  });
 });

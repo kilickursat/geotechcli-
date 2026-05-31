@@ -11,7 +11,7 @@ export interface VisionImagePreprocessResult {
   preprocessing: VisionImagePreprocessMetadata;
 }
 
-export type VisionImagePreprocessPolicy = 'none' | 'ocr-optimized';
+export type VisionImagePreprocessPolicy = 'none' | 'ocr-optimized' | 'region-v2';
 
 export const VISION_IMAGE_PREPROCESS_METADATA_SCHEMA_VERSION = 1;
 export const VISION_IMAGE_PREPROCESS_PIPELINE_VERSION = 'vision-image-preprocess-v2';
@@ -45,7 +45,7 @@ export interface VisionPreprocessRegionAssetMetadata {
 }
 
 export interface VisionPreprocessDeskewMetadata {
-  method: 'projection-profile';
+  method: 'projection-profile' | 'projection-profile-fine';
   angleDeg: number;
   confidence: number;
   applied: boolean;
@@ -195,7 +195,13 @@ export function resolveVisionImagePreprocessPolicy(
   value: string | null | undefined = process.env.GEOTECHCLI_PREPROCESSING_MODE,
 ): VisionImagePreprocessPolicy {
   const normalized = String(value ?? '').trim().toLowerCase();
-  return normalized === 'none' ? 'none' : 'ocr-optimized';
+  if (normalized === 'none') {
+    return 'none';
+  }
+  if (normalized === 'region-v2' || normalized === 'region_v2' || normalized === 'regions-v2') {
+    return 'region-v2';
+  }
+  return 'ocr-optimized';
 }
 
 interface RawPreprocessImage {
@@ -274,6 +280,7 @@ async function readRawPreprocessImage(sharp: any, buffer: Buffer): Promise<RawPr
 async function estimateDeskewCorrection(
   sharp: any,
   buffer: Buffer,
+  options: { finePass?: boolean } = {},
 ): Promise<VisionPreprocessDeskewMetadata> {
   try {
     const raw = await readRawPreprocessImage(sharp, buffer);
@@ -299,7 +306,7 @@ async function estimateDeskewCorrection(
     let bestAngle = 0;
     let bestScore = -Infinity;
     let secondBestScore = -Infinity;
-    for (let angle = -4; angle <= 4.0001; angle += 0.25) {
+    const scoreAngle = (angle: number): number => {
       const radians = (angle * Math.PI) / 180;
       const sin = Math.sin(radians);
       const cos = Math.cos(radians);
@@ -320,6 +327,11 @@ async function estimateDeskewCorrection(
       for (const count of colBins.values()) {
         score += count * count;
       }
+      return score;
+    };
+
+    for (let angle = -4; angle <= 4.0001; angle += 0.25) {
+      const score = scoreAngle(angle);
       if (score > bestScore) {
         secondBestScore = bestScore;
         bestScore = score;
@@ -329,12 +341,27 @@ async function estimateDeskewCorrection(
       }
     }
 
+    if (options.finePass) {
+      const coarseBestAngle = bestAngle;
+      for (let angle = coarseBestAngle - 0.3; angle <= coarseBestAngle + 0.3001; angle += 0.05) {
+        const rounded = Math.round(angle * 100) / 100;
+        const score = scoreAngle(rounded);
+        if (score > bestScore) {
+          secondBestScore = bestScore;
+          bestScore = score;
+          bestAngle = rounded;
+        } else if (score > secondBestScore) {
+          secondBestScore = score;
+        }
+      }
+    }
+
     const confidence = bestScore > 0
       ? clampRatio((bestScore - Math.max(0, secondBestScore)) / bestScore * 8)
       : 0;
     const applied = Math.abs(bestAngle) >= 0.35 && (confidence >= 0.01 || Math.abs(bestAngle) >= 1);
     return {
-      method: 'projection-profile',
+      method: options.finePass ? 'projection-profile-fine' : 'projection-profile',
       angleDeg: roundAngle(applied ? bestAngle : 0),
       confidence: roundRatio(confidence),
       applied,
@@ -347,6 +374,7 @@ async function estimateDeskewCorrection(
 async function detectPreprocessingRegions(
   sharp: any,
   buffer: Buffer,
+  policy: VisionImagePreprocessPolicy = 'ocr-optimized',
 ): Promise<VisionPreprocessRegionMetadata[]> {
   const regions: VisionPreprocessRegionMetadata[] = [{
     id: 'normalized-full-page',
@@ -376,9 +404,13 @@ async function detectPreprocessingRegions(
       regions.push(contentRegion);
     }
 
-    const panelRegions = buildTableLogPanelCandidates(raw);
+    const panelRegions = buildTableLogPanelCandidates(raw, { regionV2: policy === 'region-v2' });
     for (const region of panelRegions) {
-      if (!regions.some((existing) => regionOverlap(existing, region) > 0.88)) {
+      if (!regions.some((existing) =>
+        existing.id !== 'normalized-full-page'
+        && existing.id !== 'original-full-page'
+        && regionOverlap(existing, region) > 0.88,
+      )) {
         regions.push(region);
       }
     }
@@ -389,7 +421,10 @@ async function detectPreprocessingRegions(
   }
 }
 
-function buildTableLogPanelCandidates(raw: RawPreprocessImage): VisionPreprocessRegionMetadata[] {
+function buildTableLogPanelCandidates(
+  raw: RawPreprocessImage,
+  options: { regionV2?: boolean } = {},
+): VisionPreprocessRegionMetadata[] {
   const rowThreshold = Math.max(24, Math.round(raw.width * 0.07));
   const colThreshold = Math.max(24, Math.round(raw.height * 0.055));
   const heavyRows = raw.rowDarkCounts
@@ -454,17 +489,114 @@ function buildTableLogPanelCandidates(raw: RawPreprocessImage): VisionPreprocess
     ));
   }
 
+  const regionV2Candidates = options.regionV2 ? buildRegionV2PanelCandidates(raw, rowSpan) : [];
+  const candidatePool = options.regionV2
+    ? [...regionV2Candidates, full, ...candidates.slice(1)]
+    : candidates;
   const deduped: VisionPreprocessRegionMetadata[] = [];
-  for (const candidate of candidates) {
+  for (const candidate of candidatePool) {
     const coverage = candidate.coverageRatio ?? 0;
-    if (coverage < 0.025 || coverage > 0.98) {
+    const maxCoverage = options.regionV2 && candidate.id === 'region-v2-table-panel-overview' ? 1 : 0.98;
+    if (coverage < 0.025 || coverage > maxCoverage) {
       continue;
     }
     if (!deduped.some((existing) => regionOverlap(existing, candidate) > 0.88)) {
       deduped.push(candidate);
     }
   }
-  return deduped.slice(0, 5);
+  return deduped.slice(0, options.regionV2 ? 8 : 5);
+}
+
+function buildRegionV2PanelCandidates(
+  raw: RawPreprocessImage,
+  rowSpan: { start: number; end: number; count: number },
+): VisionPreprocessRegionMetadata[] {
+  const activeColThreshold = Math.max(8, Math.round(raw.height * 0.012));
+  const activeCols = raw.colDarkCounts
+    .map((count, index) => ({ count, index }))
+    .filter((col) => col.count >= activeColThreshold)
+    .map((col) => col.index);
+  const colClusters = mergeLineClusters(
+    groupContiguous(activeCols, Math.max(4, Math.round(raw.width * 0.01))),
+    Math.max(12, Math.round(raw.width * 0.035)),
+  ).filter((cluster) => {
+    const width = cluster.end - cluster.start + 1;
+    return width >= raw.width * 0.055 && width <= raw.width * 0.58;
+  });
+
+  const candidates: VisionPreprocessRegionMetadata[] = [];
+  const broadCoverage = ((raw.maxX - raw.minX + 1) * (rowSpan.end - rowSpan.start + 1)) / Math.max(1, raw.width * raw.height);
+  if (broadCoverage >= 0.02) {
+    candidates.push(buildRegionFromPixels(
+      'region-v2-table-panel-overview',
+      'region-v2 table panel crop',
+      raw.minX,
+      rowSpan.start,
+      raw.maxX,
+      rowSpan.end,
+      raw.width,
+      raw.height,
+      14,
+    ));
+  }
+
+  for (const [index, cluster] of colClusters.entries()) {
+    const localBounds = boundsForColumnRange(raw, cluster.start, cluster.end, rowSpan);
+    if (!localBounds) {
+      continue;
+    }
+    const width = localBounds.maxX - localBounds.minX + 1;
+    const height = localBounds.maxY - localBounds.minY + 1;
+    const coverage = (width * height) / Math.max(1, raw.width * raw.height);
+    if (coverage < 0.02 || coverage > 0.92) {
+      continue;
+    }
+    const tall = height / Math.max(1, width) >= 1.22;
+    const label = tall
+      ? 'region-v2 borehole/log strip crop'
+      : 'region-v2 table panel crop';
+    candidates.push(buildRegionFromPixels(
+      tall ? `region-v2-borehole-log-strip-${index + 1}` : `region-v2-table-panel-${index + 1}`,
+      label,
+      localBounds.minX,
+      localBounds.minY,
+      localBounds.maxX,
+      localBounds.maxY,
+      raw.width,
+      raw.height,
+      14,
+    ));
+  }
+
+  return candidates;
+}
+
+function boundsForColumnRange(
+  raw: RawPreprocessImage,
+  minCol: number,
+  maxCol: number,
+  rowSpan: { start: number; end: number },
+): { minX: number; minY: number; maxX: number; maxY: number } | null {
+  let minX = raw.width;
+  let minY = raw.height;
+  let maxX = -1;
+  let maxY = -1;
+  const left = Math.max(0, minCol);
+  const right = Math.min(raw.width - 1, maxCol);
+  const top = Math.max(0, rowSpan.start);
+  const bottom = Math.min(raw.height - 1, rowSpan.end);
+  for (let y = top; y <= bottom; y += 1) {
+    for (let x = left; x <= right; x += 1) {
+      const value = raw.data[(y * raw.width + x) * raw.channels] ?? 255;
+      if (value < 238) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  return maxX > minX && maxY > minY ? { minX, minY, maxX, maxY } : null;
 }
 
 function scorePreprocessRegions(
@@ -893,7 +1025,8 @@ export async function preprocessVisionImageBuffer(
       'auto-orient',
       'flatten-white-background',
     ];
-    const deskew = await estimateDeskewCorrection(sharp, working);
+    const regionV2 = policy === 'region-v2';
+    const deskew = await estimateDeskewCorrection(sharp, working, { finePass: regionV2 });
     if (deskew.applied) {
       working = await sharp(working, { pages: 1 })
         .rotate(deskew.angleDeg, { background: '#ffffff' })
@@ -901,18 +1034,25 @@ export async function preprocessVisionImageBuffer(
         .png()
         .toBuffer();
       operations.push(`deskew-angle-${deskew.angleDeg.toFixed(2)}deg`);
+      if (regionV2) {
+        operations.push('projection-profile-fine-deskew');
+      }
     } else {
       operations.push('deskew-not-applied');
+      if (regionV2) {
+        operations.push('projection-profile-fine-deskew-not-applied');
+      }
     }
 
+    const normalizedMaxDimension = regionV2 ? 2200 : 1800;
     const output = await sharp(working, { pages: 1 })
       .trim({
         background: '#ffffff',
         threshold: 10,
       })
       .resize({
-        width: 1800,
-        height: 1800,
+        width: normalizedMaxDimension,
+        height: normalizedMaxDimension,
         fit: 'inside',
         withoutEnlargement: true,
       })
@@ -924,13 +1064,13 @@ export async function preprocessVisionImageBuffer(
     const outputMetadata = await readImageMetadata(sharp, output, 'image/png');
     operations.push(
       'trim-white-margins-threshold-10',
-      'resize-inside-1800-no-enlarge',
+      `resize-inside-${normalizedMaxDimension}-no-enlarge`,
       'grayscale',
       'normalize-contrast',
       'sharpen',
       'encode-png',
     );
-    let regions = await detectPreprocessingRegions(sharp, output);
+    let regions = await detectPreprocessingRegions(sharp, output, policy);
     if (regions.some((region) => region.id === 'content-bounding-box')) {
       operations.push('detect-content-bounding-box');
     }
@@ -939,6 +1079,12 @@ export async function preprocessVisionImageBuffer(
     }
     if (regions.some((region) => region.id.startsWith('borehole-log-panel-candidate'))) {
       operations.push('detect-borehole-log-panel-candidate');
+    }
+    if (regions.some((region) => region.id.startsWith('region-v2-table-panel'))) {
+      operations.push('detect-region-v2-table-panel');
+    }
+    if (regions.some((region) => region.id.startsWith('region-v2-borehole-log-strip'))) {
+      operations.push('detect-region-v2-borehole-log-strip');
     }
     if (regions.filter((region) => region.id.includes('panel-candidate')).length > 1) {
       operations.push('detect-multiple-table-log-candidates');

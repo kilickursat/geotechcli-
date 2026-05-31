@@ -58,8 +58,10 @@ describe('geotech benchmark corpus', () => {
     const inputs = [
       corpusInput(fixture, 'hosted-beta', 'none'),
       corpusInput(fixture, 'hosted-beta', 'ocr-optimized'),
+      corpusInput(fixture, 'hosted-beta', 'region-v2'),
       corpusInput(fixture, 'open-byok-text-evidence', 'none'),
       corpusInput(fixture, 'open-byok-text-evidence', 'ocr-optimized'),
+      corpusInput(fixture, 'open-byok-text-evidence', 'region-v2'),
     ];
 
     const report = buildGeotechBenchmarkCorpusReport(inputs, {
@@ -70,20 +72,24 @@ describe('geotech benchmark corpus', () => {
     expect(report.kind).toBe('geotech-benchmark-corpus-report');
     expect(report.summary).toMatchObject({
       fixtureCount: 1,
-      runCount: 4,
-      passedRuns: 4,
+      runCount: 6,
+      passedRuns: 6,
       failedRuns: 0,
       passed: true,
       providerProfiles: ['hosted-beta', 'open-byok-text-evidence'],
-      preprocessingModes: ['none', 'ocr-optimized'],
+      preprocessingModes: ['none', 'ocr-optimized', 'region-v2'],
       totalEstimatedHostedCalls: 0,
     });
-    expect(report.preprocessingComparisons).toHaveLength(2);
+    expect(report.preprocessingComparisons).toHaveLength(4);
     expect(report.preprocessingComparisons[0]).toMatchObject({
       fixtureId: fixture.id,
       qualityDelta: 0.24,
       persistedRegionAssetsDelta: expect.any(Number),
     });
+    expect(report.preprocessingComparisons.map((comparison) => comparison.currentMode)).toEqual(expect.arrayContaining([
+      'ocr-optimized',
+      'region-v2',
+    ]));
     expect(report.runs[0]?.reviewGates).toEqual(expect.arrayContaining([
       'human-engineering-review-required',
     ]));
@@ -140,7 +146,7 @@ describe('geotech benchmark corpus', () => {
 function corpusInput(
   fixture: GeotechBenchmarkCorpusFixture,
   providerProfile: string,
-  preprocessingMode: 'none' | 'ocr-optimized',
+  preprocessingMode: 'none' | 'ocr-optimized' | 'region-v2',
 ) {
   return {
     fixture,
@@ -151,7 +157,7 @@ function corpusInput(
 }
 
 function makeBenchmarkVariant(
-  preprocessingMode: 'none' | 'ocr-optimized',
+  preprocessingMode: 'none' | 'ocr-optimized' | 'region-v2',
   providerProfile: string,
 ): GeotechDocumentBenchmark {
   const benchmark = readJson(benchmarkFixturePath) as GeotechDocumentBenchmark;
@@ -178,7 +184,46 @@ function makeBenchmarkVariant(
       maxContextStrategy: providerProfile === 'hosted-beta' ? 'full' : 'micro',
     } as any,
   };
-  benchmark.preprocessing = preprocessingMode === 'ocr-optimized'
+  benchmark.preprocessing = preprocessingMode === 'region-v2'
+    ? {
+        versions: ['page-evidence-preprocess-v4:region-v2'],
+        modes: ['region-v2'],
+        pagesWithPreprocessing: totalPages,
+        pagesWithoutPreprocessing: 0,
+        pagesWithRegions: 9,
+        totalRegions: 24,
+        preprocessingRegions: 17,
+        layoutRegions: 7,
+        pageRegionCoverage: 0.265,
+        pagesWithPreprocessingMetadata: totalPages,
+        operationCounts: {
+          'detect-table-log-panels': 7,
+          'detect-region-v2-table-panel': 5,
+          'detect-region-v2-borehole-log-strip': 4,
+          'projection-profile-fine-deskew': 4,
+          'normalize-region-assets': 17,
+        },
+        regionLabelCounts: {
+          'detected table/log panel candidate': 7,
+          'region-v2 table panel crop': 5,
+          'region-v2 borehole/log strip crop': 4,
+        },
+        persistedRegionAssets: 17,
+        persistedRegionAssetBytes: 340000,
+        pagesDeskewed: 4,
+        averageDeskewAngleDeg: 0.82,
+        averageQualityScore: 0.88,
+        averageRegionQualityScore: 0.84,
+        lowQualityRegions: 0,
+        qualityWarningCounts: {},
+        sourceCategories: {
+          'native-text': 27,
+          'layout-ocr': 17,
+          vision: 0,
+          none: 0,
+        },
+      }
+    : preprocessingMode === 'ocr-optimized'
     ? {
         versions: ['page-evidence-preprocess-v4:ocr-optimized'],
         modes: ['ocr-optimized'],

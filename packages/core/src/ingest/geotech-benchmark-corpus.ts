@@ -473,28 +473,40 @@ function buildPreprocessingComparisons(
   const comparisons: GeotechBenchmarkCorpusPreprocessingComparison[] = [];
   for (const group of grouped.values()) {
     const baseline = group.find((run) => run.preprocessingMode === 'none') ?? group[0];
-    const current = group.find((run) => run.preprocessingMode === 'ocr-optimized') ?? group.find((run) => run !== baseline);
-    if (!baseline || !current || baseline.preprocessingMode === current.preprocessingMode) {
+    if (!baseline) {
       continue;
     }
-    comparisons.push({
-      fixtureId: current.fixtureId,
-      providerProfile: current.providerProfile,
-      baselineMode: baseline.preprocessingMode,
-      currentMode: current.preprocessingMode,
-      traceabilityDelta: roundRatio(current.directTraceabilityRate - baseline.directTraceabilityRate),
-      readinessDelta: current.groundModelReadinessScore - baseline.groundModelReadinessScore,
-      qualityDelta: roundRatio(current.preprocessingQualityScore - baseline.preprocessingQualityScore),
-      regionQualityDelta: roundRatio(current.preprocessingRegionQualityScore - baseline.preprocessingRegionQualityScore),
-      hostedCallDelta: current.estimatedHostedCalls - baseline.estimatedHostedCalls,
-      pagesDeskewedDelta: current.pagesDeskewed - baseline.pagesDeskewed,
-      persistedRegionAssetsDelta: current.persistedRegionAssets - baseline.persistedRegionAssets,
-    });
+    const candidates = group
+      .filter((run) => run.preprocessingMode !== baseline.preprocessingMode)
+      .sort((left, right) => preprocessingModeRank(left.preprocessingMode) - preprocessingModeRank(right.preprocessingMode));
+    for (const current of candidates) {
+      comparisons.push({
+        fixtureId: current.fixtureId,
+        providerProfile: current.providerProfile,
+        baselineMode: baseline.preprocessingMode,
+        currentMode: current.preprocessingMode,
+        traceabilityDelta: roundRatio(current.directTraceabilityRate - baseline.directTraceabilityRate),
+        readinessDelta: current.groundModelReadinessScore - baseline.groundModelReadinessScore,
+        qualityDelta: roundRatio(current.preprocessingQualityScore - baseline.preprocessingQualityScore),
+        regionQualityDelta: roundRatio(current.preprocessingRegionQualityScore - baseline.preprocessingRegionQualityScore),
+        hostedCallDelta: current.estimatedHostedCalls - baseline.estimatedHostedCalls,
+        pagesDeskewedDelta: current.pagesDeskewed - baseline.pagesDeskewed,
+        persistedRegionAssetsDelta: current.persistedRegionAssets - baseline.persistedRegionAssets,
+      });
+    }
   }
   return comparisons.sort((left, right) =>
     left.fixtureId.localeCompare(right.fixtureId)
-    || left.providerProfile.localeCompare(right.providerProfile),
+    || left.providerProfile.localeCompare(right.providerProfile)
+    || preprocessingModeRank(left.currentMode) - preprocessingModeRank(right.currentMode),
   );
+}
+
+function preprocessingModeRank(mode: string): number {
+  if (mode === 'none') return 0;
+  if (mode === 'ocr-optimized') return 1;
+  if (mode === 'region-v2') return 2;
+  return 10;
 }
 
 function summarizeCorpus(

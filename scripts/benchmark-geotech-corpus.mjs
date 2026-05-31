@@ -69,7 +69,7 @@ async function main(argv) {
   const registry = readJson(registryPath);
   assertRegistry(registry, registryPath);
   const providerProfiles = parseCsvArg(args.providerProfiles ?? process.env.npm_config_provider_profiles ?? 'hosted-beta,open-byok-text-evidence');
-  const preprocessingModes = parseCsvArg(args.preprocessingModes ?? process.env.npm_config_preprocessing_modes ?? 'none,ocr-optimized');
+  const preprocessingModes = parseCsvArg(args.preprocessingModes ?? process.env.npm_config_preprocessing_modes ?? 'none,ocr-optimized,region-v2');
   const inputs = [];
   const skippedFixtures = [];
 
@@ -402,11 +402,11 @@ function buildBenchmarkVariant(baseBenchmark, options) {
   };
   benchmark.job = {
     ...(benchmark.job ?? {}),
-    durationMs: benchmark.job?.durationMs ?? (options.preprocessingMode === 'ocr-optimized' ? 860 : 640),
+    durationMs: benchmark.job?.durationMs ?? (options.preprocessingMode === 'region-v2' ? 980 : options.preprocessingMode === 'ocr-optimized' ? 860 : 640),
   };
   benchmark.latency = {
     ...(benchmark.latency ?? {}),
-    totalKnownLatencyMs: benchmark.latency?.totalKnownLatencyMs ?? (options.preprocessingMode === 'ocr-optimized' ? 860 : 640),
+    totalKnownLatencyMs: benchmark.latency?.totalKnownLatencyMs ?? (options.preprocessingMode === 'region-v2' ? 980 : options.preprocessingMode === 'ocr-optimized' ? 860 : 640),
   };
   benchmark.pages = Array.isArray(benchmark.pages)
     ? benchmark.pages.map((page) => ({
@@ -504,40 +504,58 @@ function preprocessingBlock(mode, totalPages, category) {
     };
   }
 
-  const cropCount = Math.max(2, Math.min(12, Math.round(totalPages * 0.25)));
+  const regionV2 = mode === 'region-v2';
+  const cropCount = regionV2
+    ? Math.max(3, Math.min(16, Math.round(totalPages * 0.38)))
+    : Math.max(2, Math.min(12, Math.round(totalPages * 0.25)));
+  const regionAssetMultiplier = regionV2 ? 2 : 1;
   return {
-    versions: ['page-evidence-preprocess-v4:ocr-optimized'],
-    modes: ['ocr-optimized'],
+    versions: [`page-evidence-preprocess-v4:${mode}`],
+    modes: [mode],
     pagesWithPreprocessing: totalPages,
     pagesWithoutPreprocessing: 0,
     pagesWithRegions: cropCount,
-    totalRegions: cropCount * 2,
-    preprocessingRegions: cropCount,
+    totalRegions: cropCount * (regionV2 ? 3 : 2),
+    preprocessingRegions: cropCount * regionAssetMultiplier,
     layoutRegions: cropCount,
     pageRegionCoverage: totalPages > 0 ? Number((cropCount / totalPages).toFixed(3)) : 0,
     pagesWithPreprocessingMetadata: totalPages,
-    operationCounts: {
+    operationCounts: regionV2 ? {
+      'auto-orient': totalPages,
+      'projection-profile-fine-deskew': cropCount,
+      'trim-white-margins': totalPages,
+      'detect-table-log-panels': cropCount,
+      'detect-region-v2-table-panel': Math.max(1, Math.round(cropCount / 2)),
+      'detect-region-v2-borehole-log-strip': Math.max(1, Math.round(cropCount / 2)),
+      'normalize-region-assets': cropCount * regionAssetMultiplier,
+      'score-preprocessing-regions': cropCount * regionAssetMultiplier,
+    } : {
       'auto-orient': totalPages,
       'projection-profile-deskew': cropCount,
       'trim-white-margins': totalPages,
       'detect-table-log-panels': cropCount,
       'normalize-region-assets': cropCount,
     },
-    regionLabelCounts: {
+    regionLabelCounts: regionV2 ? {
+      'normalized full page': totalPages,
+      'detected table/log panel candidate': cropCount,
+      'region-v2 table panel crop': Math.max(1, Math.round(cropCount / 2)),
+      'region-v2 borehole/log strip crop': Math.max(1, Math.round(cropCount / 2)),
+    } : {
       'normalized full page': totalPages,
       'detected table/log panel candidate': cropCount,
     },
-    persistedRegionAssets: cropCount,
-    persistedRegionAssetBytes: cropCount * 18000,
-    pagesDeskewed: Math.max(1, Math.round(cropCount / 2)),
-    averageDeskewAngleDeg: 0.7,
-    averageQualityScore: 0.82,
-    averageRegionQualityScore: 0.76,
+    persistedRegionAssets: cropCount * regionAssetMultiplier,
+    persistedRegionAssetBytes: cropCount * regionAssetMultiplier * (regionV2 ? 22000 : 18000),
+    pagesDeskewed: Math.max(1, Math.round(cropCount * (regionV2 ? 0.65 : 0.5))),
+    averageDeskewAngleDeg: regionV2 ? 0.82 : 0.7,
+    averageQualityScore: regionV2 ? 0.88 : 0.82,
+    averageRegionQualityScore: regionV2 ? 0.84 : 0.76,
     lowQualityRegions: 0,
     qualityWarningCounts: {},
     sourceCategories: {
       'native-text': 0,
-      'layout-ocr': cropCount,
+      'layout-ocr': regionV2 ? cropCount * regionAssetMultiplier : cropCount,
       vision: 0,
       none: 0,
     },

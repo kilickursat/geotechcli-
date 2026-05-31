@@ -88,7 +88,7 @@ const PageSchema = z.object({
     preprocessingVersion: z.string().optional(),
     schemaVersion: z.number().int().positive().optional(),
     pipelineVersion: z.string().optional(),
-    policy: z.enum(['none', 'ocr-optimized']).optional(),
+    policy: z.enum(['none', 'ocr-optimized', 'region-v2']).optional(),
     transformed: z.boolean().optional(),
     operations: z.array(z.string()).optional(),
     input: z.object({
@@ -111,7 +111,7 @@ const PageSchema = z.object({
       regionCount: z.number().int().nonnegative(),
       cropAssetCount: z.number().int().nonnegative(),
       deskew: z.object({
-        method: z.literal('projection-profile'),
+        method: z.enum(['projection-profile', 'projection-profile-fine']),
         angleDeg: z.number(),
         confidence: z.number().min(0).max(1),
         applied: z.boolean(),

@@ -201,6 +201,9 @@ function buildVisionOcrPreprocessingRegionInputs(
 
 function regionOcrPriority(id: string, label: string): number {
   const value = `${id} ${label}`.toLowerCase();
+  if (value.includes('region-v2') && (value.includes('table') || value.includes('log') || value.includes('strip'))) {
+    return -1;
+  }
   if (value.includes('table') || value.includes('log-panel')) {
     return 0;
   }
@@ -208,6 +211,81 @@ function regionOcrPriority(id: string, label: string): number {
     return 1;
   }
   return 2;
+}
+
+function recoverLocalTextFromRegionInputs(
+  regionInputs: Array<{ buffer: Buffer; mimeType: string; label: string }>,
+  minimumLength: number,
+): { textHint?: string; warnings: string[] } {
+  if (regionInputs.length === 0 || !hasLocalTesseractOcr()) {
+    return { warnings: [] };
+  }
+
+  const regionTexts: string[] = [];
+  const warnings: string[] = [];
+  for (const regionInput of regionInputs) {
+    const regionText = normalizeTextHint(runLocalTesseractOcr(regionInput.buffer, regionInput.mimeType), 2200);
+    if (regionText) {
+      regionTexts.push(regionText);
+    }
+  }
+
+  const combinedRegionText = normalizeTextHint(regionTexts.join('\n'), 5000);
+  if (combinedRegionText && combinedRegionText.length >= minimumLength) {
+    warnings.push(`Recovered OCR text from ${regionTexts.length} preprocessed region crop(s) before full-page OCR.`);
+    return { textHint: combinedRegionText, warnings };
+  }
+  if (combinedRegionText) {
+    warnings.push('Preprocessed region OCR recovered text fragments before full-page OCR, but they were too short to trust.');
+  }
+  return { warnings };
+}
+
+async function recoverVisionTextFromRegionInputs(
+  regionInputs: Array<{ buffer: Buffer; mimeType: string; label: string }>,
+  minimumLength: number,
+  config: LLMConfig,
+  visionTranscribe: NonNullable<RecoverDocumentTextHintOptions['visionTranscribe']>,
+): Promise<{ textHint?: string; warnings: string[] }> {
+  if (regionInputs.length === 0) {
+    return { warnings: [] };
+  }
+
+  const regionTexts: string[] = [];
+  const warnings: string[] = [];
+  for (const regionInput of regionInputs) {
+    try {
+      const regionTranscription = await visionTranscribe(
+        regionInput.buffer.toString('base64'),
+        regionInput.mimeType,
+        config,
+      );
+      const sanitized = sanitizeVisionOcrText(regionTranscription.text);
+      warnings.push(...regionTranscription.warnings.map((warning) => `${regionInput.label}: ${warning}`));
+      if (sanitized.rejectedReason) {
+        warnings.push(`${regionInput.label}: ${sanitized.rejectedReason}`);
+        continue;
+      }
+      if (sanitized.textHint) {
+        regionTexts.push(sanitized.textHint);
+      }
+    } catch (error) {
+      warnings.push(`${regionInput.label} failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  const combinedRegionText = normalizeTextHint(regionTexts.join('\n'), 5000);
+  if (combinedRegionText && combinedRegionText.length >= minimumLength) {
+    warnings.push(`Recovered OCR text from ${regionInputs.length} preprocessed region crop(s).`);
+    return {
+      textHint: combinedRegionText,
+      warnings: [...new Set(warnings)],
+    };
+  }
+  if (combinedRegionText) {
+    warnings.push('Preprocessed region OCR recovered text fragments, but they were still too short to trust for document extraction.');
+  }
+  return { warnings: [...new Set(warnings)] };
 }
 
 export function hasLocalTesseractOcr(): boolean {
@@ -380,12 +458,30 @@ export async function recoverDocumentTextHint(
 
   const warnings: string[] = [...nativeTextWarnings];
   const originalBuffer = Buffer.from(options.imageBase64, 'base64');
+  const preprocessingPolicy = resolveVisionImagePreprocessPolicy();
   const preprocessed = await preprocessVisionImageBuffer(
     originalBuffer,
     options.mimeType,
-    resolveVisionImagePreprocessPolicy(),
+    preprocessingPolicy,
   );
   warnings.push(...preprocessed.warnings);
+  const regionInputs = buildVisionOcrPreprocessingRegionInputs(preprocessed.preprocessing);
+  const preferRegionOcr = preprocessingPolicy === 'region-v2';
+
+  if (preferRegionOcr) {
+    const regionLocalOcr = recoverLocalTextFromRegionInputs(regionInputs, minimumLength);
+    warnings.push(...regionLocalOcr.warnings);
+    if (regionLocalOcr.textHint) {
+      return {
+        textHint: regionLocalOcr.textHint,
+        source: 'local-ocr',
+        warnings: [...new Set(warnings)],
+        latencyMs: Date.now() - start,
+        transformed: preprocessed.transformed,
+        preprocessing: preprocessed.preprocessing,
+      };
+    }
+  }
 
   const localText = normalizeTextHint(runLocalTesseractOcr(preprocessed.buffer, preprocessed.mimeType));
   if (localText && localText.length >= minimumLength) {
@@ -406,6 +502,26 @@ export async function recoverDocumentTextHint(
 
   if (allowVisionOcr && options.visionTranscribe) {
     let recoveredVisionText: string | undefined;
+
+    if (preferRegionOcr && regionInputs.length > 0) {
+      const regionRecovery = await recoverVisionTextFromRegionInputs(
+        regionInputs,
+        minimumLength,
+        options.config,
+        options.visionTranscribe,
+      );
+      warnings.push(...regionRecovery.warnings);
+      if (regionRecovery.textHint) {
+        return {
+          textHint: regionRecovery.textHint,
+          source: 'vision-ocr',
+          warnings: [...new Set(warnings)],
+          latencyMs: Date.now() - start,
+          transformed: preprocessed.transformed,
+          preprocessing: preprocessed.preprocessing,
+        };
+      }
+    }
 
     try {
       const transcription = await options.visionTranscribe(
@@ -439,46 +555,23 @@ export async function recoverDocumentTextHint(
       warnings.push('Vision OCR returned a text hint, but it was too short to trust for document extraction.');
     }
 
-    const regionInputs = buildVisionOcrPreprocessingRegionInputs(preprocessed.preprocessing);
-    if (regionInputs.length > 0) {
-      const regionTexts: string[] = [];
-
-      for (const regionInput of regionInputs) {
-        try {
-          const regionTranscription = await options.visionTranscribe(
-            regionInput.buffer.toString('base64'),
-            regionInput.mimeType,
-            options.config,
-          );
-          const sanitized = sanitizeVisionOcrText(regionTranscription.text);
-          warnings.push(...regionTranscription.warnings.map((warning) => `${regionInput.label}: ${warning}`));
-          if (sanitized.rejectedReason) {
-            warnings.push(`${regionInput.label}: ${sanitized.rejectedReason}`);
-            continue;
-          }
-          if (sanitized.textHint) {
-            regionTexts.push(sanitized.textHint);
-          }
-        } catch (error) {
-          warnings.push(`${regionInput.label} failed: ${error instanceof Error ? error.message : String(error)}`);
-        }
-      }
-
-      const combinedRegionText = normalizeTextHint(regionTexts.join('\n'), 4000);
-      if (combinedRegionText && combinedRegionText.length >= minimumLength) {
-        warnings.push(`Recovered OCR text from ${regionInputs.length} preprocessed region crop(s).`);
+    if (!preferRegionOcr && regionInputs.length > 0) {
+      const regionRecovery = await recoverVisionTextFromRegionInputs(
+        regionInputs,
+        minimumLength,
+        options.config,
+        options.visionTranscribe,
+      );
+      warnings.push(...regionRecovery.warnings);
+      if (regionRecovery.textHint) {
         return {
-          textHint: combinedRegionText,
+          textHint: regionRecovery.textHint,
           source: 'vision-ocr',
           warnings: [...new Set(warnings)],
           latencyMs: Date.now() - start,
           transformed: preprocessed.transformed,
           preprocessing: preprocessed.preprocessing,
         };
-      }
-
-      if (combinedRegionText) {
-        warnings.push('Preprocessed region OCR recovered text fragments, but they were still too short to trust for document extraction.');
       }
     }
 

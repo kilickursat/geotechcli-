@@ -278,7 +278,7 @@ function normalizePreprocessingMetadata(value: unknown): GeotechDocumentPageEvid
   if (
     schemaVersion !== 1
     || !pipelineVersion
-    || (policy !== 'none' && policy !== 'ocr-optimized')
+    || (policy !== 'none' && policy !== 'ocr-optimized' && policy !== 'region-v2')
     || transformed === undefined
     || !input
     || !output
@@ -419,7 +419,12 @@ function normalizePreprocessingDeskew(value: unknown): NonNullable<NonNullable<G
   const angleDeg = asOptionalNumber(value.angleDeg);
   const confidence = asRatio(value.confidence);
   const applied = typeof value.applied === 'boolean' ? value.applied : undefined;
-  if (method !== 'projection-profile' || angleDeg == null || confidence == null || applied === undefined) {
+  if (
+    (method !== 'projection-profile' && method !== 'projection-profile-fine')
+    || angleDeg == null
+    || confidence == null
+    || applied === undefined
+  ) {
     return undefined;
   }
   return {
