@@ -216,26 +216,43 @@ describe('vision image preprocessing', () => {
       {
         fileName: 'preprocess-v2-cpt-table.fixture.pdf',
         label: 'CPT table',
+        pageNumber: 1,
         expectedOperations: ['detect-region-v2-table-panel'],
         minCrops: 1,
       },
       {
         fileName: 'preprocess-v2-lab-table.fixture.pdf',
         label: 'lab table',
+        pageNumber: 1,
         expectedOperations: ['detect-region-v2-table-panel'],
         minCrops: 1,
       },
       {
         fileName: 'preprocess-v2-mixed-scanned-report.fixture.pdf',
         label: 'mixed scanned report',
+        pageNumber: 1,
         expectedOperations: ['detect-region-v2-borehole-log-strip', 'detect-region-v2-table-panel'],
         minCrops: 2,
+      },
+      {
+        fileName: 'preprocess-v2-mixed-digital-scanned.fixture.pdf',
+        label: 'mixed digital/scanned report',
+        pageNumber: 2,
+        expectedOperations: ['detect-region-v2-borehole-log-strip', 'detect-region-v2-table-panel'],
+        minCrops: 2,
+      },
+      {
+        fileName: 'preprocess-v2-malformed-scanned.fixture.pdf',
+        label: 'malformed scanned report',
+        pageNumber: 1,
+        expectedOperations: ['detect-region-v2-table-panel'],
+        minCrops: 1,
       },
     ];
 
     for (const fixture of fixtures) {
       const input = readFileSync(join(testDir, 'fixtures', 'geotech-corpus', fixture.fileName));
-      const result = await renderPdfPageToImageBuffer(input, 1, {
+      const result = await renderPdfPageToImageBuffer(input, fixture.pageNumber, {
         scale: 2,
         preprocessPolicy: 'region-v2',
       });

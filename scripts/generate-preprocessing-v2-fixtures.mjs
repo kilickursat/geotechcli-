@@ -3,7 +3,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import sharp from 'sharp';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -31,6 +31,19 @@ const fixtures = [
     rotateDeg: -0.7,
     svg: mixedReportSvg(),
   },
+  {
+    fileName: 'preprocess-v2-mixed-digital-scanned.fixture.pdf',
+    title: 'Preprocessing v2 mixed digital scanned fixture',
+    rotateDeg: 1.2,
+    svg: mixedReportSvg(),
+    digitalFirstPage: true,
+  },
+  {
+    fileName: 'preprocess-v2-malformed-scanned.fixture.pdf',
+    title: 'Preprocessing v2 malformed scanned fixture',
+    rotateDeg: -3.4,
+    svg: malformedReportSvg(),
+  },
 ];
 
 mkdirSync(fixtureDir, { recursive: true });
@@ -49,6 +62,9 @@ for (const fixture of fixtures) {
   pdf.setCreator('GeotechCLI fixture generator');
   pdf.setCreationDate(new Date('2026-05-31T00:00:00.000Z'));
   pdf.setModificationDate(new Date('2026-05-31T00:00:00.000Z'));
+  if (fixture.digitalFirstPage) {
+    await addDigitalSummaryPage(pdf);
+  }
   const page = pdf.addPage([595.28, 841.89]);
   const image = await pdf.embedPng(png);
   page.drawImage(image, {
@@ -60,6 +76,46 @@ for (const fixture of fixtures) {
   const outputPath = join(fixtureDir, fixture.fileName);
   writeFileSync(outputPath, await pdf.save({ useObjectStreams: false }));
   console.log(outputPath);
+}
+
+async function addDigitalSummaryPage(pdf) {
+  const page = pdf.addPage([595.28, 841.89]);
+  const regular = await pdf.embedFont(StandardFonts.Helvetica);
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  page.drawText('Digital Summary Page - Ground Investigation Extract', {
+    x: 54,
+    y: 780,
+    size: 18,
+    font: bold,
+    color: rgb(0.07, 0.09, 0.15),
+  });
+  page.drawText('This native-text page precedes a scanned evidence page in the same fixture.', {
+    x: 54,
+    y: 748,
+    size: 11,
+    font: regular,
+    color: rgb(0.07, 0.09, 0.15),
+  });
+  const rows = [
+    ['Borehole', 'Max depth', 'Key stratum', 'Evidence page'],
+    ['BH1', '10.0 m', 'Fill over clay and weathered rock', '2'],
+    ['BH2', '8.5 m', 'Clay over dense sand', '2'],
+    ['Groundwater', 'Not reported', 'Review required', '2'],
+  ];
+  const x = [54, 150, 250, 450];
+  let y = 700;
+  for (const row of rows) {
+    for (let i = 0; i < row.length; i += 1) {
+      page.drawText(row[i], {
+        x: x[i],
+        y,
+        size: y === 700 ? 10 : 9,
+        font: y === 700 ? bold : regular,
+        color: rgb(0.07, 0.09, 0.15),
+      });
+    }
+    y -= 28;
+  }
 }
 
 function pageStart(title, subtitle) {
@@ -163,6 +219,53 @@ function mixedReportSvg() {
     <text x="520" y="990">RQD</text><text x="690" y="990">8.5 m</text><text x="850" y="990">48%</text><text x="1015" y="990">18</text>
     <text x="520" y="1095">UCS</text><text x="690" y="1095">9.0 m</text><text x="850" y="1095">11 MPa</text><text x="1015" y="1095">20</text>
     <text x="540" y="1288">SPT-depth plot</text>
+  </g>
+${pageEnd()}`;
+}
+
+function malformedReportSvg() {
+  return `${pageStart('Malformed Scanned Appendix Page', 'Synthetic clipped, skewed and noisy report scan for preprocessing v2 guardrails')}
+  <defs>
+    <filter id="noise">
+      <feTurbulence type="fractalNoise" baseFrequency="0.92" numOctaves="2" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer>
+        <feFuncA type="table" tableValues="0 0.08"/>
+      </feComponentTransfer>
+    </filter>
+  </defs>
+  <rect x="0" y="0" width="${pageWidth}" height="${pageHeight}" fill="#f4f0e8"/>
+  <rect x="0" y="0" width="${pageWidth}" height="${pageHeight}" filter="url(#noise)"/>
+  <rect x="-60" y="0" width="120" height="${pageHeight}" fill="#111827" opacity="0.28"/>
+  <rect x="1110" y="0" width="160" height="${pageHeight}" fill="#111827" opacity="0.18"/>
+  <g transform="translate(110 230) rotate(-1.8)" stroke="#111827" stroke-width="5" fill="none">
+    <rect x="0" y="0" width="1040" height="760"/>
+    <line x1="0" y1="95" x2="1040" y2="95"/>
+    <line x1="0" y1="190" x2="1040" y2="190"/>
+    <line x1="0" y1="285" x2="1040" y2="285"/>
+    <line x1="0" y1="380" x2="1040" y2="380"/>
+    <line x1="0" y1="475" x2="1040" y2="475"/>
+    <line x1="0" y1="570" x2="1040" y2="570"/>
+    <line x1="170" y1="0" x2="170" y2="760"/>
+    <line x1="340" y1="0" x2="340" y2="760"/>
+    <line x1="510" y1="0" x2="510" y2="760"/>
+    <line x1="680" y1="0" x2="680" y2="760"/>
+    <line x1="850" y1="0" x2="850" y2="760"/>
+  </g>
+  <g transform="translate(120 250) rotate(-1.8)" font-family="Arial, sans-serif" font-size="21" fill="#111827">
+    <text x="20" y="60" font-weight="700">Sample</text><text x="190" y="60" font-weight="700">Depth</text><text x="360" y="60" font-weight="700">Value</text><text x="530" y="60" font-weight="700">Unit</text><text x="700" y="60" font-weight="700">Notes</text>
+    <text x="20" y="155">BH1</text><text x="190" y="155">2.0 m</text><text x="360" y="155">46</text><text x="530" y="155">LL%</text><text x="700" y="155">blurred</text>
+    <text x="20" y="250">BH1</text><text x="190" y="250">4.5 m</text><text x="360" y="250">18</text><text x="530" y="250">SPT</text><text x="700" y="250">partial</text>
+    <text x="20" y="345">BH2</text><text x="190" y="345">6.0 m</text><text x="360" y="345">62</text><text x="530" y="345">RQD%</text><text x="700" y="345">review</text>
+    <text x="20" y="440">BH2</text><text x="190" y="440">8.0 m</text><text x="360" y="440">-</text><text x="530" y="440">GW</text><text x="700" y="440">missing</text>
+  </g>
+  <g transform="translate(170 1120) rotate(2.6)" stroke="#111827" stroke-width="4" fill="none">
+    <rect x="0" y="0" width="300" height="430"/>
+    <line x1="0" y1="108" x2="300" y2="108"/>
+    <line x1="0" y1="216" x2="300" y2="216"/>
+    <line x1="0" y1="324" x2="300" y2="324"/>
+    <line x1="100" y1="0" x2="100" y2="430"/>
+    <line x1="200" y1="0" x2="200" y2="430"/>
   </g>
 ${pageEnd()}`;
 }

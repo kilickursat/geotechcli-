@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.82] - 2026-05-31
+
+### Preprocessing Benchmark Harness
+
+- Added deterministic mixed digital/scanned and malformed scanned PDF fixtures so preprocessing v2 coverage now spans borehole logs, CPT tables, lab tables, mixed scanned reports, mixed digital/scanned PDFs, and malformed scanned PDFs.
+- Added `npm run benchmark:preprocessing` to compare `none`, `ocr-optimized`, and `region-v2` without hosted model calls, writing JSON, HTML, and SVG summaries with latency, quality, crop-asset, region-count, and region-quality deltas.
+- Kept preprocessing benchmark artifacts path-safe by recording fixture basenames and hashes only, then failing the benchmark when local paths or secrets leak into persisted output.
+
 ## [0.4.81] - 2026-05-31
 
 ### Preprocessing V2 Fixture Coverage

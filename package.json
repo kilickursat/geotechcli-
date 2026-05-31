@@ -21,6 +21,7 @@
     "smoke:byok": "npm run --workspace=@geotechcli/core build && node scripts/smoke-byok-providers.mjs",
     "benchmark:geotech-report": "node scripts/benchmark-geotech-report.mjs",
     "benchmark:geotech-corpus": "node scripts/benchmark-geotech-corpus.mjs",
+    "benchmark:preprocessing": "node scripts/benchmark-preprocessing-fixtures.mjs",
     "benchmark:signal-analysis": "node scripts/benchmark-signal-analysis.mjs",
     "changeset": "changeset",
     "version-packages": "changeset version",
