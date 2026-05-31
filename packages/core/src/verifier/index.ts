@@ -1,5 +1,8 @@
 export {
   verifyGroundModel,
+  type GroundModelCalculationDraftReviewGate,
+  type GroundModelCalculationDraftSourcePage,
+  type GroundModelCalculationDraftSourceRef,
   type GroundModelCalculationInputDraft,
   type GroundModelCalculationReadiness,
   type GroundModelCalculationReadinessStatus,

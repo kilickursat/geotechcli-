@@ -8,6 +8,16 @@ const releases = [
     date: '2026-05-31',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Extended opt-in GroundModel calculation input drafts with source references, grouped source pages, evidence-derived confidence, and explicit review gates' },
+      { type: 'fix', text: 'Kept calculation and FEM drafts non-executing until missing user inputs, assumptions, and evidence gates are resolved' },
+      { type: 'fix', text: 'Increased the broader preprocessing v2 fixture regression timeout so full core CI has enough budget for deterministic multi-PDF region rendering' },
+    ],
+  },
+  {
+    version: '0.4.83',
+    date: '2026-05-31',
+    tag: '0.4.83 Release',
+    changes: [
       { type: 'feat', text: 'Added deterministic standards-profile validation for Eurocode 7, AASHTO, IS, BS, and ASTM readiness with blocker codes, required assumptions, safety-factor context, and source references' },
       { type: 'feat', text: 'Wired standards-profile validation into GroundModel verification while keeping generated calculation drafts review-gated and non-executing' },
       { type: 'fix', text: 'Added focused regression coverage for profile assumptions, missing evidence blockers, workflow blockers, and source-reference propagation' },

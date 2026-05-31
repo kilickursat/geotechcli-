@@ -384,6 +384,43 @@ describe('FEM routing contract', () => {
         missingUserInputs: ['excavation length'],
         assumptions: ['review groundwater'],
         evidenceIds: ['ev-es-1', 'ev-gw-1'],
+        sourceRefs: [
+          {
+            evidenceId: 'ev-es-1',
+            sourcePath: 'lab.csv',
+            method: 'csv-sample',
+            confidence: 0.88,
+            rowNumber: 3,
+            columnName: 'E',
+            warnings: [],
+          },
+          {
+            evidenceId: 'ev-gw-1',
+            sourcePath: 'report.pdf',
+            method: 'pdf-text',
+            confidence: 0.82,
+            pageNumber: 12,
+            warnings: [],
+          },
+        ],
+        sourcePages: [
+          {
+            sourcePath: 'report.pdf',
+            pageNumber: 12,
+            evidenceIds: ['ev-gw-1'],
+            confidence: 0.82,
+          },
+        ],
+        confidence: 0.62,
+        reviewGates: [
+          {
+            code: 'missing_user_inputs',
+            severity: 'blocking',
+            message: 'Excavation length is required before execution.',
+            evidenceIds: ['ev-es-1', 'ev-gw-1'],
+            recommendation: 'Provide excavation geometry.',
+          },
+        ],
         readyToRun: false,
       },
     };
@@ -542,6 +579,35 @@ describe('FEM routing contract', () => {
         missingUserInputs: [],
         assumptions: ['review raft level and service pressure'],
         evidenceIds: ['ev-es-1', 'ev-gw-1'],
+        sourceRefs: [
+          {
+            evidenceId: 'ev-es-1',
+            sourcePath: 'lab.csv',
+            method: 'csv-sample',
+            confidence: 0.91,
+            rowNumber: 3,
+            columnName: 'E',
+            warnings: [],
+          },
+          {
+            evidenceId: 'ev-gw-1',
+            sourcePath: 'report.pdf',
+            method: 'pdf-text',
+            confidence: 0.84,
+            pageNumber: 12,
+            warnings: [],
+          },
+        ],
+        sourcePages: [
+          {
+            sourcePath: 'report.pdf',
+            pageNumber: 12,
+            evidenceIds: ['ev-gw-1'],
+            confidence: 0.84,
+          },
+        ],
+        confidence: 0.88,
+        reviewGates: [],
         readyToRun: false,
       },
     };

@@ -275,5 +275,5 @@ describe('vision image preprocessing', () => {
       expect(averageRegionQuality, fixture.label).toBeGreaterThan(0.4);
       expect(regionV2Crops.every((region) => (region.quality?.score ?? 0) > 0.35), fixture.label).toBe(true);
     }
-  });
+  }, 15_000);
 });

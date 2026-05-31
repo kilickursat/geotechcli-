@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.84] - 2026-05-31
+
+### Calculation Draft Traceability
+
+- Extended opt-in GroundModel calculation input drafts with structured source references, grouped source pages, evidence-derived draft confidence, and explicit review gates.
+- Kept bearing, settlement, pile, liquefaction, slope, and FEM draft workflows non-executing until missing user inputs, assumptions, and evidence gates are resolved.
+- Fixed the broader preprocessing v2 fixture regression test timeout so full core CI has enough budget for deterministic multi-PDF region rendering.
+
 ## [0.4.83] - 2026-05-31
 
 ### Standards Profile Validation

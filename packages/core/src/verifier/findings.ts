@@ -1,4 +1,5 @@
 import type { GroundModel } from '../ground-model/index.js';
+import { normalizeEvidenceConfidence } from '../evidence/index.js';
 import {
   getStandardProfile,
   normalizeStandardProfileId,
@@ -61,7 +62,38 @@ export interface GroundModelCalculationInputDraft {
   missingUserInputs: string[];
   assumptions: string[];
   evidenceIds: string[];
+  sourceRefs: GroundModelCalculationDraftSourceRef[];
+  sourcePages: GroundModelCalculationDraftSourcePage[];
+  confidence: number;
+  reviewGates: GroundModelCalculationDraftReviewGate[];
   readyToRun: boolean;
+}
+
+export interface GroundModelCalculationDraftSourceRef {
+  evidenceId: string;
+  sourcePath: string;
+  method: string;
+  confidence: number;
+  pageNumber?: number;
+  rowNumber?: number;
+  sheetName?: string;
+  columnName?: string;
+  warnings: string[];
+}
+
+export interface GroundModelCalculationDraftSourcePage {
+  sourcePath: string;
+  pageNumber: number;
+  evidenceIds: string[];
+  confidence: number;
+}
+
+export interface GroundModelCalculationDraftReviewGate {
+  code: string;
+  severity: 'blocking' | 'review' | 'info';
+  message: string;
+  evidenceIds: string[];
+  recommendation: string;
 }
 
 export interface VerifyGroundModelOptions {
@@ -1196,6 +1228,14 @@ function buildCalculationInputDraft(
       break;
     }
   }
+  const sourceRefs = buildDraftSourceRefs(model, evidenceIds);
+  const sourcePages = buildDraftSourcePages(sourceRefs);
+  const reviewGates = buildDraftReviewGates(status, workflow, missingUserInputs, evidenceIds, sourceRefs);
+  const confidence = calculateDraftConfidence(status, sourceRefs, evidenceIds, missingUserInputs);
+
+  const readyToRun = status === 'ready'
+    && missingUserInputs.length === 0
+    && reviewGates.every((gate) => gate.severity === 'info');
 
   return {
     workflow: workflow.workflow,
@@ -1205,8 +1245,148 @@ function buildCalculationInputDraft(
     missingUserInputs,
     assumptions,
     evidenceIds,
-    readyToRun: status !== 'blocked' && missingUserInputs.length === 0,
+    sourceRefs,
+    sourcePages,
+    confidence,
+    reviewGates,
+    readyToRun,
   };
+}
+
+function buildDraftSourceRefs(
+  model: GroundModel,
+  evidenceIds: string[],
+): GroundModelCalculationDraftSourceRef[] {
+  const evidenceById = new Map(model.evidence.map((evidence) => [evidence.id, evidence]));
+  return evidenceIds.flatMap((evidenceId) => {
+    const evidence = evidenceById.get(evidenceId);
+    if (!evidence) {
+      return [];
+    }
+
+    return [{
+      evidenceId,
+      sourcePath: evidence.sourcePath,
+      method: evidence.method,
+      confidence: normalizeEvidenceConfidence(evidence.confidence),
+      pageNumber: evidence.location.pageNumber,
+      rowNumber: evidence.location.rowNumber,
+      sheetName: evidence.location.sheetName,
+      columnName: evidence.location.columnName,
+      warnings: [...evidence.warnings],
+    }];
+  });
+}
+
+function buildDraftSourcePages(
+  sourceRefs: GroundModelCalculationDraftSourceRef[],
+): GroundModelCalculationDraftSourcePage[] {
+  const pages = new Map<string, GroundModelCalculationDraftSourcePage>();
+  for (const ref of sourceRefs) {
+    if (ref.pageNumber == null) {
+      continue;
+    }
+
+    const key = `${ref.sourcePath}#${ref.pageNumber}`;
+    const existing = pages.get(key);
+    if (existing) {
+      existing.evidenceIds = [...new Set([...existing.evidenceIds, ref.evidenceId])];
+      existing.confidence = normalizeEvidenceConfidence(Math.min(existing.confidence, ref.confidence));
+      continue;
+    }
+
+    pages.set(key, {
+      sourcePath: ref.sourcePath,
+      pageNumber: ref.pageNumber,
+      evidenceIds: [ref.evidenceId],
+      confidence: ref.confidence,
+    });
+  }
+
+  return [...pages.values()].sort((left, right) => (
+    left.sourcePath.localeCompare(right.sourcePath) || left.pageNumber - right.pageNumber
+  ));
+}
+
+function buildDraftReviewGates(
+  status: GroundModelCalculationReadinessStatus,
+  workflow: WorkflowReadinessInput,
+  missingUserInputs: string[],
+  evidenceIds: string[],
+  sourceRefs: GroundModelCalculationDraftSourceRef[],
+): GroundModelCalculationDraftReviewGate[] {
+  const gates: GroundModelCalculationDraftReviewGate[] = [];
+
+  if (status === 'blocked') {
+    gates.push({
+      code: 'workflow_blocked',
+      severity: 'blocking',
+      message: `${workflow.label} is blocked by missing core evidence.`,
+      evidenceIds,
+      recommendation: workflow.coreMissing.length > 0
+        ? `Resolve missing evidence: ${workflow.coreMissing.join(', ')}.`
+        : 'Resolve deterministic readiness blockers before using this draft.',
+    });
+  }
+
+  if (missingUserInputs.length > 0) {
+    gates.push({
+      code: 'missing_user_inputs',
+      severity: 'blocking',
+      message: `${workflow.label} requires explicit user inputs before execution.`,
+      evidenceIds,
+      recommendation: `Provide: ${missingUserInputs.join(', ')}.`,
+    });
+  }
+
+  if (workflow.assumptionMissing.length > 0) {
+    gates.push({
+      code: 'assumption_review_required',
+      severity: 'review',
+      message: `${workflow.label} depends on assumptions that are not evidence-bound.`,
+      evidenceIds,
+      recommendation: `Verify or declare: ${workflow.assumptionMissing.join(', ')}.`,
+    });
+  }
+
+  if (evidenceIds.length === 0) {
+    gates.push({
+      code: 'no_traceable_evidence',
+      severity: 'review',
+      message: `${workflow.label} draft has no bound evidence identifiers.`,
+      evidenceIds: [],
+      recommendation: 'Bind source-page, table-row, or manual evidence before treating the draft as engineering-ready.',
+    });
+  } else if (sourceRefs.length < evidenceIds.length) {
+    const resolved = new Set(sourceRefs.map((ref) => ref.evidenceId));
+    gates.push({
+      code: 'unresolved_evidence_refs',
+      severity: 'review',
+      message: `${workflow.label} draft references evidence IDs that could not be resolved to source locations.`,
+      evidenceIds: evidenceIds.filter((evidenceId) => !resolved.has(evidenceId)),
+      recommendation: 'Refresh the GroundModel evidence table or re-run workspace analysis so draft inputs carry source locations.',
+    });
+  }
+
+  return gates;
+}
+
+function calculateDraftConfidence(
+  status: GroundModelCalculationReadinessStatus,
+  sourceRefs: GroundModelCalculationDraftSourceRef[],
+  evidenceIds: string[],
+  missingUserInputs: string[],
+): number {
+  const sourceConfidence = sourceRefs.length > 0
+    ? sourceRefs.reduce((sum, ref) => sum + ref.confidence, 0) / sourceRefs.length
+    : evidenceIds.length > 0
+      ? 0.3
+      : 0.2;
+  const statusFactor = status === 'blocked' ? 0.45 : status === 'ready_with_assumptions' ? 0.8 : 1;
+  const missingInputFactor = missingUserInputs.length > 0
+    ? Math.max(0.4, 1 - missingUserInputs.length * 0.08)
+    : 1;
+  return normalizeEvidenceConfidence(sourceConfidence * statusFactor * missingInputFactor);
 }
 
 function findNumericParameter(model: GroundModel, pattern: RegExp): number | undefined {

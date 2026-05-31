@@ -104,7 +104,114 @@ function makeGroundModel(overrides: Partial<GroundModel> = {}): GroundModel {
       },
     ],
     monitoringSeries: [],
-    evidence: [],
+    evidence: [
+      {
+        id: 'ev-bh-1',
+        sourceType: 'pdf-page',
+        sourcePath: 'site-report.pdf',
+        location: { filePath: 'site-report.pdf', pageNumber: 3 },
+        method: 'pdf-text',
+        confidence: 0.9,
+        rawValue: 'BH-01',
+        normalizedValue: 'BH-01',
+        warnings: [],
+      },
+      {
+        id: 'ev-spt-1',
+        sourceType: 'pdf-page',
+        sourcePath: 'site-report.pdf',
+        location: { filePath: 'site-report.pdf', pageNumber: 4 },
+        method: 'pdf-text',
+        confidence: 0.92,
+        rawValue: 18,
+        normalizedValue: 18,
+        unit: 'blows/300mm',
+        warnings: [],
+      },
+      {
+        id: 'ev-strata-1',
+        sourceType: 'pdf-page',
+        sourcePath: 'site-report.pdf',
+        location: { filePath: 'site-report.pdf', pageNumber: 3 },
+        method: 'pdf-text',
+        confidence: 0.9,
+        rawValue: 'medium dense silty sand over stiff clay',
+        normalizedValue: 'medium dense silty sand over stiff clay',
+        warnings: [],
+      },
+      {
+        id: 'ev-gw-1',
+        sourceType: 'pdf-page',
+        sourcePath: 'site-report.pdf',
+        location: { filePath: 'site-report.pdf', pageNumber: 5 },
+        method: 'pdf-text',
+        confidence: 0.85,
+        rawValue: 1.8,
+        normalizedValue: 1.8,
+        unit: 'm bgl',
+        warnings: [],
+      },
+      {
+        id: 'ev-gamma-1',
+        sourceType: 'pdf-page',
+        sourcePath: 'lab-summary.pdf',
+        location: { filePath: 'lab-summary.pdf', pageNumber: 7 },
+        method: 'pdf-text',
+        confidence: 0.88,
+        rawValue: 18.5,
+        normalizedValue: 18.5,
+        unit: 'kN/m3',
+        warnings: [],
+      },
+      {
+        id: 'ev-phi-1',
+        sourceType: 'pdf-page',
+        sourcePath: 'lab-summary.pdf',
+        location: { filePath: 'lab-summary.pdf', pageNumber: 7 },
+        method: 'pdf-text',
+        confidence: 0.84,
+        rawValue: 32,
+        normalizedValue: 32,
+        unit: 'deg',
+        warnings: [],
+      },
+      {
+        id: 'ev-c-1',
+        sourceType: 'pdf-page',
+        sourcePath: 'lab-summary.pdf',
+        location: { filePath: 'lab-summary.pdf', pageNumber: 7 },
+        method: 'pdf-text',
+        confidence: 0.84,
+        rawValue: 8,
+        normalizedValue: 8,
+        unit: 'kPa',
+        warnings: [],
+      },
+      {
+        id: 'ev-es-1',
+        sourceType: 'pdf-page',
+        sourcePath: 'lab-summary.pdf',
+        location: { filePath: 'lab-summary.pdf', pageNumber: 8 },
+        method: 'pdf-text',
+        confidence: 0.8,
+        rawValue: 18000,
+        normalizedValue: 18000,
+        unit: 'kPa',
+        warnings: [],
+      },
+      {
+        id: 'ev-fines-1',
+        sourceType: 'pdf-page',
+        sourcePath: 'lab-summary.pdf',
+        location: { filePath: 'lab-summary.pdf', pageNumber: 8 },
+        method: 'pdf-text',
+        confidence: 0.78,
+        rawValue: 35,
+        normalizedValue: 35,
+        unit: '%',
+        warnings: [],
+      },
+    ],
     rejectedObservations: [],
     warnings: [],
     stats: {
@@ -115,7 +222,7 @@ function makeGroundModel(overrides: Partial<GroundModel> = {}): GroundModel {
       labTests: 0,
       parameters: 5,
       monitoringSeries: 0,
-      evidenceRefs: 8,
+      evidenceRefs: 9,
       rejectedObservations: 0,
     },
   };
@@ -337,6 +444,48 @@ describe('GroundModel calculation readiness', () => {
       frictionAngle: 32,
       method: 'meyerhof',
     });
+    expect(workflows['bearing-capacity']?.inputDraft?.sourcePages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ sourcePath: 'site-report.pdf', pageNumber: 3 }),
+        expect.objectContaining({ sourcePath: 'site-report.pdf', pageNumber: 5 }),
+        expect.objectContaining({ sourcePath: 'lab-summary.pdf', pageNumber: 7 }),
+      ]),
+    );
+    expect(workflows['bearing-capacity']?.inputDraft?.sourceRefs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ evidenceId: 'ev-strata-1', sourcePath: 'site-report.pdf', pageNumber: 3 }),
+        expect.objectContaining({ evidenceId: 'ev-phi-1', sourcePath: 'lab-summary.pdf', pageNumber: 7 }),
+      ]),
+    );
+    expect(workflows['bearing-capacity']?.inputDraft?.confidence).toBeGreaterThan(0.6);
+    expect(workflows['bearing-capacity']?.inputDraft?.reviewGates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'missing_user_inputs', severity: 'blocking' }),
+      ]),
+    );
+    expect(workflows['bearing-capacity']?.inputDraft?.reviewGates.map((gate) => gate.code)).not.toContain(
+      'unresolved_evidence_refs',
+    );
+    expect(workflows['liquefaction']?.inputDraft?.reviewGates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'missing_user_inputs', severity: 'blocking' }),
+      ]),
+    );
+    const assumptionVerification = verifyGroundModel(makeGroundModel({
+      groundwater: [],
+      stats: {
+        ...makeGroundModel().stats,
+        groundwaterObservations: 0,
+      },
+    }), { includeCalculationInputDrafts: true });
+    const assumptionWorkflows = Object.fromEntries(
+      assumptionVerification.calculationReadiness.workflows.map((workflow) => [workflow.workflow, workflow]),
+    );
+    expect(assumptionWorkflows['bearing-capacity']?.inputDraft?.reviewGates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'assumption_review_required', severity: 'review' }),
+      ]),
+    );
   });
 
   it('blocks calculations that lack core evidence and separates review assumptions', () => {
