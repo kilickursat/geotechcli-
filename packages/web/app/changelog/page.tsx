@@ -8,6 +8,15 @@ const releases = [
     date: '2026-06-01',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'fix', text: 'Fixed the trusted-publishing release build by giving the web package a temporary npm lockfile during Next.js build so the Node 24 publish job selects npm for SWC registry fallback' },
+      { type: 'fix', text: 'Kept the public web build behavior unchanged while aligning the release pipeline with the already-passing CI build' },
+    ],
+  },
+  {
+    version: '0.4.86',
+    date: '2026-06-01',
+    tag: '0.4.86 Release',
+    changes: [
       { type: 'feat', text: 'Added path-safe signal benchmark history and trend artifacts for deterministic monitoring benchmark comparisons over time' },
       { type: 'feat', text: 'Added a signal-trend HTML dashboard with instrument coverage and run-to-run deltas beside the JSON and SVG benchmark outputs' },
       { type: 'fix', text: 'Kept signal benchmark acceptance fail-closed on path leaks while preserving zero-model-call checks for all five synthetic instrument classes' },

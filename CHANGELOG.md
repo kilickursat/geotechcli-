@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.87] - 2026-06-01
+
+### Trusted Publishing Release Fix
+
+- Fixed the trusted-publishing release build by giving the web package a temporary npm lockfile during Next.js build so its SWC registry fallback selects npm instead of Yarn in the Node 24 publish job.
+- Kept the web build behavior unchanged for users while making the release pipeline consistent with the already-passing CI build.
+
 ## [0.4.86] - 2026-06-01
 
 ### Signal Benchmark Trends

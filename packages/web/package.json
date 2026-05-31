@@ -1,10 +1,10 @@
 {
   "name": "@geotechcli/web",
-  "version": "0.4.86",
+  "version": "0.4.87",
   "private": true,
   "scripts": {
     "dev": "node ../../node_modules/next/dist/bin/next dev",
-    "build": "npm run --workspace=@geotechcli/core build && node ../../node_modules/next/dist/bin/next build",
+    "build": "npm run --workspace=@geotechcli/core build && node ../../scripts/build-web-next.mjs",
     "start": "node ../../node_modules/next/dist/bin/next start",
     "lint": "node ../../node_modules/next/dist/bin/next lint",
     "clean": "rm -rf .next out .open-next",
@@ -15,7 +15,7 @@
     "cf:check": "node ../../node_modules/wrangler/bin/wrangler.js check"
   },
   "dependencies": {
-    "@geotechcli/core": "0.4.86",
+    "@geotechcli/core": "0.4.87",
     "@opennextjs/cloudflare": "^1.18.0",
     "next": "15.5.18",
     "react": "^19.0.0",
