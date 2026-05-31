@@ -8,6 +8,16 @@ const releases = [
     date: '2026-05-31',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added opt-in deterministic signal threshold profiles for settlement, piezometer, inclinometer, vibration PPV, and load-test monitoring data' },
+      { type: 'feat', text: 'Extended geotech signal analyze and the sandboxed analyze_signal_file tool with threshold-profile auto and named review profiles while keeping signal metrics deterministic' },
+      { type: 'fix', text: 'Expanded the signal benchmark fixture to all five instrument classes and made comparison/direct-signal benchmark artifacts path-safe' },
+    ],
+  },
+  {
+    version: '0.4.84',
+    date: '2026-05-31',
+    tag: '0.4.84 Release',
+    changes: [
       { type: 'feat', text: 'Extended opt-in GroundModel calculation input drafts with source references, grouped source pages, evidence-derived confidence, and explicit review gates' },
       { type: 'fix', text: 'Kept calculation and FEM drafts non-executing until missing user inputs, assumptions, and evidence gates are resolved' },
       { type: 'fix', text: 'Increased the broader preprocessing v2 fixture regression timeout so full core CI has enough budget for deterministic multi-PDF region rendering' },

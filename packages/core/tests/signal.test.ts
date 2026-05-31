@@ -220,6 +220,172 @@ describe('signal analysis', () => {
     expect(result.thresholdFlags).toEqual([]);
   });
 
+  it('applies named instrument threshold profiles with review-gated metadata', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-signal-profile-'));
+    tempDirs.push(dir);
+    const filePath = join(dir, 'piezometer.csv');
+    await writeFile(
+      filePath,
+      [
+        'timestamp,instrument,pore_pressure_kpa',
+        '2026-01-01T00:00:00Z,PZ-1,10',
+        '2026-01-02T00:00:00Z,PZ-1,25',
+        '2026-01-05T00:00:00Z,PZ-1,62',
+      ].join('\n'),
+      'utf-8',
+    );
+
+    const result = await analyzeSignalFile(filePath, {
+      type: 'piezometer',
+      thresholdProfile: 'piezometer-review-kpa',
+    });
+
+    expect(result.thresholdProfile).toMatchObject({
+      id: 'piezometer-review-kpa',
+      signalType: 'piezometer',
+      explicitOverrides: {
+        threshold: false,
+        rateThreshold: false,
+        expectedIntervalHours: false,
+      },
+    });
+    expect(result.thresholdProfile?.reviewGates).toContain('project-trigger-levels-required');
+    expect(result.thresholdFlags).toEqual([
+      expect.objectContaining({
+        kind: 'value-threshold',
+        source: 'threshold-profile',
+        profileId: 'piezometer-review-kpa',
+        value: 62,
+        threshold: 50,
+      }),
+      expect.objectContaining({
+        kind: 'rate-threshold',
+        source: 'threshold-profile',
+        profileId: 'piezometer-review-kpa',
+        value: 15,
+        threshold: 10,
+      }),
+      expect.objectContaining({
+        kind: 'rate-threshold',
+        source: 'threshold-profile',
+        profileId: 'piezometer-review-kpa',
+        value: 12.333333,
+        threshold: 10,
+      }),
+    ]);
+    expect(result.missingIntervals).toEqual([
+      expect.objectContaining({
+        seriesId: 'PZ-1',
+        gapHours: 72,
+        missingIntervals: 2,
+      }),
+    ]);
+    expect(result.warnings.join(' ')).toMatch(/generic review thresholds/i);
+  });
+
+  it('supports auto profiles with explicit project-threshold overrides', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-signal-profile-override-'));
+    tempDirs.push(dir);
+    const filePath = join(dir, 'settlement.csv');
+    await writeFile(
+      filePath,
+      [
+        'timestamp,instrument,settlement_mm',
+        '2026-01-01T00:00:00Z,SM-1,0',
+        '2026-01-02T00:00:00Z,SM-1,7',
+      ].join('\n'),
+      'utf-8',
+    );
+
+    const result = await analyzeSignalFile(filePath, {
+      type: 'settlement',
+      thresholdProfile: 'auto',
+      threshold: 6,
+      rateThreshold: 6,
+    });
+
+    expect(result.thresholdProfile).toMatchObject({
+      id: 'settlement-review-mm',
+      source: 'auto-profile',
+      explicitOverrides: {
+        threshold: true,
+        rateThreshold: true,
+        expectedIntervalHours: false,
+      },
+    });
+    expect(result.thresholdFlags).toEqual([
+      expect.objectContaining({ kind: 'value-threshold', threshold: 6, profileId: 'settlement-review-mm' }),
+      expect.objectContaining({ kind: 'rate-threshold', threshold: 6, profileId: 'settlement-review-mm' }),
+    ]);
+  });
+
+  it('infers vibration PPV and load-test value columns for benchmark fixtures', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-signal-vibration-load-'));
+    tempDirs.push(dir);
+    const vibrationPath = join(dir, 'vibration.csv');
+    const loadPath = join(dir, 'pile-load-test.csv');
+    await writeFile(
+      vibrationPath,
+      [
+        'timestamp,instrument,ppv_mm_s',
+        '2026-01-01T00:00:00Z,VIB-1,1.1',
+        '2026-01-01T00:05:00Z,VIB-1,5.4',
+      ].join('\n'),
+      'utf-8',
+    );
+    await writeFile(
+      loadPath,
+      [
+        'timestamp,instrument,load_kn',
+        '2026-01-01T00:00:00Z,PLT-1,0',
+        '2026-01-01T01:00:00Z,PLT-1,520',
+      ].join('\n'),
+      'utf-8',
+    );
+
+    const vibration = await analyzeSignalFile(vibrationPath, {
+      type: 'vibration',
+      thresholdProfile: 'auto',
+    });
+    const load = await analyzeSignalFile(loadPath, {
+      type: 'load-test',
+      thresholdProfile: 'auto',
+    });
+
+    expect(vibration.columns.value).toBe('ppv_mm_s');
+    expect(vibration.thresholdProfile?.id).toBe('vibration-ppv-review-mm-s');
+    expect(vibration.thresholdFlags).toEqual([
+      expect.objectContaining({ kind: 'value-threshold', value: 5.4, threshold: 5 }),
+    ]);
+    expect(load.columns.value).toBe('load_kn');
+    expect(load.thresholdProfile?.id).toBe('load-test-review-kn');
+    expect(load.thresholdFlags).toEqual([
+      expect.objectContaining({ kind: 'rate-threshold', value: 12480, threshold: 250 }),
+    ]);
+  });
+
+  it('rejects mismatched threshold profiles instead of applying wrong instrument limits', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-signal-profile-mismatch-'));
+    tempDirs.push(dir);
+    const filePath = join(dir, 'settlement.csv');
+    await writeFile(
+      filePath,
+      [
+        'timestamp,instrument,settlement_mm',
+        '2026-01-01T00:00:00Z,SM-1,0',
+        '2026-01-02T00:00:00Z,SM-1,7',
+      ].join('\n'),
+      'utf-8',
+    );
+
+    await expect(analyzeSignalFile(filePath, {
+      type: 'settlement',
+      thresholdProfile: 'vibration-ppv-review-mm-s',
+    }))
+      .rejects
+      .toThrow(/profile .* is for vibration/i);
+  });
+
   it('fails when no analyzable rows remain after validation', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'geotech-signal-empty-'));
     tempDirs.push(dir);

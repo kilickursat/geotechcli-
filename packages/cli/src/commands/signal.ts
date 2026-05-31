@@ -3,8 +3,10 @@ import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   analyzeSignalFile,
+  SIGNAL_THRESHOLD_PROFILE_IDS,
   type SignalAnalysisType,
   type SignalAnalyzeResult,
+  type SignalThresholdProfileOption,
 } from '@geotechcli/core';
 import { addGlobalFlags, getGlobalFlags } from '../util/flags.js';
 import type { VisualizationSource } from '../util/viz.js';
@@ -12,6 +14,7 @@ import { renderInteractiveVisualization, shouldUseBrowserPlots } from '../ui/plo
 import { heading, keyValue, renderJSON, renderTable, success, warn } from '../ui/terminal.js';
 
 const SIGNAL_TYPES: SignalAnalysisType[] = ['settlement', 'piezometer', 'inclinometer', 'vibration', 'load-test', 'unknown'];
+const SIGNAL_THRESHOLD_PROFILE_OPTIONS: SignalThresholdProfileOption[] = ['auto', ...SIGNAL_THRESHOLD_PROFILE_IDS];
 
 function parsePositiveNumber(value: string): number {
   const parsed = Number(value);
@@ -45,11 +48,23 @@ function parseFormat(value: string): 'json' | 'text' {
   throw new Error(`Unsupported format "${value}". Use json or text.`);
 }
 
+function parseThresholdProfile(value: string): SignalThresholdProfileOption {
+  const normalized = value.toLowerCase() as SignalThresholdProfileOption;
+  if (!SIGNAL_THRESHOLD_PROFILE_OPTIONS.includes(normalized)) {
+    throw new Error(`Unsupported threshold profile "${value}". Use ${SIGNAL_THRESHOLD_PROFILE_OPTIONS.join(', ')}.`);
+  }
+  return normalized;
+}
+
 function renderTextResult(result: SignalAnalyzeResult): void {
   heading('Signal Analysis');
   keyValue('Source', result.source.path);
   keyValue('Format', result.source.sheetName ? `${result.source.format}#${result.source.sheetName}` : result.source.format);
   keyValue('Signal type', result.signalType);
+  if (result.thresholdProfile) {
+    keyValue('Threshold profile', `${result.thresholdProfile.id} (${result.thresholdProfile.label})`);
+    keyValue('Threshold basis', result.thresholdProfile.basis);
+  }
   keyValue('Rows analyzed', result.source.rowsAnalyzed);
   keyValue('Rows rejected', result.source.rowsRejected);
   keyValue('Value column', result.columns.value);
@@ -77,7 +92,7 @@ function renderTextResult(result: SignalAnalyzeResult): void {
         flag.kind,
         flag.timestamp ?? flag.depth ?? flag.index,
         flag.value,
-        flag.threshold,
+        `${flag.threshold}${flag.profileId ? ` (${flag.profileId})` : ''}`,
       ]),
     );
     if (result.thresholdFlags.length > 12) warn(`${result.thresholdFlags.length - 12} additional threshold flags omitted. Use --json for full output.`);
@@ -217,6 +232,7 @@ export function registerSignalCommand(program: Command): void {
     .option('--max-rows <n>', 'Maximum rows to analyze', parsePositiveInteger)
     .option('--threshold <number>', 'Absolute value threshold for flags', parseNonNegativeNumber)
     .option('--rate-threshold <number>', 'Absolute rate-of-change threshold for flags', parseNonNegativeNumber)
+    .option('--threshold-profile <profile>', `Apply a generic review threshold profile: ${SIGNAL_THRESHOLD_PROFILE_OPTIONS.join(' | ')}`, parseThresholdProfile)
     .option('--expected-interval-hours <hours>', 'Expected timestamp spacing for missing interval detection', parsePositiveNumber)
     .addHelpText('after', `
   Examples:
@@ -224,6 +240,7 @@ export function registerSignalCommand(program: Command): void {
     geotech signal analyze settlement.csv --type settlement --expected-interval-hours 24
     geotech signal analyze readings.xlsx --sheet Daily --timestamp date --value settlement_mm
     geotech signal analyze piezometer.tsv --type piezometer --threshold 50 --rate-threshold 5
+    geotech signal analyze monitoring.csv --type settlement --threshold-profile settlement-review-mm
 `);
 
   addGlobalFlags(analyze);
@@ -232,6 +249,7 @@ export function registerSignalCommand(program: Command): void {
     const flags = getGlobalFlags(opts);
     const result = await analyzeSignalFile(resolve(filePath), {
       type: opts.type as SignalAnalysisType | undefined,
+      sourcePath: filePath,
       timestampColumn: opts.timestamp as string | undefined,
       depthColumn: opts.depth as string | undefined,
       valueColumn: opts.value as string | undefined,
@@ -241,6 +259,7 @@ export function registerSignalCommand(program: Command): void {
       maxRows: opts.maxRows as number | undefined,
       threshold: opts.threshold as number | undefined,
       rateThreshold: opts.rateThreshold as number | undefined,
+      thresholdProfile: opts.thresholdProfile as SignalThresholdProfileOption | undefined,
       expectedIntervalHours: opts.expectedIntervalHours as number | undefined,
     });
 

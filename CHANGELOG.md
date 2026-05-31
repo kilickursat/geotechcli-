@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.85] - 2026-05-31
+
+### Signal Threshold Profiles
+
+- Added opt-in deterministic signal threshold profiles for settlement, piezometer, inclinometer, vibration PPV, and load-test monitoring data, with review gates that require project-specific trigger levels before engineering acceptance.
+- Extended `geotech signal analyze` and the sandboxed `analyze_signal_file` tool with `--threshold-profile auto|<profile>` while keeping LLMs out of signal metric calculation.
+- Expanded the signal benchmark fixture to cover all five instrument classes and made comparison/direct-signal benchmark artifacts path-safe so local absolute paths do not leak into persisted outputs.
+
 ## [0.4.84] - 2026-05-31
 
 ### Calculation Draft Traceability

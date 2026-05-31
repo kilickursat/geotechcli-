@@ -833,6 +833,7 @@ async function persistSignalAnalysisArtifacts(options: {
     const analyzeOptions = {
       ...(source.signalType !== 'unknown' ? { type: source.signalType } : {}),
       ...(source.sheetName ? { sheetName: source.sheetName } : {}),
+      sourcePath: source.file.path,
       maxRows: 5000,
     };
 
@@ -845,7 +846,6 @@ async function persistSignalAnalysisArtifacts(options: {
       const status = result.warnings.length > 0 ? 'review' : 'pass';
       indexEntries.push({
         source: source.file.path,
-        absolutePath: source.file.absolutePath,
         sheetName: source.sheetName,
         status,
         signalType: result.signalType,
@@ -879,7 +879,6 @@ async function persistSignalAnalysisArtifacts(options: {
       const message = err instanceof Error ? err.message : String(err);
       indexEntries.push({
         source: source.file.path,
-        absolutePath: source.file.absolutePath,
         sheetName: source.sheetName,
         status: 'blocked',
         signalType: source.signalType,

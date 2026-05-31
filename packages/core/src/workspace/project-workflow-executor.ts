@@ -608,7 +608,7 @@ function buildActions(manifest: ProjectManifest, task: ProjectWorkflowTask): Pro
         evidenceIds: source.evidenceIds,
         recommendation: source.signalType === 'unknown'
           ? 'Confirm instrument type, then rerun with --type before using trend output.'
-          : 'Run this deterministic signal analysis command with project trigger thresholds when available.',
+          : 'Run this deterministic signal analysis command with the generic review profile or replace it with project trigger thresholds before engineering acceptance.',
       });
     }
 
@@ -965,6 +965,7 @@ function buildSignalAnalyzeCommand(
     quoteCommandArg(path),
     sheetName ? `--sheet ${quoteCommandArg(sheetName)}` : '',
     type !== 'unknown' ? `--type ${type}` : '',
+    type !== 'unknown' ? '--threshold-profile auto' : '',
   ].filter(Boolean).join(' ');
 }
 

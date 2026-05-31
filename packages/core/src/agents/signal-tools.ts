@@ -1,6 +1,12 @@
 import { existsSync } from 'node:fs';
 import { basename } from 'node:path';
-import { analyzeSignalFile, type SignalAnalyzeOptions, type SignalAnalysisType } from '../signal/index.js';
+import {
+  analyzeSignalFile,
+  SIGNAL_THRESHOLD_PROFILE_IDS,
+  type SignalAnalyzeOptions,
+  type SignalAnalysisType,
+  type SignalThresholdProfileOption,
+} from '../signal/index.js';
 import { toolRegistry, type ToolResult } from './tools.js';
 import { validateReadPath } from './sandbox.js';
 
@@ -12,6 +18,7 @@ const SIGNAL_TYPES: SignalAnalysisType[] = [
   'load-test',
   'unknown',
 ];
+const SIGNAL_THRESHOLD_PROFILE_OPTIONS: SignalThresholdProfileOption[] = ['auto', ...SIGNAL_THRESHOLD_PROFILE_IDS];
 
 function optionalString(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
@@ -30,6 +37,13 @@ function optionalSignalType(value: unknown): SignalAnalysisType | undefined {
   return SIGNAL_TYPES.includes(value as SignalAnalysisType) ? value as SignalAnalysisType : undefined;
 }
 
+function optionalThresholdProfile(value: unknown): SignalThresholdProfileOption | undefined {
+  if (typeof value !== 'string') return undefined;
+  return SIGNAL_THRESHOLD_PROFILE_OPTIONS.includes(value as SignalThresholdProfileOption)
+    ? value as SignalThresholdProfileOption
+    : undefined;
+}
+
 function buildSignalAnalyzeOptions(args: Record<string, unknown>): SignalAnalyzeOptions {
   return {
     type: optionalSignalType(args.type),
@@ -42,6 +56,7 @@ function buildSignalAnalyzeOptions(args: Record<string, unknown>): SignalAnalyze
     maxRows: optionalNumber(args.maxRows),
     threshold: optionalNumber(args.threshold),
     rateThreshold: optionalNumber(args.rateThreshold),
+    thresholdProfile: optionalThresholdProfile(args.thresholdProfile),
     expectedIntervalHours: optionalNumber(args.expectedIntervalHours),
   };
 }
@@ -70,6 +85,11 @@ toolRegistry.register(
         maxRows: { type: 'number', description: 'Maximum rows to analyze', default: 5000 },
         threshold: { type: 'number', description: 'Optional absolute value threshold for warning flags' },
         rateThreshold: { type: 'number', description: 'Optional absolute rate-of-change threshold for warning flags' },
+        thresholdProfile: {
+          type: 'string',
+          enum: SIGNAL_THRESHOLD_PROFILE_OPTIONS,
+          description: 'Optional generic review threshold profile. Use auto only when the instrument type is confirmed or inferred.',
+        },
         expectedIntervalHours: { type: 'number', description: 'Optional expected timestamp interval for missing-data gap detection' },
       },
     },
@@ -90,7 +110,10 @@ toolRegistry.register(
       return { success: false, data: null, summary: '', error: `File not found: ${filePath}` };
     }
 
-    const result = await analyzeSignalFile(filePath, buildSignalAnalyzeOptions(args));
+    const result = await analyzeSignalFile(filePath, {
+      ...buildSignalAnalyzeOptions(args),
+      sourcePath: basename(filePath),
+    });
     const seriesCount = result.series.length;
     const flags = result.thresholdFlags.length;
     const gaps = result.missingIntervals.length;

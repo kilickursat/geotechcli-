@@ -54,17 +54,13 @@ const directResult = spawnSync(process.execPath, [
   cliEntry,
   'signal',
   'analyze',
-  join(fixtureWorkspace, 'monitoring', 'settlement.csv'),
+  safePath(join(fixtureWorkspace, 'monitoring', 'settlement.csv')),
   '--type',
   'settlement',
-  '--expected-interval-hours',
-  '24',
-  '--threshold',
-  '2',
-  '--rate-threshold',
-  '0.4',
+  '--threshold-profile',
+  'auto',
   '--output',
-  directSignalOutput,
+  safePath(directSignalOutput),
   '--json',
 ], {
   cwd: repoRoot,
@@ -99,6 +95,8 @@ const analysisArtifacts = existsSync(join(runDir, 'signals'))
     .filter((entry) => entry.endsWith('.analysis.json'))
     .map((entry) => readJson(join(runDir, 'signals', entry)))
   : [];
+const directSignal = redactSignalOutputPaths(readJson(directSignalOutput));
+writeFileSync(directSignalOutput, `${JSON.stringify(directSignal, null, 2)}\n`, 'utf-8');
 
 const comparison = summarizeBenchmark({
   runDir,
@@ -107,7 +105,7 @@ const comparison = summarizeBenchmark({
   modelCalls,
   toolCalls,
   analysisArtifacts,
-  directSignal: readJson(directSignalOutput),
+  directSignal,
 });
 writeFileSync(comparisonOutput, `${JSON.stringify(comparison, null, 2)}\n`, 'utf-8');
 writeFileSync(summarySvgOutput, renderSummarySvg(comparison), 'utf-8');
@@ -125,8 +123,8 @@ function prepareSyntheticSignalWorkspace(workspace) {
     [
       'timestamp,instrument,settlement_mm',
       '2026-01-01,SM-1,1.2',
-      '2026-01-02,SM-1,1.7',
-      '2026-01-04,SM-1,2.3',
+      '2026-01-02,SM-1,8.4',
+      '2026-01-04,SM-1,31.0',
       '',
     ].join('\n'),
     'utf-8',
@@ -149,6 +147,28 @@ function prepareSyntheticSignalWorkspace(workspace) {
       '0,INC-1,0.0',
       '5,INC-1,2.5',
       '10,INC-1,4.8',
+      '',
+    ].join('\n'),
+    'utf-8',
+  );
+  writeFileSync(
+    join(workspace, 'monitoring', 'vibration.csv'),
+    [
+      'timestamp,instrument,ppv_mm_s',
+      '2026-01-01T00:00:00Z,VIB-1,1.1',
+      '2026-01-01T00:05:00Z,VIB-1,5.4',
+      '2026-01-01T00:10:00Z,VIB-1,3.2',
+      '',
+    ].join('\n'),
+    'utf-8',
+  );
+  writeFileSync(
+    join(workspace, 'monitoring', 'pile-load-test.csv'),
+    [
+      'timestamp,instrument,load_kn',
+      '2026-01-01T00:00:00Z,PLT-1,0',
+      '2026-01-01T01:00:00Z,PLT-1,200',
+      '2026-01-01T02:00:00Z,PLT-1,520',
       '',
     ].join('\n'),
     'utf-8',
@@ -178,6 +198,8 @@ function summarizeBenchmark(input) {
   const directThresholdFlags = input.directSignal.thresholdFlags.length;
   const directMissingIntervals = input.directSignal.missingIntervals.length;
   const directRateFlags = input.directSignal.thresholdFlags.filter((flag) => flag.kind === 'rate-threshold').length;
+  const directProfileId = input.directSignal.thresholdProfile?.id;
+  const sourceTypes = countBy(sources.map((source) => source.signalType ?? 'unknown'));
   const regressions = [
     input.workflow.task !== 'signal-analysis'
       ? `Workflow task was ${input.workflow.task}, expected signal-analysis.`
@@ -185,8 +207,8 @@ function summarizeBenchmark(input) {
     input.modelCalls.length > 0
       ? 'Signal benchmark produced model calls; deterministic signal workflow should keep model_calls.jsonl empty.'
       : null,
-    sources.length < 3
-      ? `Only ${sources.length} signal source(s) were indexed; expected at least 3 synthetic monitoring sources.`
+    sources.length < 5
+      ? `Only ${sources.length} signal source(s) were indexed; expected at least 5 synthetic monitoring sources.`
       : null,
     input.analysisArtifacts.length !== sources.length
       ? `Analysis artifact count ${input.analysisArtifacts.length} does not match indexed source count ${sources.length}.`
@@ -194,8 +216,11 @@ function summarizeBenchmark(input) {
     blockedSources.length > 0
       ? `${blockedSources.length} signal source(s) were blocked.`
       : null,
-    rowsAnalyzed < 9
-      ? `Only ${rowsAnalyzed} rows were analyzed; expected at least 9 synthetic monitoring readings.`
+    rowsAnalyzed < 15
+      ? `Only ${rowsAnalyzed} rows were analyzed; expected at least 15 synthetic monitoring readings.`
+      : null,
+    !['settlement', 'piezometer', 'inclinometer', 'vibration', 'load-test'].every((type) => sourceTypes[type] >= 1)
+      ? `Synthetic signal fixture did not cover every required instrument profile: ${JSON.stringify(sourceTypes)}.`
       : null,
     !input.toolCalls.some((call) => call.tool === 'signal.analyze_file')
       ? 'tool_calls.jsonl did not record signal.analyze_file.'
@@ -209,6 +234,9 @@ function summarizeBenchmark(input) {
     input.directSignal.signalType !== 'settlement'
       ? `Direct signal type was ${input.directSignal.signalType}, expected settlement.`
       : null,
+    directProfileId !== 'settlement-review-mm'
+      ? `Direct signal threshold profile was ${directProfileId ?? 'none'}, expected settlement-review-mm.`
+      : null,
     input.directSignal.source.rowsAnalyzed !== 3
       ? `Direct signal run analyzed ${input.directSignal.source.rowsAnalyzed} rows, expected 3.`
       : null,
@@ -219,21 +247,21 @@ function summarizeBenchmark(input) {
       ? 'Direct signal run did not emit a rate-threshold flag with explicit rate threshold input.'
       : null,
     directMissingIntervals < 1
-      ? 'Direct signal run did not emit missing intervals with explicit expected interval input.'
+      ? 'Direct signal run did not emit missing intervals from the threshold profile interval assumption.'
       : null,
   ].filter(Boolean);
 
-  return {
+  const comparison = {
     kind: 'signal-analysis-local-benchmark-comparison',
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
-    outputDir,
-    fixtureWorkspace,
-    runDir: input.runDir,
+    outputDir: safePath(outputDir),
+    fixtureWorkspace: safePath(fixtureWorkspace),
+    runDir: safePath(input.runDir),
     artifacts: {
-      comparison: comparisonOutput,
-      summarySvg: summarySvgOutput,
-      directSignal: directSignalOutput,
+      comparison: safePath(comparisonOutput),
+      summarySvg: safePath(summarySvgOutput),
+      directSignal: safePath(directSignalOutput),
       signalIndex: signalIndexPathRelative(input.runDir),
     },
     workflow: {
@@ -252,22 +280,70 @@ function summarizeBenchmark(input) {
       series,
       thresholdFlags,
       missingIntervals,
-      sourceTypes: countBy(sources.map((source) => source.signalType ?? 'unknown')),
+      sourceTypes,
     },
     directSignal: {
       rowsAnalyzed: input.directSignal.source.rowsAnalyzed,
+      thresholdProfile: directProfileId ?? null,
       thresholdFlags: directThresholdFlags,
       rateThresholdFlags: directRateFlags,
       missingIntervals: directMissingIntervals,
       series: input.directSignal.series.length,
     },
-    passed: regressions.length === 0,
+    pathSafety: {
+      checked: true,
+      leaks: [],
+    },
+    passed: false,
     regressions,
   };
+  const pathLeaks = detectPathLeaks(JSON.stringify(comparison));
+  comparison.pathSafety.leaks = pathLeaks;
+  if (pathLeaks.length > 0) {
+    comparison.regressions.push(`Benchmark comparison contains local path leak(s): ${pathLeaks.slice(0, 3).join(', ')}.`);
+  }
+  comparison.passed = comparison.regressions.length === 0;
+  return comparison;
 }
 
 function signalIndexPathRelative(runDir) {
-  return relative(repoRoot, join(runDir, 'signals', 'index.json'));
+  return safePath(join(runDir, 'signals', 'index.json'));
+}
+
+function safePath(filePath) {
+  const resolved = resolve(filePath);
+  const rel = relative(repoRoot, resolved);
+  if (rel === '' || (rel && !rel.startsWith('..') && !rel.startsWith('/') && !rel.startsWith('\\'))) {
+    return normalizePath(rel || '.');
+  }
+  return `[external]/${normalizePath(relative(dirname(resolved), resolved)) || 'artifact'}`;
+}
+
+function normalizePath(value) {
+  return String(value).replace(/\\/g, '/');
+}
+
+function redactSignalOutputPaths(signal) {
+  return {
+    ...signal,
+    source: {
+      ...signal.source,
+      path: safePath(signal.source?.path ?? 'signal-input'),
+    },
+  };
+}
+
+function detectPathLeaks(serialized) {
+  const leaks = new Set();
+  const normalizedRoot = normalizePath(repoRoot);
+  if (serialized.includes(normalizedRoot)) leaks.add(normalizedRoot);
+  for (const match of serialized.matchAll(/[A-Za-z]:\\\\[^",]+|[A-Za-z]:\/[^",]+/g)) {
+    leaks.add(match[0]);
+  }
+  for (const match of serialized.matchAll(/\/(?:home|Users|tmp|var)\/[^",]+/g)) {
+    leaks.add(match[0]);
+  }
+  return [...leaks];
 }
 
 function renderSummary(comparison) {

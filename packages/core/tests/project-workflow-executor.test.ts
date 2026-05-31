@@ -358,7 +358,7 @@ describe('runProjectWorkflow', () => {
     expect(run.actions[0]).toMatchObject({
       label: 'Analyze monitoring/settlement.csv',
       status: 'ready',
-      command: 'geotech signal analyze monitoring/settlement.csv --type settlement',
+      command: 'geotech signal analyze monitoring/settlement.csv --type settlement --threshold-profile auto',
       evidenceIds: ['ev-monitoring'],
     });
     expect(run.findings.some((finding) => finding.title === 'Thresholds require project assumptions')).toBe(true);

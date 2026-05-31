@@ -2,9 +2,17 @@ import { extname, basename } from 'node:path';
 import { parseDelimitedFile, parseXlsxFile, type TabularCell, type TabularRow } from '../tabular/index.js';
 
 export type SignalAnalysisType = 'settlement' | 'piezometer' | 'inclinometer' | 'vibration' | 'load-test' | 'unknown';
+export type SignalThresholdProfileId =
+  | 'settlement-review-mm'
+  | 'piezometer-review-kpa'
+  | 'inclinometer-review-mm'
+  | 'vibration-ppv-review-mm-s'
+  | 'load-test-review-kn';
+export type SignalThresholdProfileOption = SignalThresholdProfileId | 'auto';
 
 export interface SignalAnalyzeOptions {
   type?: SignalAnalysisType;
+  sourcePath?: string;
   timestampColumn?: string;
   depthColumn?: string;
   valueColumn?: string;
@@ -15,6 +23,29 @@ export interface SignalAnalyzeOptions {
   threshold?: number;
   rateThreshold?: number;
   expectedIntervalHours?: number;
+  thresholdProfile?: SignalThresholdProfileOption;
+}
+
+export interface SignalThresholdProfile {
+  id: SignalThresholdProfileId;
+  signalType: Exclude<SignalAnalysisType, 'unknown'>;
+  label: string;
+  valueUnit: string;
+  rateUnit: string;
+  basis: string;
+  valueThreshold?: number;
+  rateThreshold?: number;
+  expectedIntervalHours?: number;
+  reviewGates: string[];
+}
+
+export interface SignalAppliedThresholdProfile extends SignalThresholdProfile {
+  source: 'explicit-profile' | 'auto-profile';
+  explicitOverrides: {
+    threshold: boolean;
+    rateThreshold: boolean;
+    expectedIntervalHours: boolean;
+  };
 }
 
 export interface SignalPoint {
@@ -43,6 +74,8 @@ export interface SignalThresholdFlag {
   depth?: number;
   value: number;
   threshold: number;
+  source: 'user' | 'threshold-profile';
+  profileId?: SignalThresholdProfileId;
 }
 
 export interface SignalMissingInterval {
@@ -88,6 +121,7 @@ export interface SignalAnalyzeResult {
     rowsRejected: number;
   };
   signalType: SignalAnalysisType;
+  thresholdProfile?: SignalAppliedThresholdProfile;
   columns: {
     timestamp?: string;
     depth?: string;
@@ -117,6 +151,66 @@ const EXCEL_SERIAL_MIN = 20_000;
 const EXCEL_SERIAL_MAX = 80_000;
 const EXCEL_SERIAL_EPOCH_MS = Date.UTC(1899, 11, 30);
 
+export const SIGNAL_THRESHOLD_PROFILES: readonly SignalThresholdProfile[] = [
+  {
+    id: 'settlement-review-mm',
+    signalType: 'settlement',
+    label: 'Settlement monitoring review thresholds',
+    valueUnit: 'mm',
+    rateUnit: 'mm/day',
+    basis: 'Generic internal R&D review trigger for settlement monitoring. Replace with project trigger levels before engineering acceptance.',
+    valueThreshold: 25,
+    rateThreshold: 5,
+    expectedIntervalHours: 24,
+    reviewGates: ['project-trigger-levels-required', 'instrument-zero-baseline-required', 'unit-confirmation-required'],
+  },
+  {
+    id: 'piezometer-review-kpa',
+    signalType: 'piezometer',
+    label: 'Piezometer pore-pressure review thresholds',
+    valueUnit: 'kPa',
+    rateUnit: 'kPa/day',
+    basis: 'Generic internal R&D review trigger for pore pressure or groundwater level series. Replace with project trigger levels before engineering acceptance.',
+    valueThreshold: 50,
+    rateThreshold: 10,
+    expectedIntervalHours: 24,
+    reviewGates: ['project-trigger-levels-required', 'datum-and-unit-confirmation-required', 'seasonal-baseline-review-required'],
+  },
+  {
+    id: 'inclinometer-review-mm',
+    signalType: 'inclinometer',
+    label: 'Inclinometer displacement review thresholds',
+    valueUnit: 'mm',
+    rateUnit: 'mm per inferred x-axis unit',
+    basis: 'Generic internal R&D review trigger for inclinometer displacement profiles. Replace with project trigger levels before engineering acceptance.',
+    valueThreshold: 15,
+    rateThreshold: 2,
+    reviewGates: ['project-trigger-levels-required', 'axis-or-depth-confirmation-required', 'casing-baseline-required'],
+  },
+  {
+    id: 'vibration-ppv-review-mm-s',
+    signalType: 'vibration',
+    label: 'Vibration PPV review thresholds',
+    valueUnit: 'mm/s',
+    rateUnit: 'per-sample',
+    basis: 'Generic internal R&D review trigger for vibration PPV records. Replace with applicable project, asset, and regulatory limits before engineering acceptance.',
+    valueThreshold: 5,
+    reviewGates: ['project-trigger-levels-required', 'frequency-content-review-required', 'asset-sensitivity-review-required'],
+  },
+  {
+    id: 'load-test-review-kn',
+    signalType: 'load-test',
+    label: 'Load-test progression review thresholds',
+    valueUnit: 'kN',
+    rateUnit: 'kN per inferred x-axis unit',
+    basis: 'Generic internal R&D review trigger for load-test progression. Replace with test-method hold, creep, and acceptance criteria before engineering acceptance.',
+    rateThreshold: 250,
+    reviewGates: ['test-method-required', 'hold-period-criteria-required', 'unit-confirmation-required'],
+  },
+] as const;
+
+export const SIGNAL_THRESHOLD_PROFILE_IDS = SIGNAL_THRESHOLD_PROFILES.map((profile) => profile.id);
+
 function normalizeHeader(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
@@ -145,6 +239,60 @@ function inferSignalType(sourceName: string, columns: string[], option?: SignalA
   if (/vibration|ppv|velocity|acceler/.test(text)) return 'vibration';
   if (/loadtest|load|plate|piletest/.test(text)) return 'load-test';
   return 'unknown';
+}
+
+function signalThresholdProfileById(id: SignalThresholdProfileId): SignalThresholdProfile {
+  const profile = SIGNAL_THRESHOLD_PROFILES.find((candidate) => candidate.id === id);
+  if (!profile) {
+    throw new Error(`Unknown signal threshold profile "${id}".`);
+  }
+  return profile;
+}
+
+function resolveThresholdProfile(
+  signalType: SignalAnalysisType,
+  requested: SignalThresholdProfileOption | undefined,
+  options: SignalAnalyzeOptions,
+): { profile?: SignalAppliedThresholdProfile; warnings: string[] } {
+  if (!requested) return { warnings: [] };
+
+  if (requested === 'auto') {
+    if (signalType === 'unknown') {
+      return {
+        warnings: ['No signal threshold profile was applied because the signal type is unknown. Confirm --type or pass an explicit --threshold-profile.'],
+      };
+    }
+    const profile = SIGNAL_THRESHOLD_PROFILES.find((candidate) => candidate.signalType === signalType)!;
+    return {
+      profile: {
+        ...profile,
+        source: 'auto-profile',
+        explicitOverrides: {
+          threshold: options.threshold != null,
+          rateThreshold: options.rateThreshold != null,
+          expectedIntervalHours: options.expectedIntervalHours != null,
+        },
+      },
+      warnings: [`Applied ${profile.id} generic review thresholds. Replace with project-specific trigger levels before engineering acceptance.`],
+    };
+  }
+
+  const profile = signalThresholdProfileById(requested);
+  if (signalType !== 'unknown' && profile.signalType !== signalType) {
+    throw new Error(`Signal threshold profile "${requested}" is for ${profile.signalType}, but this input was classified as ${signalType}. Confirm --type or choose a matching profile.`);
+  }
+  return {
+    profile: {
+      ...profile,
+      source: 'explicit-profile',
+      explicitOverrides: {
+        threshold: options.threshold != null,
+        rateThreshold: options.rateThreshold != null,
+        expectedIntervalHours: options.expectedIntervalHours != null,
+      },
+    },
+    warnings: [`Applied ${profile.id} generic review thresholds. Replace with project-specific trigger levels before engineering acceptance.`],
+  };
 }
 
 function asNumber(value: TabularCell): number | undefined {
@@ -374,7 +522,13 @@ function ratesForSeries(series: SignalChartSeries): SignalRateMetrics {
   };
 }
 
-function thresholdFlagsForSeries(series: SignalChartSeries, valueThreshold?: number, rateThreshold?: number): SignalThresholdFlag[] {
+function thresholdFlagsForSeries(
+  series: SignalChartSeries,
+  valueThreshold: number | undefined,
+  rateThreshold: number | undefined,
+  source: 'user' | 'threshold-profile',
+  profileId?: SignalThresholdProfileId,
+): SignalThresholdFlag[] {
   const flags: SignalThresholdFlag[] = [];
   if (valueThreshold != null) {
     series.points.forEach((point, index) => {
@@ -389,6 +543,8 @@ function thresholdFlagsForSeries(series: SignalChartSeries, valueThreshold?: num
           depth: point.depth,
           value: round(point.value),
           threshold: valueThreshold,
+          source,
+          profileId,
         });
       }
     });
@@ -413,6 +569,8 @@ function thresholdFlagsForSeries(series: SignalChartSeries, valueThreshold?: num
           depth: current.depth,
           value: round(rate),
           threshold: rateThreshold,
+          source,
+          profileId,
         });
       }
     }
@@ -451,7 +609,7 @@ export async function analyzeSignalFile(filePath: string, options: SignalAnalyze
 
   const timestamp = findColumn(columns, options.timestampColumn, [/^time$/, /^timestamp$/, /^datetime$/, /^date$/, /readingdate/, /observedat/]);
   const depth = findColumn(columns, options.depthColumn, [/^depthm?$/, /depth/, /elevation/]);
-  const value = findColumn(columns, options.valueColumn, [/^value$/, /reading/, /settlement/, /porepressure/, /waterlevel/, /displacement/, /deflection/, /^ppv$/, /vibration/, /^load$/, /force/]);
+  const value = findColumn(columns, options.valueColumn, [/^value$/, /reading/, /settlement/, /porepressure/, /waterlevel/, /displacement/, /deflection/, /ppv/, /vibration/, /velocity/, /acceleration/, /load/, /force/]);
   const instrumentId = findColumn(columns, options.instrumentIdColumn, [/instrument/, /sensor/, /gauge/, /id$/]);
   const location = findColumn(columns, options.locationColumn, [/location/, /^loc$/, /station/, /chainage/]);
 
@@ -462,32 +620,45 @@ export async function analyzeSignalFile(filePath: string, options: SignalAnalyze
     throw new Error('Could not infer a timestamp or depth column. Provide --timestamp or --depth.');
   }
 
-  const signalType = inferSignalType(basename(filePath), columns, options.type);
+  const inferredSignalType = inferSignalType(basename(filePath), columns, options.type);
+  const profileResult = resolveThresholdProfile(inferredSignalType, options.thresholdProfile, options);
+  const signalType = inferredSignalType === 'unknown' && profileResult.profile
+    ? profileResult.profile.signalType
+    : inferredSignalType;
   const selectedColumns = { timestamp, depth, value, instrumentId, location };
   const built = buildPoints(table.rows, selectedColumns);
   if (built.points.length === 0) {
     throw new Error('Signal input has no analyzable rows after rejecting invalid values or timestamps.');
   }
   const series = groupSeries(built.points);
-  const valueThreshold = options.threshold;
-  const rateThreshold = options.rateThreshold;
+  const valueThreshold = options.threshold ?? profileResult.profile?.valueThreshold;
+  const rateThreshold = options.rateThreshold ?? profileResult.profile?.rateThreshold;
+  const expectedIntervalHours = options.expectedIntervalHours ?? profileResult.profile?.expectedIntervalHours;
+  const thresholdSource = profileResult.profile ? 'threshold-profile' : 'user';
 
   return {
     schemaVersion: 'signal-analysis.v0',
     source: {
-      path: filePath,
+      path: options.sourcePath ?? filePath,
       format: table.format,
       sheetName: table.sheetName,
       rowsAnalyzed: built.points.length,
       rowsRejected: built.rejected,
     },
     signalType,
+    thresholdProfile: profileResult.profile,
     columns: selectedColumns,
     trendSummary: series.map(summarizeSeries),
-    thresholdFlags: series.flatMap((item) => thresholdFlagsForSeries(item, valueThreshold, rateThreshold)),
-    missingIntervals: series.flatMap((item) => detectMissingIntervals(item, options.expectedIntervalHours)),
+    thresholdFlags: series.flatMap((item) => thresholdFlagsForSeries(
+      item,
+      valueThreshold,
+      rateThreshold,
+      thresholdSource,
+      profileResult.profile?.id,
+    )),
+    missingIntervals: series.flatMap((item) => detectMissingIntervals(item, expectedIntervalHours)),
     rateOfChange: series.map(ratesForSeries),
     series,
-    warnings: [...table.warnings, ...built.warnings],
+    warnings: [...table.warnings, ...built.warnings, ...profileResult.warnings],
   };
 }

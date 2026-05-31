@@ -30,15 +30,18 @@ describe('signal agent tool', () => {
     const result = await toolRegistry.execute('analyze_signal_file', {
       path: filePath,
       type: 'settlement',
+      thresholdProfile: 'auto',
       threshold: 5,
       rateThreshold: 2,
-      expectedIntervalHours: 24,
     });
 
     expect(result.success).toBe(true);
     expect(result.summary).toContain('Signal analysis (settlement)');
     const data = result.data as any;
     expect(data.schemaVersion).toBe('signal-analysis.v0');
+    expect(data.source.path).toBe('settlement-monitoring.csv');
+    expect(data.thresholdProfile.id).toBe('settlement-review-mm');
+    expect(data.thresholdProfile.reviewGates).toContain('project-trigger-levels-required');
     expect(data.source.rowsAnalyzed).toBe(3);
     expect(data.series).toHaveLength(1);
     expect(data.thresholdFlags.map((flag: any) => flag.kind)).toEqual(['value-threshold', 'rate-threshold']);
