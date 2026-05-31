@@ -5,8 +5,18 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 const releases = [
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-05-31',
+    date: '2026-06-01',
     tag: `${GEOTECHCLI_VERSION} Release`,
+    changes: [
+      { type: 'feat', text: 'Added path-safe signal benchmark history and trend artifacts for deterministic monitoring benchmark comparisons over time' },
+      { type: 'feat', text: 'Added a signal-trend HTML dashboard with instrument coverage and run-to-run deltas beside the JSON and SVG benchmark outputs' },
+      { type: 'fix', text: 'Kept signal benchmark acceptance fail-closed on path leaks while preserving zero-model-call checks for all five synthetic instrument classes' },
+    ],
+  },
+  {
+    version: '0.4.85',
+    date: '2026-05-31',
+    tag: '0.4.85 Release',
     changes: [
       { type: 'feat', text: 'Added opt-in deterministic signal threshold profiles for settlement, piezometer, inclinometer, vibration PPV, and load-test monitoring data' },
       { type: 'feat', text: 'Extended geotech signal analyze and the sandboxed analyze_signal_file tool with threshold-profile auto and named review profiles while keeping signal metrics deterministic' },

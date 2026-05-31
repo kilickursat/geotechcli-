@@ -12,6 +12,9 @@ const cliEntry = join(repoRoot, 'packages', 'cli', 'dist', 'index.js');
 const comparisonOutput = join(outputDir, 'comparison.json');
 const summarySvgOutput = join(outputDir, 'summary.svg');
 const directSignalOutput = join(outputDir, 'direct-settlement-signal.json');
+const historyOutput = join(outputDir, 'signal-history.json');
+const trendOutput = join(outputDir, 'signal-trend.json');
+const trendHtmlOutput = join(outputDir, 'signal-trend.html');
 
 if (!isInside(outputDir, fixtureWorkspace)) {
   console.error(`Refusing to prepare a signal benchmark fixture outside the output directory: ${fixtureWorkspace}`);
@@ -107,9 +110,22 @@ const comparison = summarizeBenchmark({
   analysisArtifacts,
   directSignal,
 });
+const trend = buildSignalTrend({
+  comparison,
+  previousHistory: readSignalHistory(historyOutput),
+});
+const trendLeaks = detectPathLeaks(JSON.stringify(trend));
+if (trendLeaks.length > 0) {
+  comparison.pathSafety.leaks.push(...trendLeaks);
+  comparison.regressions.push(`Signal trend output contains local path leak(s): ${trendLeaks.slice(0, 3).join(', ')}.`);
+  comparison.passed = false;
+}
 writeFileSync(comparisonOutput, `${JSON.stringify(comparison, null, 2)}\n`, 'utf-8');
 writeFileSync(summarySvgOutput, renderSummarySvg(comparison), 'utf-8');
-renderSummary(comparison);
+writeJson(historyOutput, trend.history);
+writeJson(trendOutput, trend.report);
+writeFileSync(trendHtmlOutput, renderTrendHtml(trend.report), 'utf-8');
+renderSummary(comparison, trend.report);
 
 if (!comparison.passed) {
   process.exit(1);
@@ -241,10 +257,10 @@ function summarizeBenchmark(input) {
       ? `Direct signal run analyzed ${input.directSignal.source.rowsAnalyzed} rows, expected 3.`
       : null,
     directThresholdFlags < 1
-      ? 'Direct signal run did not emit any threshold flags with explicit threshold inputs.'
+      ? 'Direct signal run did not emit any threshold flags with the threshold profile input.'
       : null,
     directRateFlags < 1
-      ? 'Direct signal run did not emit a rate-threshold flag with explicit rate threshold input.'
+      ? 'Direct signal run did not emit a rate-threshold flag with the threshold profile input.'
       : null,
     directMissingIntervals < 1
       ? 'Direct signal run did not emit missing intervals from the threshold profile interval assumption.'
@@ -262,6 +278,9 @@ function summarizeBenchmark(input) {
       comparison: safePath(comparisonOutput),
       summarySvg: safePath(summarySvgOutput),
       directSignal: safePath(directSignalOutput),
+      history: safePath(historyOutput),
+      trend: safePath(trendOutput),
+      trendHtml: safePath(trendHtmlOutput),
       signalIndex: signalIndexPathRelative(input.runDir),
     },
     workflow: {
@@ -310,6 +329,91 @@ function signalIndexPathRelative(runDir) {
   return safePath(join(runDir, 'signals', 'index.json'));
 }
 
+function readSignalHistory(filePath) {
+  const parsed = existsSync(filePath) ? safeReadJson(filePath) : null;
+  return Array.isArray(parsed)
+    ? parsed.filter((item) => item?.kind === 'signal-analysis-benchmark-history-entry')
+    : [];
+}
+
+function safeReadJson(filePath) {
+  try {
+    return readJson(filePath);
+  } catch {
+    return null;
+  }
+}
+
+function writeJson(filePath, value) {
+  writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf-8');
+}
+
+function buildSignalTrend(options) {
+  const current = buildSignalHistoryEntry(options.comparison);
+  const previous = options.previousHistory.at(-1) ?? null;
+  const history = [...options.previousHistory, current].slice(-50);
+  return {
+    history,
+    report: {
+      kind: 'signal-analysis-benchmark-trend',
+      schemaVersion: 1,
+      generatedAt: current.generatedAt,
+      current,
+      previous,
+      delta: previous ? buildSignalDelta(current.summary, previous.summary) : null,
+      historyCount: history.length,
+      note: 'Local signal trend output stores benchmark summaries only. Private paths and raw monitoring files are intentionally excluded.',
+    },
+  };
+}
+
+function buildSignalHistoryEntry(comparison) {
+  return {
+    kind: 'signal-analysis-benchmark-history-entry',
+    schemaVersion: 1,
+    generatedAt: comparison.generatedAt,
+    passed: comparison.passed,
+    thresholdProfile: comparison.directSignal.thresholdProfile,
+    summary: {
+      sources: finiteNumber(comparison.signalArtifacts.sources),
+      analyzedSources: finiteNumber(comparison.signalArtifacts.analyzedSources),
+      blockedSources: finiteNumber(comparison.signalArtifacts.blockedSources),
+      rowsAnalyzed: finiteNumber(comparison.signalArtifacts.rowsAnalyzed),
+      series: finiteNumber(comparison.signalArtifacts.series),
+      directThresholdFlags: finiteNumber(comparison.directSignal.thresholdFlags),
+      directRateThresholdFlags: finiteNumber(comparison.directSignal.rateThresholdFlags),
+      directMissingIntervals: finiteNumber(comparison.directSignal.missingIntervals),
+      modelCallsBytes: finiteNumber(comparison.workflow.modelCallsBytes),
+      pathLeakCount: Array.isArray(comparison.pathSafety?.leaks) ? comparison.pathSafety.leaks.length : 0,
+      sourceTypes: { ...(comparison.signalArtifacts.sourceTypes ?? {}) },
+    },
+  };
+}
+
+function buildSignalDelta(current, previous) {
+  return {
+    sources: current.sources - previous.sources,
+    analyzedSources: current.analyzedSources - previous.analyzedSources,
+    blockedSources: current.blockedSources - previous.blockedSources,
+    rowsAnalyzed: current.rowsAnalyzed - previous.rowsAnalyzed,
+    series: current.series - previous.series,
+    directThresholdFlags: current.directThresholdFlags - previous.directThresholdFlags,
+    directRateThresholdFlags: current.directRateThresholdFlags - previous.directRateThresholdFlags,
+    directMissingIntervals: current.directMissingIntervals - previous.directMissingIntervals,
+    modelCallsBytes: current.modelCallsBytes - previous.modelCallsBytes,
+    pathLeakCount: current.pathLeakCount - previous.pathLeakCount,
+    sourceTypes: buildSourceTypeDelta(current.sourceTypes, previous.sourceTypes),
+  };
+}
+
+function buildSourceTypeDelta(current, previous) {
+  const keys = new Set([...Object.keys(current ?? {}), ...Object.keys(previous ?? {})]);
+  return [...keys].sort().reduce((acc, key) => {
+    acc[key] = finiteNumber(current?.[key]) - finiteNumber(previous?.[key]);
+    return acc;
+  }, {});
+}
+
 function safePath(filePath) {
   const resolved = resolve(filePath);
   const rel = relative(repoRoot, resolved);
@@ -346,7 +450,7 @@ function detectPathLeaks(serialized) {
   return [...leaks];
 }
 
-function renderSummary(comparison) {
+function renderSummary(comparison, trend) {
   console.log('\nSignal analysis benchmark');
   console.log(`Workspace: ${fixtureWorkspace}`);
   console.log(`Run: ${comparison.runDir}`);
@@ -358,6 +462,9 @@ function renderSummary(comparison) {
   console.log(`Model calls bytes: ${comparison.workflow.modelCallsBytes}`);
   console.log(`Comparison: ${comparisonOutput}`);
   console.log(`Summary SVG: ${summarySvgOutput}`);
+  console.log(`History entries: ${trend.historyCount}`);
+  console.log(`Trend: ${trendOutput}`);
+  console.log(`Trend HTML: ${trendHtmlOutput}`);
   if (comparison.passed) {
     console.log('Acceptance: passed');
   } else {
@@ -403,8 +510,56 @@ ${cardMarkup}
 `;
 }
 
+function renderTrendHtml(trend) {
+  const delta = trend.delta;
+  const typeRows = Object.entries(trend.current.summary.sourceTypes)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([type, count]) => {
+      const typeDelta = delta?.sourceTypes?.[type] ?? null;
+      return `<tr><td>${escapeHtml(type)}</td><td>${count}</td><td>${formatDelta(typeDelta)}</td></tr>`;
+    }).join('');
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GeotechCLI Signal Benchmark Trend</title>
+<style>
+body{margin:0;font-family:Inter,Arial,sans-serif;background:#f8fafc;color:#0f172a}
+main{max-width:980px;margin:0 auto;padding:32px 20px 56px}
+h1{margin:0 0 8px;font-size:28px}.note{color:#475569;font-size:13px}
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:22px 0}
+.metric{background:white;border:1px solid #dbe5ea;border-radius:8px;padding:14px}.metric strong{display:block;font-size:24px}
+table{width:100%;border-collapse:collapse;background:white;border:1px solid #dbe5ea;border-radius:8px;overflow:hidden;margin-top:16px}
+th,td{padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:left;font-size:13px}
+th{background:#0f172a;color:#f8fafc}.pass{color:#0f766e;font-weight:700}.fail{color:#b91c1c;font-weight:700}
+</style>
+</head>
+<body>
+<main>
+<h1>GeotechCLI Signal Benchmark Trend</h1>
+<p class="note">${escapeHtml(trend.note)} Generated ${escapeHtml(trend.generatedAt)}.</p>
+<section class="summary">
+  <div class="metric"><span>History Entries</span><strong>${trend.historyCount}</strong></div>
+  <div class="metric"><span>Rows Delta</span><strong>${delta ? signed(delta.rowsAnalyzed) : 'new'}</strong></div>
+  <div class="metric"><span>Direct Flags Delta</span><strong>${delta ? signed(delta.directThresholdFlags) : 'new'}</strong></div>
+  <div class="metric"><span>Model Bytes Delta</span><strong>${delta ? signed(delta.modelCallsBytes) : 'new'}</strong></div>
+</section>
+<p>Status: <span class="${trend.current.passed ? 'pass' : 'fail'}">${trend.current.passed ? 'pass' : 'fail'}</span>. Threshold profile: <code>${escapeHtml(trend.current.thresholdProfile ?? 'none')}</code>.</p>
+<h2>Instrument Coverage</h2>
+<table><thead><tr><th>Signal type</th><th>Current count</th><th>Delta</th></tr></thead><tbody>${typeRows}</tbody></table>
+</main>
+</body>
+</html>
+`;
+}
+
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, 'utf-8'));
+}
+
+function finiteNumber(value) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
 function countBy(values) {
@@ -436,4 +591,21 @@ function escapeXml(value) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;');
+}
+
+function formatDelta(value) {
+  if (value == null) return 'new';
+  return signed(value);
+}
+
+function signed(value) {
+  return value > 0 ? `+${value}` : String(value);
 }

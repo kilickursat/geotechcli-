@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.86] - 2026-06-01
+
+### Signal Benchmark Trends
+
+- Added path-safe signal benchmark history and trend artifacts so deterministic monitoring runs can be compared over time without storing raw monitoring files or private local paths.
+- Added a small `signal-trend.html` dashboard alongside signal comparison JSON and SVG output, including instrument coverage and run-to-run deltas.
+- Kept the signal benchmark fail-closed on path leaks while preserving zero-model-call acceptance for settlement, piezometer, inclinometer, vibration, and load-test fixtures.
+
 ## [0.4.85] - 2026-05-31
 
 ### Signal Threshold Profiles

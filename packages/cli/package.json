@@ -1,6 +1,6 @@
 {
   "name": "geotechcli",
-  "version": "0.4.85",
+  "version": "0.4.86",
   "description": "AI-native CLI for geotechnical engineering",
   "type": "module",
   "bin": {
@@ -16,7 +16,7 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "@geotechcli/core": "0.4.85",
+    "@geotechcli/core": "0.4.86",
     "asciichart": "^1.5.25",
     "boxen": "^8.0.1",
     "chalk": "^5.4.0",
