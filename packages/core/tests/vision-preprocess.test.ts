@@ -210,4 +210,53 @@ describe('vision image preprocessing', () => {
     expect(result?.preprocessing.quality?.cropAssetCount).toBeGreaterThanOrEqual(2);
     expect(regionV2Crops.every((region) => (region.quality?.score ?? 0) > 0.4)).toBe(true);
   });
+
+  it('keeps preprocessing v2 region coverage across broader scanned fixture types', async () => {
+    const fixtures = [
+      {
+        fileName: 'preprocess-v2-cpt-table.fixture.pdf',
+        label: 'CPT table',
+        expectedOperations: ['detect-region-v2-table-panel'],
+        minCrops: 1,
+      },
+      {
+        fileName: 'preprocess-v2-lab-table.fixture.pdf',
+        label: 'lab table',
+        expectedOperations: ['detect-region-v2-table-panel'],
+        minCrops: 1,
+      },
+      {
+        fileName: 'preprocess-v2-mixed-scanned-report.fixture.pdf',
+        label: 'mixed scanned report',
+        expectedOperations: ['detect-region-v2-borehole-log-strip', 'detect-region-v2-table-panel'],
+        minCrops: 2,
+      },
+    ];
+
+    for (const fixture of fixtures) {
+      const input = readFileSync(join(testDir, 'fixtures', 'geotech-corpus', fixture.fileName));
+      const result = await renderPdfPageToImageBuffer(input, 1, {
+        scale: 2,
+        preprocessPolicy: 'region-v2',
+      });
+
+      expect(result, fixture.label).not.toBeNull();
+      expect(result?.preprocessing.policy, fixture.label).toBe('region-v2');
+      expect(result?.preprocessing.operations, fixture.label).toEqual(expect.arrayContaining([
+        ...fixture.expectedOperations,
+        'score-preprocessing-regions',
+        'normalize-region-crop-assets',
+      ]));
+      const regionV2Crops = result!.preprocessing.regions.filter((region) =>
+        region.id.startsWith('region-v2-') && region.asset?.normalized === true,
+      );
+      expect(regionV2Crops.length, fixture.label).toBeGreaterThanOrEqual(fixture.minCrops);
+      expect(result?.preprocessing.quality?.cropAssetCount, fixture.label).toBeGreaterThanOrEqual(fixture.minCrops);
+      expect(result?.preprocessing.quality?.regionCount, fixture.label).toBeGreaterThanOrEqual(regionV2Crops.length);
+      const averageRegionQuality = regionV2Crops.reduce((sum, region) =>
+        sum + (region.quality?.score ?? 0), 0) / regionV2Crops.length;
+      expect(averageRegionQuality, fixture.label).toBeGreaterThan(0.4);
+      expect(regionV2Crops.every((region) => (region.quality?.score ?? 0) > 0.35), fixture.label).toBe(true);
+    }
+  });
 });

@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.81] - 2026-05-31
+
+### Preprocessing V2 Fixture Coverage
+
+- Added deterministic scanned CPT table, lab table, and mixed scanned-report PDF fixtures to broaden `region-v2` crop-detection coverage beyond the initial borehole/table acceptance PDF.
+- Added preprocessing-only regression coverage proving `region-v2` detects normalized crop assets and region quality across CPT, lab, and mixed report layouts without requiring hosted model calls.
+- Updated development status to keep the broader fixture expansion visible as the next PDF/image preprocessing v2 hardening slice.
+
 ## [0.4.80] - 2026-05-31
 
 ### Region-v2 Real Evidence Acceptance Fixture

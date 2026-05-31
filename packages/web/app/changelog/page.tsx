@@ -8,6 +8,16 @@ const releases = [
     date: '2026-05-31',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added deterministic scanned CPT table, lab table, and mixed scanned-report PDF fixtures to broaden region-v2 crop-detection coverage' },
+      { type: 'fix', text: 'Added preprocessing-only regression coverage proving region-v2 detects normalized crop assets and region quality across broader geotechnical scanned layouts without hosted model calls' },
+      { type: 'fix', text: 'Updated development status so preprocessing v2 broader-fixture coverage remains visible as the next hardening slice' },
+    ],
+  },
+  {
+    version: '0.4.80',
+    date: '2026-05-31',
+    tag: '0.4.80 Release',
+    changes: [
       { type: 'feat', text: 'Added a deterministic in-repo image-only borehole/table PDF fixture so region-v2 preprocessing is tested against rendered PDF evidence, not only synthetic benchmark metadata' },
       { type: 'fix', text: 'Made corpus acceptance fail when region-v2 returns zero preprocessing regions, zero persisted crop assets, low region quality, or traceability below none and ocr-optimized' },
       { type: 'fix', text: 'Updated corpus HTML comparisons with region quality deltas and kept committed public fixture outputs free of local absolute path leaks' },
