@@ -2,8 +2,10 @@ import type { GroundModel } from '../ground-model/index.js';
 import {
   getStandardProfile,
   normalizeStandardProfileId,
+  validateStandardProfileReadiness,
   type StandardProfileAssumptions,
   type StandardProfileId,
+  type StandardProfileValidation,
 } from '../standards/index.js';
 
 export type GroundModelFindingSeverity = 'blocking' | 'review' | 'info';
@@ -64,6 +66,7 @@ export interface GroundModelCalculationInputDraft {
 
 export interface VerifyGroundModelOptions {
   includeCalculationInputDrafts?: boolean;
+  declaredStandardAssumptionCodes?: string[];
 }
 
 export interface GroundModelCalculationReadinessSummary {
@@ -82,6 +85,8 @@ export interface GroundModelVerification {
     info: number;
   };
   findings: GroundModelFinding[];
+  standardProfile?: StandardProfileId;
+  standardProfileValidation: StandardProfileValidation;
   calculationReadiness: {
     schemaVersion: 'ground-model-calculation-readiness.v1';
     summary: GroundModelCalculationReadinessSummary;
@@ -99,6 +104,30 @@ export function verifyGroundModel(
 ): GroundModelVerification {
   const findings: GroundModelFinding[] = [];
   const calculationReadiness = assessCalculationReadiness(model, options);
+  const evidenceContext = buildEvidenceContext(model);
+  const standardProfileValidation = validateStandardProfileReadiness({
+    requestedProfile: model.project.requestedStandard ?? 'eurocode7',
+    declaredAssumptionCodes: options.declaredStandardAssumptionCodes,
+    evidence: {
+      hasBoreholes: evidenceContext.hasBoreholes,
+      hasStrata: evidenceContext.hasStrata,
+      hasDepthCoverage: evidenceContext.hasDepthCoverage,
+      hasSpt: evidenceContext.hasSpt,
+      hasGroundwater: evidenceContext.hasGroundwater,
+      hasUnitWeight: evidenceContext.hasUnitWeight,
+      hasStrength: evidenceContext.hasStrength,
+      hasCompressibility: evidenceContext.hasCompressibility,
+      hasFinesOrGradation: evidenceContext.hasFinesOrGradation,
+      hasCoordinates: model.boreholes.some((borehole) => Boolean(borehole.coordinates)),
+    },
+    workflows: calculationReadiness.workflows.map((workflow) => ({
+      workflow: workflow.workflow,
+      status: workflow.status,
+      missing: workflow.missing,
+      assumptions: workflow.assumptions,
+      evidenceIds: workflow.evidenceIds,
+    })),
+  });
 
   if (model.stats.evidenceRefs === 0) {
     addFinding(findings, {
@@ -196,6 +225,8 @@ export function verifyGroundModel(
     status: summary.blocking > 0 ? 'blocking' : summary.review > 0 ? 'review' : 'pass',
     summary,
     findings,
+    standardProfile: standardProfileValidation.profile?.id,
+    standardProfileValidation,
     calculationReadiness,
   };
 }

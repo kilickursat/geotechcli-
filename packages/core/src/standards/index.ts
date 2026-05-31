@@ -27,8 +27,96 @@ export interface StandardProfileAssumptions {
   pileMethod: 'alpha' | 'beta' | 'spt-meyerhof' | 'auto';
   slopeMethod: 'bishop' | 'ordinary';
   liquefactionMethod: 'boulanger-idriss-2014';
+  sourceReferences: string[];
+  safetyFactorContext: StandardProfileSafetyFactorContext[];
+  requiredAssumptions: StandardProfileRequiredAssumption[];
   notes: string[];
 }
+
+export type StandardProfileValidationStatus = 'pass' | 'review' | 'blocked';
+export type StandardProfileValidationSeverity = 'blocking' | 'review' | 'info';
+
+export interface StandardProfileSafetyFactorContext {
+  workflow: string;
+  label: string;
+  designBasis: string;
+  factorLabel: string;
+  value?: number;
+  sourceReferences: string[];
+  notes: string[];
+}
+
+export interface StandardProfileRequiredAssumption {
+  code: string;
+  label: string;
+  severity: StandardProfileValidationSeverity;
+  workflows: string[];
+  sourceReferences: string[];
+  recommendation: string;
+}
+
+export interface StandardProfileValidationWorkflowInput {
+  workflow: string;
+  status: 'ready' | 'ready_with_assumptions' | 'blocked' | string;
+  missing?: string[];
+  assumptions?: string[];
+  evidenceIds?: string[];
+}
+
+export interface StandardProfileEvidenceChecklist {
+  hasBoreholes?: boolean;
+  hasStrata?: boolean;
+  hasDepthCoverage?: boolean;
+  hasSpt?: boolean;
+  hasGroundwater?: boolean;
+  hasUnitWeight?: boolean;
+  hasStrength?: boolean;
+  hasCompressibility?: boolean;
+  hasFinesOrGradation?: boolean;
+  hasCoordinates?: boolean;
+}
+
+export interface StandardProfileValidationInput {
+  requestedProfile?: string | null;
+  declaredAssumptionCodes?: string[];
+  evidence?: StandardProfileEvidenceChecklist;
+  workflows?: StandardProfileValidationWorkflowInput[];
+}
+
+export interface StandardProfileValidationBlocker {
+  code: string;
+  severity: StandardProfileValidationSeverity;
+  message: string;
+  workflows: string[];
+  sourceReferences: string[];
+  evidenceIds: string[];
+  recommendation: string;
+}
+
+export interface StandardProfileValidationRequiredAssumption extends StandardProfileRequiredAssumption {
+  declared: boolean;
+}
+
+export interface StandardProfileValidation {
+  schemaVersion: 'standard-profile-validation.v1';
+  profile: StandardProfileAssumptions | null;
+  requestedProfile?: string;
+  status: StandardProfileValidationStatus;
+  blockerCodes: string[];
+  blockers: StandardProfileValidationBlocker[];
+  requiredAssumptions: StandardProfileValidationRequiredAssumption[];
+  safetyFactorContext: StandardProfileSafetyFactorContext[];
+  sourceReferences: string[];
+  notes: string[];
+}
+
+const STANDARD_VALIDATION_WORKFLOWS = new Set([
+  'bearing-capacity',
+  'settlement',
+  'pile-capacity',
+  'liquefaction',
+  'slope-stability',
+]);
 
 const STANDARD_PROFILES: Record<StandardProfileId, StandardProfileAssumptions> = {
   eurocode7: {
@@ -41,6 +129,53 @@ const STANDARD_PROFILES: Record<StandardProfileId, StandardProfileAssumptions> =
     pileMethod: 'auto',
     slopeMethod: 'bishop',
     liquefactionMethod: 'boulanger-idriss-2014',
+    sourceReferences: ['EC7-2.4.7', 'EC7-6.5', 'EC7-7.6', 'EC7-11'],
+    safetyFactorContext: [
+      {
+        workflow: 'bearing-capacity',
+        label: 'Spread foundation bearing resistance',
+        designBasis: 'Partial-factor verification is required before claiming Eurocode 7 compliance.',
+        factorLabel: 'Draft global factor of safety fallback',
+        value: 3.0,
+        sourceReferences: ['EC7-2.4.7', 'EC7-6.5'],
+        notes: ['The deterministic bearing engine remains a global-FS draft route until design approach, actions, material factors, and resistance factors are declared.'],
+      },
+      {
+        workflow: 'pile-capacity',
+        label: 'Pile compressive resistance',
+        designBasis: 'Pile resistance requires selected design approach, correlation factors, pile type, and resistance factors.',
+        factorLabel: 'Draft global factor of safety fallback',
+        value: 3.0,
+        sourceReferences: ['EC7-2.4.7', 'EC7-7.6'],
+        notes: ['Do not convert the draft pile route into EC7 design output without declared partial factors and test-profile correlation assumptions.'],
+      },
+      {
+        workflow: 'slope-stability',
+        label: 'Overall stability',
+        designBasis: 'Overall stability requires material-factor and action-factor selection before design use.',
+        factorLabel: 'Draft global stability check',
+        sourceReferences: ['EC7-2.4.7', 'EC7-11'],
+        notes: ['Global-FS slope outputs are screening checks, not an EC7 partial-factor verification.'],
+      },
+    ],
+    requiredAssumptions: [
+      {
+        code: 'ec7_design_approach_required',
+        label: 'Eurocode 7 design approach and combination',
+        severity: 'blocking',
+        workflows: ['bearing-capacity', 'pile-capacity', 'slope-stability'],
+        sourceReferences: ['EC7-2.4.7'],
+        recommendation: 'Declare Design Approach 1/2/3 and the governing action/material/resistance factor set before any EC7 design claim.',
+      },
+      {
+        code: 'ec7_characteristic_values_required',
+        label: 'Characteristic value selection basis',
+        severity: 'blocking',
+        workflows: ['bearing-capacity', 'settlement', 'pile-capacity', 'slope-stability'],
+        sourceReferences: ['EC7-2.4.7'],
+        recommendation: 'Record how characteristic soil and groundwater values were selected from the evidence before generated drafts are used for design.',
+      },
+    ],
     notes: [
       'Select design approach and partial factors before claiming Eurocode 7 compliance.',
       'Use generated inputs as draft characteristic-value checks, not final design values.',
@@ -56,6 +191,45 @@ const STANDARD_PROFILES: Record<StandardProfileId, StandardProfileAssumptions> =
     pileMethod: 'spt-meyerhof',
     slopeMethod: 'bishop',
     liquefactionMethod: 'boulanger-idriss-2014',
+    sourceReferences: ['AASHTO-LRFD-GEOTECH', 'ASTM-D1586', 'BI-2014'],
+    safetyFactorContext: [
+      {
+        workflow: 'bearing-capacity',
+        label: 'Service and strength bearing checks',
+        designBasis: 'AASHTO LRFD requires selected limit state, load combination, and resistance factor.',
+        factorLabel: 'Draft global factor of safety fallback',
+        value: 2.5,
+        sourceReferences: ['AASHTO-LRFD-GEOTECH'],
+        notes: ['Draft bearing inputs are not LRFD design outputs until resistance factors and limit-state combinations are declared.'],
+      },
+      {
+        workflow: 'pile-capacity',
+        label: 'Driven pile SPT correlation route',
+        designBasis: 'AASHTO-style pile drafts require pile type, construction method, resistance factor, and corrected SPT values.',
+        factorLabel: 'Draft global factor of safety fallback',
+        value: 2.5,
+        sourceReferences: ['AASHTO-LRFD-GEOTECH', 'ASTM-D1586'],
+        notes: ['SPT evidence should use corrected N-values where available before transportation foundation design checks.'],
+      },
+    ],
+    requiredAssumptions: [
+      {
+        code: 'aashto_limit_state_required',
+        label: 'AASHTO LRFD limit state and load combination',
+        severity: 'blocking',
+        workflows: ['bearing-capacity', 'settlement', 'pile-capacity', 'slope-stability'],
+        sourceReferences: ['AASHTO-LRFD-GEOTECH'],
+        recommendation: 'Declare service/strength limit state, load combination, and resistance factor before any AASHTO LRFD design claim.',
+      },
+      {
+        code: 'aashto_resistance_factor_required',
+        label: 'Resistance factor basis',
+        severity: 'blocking',
+        workflows: ['bearing-capacity', 'pile-capacity', 'slope-stability'],
+        sourceReferences: ['AASHTO-LRFD-GEOTECH'],
+        recommendation: 'Record the resistance factor and basis for the selected geotechnical resistance model.',
+      },
+    ],
     notes: [
       'Resistance factors, load combinations, and service/strength limit states must be selected before design use.',
       'SPT-based pile and liquefaction drafts require corrected N-values where available.',
@@ -71,6 +245,45 @@ const STANDARD_PROFILES: Record<StandardProfileId, StandardProfileAssumptions> =
     pileMethod: 'auto',
     slopeMethod: 'bishop',
     liquefactionMethod: 'boulanger-idriss-2014',
+    sourceReferences: ['IS-6403', 'IS-2911', 'BI-2014'],
+    safetyFactorContext: [
+      {
+        workflow: 'bearing-capacity',
+        label: 'Working-stress bearing capacity',
+        designBasis: 'IS-style bearing drafts require applicable code clause, water-table treatment, and settlement limit checks.',
+        factorLabel: 'Draft factor of safety',
+        value: 3.0,
+        sourceReferences: ['IS-6403'],
+        notes: ['The deterministic route prepares input drafts only; final IS compliance requires project-specific load and settlement criteria.'],
+      },
+      {
+        workflow: 'pile-capacity',
+        label: 'Pile design draft route',
+        designBasis: 'Pile drafts require pile type, installation method, working load, and applicable IS pile design assumptions.',
+        factorLabel: 'Draft factor of safety',
+        value: 3.0,
+        sourceReferences: ['IS-2911'],
+        notes: ['Pile capacity drafts are not final IS design checks until installation method and code edition are declared.'],
+      },
+    ],
+    requiredAssumptions: [
+      {
+        code: 'is_code_clause_required',
+        label: 'Applicable IS code and clause basis',
+        severity: 'blocking',
+        workflows: ['bearing-capacity', 'settlement', 'pile-capacity', 'slope-stability'],
+        sourceReferences: ['IS-6403', 'IS-2911'],
+        recommendation: 'Declare the governing IS code, edition, clause basis, load case, and settlement criteria before design use.',
+      },
+      {
+        code: 'is_water_table_treatment_required',
+        label: 'Water-table treatment and seasonal basis',
+        severity: 'review',
+        workflows: ['bearing-capacity', 'pile-capacity', 'slope-stability', 'liquefaction'],
+        sourceReferences: ['IS-6403'],
+        recommendation: 'Record the adopted groundwater level and seasonal variation before routing generated inputs into calculations.',
+      },
+    ],
     notes: [
       'Confirm applicable IS code, load combination, and water-level assumptions before calculation.',
       'Treat SPT references to IS methods as standards text unless plausible blow counts are evidence-bound.',
@@ -86,6 +299,44 @@ const STANDARD_PROFILES: Record<StandardProfileId, StandardProfileAssumptions> =
     pileMethod: 'auto',
     slopeMethod: 'bishop',
     liquefactionMethod: 'boulanger-idriss-2014',
+    sourceReferences: ['BS-8004', 'BS-8002', 'EC7-2.4.7'],
+    safetyFactorContext: [
+      {
+        workflow: 'bearing-capacity',
+        label: 'Legacy BS / UK practice bearing draft',
+        designBasis: 'BS-style checks require confirming whether legacy BS, Eurocode 7 with UK NA, or project specification controls.',
+        factorLabel: 'Draft factor of safety',
+        value: 3.0,
+        sourceReferences: ['BS-8004', 'EC7-2.4.7'],
+        notes: ['Generated drafts are readiness inputs; they do not apply UK national-annex partial factors.'],
+      },
+      {
+        workflow: 'slope-stability',
+        label: 'Overall stability draft',
+        designBasis: 'Slope checks require selected legacy/NA basis, groundwater assumptions, and construction stage conditions.',
+        factorLabel: 'Draft global stability check',
+        sourceReferences: ['BS-8002', 'EC7-11'],
+        notes: ['Use this as a readiness gate before deterministic slope runs, not as BS compliance output.'],
+      },
+    ],
+    requiredAssumptions: [
+      {
+        code: 'bs_design_basis_required',
+        label: 'Legacy BS versus Eurocode 7 UK NA design basis',
+        severity: 'blocking',
+        workflows: ['bearing-capacity', 'settlement', 'pile-capacity', 'slope-stability'],
+        sourceReferences: ['BS-8004', 'EC7-2.4.7'],
+        recommendation: 'Declare whether legacy BS, Eurocode 7 UK National Annex, or project specification governs before design claims.',
+      },
+      {
+        code: 'bs_groundwater_and_stage_required',
+        label: 'Groundwater and construction-stage assumptions',
+        severity: 'review',
+        workflows: ['bearing-capacity', 'slope-stability'],
+        sourceReferences: ['BS-8002', 'BS-8004'],
+        recommendation: 'Record groundwater and construction-stage assumptions before using generated bearing or stability inputs.',
+      },
+    ],
     notes: [
       'Confirm whether the project requires legacy BS, Eurocode 7 UK NA, or project-specific specifications.',
       'Generated drafts are preliminary and do not apply national-annex factors.',
@@ -101,6 +352,43 @@ const STANDARD_PROFILES: Record<StandardProfileId, StandardProfileAssumptions> =
     pileMethod: 'spt-meyerhof',
     slopeMethod: 'bishop',
     liquefactionMethod: 'boulanger-idriss-2014',
+    sourceReferences: ['ASTM-D2487', 'ASTM-D1586', 'ASTM-D5778', 'ASTM-D4318'],
+    safetyFactorContext: [
+      {
+        workflow: 'bearing-capacity',
+        label: 'Testing/classification provenance for bearing drafts',
+        designBasis: 'ASTM supports test method and classification provenance; it is not a complete geotechnical design-code profile.',
+        factorLabel: 'No ASTM design factor',
+        sourceReferences: ['ASTM-D2487', 'ASTM-D1586', 'ASTM-D4318'],
+        notes: ['Select a companion design profile before turning ASTM-sourced evidence into design calculations.'],
+      },
+      {
+        workflow: 'liquefaction',
+        label: 'SPT/CPT provenance for liquefaction drafts',
+        designBasis: 'ASTM SPT/CPT methods can provide traceable inputs for empirical liquefaction checks.',
+        factorLabel: 'Boulanger-Idriss triggering method',
+        sourceReferences: ['ASTM-D1586', 'ASTM-D5778', 'BI-2014'],
+        notes: ['Corrected SPT/CPT parameters and seismic demand remain required user inputs.'],
+      },
+    ],
+    requiredAssumptions: [
+      {
+        code: 'astm_companion_design_standard_required',
+        label: 'Companion design standard for calculations',
+        severity: 'blocking',
+        workflows: ['bearing-capacity', 'settlement', 'pile-capacity', 'slope-stability'],
+        sourceReferences: ['ASTM-D2487', 'ASTM-D1586'],
+        recommendation: 'Use ASTM for test/classification traceability, then declare Eurocode 7, AASHTO, IS, BS, or a project specification for design factors.',
+      },
+      {
+        code: 'astm_test_method_traceability_required',
+        label: 'ASTM test method provenance',
+        severity: 'review',
+        workflows: ['bearing-capacity', 'settlement', 'pile-capacity', 'liquefaction', 'slope-stability'],
+        sourceReferences: ['ASTM-D2487', 'ASTM-D1586', 'ASTM-D5778', 'ASTM-D4318'],
+        recommendation: 'Preserve source test method, sample depth, correction factors, and classification evidence for all ASTM-derived parameters.',
+      },
+    ],
     notes: [
       'Use ASTM references for test/classification provenance, then select a design standard for final factors.',
       'Generated drafts preserve ASTM SPT/USCS traceability but are not ASTM design compliance outputs.',
@@ -116,6 +404,13 @@ const STANDARDS_DB: StandardProvision[] = [
   { id: 'EC7-11', standard: 'EN 1997-1:2004', section: '11', title: 'Overall stability', content: 'Verification of overall stability required for slopes, embankments, earthworks. Bishop, Janbu, Morgenstern-Price methods acceptable. Minimum FOS: 1.0 when using partial factors on soil strength (DA3), or 1.25-1.5 for global FOS approach.', keywords: ['slope stability', 'overall stability', 'factor of safety', 'bishop', 'eurocode'], topic: 'slopes' },
   { id: 'EC7-12', standard: 'EN 1997-1:2004', section: '12', title: 'Embankments', content: 'End-of-construction stability, long-term stability, and rapid drawdown conditions shall be checked. Pore pressure assumptions: undrained (short-term), drained (long-term). Observation method per §2.7 is applicable for staged construction.', keywords: ['embankment', 'construction', 'stability', 'pore pressure', 'staged'], topic: 'slopes' },
   { id: 'EC7-9', standard: 'EN 1997-1:2004', section: '9', title: 'Retaining structures', content: 'Earth pressure: at-rest K0 = 1-sinφ\' (normally consolidated), active Ka, passive Kp. Compaction-induced pressures shall be considered. Water pressure treated separately from earth pressure. Design approaches DA1, DA2, DA3 applicable.', keywords: ['retaining wall', 'earth pressure', 'lateral', 'K0', 'active', 'passive'], topic: 'retaining' },
+
+  // --- AASHTO / IS / BS profile anchors ---
+  { id: 'AASHTO-LRFD-GEOTECH', standard: 'AASHTO LRFD Bridge Design Specifications', section: 'Geotechnical', title: 'LRFD geotechnical design profile', content: 'Transportation foundation checks require declared limit state, load combination, resistance factor, serviceability criteria, and construction method. Draft inputs are not LRFD design output until these project-specific factors are selected.', keywords: ['aashto', 'lrfd', 'resistance factor', 'limit state', 'foundation', 'pile'], topic: 'design' },
+  { id: 'IS-6403', standard: 'IS 6403', section: 'Bearing capacity', title: 'Shallow foundation bearing capacity profile', content: 'Working-stress bearing checks require declared foundation geometry, load case, water-table correction, soil parameter basis, and settlement criteria. Draft factors of safety must be confirmed against the governing project code edition.', keywords: ['indian standard', 'is', 'bearing capacity', 'foundation', 'water table', 'settlement'], topic: 'foundations' },
+  { id: 'IS-2911', standard: 'IS 2911', section: 'Pile foundations', title: 'Pile design profile', content: 'Pile design checks require pile type, installation method, load case, group effects, groundwater assumptions, and source evidence for shaft and base resistance parameters before design use.', keywords: ['indian standard', 'is', 'pile', 'deep foundation', 'shaft resistance', 'base resistance'], topic: 'foundations' },
+  { id: 'BS-8004', standard: 'BS 8004 / UK practice', section: 'Foundations', title: 'Foundation design profile', content: 'Foundation design readiness requires confirming whether legacy British Standards, Eurocode 7 UK National Annex, or project-specific specifications govern. Draft global factor checks do not apply national-annex factors.', keywords: ['british standard', 'bs', 'foundation', 'bearing capacity', 'uk national annex'], topic: 'foundations' },
+  { id: 'BS-8002', standard: 'BS 8002 / UK practice', section: 'Earth retaining and stability', title: 'Retaining and stability profile', content: 'Retaining and stability checks require selected design basis, groundwater conditions, construction stage, surcharge, drainage, and material parameter basis before design claims.', keywords: ['british standard', 'bs', 'retaining', 'stability', 'groundwater', 'slope'], topic: 'slopes' },
 
   // --- ASTM Standards ---
   { id: 'ASTM-D2487', standard: 'ASTM D2487', section: 'Full', title: 'USCS Classification', content: 'Unified Soil Classification System. Coarse-grained: >50% retained on #200 sieve → GW/GP/GM/GC/SW/SP/SM/SC based on gradation (Cu, Cc) and fines plasticity. Fine-grained: >50% passing #200 → CL/ML/CH/MH/OL/OH/Pt based on LL, PI, A-line (PI = 0.73(LL-20)). Dual symbols for borderline soils.', keywords: ['uscs', 'classification', 'soil classification', 'grain size', 'atterberg'], topic: 'classification' },
@@ -245,10 +540,7 @@ export function normalizeStandardProfileId(value: string | null | undefined): St
 }
 
 export function listStandardProfiles(): StandardProfileAssumptions[] {
-  return Object.values(STANDARD_PROFILES).map((profile) => ({
-    ...profile,
-    notes: [...profile.notes],
-  }));
+  return Object.values(STANDARD_PROFILES).map(cloneStandardProfile);
 }
 
 export function getStandardProfile(id: string | null | undefined): StandardProfileAssumptions | null {
@@ -258,8 +550,251 @@ export function getStandardProfile(id: string | null | undefined): StandardProfi
   }
 
   const profile = STANDARD_PROFILES[normalized];
+  return cloneStandardProfile(profile);
+}
+
+export function validateStandardProfileReadiness(
+  input: StandardProfileValidationInput = {},
+): StandardProfileValidation {
+  const requestedProfile = input.requestedProfile?.trim() || 'eurocode7';
+  const normalized = normalizeStandardProfileId(requestedProfile);
+  const profile = normalized ? STANDARD_PROFILES[normalized] : null;
+  const declaredCodes = new Set((input.declaredAssumptionCodes ?? []).map((code) => code.toLowerCase()));
+
+  if (!profile) {
+    const blocker: StandardProfileValidationBlocker = {
+      code: 'standard_profile_unknown',
+      severity: 'blocking',
+      message: `Requested standard profile "${requestedProfile}" is not supported.`,
+      workflows: [],
+      sourceReferences: [],
+      evidenceIds: [],
+      recommendation: 'Use one of eurocode7, aashto, is, bs, or astm before claiming standard-profile readiness.',
+    };
+
+    return {
+      schemaVersion: 'standard-profile-validation.v1',
+      profile: null,
+      requestedProfile,
+      status: 'blocked',
+      blockerCodes: [blocker.code],
+      blockers: [blocker],
+      requiredAssumptions: [],
+      safetyFactorContext: [],
+      sourceReferences: [],
+      notes: [],
+    };
+  }
+
+  const workflowSet = new Set((input.workflows ?? []).map((workflow) => workflow.workflow));
+  const workflowFilter = (workflow: string): boolean => workflowSet.size === 0 || workflowSet.has(workflow);
+  const requiredAssumptions = profile.requiredAssumptions
+    .filter((assumption) => assumption.workflows.some(workflowFilter))
+    .map((assumption) => ({
+      ...cloneRequiredAssumption(assumption),
+      declared: declaredCodes.has(assumption.code.toLowerCase()),
+    }));
+  const safetyFactorContext = profile.safetyFactorContext
+    .filter((context) => workflowFilter(context.workflow))
+    .map(cloneSafetyFactorContext);
+  const blockers: StandardProfileValidationBlocker[] = [];
+
+  for (const assumption of requiredAssumptions) {
+    if (assumption.declared) {
+      continue;
+    }
+
+    blockers.push({
+      code: assumption.code,
+      severity: assumption.severity,
+      message: `Required ${profile.label} assumption is not declared: ${assumption.label}.`,
+      workflows: assumption.workflows.filter(workflowFilter),
+      sourceReferences: [...assumption.sourceReferences],
+      evidenceIds: [],
+      recommendation: assumption.recommendation,
+    });
+  }
+
+  blockers.push(...buildEvidenceValidationBlockers(profile, input));
+  blockers.push(...buildWorkflowValidationBlockers(profile, input));
+
+  const status: StandardProfileValidationStatus = blockers.some((blocker) => blocker.severity === 'blocking')
+    ? 'blocked'
+    : blockers.some((blocker) => blocker.severity === 'review')
+      ? 'review'
+      : 'pass';
+
   return {
-    ...profile,
+    schemaVersion: 'standard-profile-validation.v1',
+    profile: cloneStandardProfile(profile),
+    requestedProfile,
+    status,
+    blockerCodes: [...new Set(blockers.map((blocker) => blocker.code))],
+    blockers,
+    requiredAssumptions,
+    safetyFactorContext,
+    sourceReferences: collectStandardSourceReferences(profile, safetyFactorContext, blockers),
     notes: [...profile.notes],
   };
+}
+
+function buildEvidenceValidationBlockers(
+  profile: StandardProfileAssumptions,
+  input: StandardProfileValidationInput,
+): StandardProfileValidationBlocker[] {
+  const evidence = input.evidence ?? {};
+  const workflowSet = new Set((input.workflows ?? []).map((workflow) => workflow.workflow));
+  const hasAnyWorkflow = (...workflows: string[]): boolean => (
+    workflowSet.size === 0 || workflows.some((workflow) => workflowSet.has(workflow))
+  );
+  const blockers: StandardProfileValidationBlocker[] = [];
+
+  if (evidence.hasGroundwater === false && hasAnyWorkflow('bearing-capacity', 'settlement', 'pile-capacity', 'liquefaction', 'slope-stability')) {
+    blockers.push({
+      code: 'standard_groundwater_review_required',
+      severity: 'review',
+      message: 'Groundwater condition is not evidence-bound for one or more standard-profile workflows.',
+      workflows: filterWorkflows(workflowSet, ['bearing-capacity', 'settlement', 'pile-capacity', 'liquefaction', 'slope-stability']),
+      sourceReferences: relevantProfileReferences(profile, ['bearing-capacity', 'settlement', 'pile-capacity', 'liquefaction', 'slope-stability']),
+      evidenceIds: [],
+      recommendation: 'Bind groundwater observations to source evidence or declare a dry/unknown groundwater assumption before calculation use.',
+    });
+  }
+
+  if (evidence.hasUnitWeight === false && hasAnyWorkflow('bearing-capacity', 'settlement', 'pile-capacity', 'slope-stability')) {
+    blockers.push({
+      code: 'standard_unit_weight_required',
+      severity: 'review',
+      message: 'Unit weight is missing from evidence for standard-profile calculation drafts.',
+      workflows: filterWorkflows(workflowSet, ['bearing-capacity', 'settlement', 'pile-capacity', 'slope-stability']),
+      sourceReferences: relevantProfileReferences(profile, ['bearing-capacity', 'settlement', 'pile-capacity', 'slope-stability']),
+      evidenceIds: [],
+      recommendation: 'Add measured or explicitly assumed unit weight with source-page traceability before routing into calculations.',
+    });
+  }
+
+  if (evidence.hasStrength === false && hasAnyWorkflow('bearing-capacity', 'slope-stability')) {
+    blockers.push({
+      code: 'standard_strength_basis_required',
+      severity: 'blocking',
+      message: 'Shear-strength evidence is missing for standard-profile bearing or slope checks.',
+      workflows: filterWorkflows(workflowSet, ['bearing-capacity', 'slope-stability']),
+      sourceReferences: relevantProfileReferences(profile, ['bearing-capacity', 'slope-stability']),
+      evidenceIds: [],
+      recommendation: 'Provide cohesion, friction angle, undrained strength, or an accepted correlation basis before design-routing these workflows.',
+    });
+  }
+
+  if (evidence.hasSpt === false && hasAnyWorkflow('liquefaction')) {
+    blockers.push({
+      code: 'standard_spt_required_for_liquefaction',
+      severity: 'blocking',
+      message: 'Liquefaction readiness requires SPT/CPT evidence; no SPT evidence is currently bound.',
+      workflows: filterWorkflows(workflowSet, ['liquefaction']),
+      sourceReferences: relevantProfileReferences(profile, ['liquefaction']),
+      evidenceIds: [],
+      recommendation: 'Add corrected SPT/CPT data with depth and groundwater evidence before liquefaction routing.',
+    });
+  }
+
+  if (evidence.hasFinesOrGradation === false && hasAnyWorkflow('liquefaction')) {
+    blockers.push({
+      code: 'standard_fines_correction_review_required',
+      severity: 'review',
+      message: 'Fines/gradation evidence is missing for liquefaction correction assumptions.',
+      workflows: filterWorkflows(workflowSet, ['liquefaction']),
+      sourceReferences: relevantProfileReferences(profile, ['liquefaction']),
+      evidenceIds: [],
+      recommendation: 'Add fines content, gradation, or an explicit conservative correction assumption before liquefaction use.',
+    });
+  }
+
+  if (evidence.hasCoordinates === false && hasAnyWorkflow('slope-stability', 'pile-capacity', 'bearing-capacity')) {
+    blockers.push({
+      code: 'standard_location_traceability_review_required',
+      severity: 'info',
+      message: 'Borehole or investigation location coordinates are not evidence-bound.',
+      workflows: filterWorkflows(workflowSet, ['bearing-capacity', 'pile-capacity', 'slope-stability']),
+      sourceReferences: [...profile.sourceReferences],
+      evidenceIds: [],
+      recommendation: 'Bind borehole coordinates or explicitly mark the model as non-spatial before map or site-zoning decisions.',
+    });
+  }
+
+  return blockers;
+}
+
+function buildWorkflowValidationBlockers(
+  profile: StandardProfileAssumptions,
+  input: StandardProfileValidationInput,
+): StandardProfileValidationBlocker[] {
+  return (input.workflows ?? [])
+    .filter((workflow) => STANDARD_VALIDATION_WORKFLOWS.has(workflow.workflow) && workflow.status === 'blocked')
+    .map((workflow) => ({
+      code: `workflow_blocked_${sanitizeBlockerCode(workflow.workflow)}`,
+      severity: 'blocking' as const,
+      message: `${workflow.workflow} is blocked before ${profile.label} readiness can be claimed.`,
+      workflows: [workflow.workflow],
+      sourceReferences: relevantProfileReferences(profile, [workflow.workflow]),
+      evidenceIds: [...new Set(workflow.evidenceIds ?? [])].slice(0, 12),
+      recommendation: workflow.missing && workflow.missing.length > 0
+        ? `Resolve missing inputs: ${workflow.missing.join(', ')}.`
+        : 'Resolve deterministic workflow blockers before standard-profile approval.',
+    }));
+}
+
+function cloneStandardProfile(profile: StandardProfileAssumptions): StandardProfileAssumptions {
+  return {
+    ...profile,
+    sourceReferences: [...profile.sourceReferences],
+    safetyFactorContext: profile.safetyFactorContext.map(cloneSafetyFactorContext),
+    requiredAssumptions: profile.requiredAssumptions.map(cloneRequiredAssumption),
+    notes: [...profile.notes],
+  };
+}
+
+function cloneSafetyFactorContext(context: StandardProfileSafetyFactorContext): StandardProfileSafetyFactorContext {
+  return {
+    ...context,
+    sourceReferences: [...context.sourceReferences],
+    notes: [...context.notes],
+  };
+}
+
+function cloneRequiredAssumption(assumption: StandardProfileRequiredAssumption): StandardProfileRequiredAssumption {
+  return {
+    ...assumption,
+    workflows: [...assumption.workflows],
+    sourceReferences: [...assumption.sourceReferences],
+  };
+}
+
+function collectStandardSourceReferences(
+  profile: StandardProfileAssumptions,
+  safetyFactorContext: StandardProfileSafetyFactorContext[],
+  blockers: StandardProfileValidationBlocker[],
+): string[] {
+  return [
+    ...new Set([
+      ...profile.sourceReferences,
+      ...safetyFactorContext.flatMap((context) => context.sourceReferences),
+      ...blockers.flatMap((blocker) => blocker.sourceReferences),
+    ]),
+  ].filter(Boolean);
+}
+
+function relevantProfileReferences(profile: StandardProfileAssumptions, workflows: string[]): string[] {
+  const references = profile.safetyFactorContext
+    .filter((context) => workflows.includes(context.workflow))
+    .flatMap((context) => context.sourceReferences);
+
+  return references.length > 0 ? [...new Set(references)] : [...profile.sourceReferences];
+}
+
+function filterWorkflows(workflowSet: Set<string>, workflows: string[]): string[] {
+  return workflowSet.size === 0 ? workflows : workflows.filter((workflow) => workflowSet.has(workflow));
+}
+
+function sanitizeBlockerCode(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
 }

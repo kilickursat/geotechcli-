@@ -8,6 +8,16 @@ const releases = [
     date: '2026-05-31',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added deterministic standards-profile validation for Eurocode 7, AASHTO, IS, BS, and ASTM readiness with blocker codes, required assumptions, safety-factor context, and source references' },
+      { type: 'feat', text: 'Wired standards-profile validation into GroundModel verification while keeping generated calculation drafts review-gated and non-executing' },
+      { type: 'fix', text: 'Added focused regression coverage for profile assumptions, missing evidence blockers, workflow blockers, and source-reference propagation' },
+    ],
+  },
+  {
+    version: '0.4.82',
+    date: '2026-05-31',
+    tag: '0.4.82 Release',
+    changes: [
       { type: 'feat', text: 'Added deterministic mixed digital/scanned and malformed scanned PDF fixtures so preprocessing v2 coverage spans borehole, CPT, lab, mixed, and malformed report page shapes' },
       { type: 'feat', text: 'Added npm run benchmark:preprocessing to compare none, ocr-optimized, and region-v2 without hosted model calls, writing JSON, HTML, and SVG summaries' },
       { type: 'fix', text: 'Made preprocessing benchmark output path-safe by storing fixture basenames and hashes only and failing if local paths or secrets leak into persisted output' },

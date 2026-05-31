@@ -164,6 +164,15 @@ describe('GroundModel calculation readiness', () => {
     expect(workflows['slope-stability']?.evidenceIds).toContain('ev-phi-1');
     expect(workflows['bearing-capacity']?.standardProfile).toBe('eurocode7');
     expect(workflows['bearing-capacity']?.inputDraft).toBeUndefined();
+    expect(verification.standardProfile).toBe('eurocode7');
+    expect(verification.standardProfileValidation.status).toBe('blocked');
+    expect(verification.standardProfileValidation.blockerCodes).toEqual(
+      expect.arrayContaining(['ec7_design_approach_required', 'ec7_characteristic_values_required']),
+    );
+    expect(verification.standardProfileValidation.blockerCodes.some((code) => code.includes('fem'))).toBe(false);
+    expect(verification.standardProfileValidation.sourceReferences).toEqual(
+      expect.arrayContaining(['EC7-2.4.7', 'EC7-6.5', 'EC7-7.6', 'EC7-11']),
+    );
   });
 
   it('adds opt-in non-executing calculation input drafts with missing user inputs', () => {

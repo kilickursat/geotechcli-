@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.83] - 2026-05-31
+
+### Standards Profile Validation
+
+- Added deterministic standards-profile validation for Eurocode 7, AASHTO, IS, BS, and ASTM readiness, including blocker codes, required assumptions, safety-factor context, and source-reference anchors.
+- Wired standards-profile validation into GroundModel verification without auto-running design calculations, so calculation drafts remain review-gated and evidence-bound.
+- Added focused regression coverage for profile assumptions, missing evidence blockers, workflow blockers, and source-reference propagation.
+
 ## [0.4.82] - 2026-05-31
 
 ### Preprocessing Benchmark Harness
