@@ -354,6 +354,8 @@ export async function recoverDocumentTextHint(
       ? seededTextQuality.reasons.map((reason) => `Native text quality gate rejected the seeded text hint: ${reason}`)
       : [];
   const start = Date.now();
+  const preprocessingPolicy = resolveVisionImagePreprocessPolicy();
+  let preprocessedImage: Awaited<ReturnType<typeof preprocessVisionImageBuffer>> | null = null;
 
   if (existingTextAccepted && seededText && seededText.length >= minimumLength) {
     return {
@@ -401,12 +403,23 @@ export async function recoverDocumentTextHint(
   }
 
   const allowLayoutOcr = options.allowLayoutOcr ?? true;
+  if (options.mimeType.startsWith('image/') && preprocessingPolicy === 'region-v2') {
+    const originalBuffer = Buffer.from(options.imageBase64, 'base64');
+    preprocessedImage = await preprocessVisionImageBuffer(
+      originalBuffer,
+      options.mimeType,
+      preprocessingPolicy,
+    );
+    nativeTextWarnings.push(...preprocessedImage.warnings);
+  }
   if (allowLayoutOcr && supportsGlmOcrLayoutParsing(options.config)) {
     const layoutParse = options.layoutParse ?? parseDocumentLayoutWithGlmOcr;
     try {
       const layout = await layoutParse(
-        options.imageBase64,
-        options.mimeType,
+        preprocessedImage
+          ? preprocessedImage.buffer.toString('base64')
+          : options.imageBase64,
+        preprocessedImage?.mimeType ?? options.mimeType,
         options.config,
       );
       const layoutText = normalizeTextHint(layout.text || layout.markdown, 6000);
@@ -420,7 +433,8 @@ export async function recoverDocumentTextHint(
             `Recovered GLM-OCR layout text with ${layout.pages.length} parsed page(s).`,
           ],
           latencyMs: Date.now() - start,
-          transformed: false,
+          transformed: preprocessedImage?.transformed ?? false,
+          preprocessing: preprocessedImage?.preprocessing,
           layout,
         };
       }
@@ -457,14 +471,15 @@ export async function recoverDocumentTextHint(
   }
 
   const warnings: string[] = [...nativeTextWarnings];
-  const originalBuffer = Buffer.from(options.imageBase64, 'base64');
-  const preprocessingPolicy = resolveVisionImagePreprocessPolicy();
-  const preprocessed = await preprocessVisionImageBuffer(
-    originalBuffer,
-    options.mimeType,
-    preprocessingPolicy,
-  );
-  warnings.push(...preprocessed.warnings);
+  const preprocessed = preprocessedImage
+    ?? await preprocessVisionImageBuffer(
+      Buffer.from(options.imageBase64, 'base64'),
+      options.mimeType,
+      preprocessingPolicy,
+    );
+  if (!preprocessedImage) {
+    warnings.push(...preprocessed.warnings);
+  }
   const regionInputs = buildVisionOcrPreprocessingRegionInputs(preprocessed.preprocessing);
   const preferRegionOcr = preprocessingPolicy === 'region-v2';
 

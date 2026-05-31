@@ -736,6 +736,121 @@ describe('ingestGeotechDocument', () => {
     expect(result.pageFailures).toEqual([]);
   });
 
+  it('routes region-v2 image-heavy pages through OCR recovery before visual interpretation', async () => {
+    const previousPreprocessingMode = process.env.GEOTECHCLI_PREPROCESSING_MODE;
+    process.env.GEOTECHCLI_PREPROCESSING_MODE = 'region-v2';
+    try {
+      const transcribePageImageText = vi.fn(async () => ({
+        text: 'BH-1 borehole log table recovered by region-v2 OCR. SPT N equals 18 at 4.5 m in silty sand.',
+        warnings: [],
+        latencyMs: 5,
+      }));
+      const extractTextFacts = vi.fn(async (_pageText: string, _config: any, context: any) => makeResult({
+        documentClass: 'borehole-log',
+        title: 'Borehole BH-1',
+        summary: 'Region-v2 OCR evidence was extracted before visual interpretation.',
+        materials: [
+          { kind: 'soil', description: 'silty sand', uscsSymbol: 'SM', lithology: null },
+        ],
+        parameters: [
+          { name: 'sptN', valueText: '18', numericValue: 18, unit: null, material: 'silty sand', context: 'region-v2 OCR page evidence' },
+        ],
+        pageNumber: context.pageNumber ?? null,
+        totalPages: context.totalPages ?? null,
+        rawLLMText: 'mock',
+        parseStatus: 'parsed',
+        confidence: 88,
+      }) as any);
+      const interpretPage = vi.fn(async () => {
+        throw new Error('Region-v2 should attempt OCR recovery before direct visual interpretation.');
+      });
+
+      const result = await ingestGeotechDocument({
+        config: { provider: 'hosted-beta', timeout: 60000 } as any,
+        source: {
+          filePath: 'region-v2-visual-report.pdf',
+          fileName: 'region-v2-visual-report.pdf',
+          inputKind: 'pdf',
+        },
+        inspection: {
+          totalPages: 1,
+          warnings: [],
+          metadata: { pdfVersion: '1.7', objectCount: 4 },
+          pages: [{
+            pageNumber: 1,
+            classification: 'image-only',
+            degradation: { level: 'full', reasons: ['scan'] },
+            capabilities: { nativeTextExtraction: 'unavailable', rasterImageExtraction: 'available' },
+            normalizedText: '',
+            rawText: '',
+            normalizedArtifact: {
+              pageNumber: 1,
+              classification: 'image-only',
+              rotation: 0,
+              nativeText: '',
+              textQuality: {
+                accepted: false,
+                score: 0.1,
+                printableRatio: 0.1,
+                replacementRatio: 0.4,
+                symbolNoiseRatio: 0.4,
+                suspiciousTokenRatio: 0.4,
+                dictionaryCoverageRatio: 0.05,
+                averageTokenShapeScore: 0.2,
+                reasons: ['unreadable raster text'],
+              },
+              textSource: 'none',
+              renderedImageAvailable: true,
+              headingHints: ['Borehole BH-1 SPT values'],
+              tablesDetected: true,
+              figuresDetected: false,
+              warnings: [],
+              confidence: 18,
+            },
+            metadata: {
+              width: 900,
+              height: 1200,
+              rotation: 0,
+              characterCount: 0,
+              wordCount: 0,
+              lineCount: 0,
+              hasTextOperators: false,
+              hasRasterImages: true,
+              contentStreamCount: 1,
+              decodedContentStreamCount: 1,
+              contentFilters: [],
+              fontNames: [],
+              objectRef: '1 0 R',
+            },
+          }],
+        } as any,
+        pages: [{
+          base64: 'iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAIAAAACUFjqAAAAFElEQVR42mP8z8AARLJgwiM3gqUBAF5ZAQnYqT+RAAAAAElFTkSuQmCC',
+          mimeType: 'image/png',
+          pageNumber: 1,
+          totalPages: 1,
+          sourceKind: 'raster-image',
+        }],
+        transcribePageImageText,
+        extractTextFacts,
+        interpretPage,
+      });
+
+      expect(transcribePageImageText).toHaveBeenCalled();
+      expect(extractTextFacts).toHaveBeenCalledTimes(1);
+      expect(interpretPage).not.toHaveBeenCalled();
+      expect(result.pageAudits[0]?.textHintSource).toBe('vision-ocr');
+      expect(result.pageAudits[0]?.evidenceCache?.preprocessing?.policy).toBeUndefined();
+      expect(result.parameters[0]?.name).toBe('sptN');
+    } finally {
+      if (previousPreprocessingMode === undefined) {
+        delete process.env.GEOTECHCLI_PREPROCESSING_MODE;
+      } else {
+        process.env.GEOTECHCLI_PREPROCESSING_MODE = previousPreprocessingMode;
+      }
+    }
+  });
+
   it('serializes hosted-beta extraction for image-heavy page packets', async () => {
     let inFlight = 0;
     let maxInFlight = 0;

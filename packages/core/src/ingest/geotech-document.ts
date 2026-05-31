@@ -15,7 +15,7 @@ import {
 } from '../vision/geotech-document.js';
 import { transcribeDocumentImageText } from '../vision/index.js';
 import { recoverDocumentTextHint, type DocumentTextHintSource } from '../vision/ocr.js';
-import type { VisionImagePreprocessMetadata } from '../vision/preprocess.js';
+import { resolveVisionImagePreprocessPolicy, type VisionImagePreprocessMetadata } from '../vision/preprocess.js';
 import type { GlmOcrLayoutPage } from '../vision/layout-ocr.js';
 import type { PdfDocumentInspection, PdfPageClassification } from './pdf.js';
 import type { IngestSegmentationSummary } from './segmentation.js';
@@ -2230,12 +2230,13 @@ export async function ingestGeotechDocument(
           ...options.config,
           timeout: pageTimeoutMs,
         };
+        const preprocessingPolicy = resolveVisionImagePreprocessPolicy();
         if (shouldPreferDirectVisualExtraction({
           config: options.config,
           page,
           inspectionPage,
           textHint: pageTextHint,
-        }) && !cachedTextHint) {
+        }) && !cachedTextHint && preprocessingPolicy !== 'region-v2') {
           const context: GeotechDocumentContext = {
             pageNumber: page.pageNumber,
             totalPages: page.totalPages,

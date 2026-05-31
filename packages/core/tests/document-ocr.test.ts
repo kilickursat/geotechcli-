@@ -324,4 +324,79 @@ describe('document text recovery', () => {
       }
     }
   });
+
+  it('keeps region-v2 preprocessing metadata when GLM-OCR layout succeeds first', async () => {
+    const previousMode = process.env.GEOTECHCLI_PREPROCESSING_MODE;
+    process.env.GEOTECHCLI_PREPROCESSING_MODE = 'region-v2';
+    const svg = `
+      <svg width="1100" height="1000" xmlns="http://www.w3.org/2000/svg">
+        <rect width="1100" height="1000" fill="white"/>
+        <g stroke="black" stroke-width="4" fill="none">
+          <rect x="90" y="90" width="280" height="790"/>
+          <line x1="90" y1="220" x2="370" y2="220"/>
+          <line x1="90" y1="350" x2="370" y2="350"/>
+          <line x1="90" y1="480" x2="370" y2="480"/>
+          <line x1="90" y1="610" x2="370" y2="610"/>
+          <line x1="90" y1="740" x2="370" y2="740"/>
+          <line x1="180" y1="90" x2="180" y2="880"/>
+          <line x1="280" y1="90" x2="280" y2="880"/>
+          <rect x="510" y="120" width="470" height="380"/>
+          <line x1="510" y1="245" x2="980" y2="245"/>
+          <line x1="510" y1="370" x2="980" y2="370"/>
+          <line x1="665" y1="120" x2="665" y2="500"/>
+          <line x1="820" y1="120" x2="820" y2="500"/>
+        </g>
+      </svg>
+    `;
+    const imageBuffer = await sharp(Buffer.from(svg)).png().toBuffer();
+    const layoutParse = vi.fn().mockResolvedValue({
+      text: 'BH-01 borehole log layout OCR recovered table values. SPT N equals 12 and groundwater is not reported.',
+      markdown: '',
+      pages: [{
+        pageNumber: 1,
+        width: 1100,
+        height: 1000,
+        text: 'BH-01 SPT N equals 12',
+        tables: ['| Depth | SPT |'],
+        formulas: [],
+        images: [],
+        elements: [{
+          index: 1,
+          label: 'table',
+          bbox2d: [0.1, 0.1, 0.8, 0.4],
+          content: '| Depth | SPT |',
+          confidence: null,
+        }],
+      }],
+      warnings: [],
+      latencyMs: 20,
+    });
+
+    try {
+      const result = await recoverDocumentTextHint({
+        imageBase64: imageBuffer.toString('base64'),
+        mimeType: 'image/png',
+        config: {
+          provider: 'hosted-beta',
+          apiKey: '',
+        },
+        layoutParse,
+        visionTranscribe: vi.fn(),
+      });
+
+      expect(result.source).toBe('glm-ocr');
+      expect(result.preprocessing?.policy).toBe('region-v2');
+      expect(result.preprocessing?.regions.some((region) => region.id.startsWith('region-v2-') && region.asset?.dataBase64)).toBe(true);
+      expect(result.layout?.pages[0]?.elements).toHaveLength(1);
+      expect(layoutParse).toHaveBeenCalledTimes(1);
+      expect(layoutParse.mock.calls[0]?.[1]).toBe('image/png');
+      expect(layoutParse.mock.calls[0]?.[0]).not.toBe(imageBuffer.toString('base64'));
+    } finally {
+      if (previousMode === undefined) {
+        delete process.env.GEOTECHCLI_PREPROCESSING_MODE;
+      } else {
+        process.env.GEOTECHCLI_PREPROCESSING_MODE = previousMode;
+      }
+    }
+  });
 });

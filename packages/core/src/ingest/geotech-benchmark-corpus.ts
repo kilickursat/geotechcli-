@@ -25,7 +25,21 @@ export interface GeotechBenchmarkCorpusFixtureExpectations {
   expectedBoreholeIds?: string[];
   requiredPreprocessingModes?: string[];
   requiredProviderProfiles?: string[];
+  preprocessingModeExpectations?: Record<string, GeotechBenchmarkCorpusPreprocessingModeExpectation>;
   knownLimitations?: string[];
+}
+
+export interface GeotechBenchmarkCorpusPreprocessingModeExpectation {
+  minSuccessfulPageRate?: number;
+  maxFailedPages?: number;
+  minCacheHitRate?: number;
+  minTraceabilityRate?: number;
+  minAverageQualityScore?: number;
+  minAverageRegionQualityScore?: number;
+  minPreprocessingRegions?: number;
+  minPersistedRegionAssets?: number;
+  maxEstimatedHostedCalls?: number;
+  sameOrBetterTraceabilityThan?: string[];
 }
 
 export interface GeotechBenchmarkCorpusFixture {
@@ -211,6 +225,7 @@ export function renderGeotechBenchmarkCorpusHtml(report: GeotechBenchmarkCorpusR
       <td>${escapeHtml(comparison.providerProfile)}</td>
       <td>${escapeHtml(comparison.baselineMode)} to ${escapeHtml(comparison.currentMode)}</td>
       <td>${signedPercent(comparison.qualityDelta)}</td>
+      <td>${signedPercent(comparison.regionQualityDelta)}</td>
       <td>${signedPercent(comparison.traceabilityDelta)}</td>
       <td>${comparison.pagesDeskewedDelta}</td>
       <td>${comparison.persistedRegionAssetsDelta}</td>
@@ -249,7 +264,7 @@ th{background:#0f172a;color:#f8fafc}
 <h2>Runs</h2>
 <table><thead><tr><th>Fixture</th><th>Category</th><th>Provider</th><th>Preprocessing</th><th>Trace</th><th>GM score</th><th>Quality</th><th>Review gates</th><th>Pages</th><th>Calls</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>
 <h2>Preprocessing Comparisons</h2>
-<table><thead><tr><th>Fixture</th><th>Provider</th><th>Modes</th><th>Quality delta</th><th>Trace delta</th><th>Deskew delta</th><th>Crop Asset delta</th></tr></thead><tbody>${comparisons || '<tr><td colspan="7">No paired preprocessing-mode comparisons available.</td></tr>'}</tbody></table>
+<table><thead><tr><th>Fixture</th><th>Provider</th><th>Modes</th><th>Quality delta</th><th>Region quality delta</th><th>Trace delta</th><th>Deskew delta</th><th>Crop Asset delta</th></tr></thead><tbody>${comparisons || '<tr><td colspan="8">No paired preprocessing-mode comparisons available.</td></tr>'}</tbody></table>
 ${report.failures.length ? `<h2>Failures</h2><ul>${report.failures.map((failure) => `<li>${escapeHtml(failure)}</li>`).join('')}</ul>` : ''}
 ${report.warnings.length ? `<h2>Warnings</h2><ul>${report.warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join('')}</ul>` : ''}
 </main>
@@ -318,6 +333,7 @@ function validateRunExpectations(
   run: Omit<GeotechBenchmarkCorpusRun, 'passed' | 'failures' | 'warnings'>,
 ): string[] {
   const expected = fixture.expectations;
+  const modeExpected = expected.preprocessingModeExpectations?.[run.preprocessingMode];
   return [
     expected.minSuccessfulPageRate != null && run.successfulPageRate < expected.minSuccessfulPageRate
       ? `successful page rate ${formatRatio(run.successfulPageRate)} below ${formatRatio(expected.minSuccessfulPageRate)}`
@@ -346,6 +362,46 @@ function validateRunExpectations(
     ...(expected.expectedBoreholeIds ?? []).flatMap((id) =>
       run.boreholeIds.includes(id) ? [] : [`expected borehole ${id} missing`],
     ),
+    ...validatePreprocessingModeExpectations(run.preprocessingMode, run, modeExpected),
+  ].filter((value): value is string => value != null);
+}
+
+function validatePreprocessingModeExpectations(
+  mode: string,
+  run: Omit<GeotechBenchmarkCorpusRun, 'passed' | 'failures' | 'warnings'>,
+  expected: GeotechBenchmarkCorpusPreprocessingModeExpectation | undefined,
+): string[] {
+  if (!expected) {
+    return [];
+  }
+  return [
+    expected.minSuccessfulPageRate != null && run.successfulPageRate < expected.minSuccessfulPageRate
+      ? `${mode} successful page rate ${formatRatio(run.successfulPageRate)} below ${formatRatio(expected.minSuccessfulPageRate)}`
+      : null,
+    expected.maxFailedPages != null && run.failedPages > expected.maxFailedPages
+      ? `${mode} failed pages ${run.failedPages} above ${expected.maxFailedPages}`
+      : null,
+    expected.minCacheHitRate != null && run.cacheHitRate < expected.minCacheHitRate
+      ? `${mode} cache hit rate ${formatRatio(run.cacheHitRate)} below ${formatRatio(expected.minCacheHitRate)}`
+      : null,
+    expected.minTraceabilityRate != null && run.directTraceabilityRate < expected.minTraceabilityRate
+      ? `${mode} traceability ${formatRatio(run.directTraceabilityRate)} below ${formatRatio(expected.minTraceabilityRate)}`
+      : null,
+    expected.minAverageQualityScore != null && run.preprocessingQualityScore < expected.minAverageQualityScore
+      ? `${mode} preprocessing quality ${formatRatio(run.preprocessingQualityScore)} below ${formatRatio(expected.minAverageQualityScore)}`
+      : null,
+    expected.minAverageRegionQualityScore != null && run.preprocessingRegionQualityScore < expected.minAverageRegionQualityScore
+      ? `${mode} region quality ${formatRatio(run.preprocessingRegionQualityScore)} below ${formatRatio(expected.minAverageRegionQualityScore)}`
+      : null,
+    expected.minPreprocessingRegions != null && run.preprocessingRegions < expected.minPreprocessingRegions
+      ? `${mode} preprocessing regions ${run.preprocessingRegions} below ${expected.minPreprocessingRegions}`
+      : null,
+    expected.minPersistedRegionAssets != null && run.persistedRegionAssets < expected.minPersistedRegionAssets
+      ? `${mode} persisted region assets ${run.persistedRegionAssets} below ${expected.minPersistedRegionAssets}`
+      : null,
+    expected.maxEstimatedHostedCalls != null && run.estimatedHostedCalls > expected.maxEstimatedHostedCalls
+      ? `${mode} estimated hosted calls ${run.estimatedHostedCalls} above ${expected.maxEstimatedHostedCalls}`
+      : null,
   ].filter((value): value is string => value != null);
 }
 
@@ -364,6 +420,30 @@ function validateFixtureCoverage(
     for (const profile of fixture.expectations.requiredProviderProfiles ?? []) {
       if (!fixtureRuns.some((run) => run.providerProfile === profile)) {
         failures.push(`${fixture.id}: missing provider profile ${profile}`);
+      }
+    }
+    const modeExpectations = fixture.expectations.preprocessingModeExpectations ?? {};
+    const providerProfiles = uniqueSorted(fixtureRuns.map((run) => run.providerProfile));
+    for (const [mode, expectation] of Object.entries(modeExpectations)) {
+      for (const providerProfile of providerProfiles) {
+        const providerRuns = fixtureRuns.filter((run) => run.providerProfile === providerProfile);
+        const current = providerRuns.find((run) => run.preprocessingMode === mode);
+        for (const baselineMode of expectation.sameOrBetterTraceabilityThan ?? []) {
+          const baseline = providerRuns.find((run) => run.preprocessingMode === baselineMode);
+          if (!current) {
+            failures.push(`${fixture.id}/${providerProfile}: missing ${mode} run for traceability regression check`);
+            continue;
+          }
+          if (!baseline) {
+            failures.push(`${fixture.id}/${providerProfile}: missing ${baselineMode} baseline for ${mode} traceability regression check`);
+            continue;
+          }
+          if (current.directTraceabilityRate < baseline.directTraceabilityRate) {
+            failures.push(
+              `${fixture.id}/${providerProfile}: ${mode} traceability ${formatRatio(current.directTraceabilityRate)} regressed below ${baselineMode} ${formatRatio(baseline.directTraceabilityRate)}`,
+            );
+          }
+        }
       }
     }
   }

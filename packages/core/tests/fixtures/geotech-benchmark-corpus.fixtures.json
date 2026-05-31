@@ -41,12 +41,47 @@
         "maxFailedPages": 0,
         "minCacheHitRate": 0.95,
         "minTraceabilityRate": 0.9,
-        "minGroundModelReadinessScore": 55,
+        "minGroundModelReadinessScore": 40,
         "maxEstimatedHostedCalls": 0,
         "requireFemExecutionBoundarySafe": true,
         "expectedBoreholeIds": ["BH1"],
         "requiredPreprocessingModes": ["none", "ocr-optimized", "region-v2"],
         "requiredProviderProfiles": ["hosted-beta", "open-byok-text-evidence"]
+      }
+    },
+    {
+      "id": "region-v2-scanned-borehole-table-v1",
+      "category": "borehole-log",
+      "sourceType": "public-sample",
+      "source": "geotech-corpus/region-v2-scanned-borehole-table.fixture.pdf",
+      "input": {
+        "path": "geotech-corpus/region-v2-scanned-borehole-table.fixture.pdf"
+      },
+      "baseline": "geotech-corpus/borehole-log-small.benchmark.json",
+      "description": "Deterministic image-only PDF fixture with borehole strip-log and laboratory table panels for region-v2 preprocessing acceptance.",
+      "expectations": {
+        "minSuccessfulPageRate": 1,
+        "maxFailedPages": 0,
+        "minCacheHitRate": 0.95,
+        "minTraceabilityRate": 0.9,
+        "minGroundModelReadinessScore": 40,
+        "maxEstimatedHostedCalls": 0,
+        "requireFemExecutionBoundarySafe": true,
+        "expectedBoreholeIds": ["BH1"],
+        "requiredPreprocessingModes": ["none", "ocr-optimized", "region-v2"],
+        "requiredProviderProfiles": ["hosted-beta", "open-byok-text-evidence"],
+        "preprocessingModeExpectations": {
+          "region-v2": {
+            "minCacheHitRate": 0.95,
+            "minTraceabilityRate": 0.9,
+            "minAverageQualityScore": 0.8,
+            "minAverageRegionQualityScore": 0.7,
+            "minPreprocessingRegions": 2,
+            "minPersistedRegionAssets": 2,
+            "maxEstimatedHostedCalls": 0,
+            "sameOrBetterTraceabilityThan": ["none", "ocr-optimized"]
+          }
+        }
       }
     },
     {

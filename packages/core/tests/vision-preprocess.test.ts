@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 
-import { preprocessVisionImageBuffer } from '../src/vision/preprocess.js';
+import { preprocessVisionImageBuffer, renderPdfPageToImageBuffer } from '../src/vision/preprocess.js';
+
+const testDir = dirname(fileURLToPath(import.meta.url));
 
 describe('vision image preprocessing', () => {
   it('records normalization operations and detects table/log-panel region candidates', async () => {
@@ -174,5 +179,35 @@ describe('vision image preprocessing', () => {
     expect(regionV2Crops.every((region) => region.asset?.normalized === true)).toBe(true);
     expect(regionV2Crops.every((region) => (region.quality?.score ?? 0) > 0.4)).toBe(true);
     expect(result.preprocessing.quality?.regionCount).toBeGreaterThanOrEqual(regionV2Crops.length);
+  });
+
+  it('detects region-v2 crops from the committed scanned borehole/table PDF fixture', async () => {
+    const fixture = readFileSync(join(
+      testDir,
+      'fixtures',
+      'geotech-corpus',
+      'region-v2-scanned-borehole-table.fixture.pdf',
+    ));
+
+    const result = await renderPdfPageToImageBuffer(fixture, 1, {
+      scale: 2,
+      preprocessPolicy: 'region-v2',
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.preprocessing.policy).toBe('region-v2');
+    expect(result?.preprocessing.operations).toEqual(expect.arrayContaining([
+      'detect-region-v2-borehole-log-strip',
+      'detect-region-v2-table-panel',
+      'score-preprocessing-regions',
+      'normalize-region-crop-assets',
+    ]));
+    const regionV2Crops = result!.preprocessing.regions.filter((region) =>
+      region.id.startsWith('region-v2-') && region.asset?.normalized === true,
+    );
+    expect(regionV2Crops.length).toBeGreaterThanOrEqual(2);
+    expect(result?.preprocessing.quality?.regionCount).toBeGreaterThanOrEqual(regionV2Crops.length);
+    expect(result?.preprocessing.quality?.cropAssetCount).toBeGreaterThanOrEqual(2);
+    expect(regionV2Crops.every((region) => (region.quality?.score ?? 0) > 0.4)).toBe(true);
   });
 });

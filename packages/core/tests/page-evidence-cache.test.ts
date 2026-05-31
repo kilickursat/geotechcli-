@@ -1,6 +1,7 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { LLMConfig } from '../src/llm/types.js';
@@ -16,6 +17,9 @@ import {
   readPageEvidenceCache,
   writePageEvidenceCache,
 } from '../src/ingest/page-evidence-cache.js';
+import { renderPdfPageToImageBuffer } from '../src/vision/preprocess.js';
+
+const testDir = dirname(fileURLToPath(import.meta.url));
 
 describe('page evidence cache', () => {
   let configDir = '';
@@ -329,6 +333,58 @@ describe('page evidence cache', () => {
     const rawAsset = raw.preprocessing.regions.find((region: any) => region.id === 'table-log-panel-candidate').asset;
     expect(rawAsset.dataBase64).toBeUndefined();
     expect(rawAsset.cacheRelativePath).toBe(asset?.cacheRelativePath);
+  });
+
+  it('persists region-v2 crop assets from the committed scanned borehole/table PDF fixture', async () => {
+    const fixture = readFileSync(join(
+      testDir,
+      'fixtures',
+      'geotech-corpus',
+      'region-v2-scanned-borehole-table.fixture.pdf',
+    ));
+    const rendered = await renderPdfPageToImageBuffer(fixture, 1, {
+      scale: 2,
+      preprocessPolicy: 'region-v2',
+    });
+    expect(rendered).not.toBeNull();
+    const parts = {
+      ...buildParts(),
+      pageHash: hashBuffer(rendered!.buffer),
+      preprocessingVersion: 'page-evidence-preprocess-v4:region-v2',
+    };
+
+    writePageEvidenceCache(parts, {
+      textHint: 'Recovered OCR text from region-v2 fixture.',
+      source: 'vision-ocr',
+      warnings: [],
+      transformed: true,
+      preprocessing: rendered!.preprocessing,
+      createdAt: '2026-05-31T00:00:00.000Z',
+    });
+
+    const cached = readPageEvidenceCache(parts);
+    const assets = cached?.preprocessing?.regions
+      .filter((region) => region.id.startsWith('region-v2-'))
+      .map((region) => region.asset)
+      .filter((asset): asset is NonNullable<typeof asset> => !!asset);
+    expect(assets?.length).toBeGreaterThanOrEqual(2);
+    for (const asset of assets ?? []) {
+      expect(asset).toMatchObject({
+        mimeType: 'image/png',
+        sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+        normalized: true,
+        cacheRelativePath: expect.stringMatching(/^assets\//),
+      });
+      expect(readFileSync(getPageEvidenceCacheAssetPath(asset.cacheRelativePath!)).length).toBe(asset.byteLength);
+    }
+
+    const raw = JSON.parse(readFileSync(getPageEvidenceCachePath(parts), 'utf-8'));
+    const rawAssets = raw.preprocessing.regions
+      .filter((region: any) => String(region.id).startsWith('region-v2-'))
+      .map((region: any) => region.asset)
+      .filter(Boolean);
+    expect(rawAssets.length).toBeGreaterThanOrEqual(2);
+    expect(rawAssets.every((asset: any) => asset.dataBase64 === undefined && /^assets\//.test(asset.cacheRelativePath))).toBe(true);
   });
 
   it('persists compact GLM-OCR layout pages without storing full provider payloads', () => {

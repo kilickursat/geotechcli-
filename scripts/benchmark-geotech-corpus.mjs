@@ -2,7 +2,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { dirname, join, relative, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -86,7 +86,7 @@ async function main(argv) {
   for (const fixtureRecord of registry.fixtures) {
     const fixture = normalizeFixture(fixtureRecord);
     if (realFixtures) {
-      const resolvedInput = resolveRealFixtureInput(fixtureRecord);
+      const resolvedInput = resolveRealFixtureInput(fixtureRecord, registryPath);
       if (!resolvedInput) {
         const envName = fixtureRecord.input?.env ?? defaultFixtureEnv(fixture.category);
         const reason = envName
@@ -111,7 +111,7 @@ async function main(argv) {
         continue;
       }
 
-      const realFixture = normalizeRealFixture(fixture, resolvedInput.envName);
+      const realFixture = normalizeRealFixture(fixture, resolvedInput);
       for (const preprocessingMode of preprocessingModes) {
         const runDir = join(runsDir, realFixture.id, 'configured-provider', preprocessingMode);
         mkdirSync(runDir, { recursive: true });
@@ -153,7 +153,7 @@ async function main(argv) {
           writeJson(comparisonPath, compareGeotechDocumentBenchmarks(cached, first));
         }
         inputs.push({
-          fixture: normalizeRealFixture(fixture, resolvedInput.envName, providerProfile),
+          fixture: normalizeRealFixture(fixture, resolvedInput, providerProfile),
           benchmark: cached,
           providerProfile,
           preprocessingMode,
@@ -289,7 +289,16 @@ function runRealBenchmark(options) {
   }
 }
 
-function resolveRealFixtureInput(fixtureRecord) {
+function resolveRealFixtureInput(fixtureRecord, registryPath) {
+  if (typeof fixtureRecord.input?.path === 'string' && fixtureRecord.input.path.trim()) {
+    return {
+      envName: fixtureRecord.input.env ?? 'IN_REPO_FIXTURE',
+      path: resolve(dirname(registryPath), fixtureRecord.input.path.trim()),
+      source: fixtureRecord.input.path.trim(),
+      inRepo: true,
+    };
+  }
+
   const envName = fixtureRecord.input?.env ?? defaultFixtureEnv(fixtureRecord.category);
   if (!envName) {
     return null;
@@ -304,6 +313,8 @@ function resolveRealFixtureInput(fixtureRecord) {
   return {
     envName,
     path: resolve(inputValue),
+    source: redactedFixtureSource(fixtureRecord, envName),
+    inRepo: false,
   };
 }
 
@@ -319,20 +330,25 @@ function defaultFixtureEnv(category) {
   }[category] ?? null;
 }
 
-function normalizeRealFixture(fixture, envName, providerProfile) {
+function normalizeRealFixture(fixture, resolvedInput, providerProfile) {
+  const knownLimitations = resolvedInput.inRepo
+    ? fixture.expectations.knownLimitations ?? []
+    : [
+        ...(fixture.expectations.knownLimitations ?? []),
+        `Real local fixture path is supplied through ${resolvedInput.envName}; source bytes and absolute paths are intentionally not persisted.`,
+      ];
   return {
     ...fixture,
-    sourceType: 'local-private',
-    source: redactedFixtureSource(fixture, envName),
+    sourceType: resolvedInput.inRepo ? fixture.sourceType : 'local-private',
+    source: resolvedInput.inRepo
+      ? fixture.source ?? resolvedInput.source
+      : redactedFixtureSource(fixture, resolvedInput.envName),
     expectations: {
       ...fixture.expectations,
       requiredProviderProfiles: providerProfile
         ? [providerProfile]
         : undefined,
-      knownLimitations: [
-        ...(fixture.expectations.knownLimitations ?? []),
-        `Real local fixture path is supplied through ${envName}; source bytes and absolute paths are intentionally not persisted.`,
-      ],
+      knownLimitations,
     },
   };
 }
@@ -342,13 +358,17 @@ function sanitizeRealBenchmark(benchmark, fixture, resolvedInput, preprocessingM
   sanitized.label = `${fixture.id} ${preprocessingMode} cached local fixture`;
   if (sanitized.source) {
     sanitized.source.filePath = undefined;
-    sanitized.source.fileName = `${fixture.id}.local-fixture`;
-    sanitized.source.redacted = true;
+    sanitized.source.fileName = resolvedInput.inRepo
+      ? basename(resolvedInput.path)
+      : `${fixture.id}.local-fixture`;
+    sanitized.source.redacted = !resolvedInput.inRepo;
   }
   sanitized.fixture = {
     id: fixture.id,
     category: fixture.category,
-    source: redactedFixtureSource(fixture, resolvedInput.envName),
+    source: resolvedInput.inRepo
+      ? fixture.source ?? resolvedInput.source
+      : redactedFixtureSource(fixture, resolvedInput.envName),
     description: fixture.description,
   };
   if (sanitized.preprocessing) {

@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.80] - 2026-05-31
+
+### Region-v2 Real Evidence Acceptance Fixture
+
+- Added a deterministic in-repo image-only borehole/table PDF fixture so `region-v2` preprocessing is tested against rendered PDF evidence, not only synthetic benchmark metadata.
+- Made corpus acceptance fail when `region-v2` produces zero preprocessing regions, zero persisted crop assets, low region quality, or traceability below `none`/`ocr-optimized` for the same fixture/provider.
+- Updated corpus HTML comparisons to show region quality deltas and improved real-fixture handling so committed public fixtures do not leak absolute local paths.
+
 ## [0.4.79] - 2026-05-31
 
 ### Region-Level Preprocessing V2

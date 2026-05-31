@@ -40,6 +40,26 @@ describe('geotech benchmark corpus', () => {
       'GEOTECHCLI_BENCHMARK_MIXED_SCANNED_PDF',
       'GEOTECHCLI_BENCHMARK_MALFORMED_SCANNED_PDF',
     ]));
+    const regionV2Fixture = registry.fixtures.find((fixture: any) =>
+      fixture.id === 'region-v2-scanned-borehole-table-v1',
+    );
+    expect(regionV2Fixture).toMatchObject({
+      sourceType: 'public-sample',
+      input: {
+        path: 'geotech-corpus/region-v2-scanned-borehole-table.fixture.pdf',
+      },
+      expectations: {
+        preprocessingModeExpectations: {
+          'region-v2': {
+            minPreprocessingRegions: expect.any(Number),
+            minPersistedRegionAssets: expect.any(Number),
+            minAverageRegionQualityScore: expect.any(Number),
+            sameOrBetterTraceabilityThan: ['none', 'ocr-optimized'],
+          },
+        },
+      },
+    });
+    expect(existsSync(join(testDir, 'fixtures', regionV2Fixture.input.path))).toBe(true);
     for (const fixture of registry.fixtures) {
       expect(fixture.expectations).toEqual(expect.objectContaining({
         minSuccessfulPageRate: expect.any(Number),
@@ -100,8 +120,56 @@ describe('geotech benchmark corpus', () => {
     expect(svg).toContain('GeotechCLI Benchmark Corpus');
     expect(svg).toContain('PASS');
     expect(html).toContain('Preprocessing Comparisons');
+    expect(html).toContain('Region quality delta');
     expect(html).toContain('Review gates');
     expect(html).toContain('Pages');
+  });
+
+  it('fails region-v2 acceptance when borehole/table pages produce no preprocessing regions', () => {
+    const fixture = readJson(corpusRegistryPath).fixtures.find((candidate: any) =>
+      candidate.id === 'region-v2-scanned-borehole-table-v1',
+    ) as GeotechBenchmarkCorpusFixture;
+    const none = makeBenchmarkVariant('none', 'hosted-beta');
+    const ocr = makeBenchmarkVariant('ocr-optimized', 'hosted-beta');
+    const region = makeBenchmarkVariant('region-v2', 'hosted-beta');
+    region.preprocessing!.preprocessingRegions = 0;
+    region.preprocessing!.persistedRegionAssets = 0;
+    region.preprocessing!.averageRegionQualityScore = 0.1;
+
+    const report = buildGeotechBenchmarkCorpusReport([
+      { fixture, benchmark: none, providerProfile: 'hosted-beta', preprocessingMode: 'none' },
+      { fixture, benchmark: ocr, providerProfile: 'hosted-beta', preprocessingMode: 'ocr-optimized' },
+      { fixture, benchmark: region, providerProfile: 'hosted-beta', preprocessingMode: 'region-v2' },
+    ], {
+      generatedAt: '2026-05-31T00:00:00.000Z',
+    });
+
+    expect(report.summary.passed).toBe(false);
+    expect(report.failures.join(' ')).toMatch(/region-v2 preprocessing regions 0 below/i);
+    expect(report.failures.join(' ')).toMatch(/region-v2 persisted region assets 0 below/i);
+    expect(report.failures.join(' ')).toMatch(/region-v2 region quality/i);
+  });
+
+  it('fails region-v2 acceptance when traceability regresses against earlier preprocessing modes', () => {
+    const fixture = readJson(corpusRegistryPath).fixtures.find((candidate: any) =>
+      candidate.id === 'region-v2-scanned-borehole-table-v1',
+    ) as GeotechBenchmarkCorpusFixture;
+    const none = makeBenchmarkVariant('none', 'hosted-beta');
+    const ocr = makeBenchmarkVariant('ocr-optimized', 'hosted-beta');
+    const region = makeBenchmarkVariant('region-v2', 'hosted-beta');
+    region.traceability.directParameterTraceabilityRate = 0.89;
+
+    const report = buildGeotechBenchmarkCorpusReport([
+      { fixture, benchmark: none, providerProfile: 'hosted-beta', preprocessingMode: 'none' },
+      { fixture, benchmark: ocr, providerProfile: 'hosted-beta', preprocessingMode: 'ocr-optimized' },
+      { fixture, benchmark: region, providerProfile: 'hosted-beta', preprocessingMode: 'region-v2' },
+    ], {
+      generatedAt: '2026-05-31T00:00:00.000Z',
+    });
+
+    expect(report.summary.passed).toBe(false);
+    expect(report.failures.join(' ')).toMatch(/region-v2 traceability/i);
+    expect(report.failures.join(' ')).toMatch(/regressed below ocr-optimized/i);
   });
 
   it('fails closed when FEM execution boundaries regress inside a corpus run', () => {

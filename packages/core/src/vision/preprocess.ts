@@ -516,13 +516,28 @@ function buildRegionV2PanelCandidates(
     .map((count, index) => ({ count, index }))
     .filter((col) => col.count >= activeColThreshold)
     .map((col) => col.index);
-  const colClusters = mergeLineClusters(
+  let colClusters = mergeLineClusters(
     groupContiguous(activeCols, Math.max(4, Math.round(raw.width * 0.01))),
     Math.max(12, Math.round(raw.width * 0.035)),
   ).filter((cluster) => {
     const width = cluster.end - cluster.start + 1;
     return width >= raw.width * 0.055 && width <= raw.width * 0.58;
   });
+
+  if (colClusters.length === 0) {
+    const structuralColThreshold = Math.max(24, Math.round(raw.height * 0.045));
+    const structuralCols = raw.colDarkCounts
+      .map((count, index) => ({ count, index }))
+      .filter((col) => col.count >= structuralColThreshold)
+      .map((col) => col.index);
+    colClusters = mergeLineClusters(
+      groupContiguous(structuralCols, Math.max(5, Math.round(raw.width * 0.012))),
+      Math.max(8, Math.round(raw.width * 0.012)),
+    ).filter((cluster) => {
+      const width = cluster.end - cluster.start + 1;
+      return width >= raw.width * 0.05 && width <= raw.width * 0.42;
+    });
+  }
 
   const candidates: VisionPreprocessRegionMetadata[] = [];
   const broadCoverage = ((raw.maxX - raw.minX + 1) * (rowSpan.end - rowSpan.start + 1)) / Math.max(1, raw.width * raw.height);

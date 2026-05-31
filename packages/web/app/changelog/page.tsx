@@ -8,6 +8,16 @@ const releases = [
     date: '2026-05-31',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added a deterministic in-repo image-only borehole/table PDF fixture so region-v2 preprocessing is tested against rendered PDF evidence, not only synthetic benchmark metadata' },
+      { type: 'fix', text: 'Made corpus acceptance fail when region-v2 returns zero preprocessing regions, zero persisted crop assets, low region quality, or traceability below none and ocr-optimized' },
+      { type: 'fix', text: 'Updated corpus HTML comparisons with region quality deltas and kept committed public fixture outputs free of local absolute path leaks' },
+    ],
+  },
+  {
+    version: '0.4.79',
+    date: '2026-05-31',
+    tag: '0.4.79 Release',
+    changes: [
       { type: 'feat', text: 'Added explicit region-v2 PDF/image preprocessing with fine-pass deskew metadata, higher-resolution normalized pages, smarter table and borehole/log strip crop candidates, and region quality scoring' },
       { type: 'feat', text: 'Routes region-v2 table/log crop assets into OCR before full-page vision OCR so borehole and table evidence gets a tighter first extraction target while retaining provider-neutral fallback behavior' },
       { type: 'fix', text: 'Extended corpus benchmarks to compare none, ocr-optimized, and region-v2 by default across region quality, persisted crop assets, deskew, hosted-call, traceability, and GroundModel readiness deltas' },
