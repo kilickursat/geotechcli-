@@ -8,6 +8,16 @@ const releases = [
     date: '2026-06-01',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Split the internal geotechnical corpus benchmark provider matrix into hosted-beta, OpenAI-compatible BYOK, OpenRouter/free, and local/HF-compatible profiles' },
+      { type: 'fix', text: 'Added fail-closed provider evidence checks so text-only, free, and local profiles must consume preprocessed OCR/page evidence instead of direct image or native-PDF tasks' },
+      { type: 'feat', text: 'Added corpus-level confidence component summaries and trend fields for extraction, traceability, corroboration, readiness, and page-evidence trust review' },
+    ],
+  },
+  {
+    version: '0.4.87',
+    date: '2026-06-01',
+    tag: '0.4.87 Release',
+    changes: [
       { type: 'fix', text: 'Fixed the trusted-publishing release build by giving the web package a temporary npm lockfile during Next.js build so the Node 24 publish job selects npm for SWC registry fallback' },
       { type: 'fix', text: 'Kept the public web build behavior unchanged while aligning the release pipeline with the already-passing CI build' },
     ],

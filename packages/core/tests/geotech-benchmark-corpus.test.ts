@@ -75,14 +75,16 @@ describe('geotech benchmark corpus', () => {
 
   it('aggregates provider profiles and preprocessing modes without changing the document benchmark contract', () => {
     const fixture = readJson(corpusRegistryPath).fixtures[0] as GeotechBenchmarkCorpusFixture;
-    const inputs = [
-      corpusInput(fixture, 'hosted-beta', 'none'),
-      corpusInput(fixture, 'hosted-beta', 'ocr-optimized'),
-      corpusInput(fixture, 'hosted-beta', 'region-v2'),
-      corpusInput(fixture, 'open-byok-text-evidence', 'none'),
-      corpusInput(fixture, 'open-byok-text-evidence', 'ocr-optimized'),
-      corpusInput(fixture, 'open-byok-text-evidence', 'region-v2'),
+    const providerProfiles = [
+      'hosted-beta',
+      'openai-compatible-byok',
+      'openrouter-free',
+      'local-hf-compatible',
     ];
+    const preprocessingModes = ['none', 'ocr-optimized', 'region-v2'] as const;
+    const inputs = providerProfiles.flatMap((providerProfile) =>
+      preprocessingModes.map((preprocessingMode) => corpusInput(fixture, providerProfile, preprocessingMode)),
+    );
 
     const report = buildGeotechBenchmarkCorpusReport(inputs, {
       generatedAt: '2026-05-31T00:00:00.000Z',
@@ -92,15 +94,21 @@ describe('geotech benchmark corpus', () => {
     expect(report.kind).toBe('geotech-benchmark-corpus-report');
     expect(report.summary).toMatchObject({
       fixtureCount: 1,
-      runCount: 6,
-      passedRuns: 6,
+      runCount: 12,
+      passedRuns: 12,
       failedRuns: 0,
       passed: true,
-      providerProfiles: ['hosted-beta', 'open-byok-text-evidence'],
+      providerProfiles: ['hosted-beta', 'local-hf-compatible', 'openai-compatible-byok', 'openrouter-free'],
       preprocessingModes: ['none', 'ocr-optimized', 'region-v2'],
+      averageConfidenceBreakdown: {
+        overall: 55,
+        extractionConfidence: 66,
+        traceabilityScore: 100,
+        corroborationScore: 30,
+      },
       totalEstimatedHostedCalls: 0,
     });
-    expect(report.preprocessingComparisons).toHaveLength(4);
+    expect(report.preprocessingComparisons).toHaveLength(8);
     expect(report.preprocessingComparisons[0]).toMatchObject({
       fixtureId: fixture.id,
       qualityDelta: 0.24,
@@ -113,6 +121,20 @@ describe('geotech benchmark corpus', () => {
     expect(report.runs[0]?.reviewGates).toEqual(expect.arrayContaining([
       'human-engineering-review-required',
     ]));
+    const freeRoute = report.runs.find((run) =>
+      run.providerProfile === 'openrouter-free' && run.preprocessingMode === 'region-v2',
+    );
+    expect(freeRoute?.providerBenchmarkProfile).toMatchObject({
+      evidenceInput: 'preprocessed-page-evidence',
+      imageInputsAllowed: false,
+      nativePdfAllowed: false,
+      requiresPreprocessedEvidence: true,
+      likelyFreeRoute: true,
+    });
+    expect(freeRoute?.reviewGates).toEqual(expect.arrayContaining([
+      'free-route-capacity-and-feature-variance',
+      'text-only-provider-uses-ocr-page-evidence',
+    ]));
     expect(report.failures).toEqual([]);
 
     const svg = renderGeotechBenchmarkCorpusSvg(report);
@@ -120,9 +142,36 @@ describe('geotech benchmark corpus', () => {
     expect(svg).toContain('GeotechCLI Benchmark Corpus');
     expect(svg).toContain('PASS');
     expect(html).toContain('Preprocessing Comparisons');
+    expect(html).toContain('Evidence input');
+    expect(html).toContain('preprocessed-page-evidence');
+    expect(html).toContain('Trust E/T/C');
     expect(html).toContain('Region quality delta');
     expect(html).toContain('Review gates');
     expect(html).toContain('Pages');
+  });
+
+  it('fails closed when BYOK/free provider profiles bypass preprocessed page evidence', () => {
+    const fixture = readJson(corpusRegistryPath).fixtures[0] as GeotechBenchmarkCorpusFixture;
+    const unsafe = makeBenchmarkVariant('region-v2', 'openrouter-free');
+    unsafe.provider!.preprocessingPolicy.requirePreprocessedEvidence = false;
+    unsafe.provider!.preprocessingPolicy.allowImageInputs = true;
+    unsafe.provider!.capabilities.visionImages = true;
+    unsafe.provider!.reviewGates = ['human-engineering-review-required'];
+
+    const report = buildGeotechBenchmarkCorpusReport([{
+      fixture,
+      benchmark: unsafe,
+      providerProfile: 'openrouter-free',
+      preprocessingMode: 'region-v2',
+    }], {
+      generatedAt: '2026-05-31T00:00:00.000Z',
+    });
+
+    expect(report.summary.passed).toBe(false);
+    expect(report.failures.join(' ')).toMatch(/must require preprocessed page evidence/i);
+    expect(report.failures.join(' ')).toMatch(/must not accept direct image tasks/i);
+    expect(report.failures.join(' ')).toMatch(/missing capacity\/feature review gate/i);
+    expect(report.failures.join(' ')).toMatch(/missing text-evidence review gate/i);
   });
 
   it('fails region-v2 acceptance when borehole/table pages produce no preprocessing regions', () => {
@@ -230,28 +279,7 @@ function makeBenchmarkVariant(
 ): GeotechDocumentBenchmark {
   const benchmark = readJson(benchmarkFixturePath) as GeotechDocumentBenchmark;
   const totalPages = benchmark.source.totalPages;
-  benchmark.provider = {
-    provider: providerProfile === 'hosted-beta' ? 'hosted-beta' : 'openai-compatible',
-    profile: providerProfile as any,
-    modelId: providerProfile === 'hosted-beta' ? 'glm-5.1' : 'byok-text-evidence-model',
-    visionModelId: providerProfile === 'hosted-beta' ? 'glm-5v-turbo' : null,
-    capabilities: {
-      text: true,
-      visionImages: providerProfile === 'hosted-beta',
-      nativePdfDocuments: false,
-      jsonMode: providerProfile === 'hosted-beta',
-    } as any,
-    likelyFreeRoute: providerProfile !== 'hosted-beta',
-    contextStrategy: providerProfile === 'hosted-beta' ? 'full' : 'micro',
-    reviewGates: ['human-engineering-review-required'],
-    preprocessingPolicy: {
-      preferNativePdf: false,
-      requirePreprocessedEvidence: true,
-      allowImageInputs: providerProfile === 'hosted-beta',
-      allowLayoutOcr: providerProfile === 'hosted-beta',
-      maxContextStrategy: providerProfile === 'hosted-beta' ? 'full' : 'micro',
-    } as any,
-  };
+  benchmark.provider = testProviderBlock(providerProfile);
   benchmark.preprocessing = preprocessingMode === 'region-v2'
     ? {
         versions: ['page-evidence-preprocess-v4:region-v2'],
@@ -351,6 +379,123 @@ function makeBenchmarkVariant(
         },
       };
   return benchmark;
+}
+
+function testProviderBlock(providerProfile: string): NonNullable<GeotechDocumentBenchmark['provider']> {
+  if (providerProfile === 'hosted-beta') {
+    return {
+      provider: 'hosted-beta',
+      profile: 'hosted-default',
+      modelId: 'glm-5.1',
+      visionModelId: 'glm-5v-turbo',
+      capabilities: {
+        text: true,
+        visionImages: true,
+        nativePdfDocuments: false,
+        jsonMode: true,
+      },
+      likelyFreeRoute: false,
+      contextStrategy: 'full',
+      reviewGates: ['human-engineering-review-required'],
+      preprocessingPolicy: {
+        preferNativePdf: false,
+        requirePreprocessedEvidence: true,
+        allowImageInputs: true,
+        allowLayoutOcr: true,
+        maxContextStrategy: 'full',
+      },
+    };
+  }
+  if (providerProfile === 'openai-compatible-byok') {
+    return textEvidenceProviderBlock({
+      provider: 'openai-compatible',
+      modelId: 'openai-compatible/byok-text-evidence-model',
+      likelyFreeRoute: false,
+      contextStrategy: 'compact',
+      jsonMode: true,
+      reviewGates: [
+        'openai-compatible-byok-uses-preprocessed-page-evidence',
+        'native-pdf-unavailable-use-preprocessed-evidence',
+        'human-engineering-review-required',
+      ],
+    });
+  }
+  if (providerProfile === 'openrouter-free') {
+    return textEvidenceProviderBlock({
+      provider: 'openai-compatible',
+      modelId: 'google/gemma-4-26b-a4b-it:free',
+      likelyFreeRoute: true,
+      contextStrategy: 'micro',
+      jsonMode: false,
+      reviewGates: [
+        'text-only-provider-uses-ocr-page-evidence',
+        'free-route-capacity-and-feature-variance',
+        'compact-context-required',
+        'human-engineering-review-required',
+      ],
+    });
+  }
+  if (providerProfile === 'local-hf-compatible') {
+    return textEvidenceProviderBlock({
+      provider: 'huggingface',
+      modelId: 'local-or-hf-compatible/text-evidence-model',
+      likelyFreeRoute: false,
+      contextStrategy: 'compact',
+      jsonMode: false,
+      reviewGates: [
+        'local-hf-compatible-uses-preprocessed-page-evidence',
+        'native-pdf-unavailable-use-preprocessed-evidence',
+        'compact-context-required',
+        'human-engineering-review-required',
+      ],
+    });
+  }
+  return textEvidenceProviderBlock({
+    provider: 'openai-compatible',
+    modelId: 'byok-text-evidence-model',
+    likelyFreeRoute: true,
+    contextStrategy: 'micro',
+    jsonMode: false,
+    reviewGates: [
+      'text-only-provider-uses-ocr-page-evidence',
+      'free-route-capacity-and-feature-variance',
+      'human-engineering-review-required',
+    ],
+  });
+}
+
+function textEvidenceProviderBlock(
+  options: {
+    provider: 'openai-compatible' | 'huggingface';
+    modelId: string;
+    likelyFreeRoute: boolean;
+    contextStrategy: 'compact' | 'micro';
+    jsonMode: boolean;
+    reviewGates: string[];
+  },
+): NonNullable<GeotechDocumentBenchmark['provider']> {
+  return {
+    provider: options.provider,
+    profile: 'open-byok',
+    modelId: options.modelId,
+    visionModelId: null,
+    capabilities: {
+      text: true,
+      visionImages: false,
+      nativePdfDocuments: false,
+      jsonMode: options.jsonMode,
+    },
+    likelyFreeRoute: options.likelyFreeRoute,
+    contextStrategy: options.contextStrategy,
+    reviewGates: options.reviewGates,
+    preprocessingPolicy: {
+      preferNativePdf: false,
+      requirePreprocessedEvidence: true,
+      allowImageInputs: false,
+      allowLayoutOcr: false,
+      maxContextStrategy: options.contextStrategy,
+    },
+  };
 }
 
 function readJson(filePath: string): any {

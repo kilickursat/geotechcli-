@@ -68,7 +68,11 @@ async function main(argv) {
 
   const registry = readJson(registryPath);
   assertRegistry(registry, registryPath);
-  const providerProfiles = parseCsvArg(args.providerProfiles ?? process.env.npm_config_provider_profiles ?? 'hosted-beta,open-byok-text-evidence');
+  const providerProfiles = parseCsvArg(
+    args.providerProfiles
+    ?? process.env.npm_config_provider_profiles
+    ?? 'hosted-beta,openai-compatible-byok,openrouter-free,local-hf-compatible',
+  ).map(normalizeProviderBenchmarkProfile);
   const preprocessingModes = parseCsvArg(args.preprocessingModes ?? process.env.npm_config_preprocessing_modes ?? 'none,ocr-optimized,region-v2');
   const inputs = [];
   const skippedFixtures = [];
@@ -439,7 +443,8 @@ function buildBenchmarkVariant(baseBenchmark, options) {
 }
 
 function providerBlock(profile) {
-  if (profile === 'hosted-beta') {
+  const normalizedProfile = normalizeProviderBenchmarkProfile(profile);
+  if (normalizedProfile === 'hosted-beta') {
     return {
       provider: 'hosted-beta',
       profile: 'hosted-beta',
@@ -463,31 +468,86 @@ function providerBlock(profile) {
       },
     };
   }
+  if (normalizedProfile === 'openai-compatible-byok') {
+    return providerTextEvidenceBlock({
+      provider: 'openai-compatible',
+      profile: normalizedProfile,
+      modelId: 'openai-compatible/byok-text-evidence-model',
+      likelyFreeRoute: false,
+      contextStrategy: 'compact',
+      jsonMode: true,
+      reviewGates: [
+        'openai-compatible-byok-uses-preprocessed-page-evidence',
+        'native-pdf-unavailable-use-preprocessed-evidence',
+        'human-engineering-review-required',
+      ],
+    });
+  }
+  if (normalizedProfile === 'openrouter-free') {
+    return providerTextEvidenceBlock({
+      provider: 'openai-compatible',
+      profile: normalizedProfile,
+      modelId: process.env.OPENROUTER_MODEL || 'google/gemma-4-26b-a4b-it:free',
+      likelyFreeRoute: true,
+      contextStrategy: 'micro',
+      jsonMode: false,
+      reviewGates: [
+        'text-only-provider-uses-ocr-page-evidence',
+        'free-route-capacity-and-feature-variance',
+        'compact-context-required',
+        'human-engineering-review-required',
+      ],
+    });
+  }
+  if (normalizedProfile === 'local-hf-compatible') {
+    return providerTextEvidenceBlock({
+      provider: 'huggingface',
+      profile: normalizedProfile,
+      modelId: 'local-or-hf-compatible/text-evidence-model',
+      likelyFreeRoute: false,
+      contextStrategy: 'compact',
+      jsonMode: false,
+      reviewGates: [
+        'local-hf-compatible-uses-preprocessed-page-evidence',
+        'native-pdf-unavailable-use-preprocessed-evidence',
+        'compact-context-required',
+        'human-engineering-review-required',
+      ],
+    });
+  }
+  throw new Error(`Unknown provider benchmark profile: ${profile}`);
+}
+
+function providerTextEvidenceBlock(options) {
   return {
-    provider: 'openai-compatible',
-    profile,
-    modelId: 'byok-text-evidence-model',
+    provider: options.provider,
+    profile: options.profile,
+    modelId: options.modelId,
     visionModelId: null,
     capabilities: {
       text: true,
       visionImages: false,
       nativePdfDocuments: false,
-      jsonMode: false,
+      jsonMode: options.jsonMode,
     },
-    likelyFreeRoute: true,
-    contextStrategy: 'micro',
-    reviewGates: [
-      'text-only-provider-uses-ocr-page-evidence',
-      'human-engineering-review-required',
-    ],
+    likelyFreeRoute: options.likelyFreeRoute,
+    contextStrategy: options.contextStrategy,
+    reviewGates: options.reviewGates,
     preprocessingPolicy: {
       preferNativePdf: false,
       requirePreprocessedEvidence: true,
       allowImageInputs: false,
       allowLayoutOcr: false,
-      maxContextStrategy: 'micro',
+      maxContextStrategy: options.contextStrategy,
     },
   };
+}
+
+function normalizeProviderBenchmarkProfile(profile) {
+  if (profile === 'open-byok-text-evidence') {
+    return 'openai-compatible-byok';
+  }
+  return profile;
 }
 
 function preprocessingBlock(mode, totalPages, category) {
@@ -743,6 +803,7 @@ function buildHistoryEntry(report, context) {
       failedRuns: finiteNumber(report.summary?.failedRuns),
       passed: Boolean(report.summary?.passed),
       averageConfidence: finiteNumber(report.summary?.averageConfidence),
+      averageConfidenceBreakdown: summarizeHistoryConfidenceBreakdown(report.summary?.averageConfidenceBreakdown),
       averageTraceabilityRate: finiteNumber(report.summary?.averageTraceabilityRate),
       averageGroundModelReadinessScore: finiteNumber(report.summary?.averageGroundModelReadinessScore),
       averagePreprocessingQualityScore: finiteNumber(report.summary?.averagePreprocessingQualityScore),
@@ -760,6 +821,7 @@ function buildHistoryEntry(report, context) {
           cacheHitRate: finiteNumber(run.cacheHitRate),
           estimatedHostedCalls: finiteNumber(run.estimatedHostedCalls),
           directTraceabilityRate: finiteNumber(run.directTraceabilityRate),
+          confidenceBreakdown: summarizeHistoryConfidenceBreakdown(run.confidenceBreakdown),
           groundModelReadinessScore: finiteNumber(run.groundModelReadinessScore),
           preprocessingQualityScore: finiteNumber(run.preprocessingQualityScore),
           preprocessingRegionQualityScore: finiteNumber(run.preprocessingRegionQualityScore),
@@ -777,6 +839,14 @@ function buildSummaryDelta(current, previous) {
     passedRuns: current.passedRuns - previous.passedRuns,
     failedRuns: current.failedRuns - previous.failedRuns,
     averageConfidence: round(current.averageConfidence - previous.averageConfidence),
+    averageExtractionConfidence: round(
+      finiteNumber(current.averageConfidenceBreakdown?.extractionConfidence)
+      - finiteNumber(previous.averageConfidenceBreakdown?.extractionConfidence),
+    ),
+    averageCorroborationScore: round(
+      finiteNumber(current.averageConfidenceBreakdown?.corroborationScore)
+      - finiteNumber(previous.averageConfidenceBreakdown?.corroborationScore),
+    ),
     averageTraceabilityRate: round(current.averageTraceabilityRate - previous.averageTraceabilityRate),
     averageGroundModelReadinessScore: current.averageGroundModelReadinessScore - previous.averageGroundModelReadinessScore,
     averagePreprocessingQualityScore: round(current.averagePreprocessingQualityScore - previous.averagePreprocessingQualityScore),
@@ -799,6 +869,18 @@ function buildRunDeltas(currentRuns, previousRuns) {
       cacheHitRateDelta: previous ? round(current.cacheHitRate - previous.cacheHitRate) : null,
       hostedCallDelta: previous ? current.estimatedHostedCalls - previous.estimatedHostedCalls : null,
       traceabilityDelta: previous ? round(current.directTraceabilityRate - previous.directTraceabilityRate) : null,
+      extractionConfidenceDelta: previous
+        ? round(
+          finiteNumber(current.confidenceBreakdown?.extractionConfidence)
+          - finiteNumber(previous.confidenceBreakdown?.extractionConfidence),
+        )
+        : null,
+      corroborationScoreDelta: previous
+        ? round(
+          finiteNumber(current.confidenceBreakdown?.corroborationScore)
+          - finiteNumber(previous.confidenceBreakdown?.corroborationScore),
+        )
+        : null,
       groundModelReadinessDelta: previous ? current.groundModelReadinessScore - previous.groundModelReadinessScore : null,
       qualityDelta: previous ? round(current.preprocessingQualityScore - previous.preprocessingQualityScore) : null,
       reviewGateDelta: previous ? current.reviewGates.length - previous.reviewGates.length : null,
@@ -815,6 +897,18 @@ function runKey(run) {
 
 function finiteNumber(value) {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+function summarizeHistoryConfidenceBreakdown(value) {
+  return {
+    overall: finiteNumber(value?.overall),
+    extractionConfidence: finiteNumber(value?.extractionConfidence),
+    engineeringCompleteness: finiteNumber(value?.engineeringCompleteness),
+    traceabilityScore: finiteNumber(value?.traceabilityScore),
+    corroborationScore: finiteNumber(value?.corroborationScore),
+    readinessScore: finiteNumber(value?.readinessScore),
+    pageEvidenceConfidence: finiteNumber(value?.pageEvidenceConfidence),
+  };
 }
 
 function round(value) {
@@ -860,6 +954,8 @@ th{background:#0f172a;color:#f8fafc}.pass{color:#0f766e;font-weight:700}.fail{co
 <section class="summary">
   <div class="metric"><span>History Entries</span><strong>${trend.historyCount}</strong></div>
   <div class="metric"><span>Run Delta</span><strong>${delta ? signed(delta.runCount) : 'new'}</strong></div>
+  <div class="metric"><span>Extraction Trust Delta</span><strong>${delta ? signed(delta.averageExtractionConfidence) : 'new'}</strong></div>
+  <div class="metric"><span>Corroboration Delta</span><strong>${delta ? signed(delta.averageCorroborationScore) : 'new'}</strong></div>
   <div class="metric"><span>Traceability Delta</span><strong>${delta ? signedPercent(delta.averageTraceabilityRate) : 'new'}</strong></div>
   <div class="metric"><span>Quality Delta</span><strong>${delta ? signedPercent(delta.averagePreprocessingQualityScore) : 'new'}</strong></div>
 </section>

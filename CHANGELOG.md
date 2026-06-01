@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.88] - 2026-06-01
+
+### Provider Benchmark Hardening
+
+- Split the internal geotechnical corpus benchmark provider matrix into hosted-beta, OpenAI-compatible BYOK, OpenRouter/free, and local/HF-compatible profiles.
+- Added provider evidence-input metadata and fail-closed corpus checks so text-only/free/local profiles must consume preprocessed OCR/page evidence instead of direct image or native-PDF tasks.
+- Added corpus-level confidence component summaries and trend fields so extraction, traceability, corroboration, readiness, and page-evidence trust can be reviewed separately from model self-score.
+
 ## [0.4.87] - 2026-06-01
 
 ### Trusted Publishing Release Fix

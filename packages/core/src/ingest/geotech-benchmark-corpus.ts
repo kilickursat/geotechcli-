@@ -58,6 +58,45 @@ export interface GeotechBenchmarkCorpusRunInput {
   preprocessingMode?: string;
 }
 
+export type GeotechBenchmarkCorpusEvidenceInput =
+  | 'image-or-layout-evidence'
+  | 'preprocessed-page-evidence'
+  | 'native-pdf'
+  | 'unknown';
+
+export interface GeotechBenchmarkCorpusProviderProfileSummary {
+  id: string;
+  provider: string;
+  modelId: string | null;
+  visionModelId: string | null;
+  evidenceInput: GeotechBenchmarkCorpusEvidenceInput;
+  imageInputsAllowed: boolean;
+  nativePdfAllowed: boolean;
+  layoutOcrAllowed: boolean;
+  requiresPreprocessedEvidence: boolean;
+  likelyFreeRoute: boolean;
+  contextStrategy: string;
+  reviewGates: string[];
+}
+
+export interface GeotechBenchmarkCorpusConfidenceSummary {
+  overall: number;
+  extractionConfidence: number;
+  engineeringCompleteness: number;
+  traceabilityScore: number;
+  corroborationScore: number;
+  readinessScore: number;
+  pageEvidenceConfidence: number;
+  methodCoverage: {
+    nativeTextPages: number;
+    layoutOcrPages: number;
+    visualReasoningPages: number;
+    directVisualPages: number;
+  };
+  missingCriticalData: string[];
+  reviewGates: string[];
+}
+
 export interface GeotechBenchmarkCorpusReportOptions {
   generatedAt?: string | Date;
   label?: string;
@@ -68,12 +107,14 @@ export interface GeotechBenchmarkCorpusRun {
   category: GeotechBenchmarkCorpusFixtureCategory;
   sourceType: GeotechBenchmarkCorpusFixture['sourceType'];
   providerProfile: string;
+  providerBenchmarkProfile: GeotechBenchmarkCorpusProviderProfileSummary;
   preprocessingMode: string;
   totalPages: number;
   successfulPages: number;
   failedPages: number;
   successfulPageRate: number;
   documentConfidence: number;
+  confidenceBreakdown: GeotechBenchmarkCorpusConfidenceSummary;
   parseStatus: string;
   cacheHitRate: number;
   estimatedHostedCalls: number;
@@ -123,6 +164,10 @@ export interface GeotechBenchmarkCorpusReport {
     providerProfiles: string[];
     preprocessingModes: string[];
     averageConfidence: number;
+    averageConfidenceBreakdown: Omit<
+      GeotechBenchmarkCorpusConfidenceSummary,
+      'methodCoverage' | 'missingCriticalData' | 'reviewGates'
+    >;
     averageTraceabilityRate: number;
     averageGroundModelReadinessScore: number;
     averagePreprocessingQualityScore: number;
@@ -175,7 +220,6 @@ export function renderGeotechBenchmarkCorpusSvg(report: GeotechBenchmarkCorpusRe
   const rows = report.runs.slice(0, 18).map((run, index) => {
     const y = headerHeight + index * rowHeight;
     const trace = Math.round(run.directTraceabilityRate * 100);
-    const quality = Math.round(run.preprocessingQualityScore * 100);
     const statusColor = run.passed ? '#0f766e' : '#b91c1c';
     return [
       `<rect x="24" y="${y}" width="932" height="${rowHeight - 6}" rx="6" fill="${index % 2 === 0 ? '#f8fafc' : '#eef6f8'}" stroke="#dbe5ea"/>`,
@@ -183,7 +227,7 @@ export function renderGeotechBenchmarkCorpusSvg(report: GeotechBenchmarkCorpusRe
       `<text x="270" y="${y + 20}" font-size="12" fill="#475569">${escapeSvg(run.category)}</text>`,
       `<text x="430" y="${y + 20}" font-size="12" fill="#475569">${escapeSvg(run.providerProfile)}</text>`,
       `<text x="585" y="${y + 20}" font-size="12" fill="#475569">${escapeSvg(run.preprocessingMode)}</text>`,
-      `<text x="720" y="${y + 20}" font-size="12" fill="#0f172a">trace ${trace}% / quality ${quality}%</text>`,
+      `<text x="720" y="${y + 20}" font-size="12" fill="#0f172a">${escapeSvg(shortEvidenceInput(run.providerBenchmarkProfile.evidenceInput))} | trace ${trace}%</text>`,
       `<text x="910" y="${y + 20}" text-anchor="end" font-size="12" font-weight="700" fill="${statusColor}">${run.passed ? 'pass' : 'fail'}</text>`,
     ].join('');
   }).join('\n');
@@ -210,7 +254,9 @@ export function renderGeotechBenchmarkCorpusHtml(report: GeotechBenchmarkCorpusR
       <td>${escapeHtml(run.fixtureId)}</td>
       <td>${escapeHtml(run.category)}</td>
       <td>${escapeHtml(run.providerProfile)}</td>
+      <td>${escapeHtml(run.providerBenchmarkProfile.evidenceInput)}</td>
       <td>${escapeHtml(run.preprocessingMode)}</td>
+      <td>${run.confidenceBreakdown.extractionConfidence}/${run.confidenceBreakdown.traceabilityScore}/${run.confidenceBreakdown.corroborationScore}</td>
       <td>${Math.round(run.directTraceabilityRate * 100)}%</td>
       <td>${run.groundModelReadinessScore}</td>
       <td>${Math.round(run.preprocessingQualityScore * 100)}%</td>
@@ -259,10 +305,11 @@ th{background:#0f172a;color:#f8fafc}
   <div class="metric"><span>Status</span><strong class="${report.summary.passed ? 'pass' : 'fail'}">${report.summary.passed ? 'PASS' : 'FAIL'}</strong></div>
   <div class="metric"><span>Runs</span><strong>${report.summary.passedRuns}/${report.summary.runCount}</strong></div>
   <div class="metric"><span>Traceability</span><strong>${Math.round(report.summary.averageTraceabilityRate * 100)}%</strong></div>
+  <div class="metric"><span>Trust Components</span><strong>${report.summary.averageConfidenceBreakdown.extractionConfidence}/${report.summary.averageConfidenceBreakdown.traceabilityScore}/${report.summary.averageConfidenceBreakdown.corroborationScore}</strong></div>
   <div class="metric"><span>Preprocessing Quality</span><strong>${Math.round(report.summary.averagePreprocessingQualityScore * 100)}%</strong></div>
 </section>
 <h2>Runs</h2>
-<table><thead><tr><th>Fixture</th><th>Category</th><th>Provider</th><th>Preprocessing</th><th>Trace</th><th>GM score</th><th>Quality</th><th>Review gates</th><th>Pages</th><th>Calls</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>
+<table><thead><tr><th>Fixture</th><th>Category</th><th>Provider</th><th>Evidence input</th><th>Preprocessing</th><th>Trust E/T/C</th><th>Trace</th><th>GM score</th><th>Quality</th><th>Review gates</th><th>Pages</th><th>Calls</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>
 <h2>Preprocessing Comparisons</h2>
 <table><thead><tr><th>Fixture</th><th>Provider</th><th>Modes</th><th>Quality delta</th><th>Region quality delta</th><th>Trace delta</th><th>Deskew delta</th><th>Crop Asset delta</th></tr></thead><tbody>${comparisons || '<tr><td colspan="8">No paired preprocessing-mode comparisons available.</td></tr>'}</tbody></table>
 ${report.failures.length ? `<h2>Failures</h2><ul>${report.failures.map((failure) => `<li>${escapeHtml(failure)}</li>`).join('')}</ul>` : ''}
@@ -279,6 +326,7 @@ function buildCorpusRun(input: GeotechBenchmarkCorpusRunInput): GeotechBenchmark
     ?? benchmark.provider?.profile
     ?? benchmark.provider?.provider
     ?? 'unknown';
+  const providerBenchmarkProfile = summarizeProviderBenchmarkProfile(providerProfile, benchmark);
   const preprocessingMode = input.preprocessingMode
     ?? benchmark.preprocessing?.modes?.[0]
     ?? 'unknown';
@@ -289,12 +337,14 @@ function buildCorpusRun(input: GeotechBenchmarkCorpusRunInput): GeotechBenchmark
     category: input.fixture.category,
     sourceType: input.fixture.sourceType,
     providerProfile,
+    providerBenchmarkProfile,
     preprocessingMode,
     totalPages: finiteNumber(benchmark.source?.totalPages),
     successfulPages: finiteNumber(benchmark.source?.successfulPages),
     failedPages: finiteNumber(benchmark.source?.failedPages),
     successfulPageRate: successfulPageRate(benchmark),
     documentConfidence: finiteNumber(benchmark.document?.confidence),
+    confidenceBreakdown: summarizeConfidenceBreakdown(benchmark),
     parseStatus: benchmark.document?.parseStatus ?? 'unknown',
     cacheHitRate: finiteNumber(benchmark.evidenceCache?.hitRate),
     estimatedHostedCalls,
@@ -315,6 +365,7 @@ function buildCorpusRun(input: GeotechBenchmarkCorpusRunInput): GeotechBenchmark
   };
   const failures = [
     ...validateRunExpectations(input.fixture, run),
+    ...validateProviderEvidenceContract(run),
     ...(input.fixture.expectations.requireFemExecutionBoundarySafe
       ? validateFemExecutionBoundary(benchmark)
       : []),
@@ -405,6 +456,50 @@ function validatePreprocessingModeExpectations(
   ].filter((value): value is string => value != null);
 }
 
+function validateProviderEvidenceContract(
+  run: Omit<GeotechBenchmarkCorpusRun, 'passed' | 'failures' | 'warnings'>,
+): string[] {
+  const provider = run.providerBenchmarkProfile;
+  const gates = new Set(provider.reviewGates);
+  const profileRequiresTextEvidence = [
+    'openai-compatible-byok',
+    'openrouter-free',
+    'local-hf-compatible',
+    'open-byok-text-evidence',
+  ].includes(provider.id);
+  const providerNameRequiresTextEvidence = provider.provider === 'huggingface'
+    || provider.provider === 'local-hf-compatible';
+  const textEvidenceOnly = profileRequiresTextEvidence || providerNameRequiresTextEvidence;
+  const failures = [
+    provider.requiresPreprocessedEvidence
+      && !provider.imageInputsAllowed
+      && !provider.nativePdfAllowed
+      && provider.evidenceInput !== 'preprocessed-page-evidence'
+      ? `provider profile ${provider.id} must consume preprocessed page evidence, got ${provider.evidenceInput}`
+      : null,
+    textEvidenceOnly && !provider.requiresPreprocessedEvidence
+      ? `provider profile ${provider.id} must require preprocessed page evidence`
+      : null,
+    textEvidenceOnly && provider.imageInputsAllowed
+      ? `provider profile ${provider.id} must not accept direct image tasks`
+      : null,
+    textEvidenceOnly && provider.nativePdfAllowed
+      ? `provider profile ${provider.id} must not accept native PDF tasks`
+      : null,
+    textEvidenceOnly && provider.evidenceInput !== 'preprocessed-page-evidence'
+      ? `provider profile ${provider.id} must route through OCR/page evidence, got ${provider.evidenceInput}`
+      : null,
+    provider.likelyFreeRoute && !gates.has('free-route-capacity-and-feature-variance')
+      ? `provider profile ${provider.id} free route missing capacity/feature review gate`
+      : null,
+    textEvidenceOnly && !hasTextEvidenceGate(provider.reviewGates)
+      ? `provider profile ${provider.id} missing text-evidence review gate`
+      : null,
+  ];
+
+  return failures.filter((value): value is string => value != null);
+}
+
 function validateFixtureCoverage(
   fixtures: GeotechBenchmarkCorpusFixture[],
   runs: GeotechBenchmarkCorpusRun[],
@@ -448,6 +543,95 @@ function validateFixtureCoverage(
     }
   }
   return failures;
+}
+
+function summarizeProviderBenchmarkProfile(
+  providerProfile: string,
+  benchmark: GeotechDocumentBenchmark,
+): GeotechBenchmarkCorpusProviderProfileSummary {
+  const provider = benchmark.provider;
+  const capabilities = provider?.capabilities;
+  const policy = provider?.preprocessingPolicy;
+  const imageInputsAllowed = Boolean(policy?.allowImageInputs);
+  const nativePdfAllowed = Boolean(policy?.preferNativePdf && capabilities?.nativePdfDocuments);
+  const layoutOcrAllowed = Boolean(policy?.allowLayoutOcr);
+  return {
+    id: providerProfile || provider?.profile || 'unknown',
+    provider: provider?.provider ?? 'unknown',
+    modelId: provider?.modelId ?? null,
+    visionModelId: provider?.visionModelId ?? null,
+    evidenceInput: inferProviderEvidenceInput({
+      imageInputsAllowed,
+      nativePdfAllowed,
+      layoutOcrAllowed,
+      requiresPreprocessedEvidence: Boolean(policy?.requirePreprocessedEvidence),
+    }),
+    imageInputsAllowed,
+    nativePdfAllowed,
+    layoutOcrAllowed,
+    requiresPreprocessedEvidence: Boolean(policy?.requirePreprocessedEvidence),
+    likelyFreeRoute: Boolean(provider?.likelyFreeRoute),
+    contextStrategy: provider?.contextStrategy ?? policy?.maxContextStrategy ?? 'unknown',
+    reviewGates: uniqueSorted(provider?.reviewGates ?? []),
+  };
+}
+
+function summarizeConfidenceBreakdown(
+  benchmark: GeotechDocumentBenchmark,
+): GeotechBenchmarkCorpusConfidenceSummary {
+  const breakdown = benchmark.document?.confidenceBreakdown;
+  return {
+    overall: finiteNumber(breakdown?.overall ?? benchmark.document?.confidence),
+    extractionConfidence: finiteNumber(breakdown?.extractionConfidence ?? benchmark.document?.confidence),
+    engineeringCompleteness: finiteNumber(breakdown?.engineeringCompleteness),
+    traceabilityScore: finiteNumber(
+      breakdown?.traceabilityScore
+      ?? (benchmark.traceability?.directParameterTraceabilityRate != null
+        ? benchmark.traceability.directParameterTraceabilityRate * 100
+        : 0),
+    ),
+    corroborationScore: finiteNumber(breakdown?.corroborationScore),
+    readinessScore: finiteNumber(
+      breakdown?.readinessScore
+      ?? benchmark.groundModelReadiness?.score,
+    ),
+    pageEvidenceConfidence: finiteNumber(
+      breakdown?.pageEvidenceConfidence
+      ?? benchmark.pageOutcomes?.averageConfidence,
+    ),
+    methodCoverage: {
+      nativeTextPages: finiteNumber(breakdown?.methodCoverage?.nativeTextPages),
+      layoutOcrPages: finiteNumber(breakdown?.methodCoverage?.layoutOcrPages),
+      visualReasoningPages: finiteNumber(breakdown?.methodCoverage?.visualReasoningPages),
+      directVisualPages: finiteNumber(breakdown?.methodCoverage?.directVisualPages),
+    },
+    missingCriticalData: uniqueSorted(breakdown?.missingCriticalData ?? []),
+    reviewGates: uniqueSorted(breakdown?.reviewGates ?? []),
+  };
+}
+
+function inferProviderEvidenceInput(options: {
+  imageInputsAllowed: boolean;
+  nativePdfAllowed: boolean;
+  layoutOcrAllowed: boolean;
+  requiresPreprocessedEvidence: boolean;
+}): GeotechBenchmarkCorpusEvidenceInput {
+  if (options.nativePdfAllowed) {
+    return 'native-pdf';
+  }
+  if (options.imageInputsAllowed || options.layoutOcrAllowed) {
+    return 'image-or-layout-evidence';
+  }
+  if (options.requiresPreprocessedEvidence) {
+    return 'preprocessed-page-evidence';
+  }
+  return 'unknown';
+}
+
+function hasTextEvidenceGate(reviewGates: string[]): boolean {
+  return reviewGates.some((gate) =>
+    /(?:text-only|ocr-page|preprocessed-page|preprocessed.*evidence)/i.test(gate),
+  );
 }
 
 function validateFemExecutionBoundary(benchmark: GeotechDocumentBenchmark): string[] {
@@ -604,6 +788,15 @@ function summarizeCorpus(
     providerProfiles: uniqueSorted(runs.map((run) => run.providerProfile)),
     preprocessingModes: uniqueSorted(runs.map((run) => run.preprocessingMode)),
     averageConfidence: average(runs.map((run) => run.documentConfidence)),
+    averageConfidenceBreakdown: {
+      overall: Math.round(average(runs.map((run) => run.confidenceBreakdown.overall))),
+      extractionConfidence: Math.round(average(runs.map((run) => run.confidenceBreakdown.extractionConfidence))),
+      engineeringCompleteness: Math.round(average(runs.map((run) => run.confidenceBreakdown.engineeringCompleteness))),
+      traceabilityScore: Math.round(average(runs.map((run) => run.confidenceBreakdown.traceabilityScore))),
+      corroborationScore: Math.round(average(runs.map((run) => run.confidenceBreakdown.corroborationScore))),
+      readinessScore: Math.round(average(runs.map((run) => run.confidenceBreakdown.readinessScore))),
+      pageEvidenceConfidence: Math.round(average(runs.map((run) => run.confidenceBreakdown.pageEvidenceConfidence))),
+    },
     averageTraceabilityRate: average(runs.map((run) => run.directTraceabilityRate)),
     averageGroundModelReadinessScore: Math.round(average(runs.map((run) => run.groundModelReadinessScore))),
     averagePreprocessingQualityScore: average(runs.map((run) => run.preprocessingQualityScore)),
@@ -643,6 +836,13 @@ function routeList(values: string[] | undefined): string {
 
 function formatReviewGates(values: string[]): string {
   return values.length > 0 ? values.join(', ') : 'none';
+}
+
+function shortEvidenceInput(value: GeotechBenchmarkCorpusEvidenceInput): string {
+  if (value === 'preprocessed-page-evidence') return 'preprocessed';
+  if (value === 'image-or-layout-evidence') return 'image/layout';
+  if (value === 'native-pdf') return 'native PDF';
+  return 'unknown';
 }
 
 function countBy(values: string[]): Record<string, number> {
