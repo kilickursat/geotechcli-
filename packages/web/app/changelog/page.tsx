@@ -8,6 +8,16 @@ const releases = [
     date: '2026-06-01',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added a provider-neutral BYOK benchmark contract using the same preprocessed page-evidence prompt across hosted-beta, OpenAI-compatible, OpenRouter/free, and local/HF-compatible routes' },
+      { type: 'fix', text: 'Made BYOK response validation require compact JSON, source-evidence citations, preserved review gates, and no claims of direct image/PDF inspection' },
+      { type: 'feat', text: 'Extended npm run smoke:byok with structured JSON report output for provider profile, model, latency, token, and evidence-contract comparison' },
+    ],
+  },
+  {
+    version: '0.4.89',
+    date: '2026-06-01',
+    tag: '0.4.89 Release',
+    changes: [
       { type: 'fix', text: 'Added a machine-readable path-safety block to the internal geotechnical corpus benchmark report' },
       { type: 'fix', text: 'Made corpus acceptance fail closed when fixture or benchmark inputs contain local absolute paths or secret-shaped values' },
       { type: 'fix', text: 'Kept path and secret findings redacted in JSON and HTML output so private fixture paths and BYOK tokens are not echoed into persisted artifacts' },

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -12,20 +12,38 @@ if (!existsSync(distEntry)) {
   process.exit(1);
 }
 
-const { generateText } = await import('../packages/core/dist/index.js');
+const {
+  buildByokBenchmarkPrompt,
+  buildByokBenchmarkReport,
+  buildByokProviderBenchmarkProfile,
+  generateText,
+  validateByokBenchmarkResponse,
+} = await import('../packages/core/dist/index.js');
 
-const args = new Set(process.argv.slice(2));
-const strict = args.has('--strict');
+const parsedArgs = parseArgs(process.argv.slice(2));
+const strict = parsedArgs.strict;
 const requestedProviders = new Set(
-  process.argv
-    .slice(2)
-    .filter((arg) => arg.startsWith('--provider='))
-    .flatMap((arg) => arg.slice('--provider='.length).split(',').map((value) => value.trim()).filter(Boolean)),
+  parsedArgs.providers,
 );
 
 const candidates = [
   {
+    name: 'hosted-beta',
+    profileId: 'hosted-beta',
+    env: ['GEOTECHCLI_BYOK_HOSTED_BETA'],
+    requiresTruthy: true,
+    config: () => ({
+      provider: 'hosted-beta',
+      apiKey: envValue('GEOTECHCLI_HOSTED_BETA_TOKEN'),
+      baseUrl: envValue('GEOTECHCLI_PROXY_URL') || undefined,
+      modelId: process.env.GEOTECHCLI_BYOK_HOSTED_BETA_MODEL || 'glm-5.1',
+      visionModelId: process.env.GEOTECHCLI_BYOK_HOSTED_BETA_VISION_MODEL || 'glm-5v-turbo',
+      timeout: timeoutMs(120_000),
+    }),
+  },
+  {
     name: 'zhipu',
+    profileId: 'direct-zai',
     env: ['ZHIPU_API_KEY', 'ZAI_API_KEY'],
     config: () => ({
       provider: 'zhipu',
@@ -37,6 +55,7 @@ const candidates = [
   },
   {
     name: 'openai',
+    profileId: 'premium-byok',
     env: ['OPENAI_API_KEY'],
     config: () => ({
       provider: 'openai',
@@ -47,6 +66,7 @@ const candidates = [
   },
   {
     name: 'anthropic',
+    profileId: 'premium-byok',
     env: ['ANTHROPIC_API_KEY'],
     config: () => ({
       provider: 'anthropic',
@@ -57,6 +77,7 @@ const candidates = [
   },
   {
     name: 'huggingface',
+    profileId: 'local-hf-compatible',
     env: ['HF_TOKEN', 'HUGGINGFACE_API_KEY'],
     config: () => ({
       provider: 'huggingface',
@@ -67,6 +88,7 @@ const candidates = [
   },
   {
     name: 'openai-compatible',
+    profileId: 'openai-compatible',
     env: ['OPENAI_COMPATIBLE_API_KEY', 'OPENAI_COMPATIBLE_BASE_URL', 'OPENAI_COMPATIBLE_MODEL'],
     requiresAll: true,
     config: () => ({
@@ -79,6 +101,7 @@ const candidates = [
   },
   {
     name: 'openrouter',
+    profileId: 'openrouter-free',
     env: ['OPENROUTER_API_KEY'],
     config: () => ({
       provider: 'openai-compatible',
@@ -94,62 +117,164 @@ const selected = candidates.filter((candidate) =>
   requestedProviders.size === 0 || requestedProviders.has(candidate.name),
 );
 const configured = selected.filter((candidate) =>
-  candidate.requiresAll
+  candidate.requiresTruthy
+    ? candidate.env.some((name) => /^(?:1|true|yes|on)$/i.test(String(process.env[name] ?? '').trim()))
+    : candidate.requiresAll
     ? candidate.env.every((name) => Boolean(process.env[name]))
     : candidate.env.some((name) => Boolean(process.env[name])),
 );
 
 if (configured.length === 0) {
   const providerHint = requestedProviders.size > 0 ? ` for ${[...requestedProviders].join(', ')}` : '';
+  if (parsedArgs.out || parsedArgs.json) {
+    const skippedReport = buildByokBenchmarkReport([]);
+    if (parsedArgs.out) {
+      const outputPath = resolve(parsedArgs.out);
+      mkdirSync(dirname(outputPath), { recursive: true });
+      writeFileSync(outputPath, `${JSON.stringify(skippedReport, null, 2)}\n`);
+      console.log(`BYOK benchmark report: ${parsedArgs.out}`);
+    }
+    if (parsedArgs.json) {
+      console.log(JSON.stringify(skippedReport, null, 2));
+    }
+  }
   console.log(`BYOK smoke skipped: no matching provider environment keys configured${providerHint}.`);
-  console.log('Supported envs: OPENROUTER_API_KEY, ZHIPU_API_KEY/ZAI_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, HF_TOKEN/HUGGINGFACE_API_KEY, or OPENAI_COMPATIBLE_API_KEY + OPENAI_COMPATIBLE_BASE_URL + OPENAI_COMPATIBLE_MODEL.');
+  console.log('Supported envs: GEOTECHCLI_BYOK_HOSTED_BETA=1, OPENROUTER_API_KEY, ZHIPU_API_KEY/ZAI_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, HF_TOKEN/HUGGINGFACE_API_KEY, or OPENAI_COMPATIBLE_API_KEY + OPENAI_COMPATIBLE_BASE_URL + OPENAI_COMPATIBLE_MODEL.');
   process.exit(strict ? 1 : 0);
 }
 
-const prompt = [
-  'Return ONLY compact JSON with keys ok and note.',
-  'Set ok to true and note to a short geotechnical phrase containing "source evidence".',
-].join(' ');
-
-const results = [];
+const runs = [];
 for (const candidate of configured) {
   const started = Date.now();
+  const config = candidate.config();
+  const profile = buildByokProviderBenchmarkProfile(candidate.profileId, config);
+  const prompt = buildByokBenchmarkPrompt(profile);
   try {
-    const response = await generateText(prompt, candidate.config(), {
+    const response = await generateText(prompt, config, {
       temperature: 0,
-      maxTokens: 80,
-      jsonMode: candidate.name !== 'openrouter',
+      maxTokens: 180,
+      jsonMode: profile.jsonModeAllowed,
     });
-    const text = String(response.text ?? '').trim();
-    const ok = /"ok"\s*:\s*true|source evidence/i.test(text);
-    results.push({
-      provider: candidate.name,
-      ok,
+    const validation = validateByokBenchmarkResponse(String(response.text ?? ''), profile.evidenceContract);
+    runs.push({
+      profile,
+      ok: validation.ok,
       model: response.model,
       latencyMs: response.latencyMs,
       totalTokens: response.usage.totalTokens,
-      textPreview: text.slice(0, 160),
+      response: validation,
     });
   } catch (error) {
-    results.push({
-      provider: candidate.name,
+    runs.push({
+      profile,
       ok: false,
+      model: config.modelId ?? null,
       latencyMs: Date.now() - started,
+      totalTokens: null,
+      response: {
+        ok: false,
+        parsedJson: false,
+        citedEvidenceIds: [],
+        failures: ['provider_error'],
+        warnings: [],
+      },
       error: error instanceof Error ? redactSecretLikeText(error.message) : String(error),
     });
   }
 }
 
-for (const result of results) {
-  if (result.ok) {
-    console.log(`PASS ${result.provider}: model=${result.model ?? 'unknown'} latency=${result.latencyMs}ms tokens=${result.totalTokens ?? 0}`);
+const report = buildByokBenchmarkReport(runs);
+if (parsedArgs.out) {
+  const outputPath = resolve(parsedArgs.out);
+  mkdirSync(dirname(outputPath), { recursive: true });
+  writeFileSync(outputPath, `${JSON.stringify(report, null, 2)}\n`);
+}
+if (parsedArgs.json) {
+  console.log(JSON.stringify(report, null, 2));
+} else if (parsedArgs.out) {
+  console.log(`BYOK benchmark report: ${parsedArgs.out}`);
+}
+
+for (const run of runs) {
+  if (run.ok) {
+    console.log(`PASS ${run.profile.id}: provider=${run.profile.provider} model=${run.model ?? 'unknown'} latency=${run.latencyMs}ms tokens=${run.totalTokens ?? 0}`);
   } else {
-    console.error(`FAIL ${result.provider}: ${result.error ?? result.textPreview ?? 'response did not satisfy smoke contract'}`);
+    const details = run.error ?? (run.response.failures.join(', ') || 'response did not satisfy evidence contract');
+    console.error(`FAIL ${run.profile.id}: provider=${run.profile.provider} ${details}`);
   }
 }
 
-if (results.some((result) => !result.ok)) {
+if (!report.summary.passed) {
   process.exit(1);
+}
+
+function parseArgs(argv) {
+  const parsed = {
+    strict: truthy(process.env.npm_config_strict),
+    json: truthy(process.env.npm_config_json),
+    out: process.env.npm_config_out || '',
+    providers: splitCsv(process.env.npm_config_provider || ''),
+  };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === '--strict') {
+      parsed.strict = true;
+      continue;
+    }
+    if (arg === '--json') {
+      parsed.json = true;
+      continue;
+    }
+    if (arg === '--out') {
+      const value = argv[index + 1];
+      if (!value || value.startsWith('--')) {
+        console.error('--out requires a file path.');
+        process.exit(1);
+      }
+      parsed.out = value;
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith('--out=')) {
+      parsed.out = arg.slice('--out='.length);
+      continue;
+    }
+    if (arg === '--provider') {
+      const value = argv[index + 1];
+      if (!value || value.startsWith('--')) {
+        console.error('--provider requires a provider name or comma-separated list.');
+        process.exit(1);
+      }
+      parsed.providers.push(...splitCsv(value));
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith('--provider=')) {
+      parsed.providers.push(...splitCsv(arg.slice('--provider='.length)));
+      continue;
+    }
+    if (!arg.startsWith('--') && (!parsed.out || parsed.out === 'true')) {
+      parsed.out = arg;
+      continue;
+    }
+    console.error(`Unknown BYOK smoke option: ${arg}`);
+    process.exit(1);
+  }
+  return {
+    ...parsed,
+    providers: [...new Set(parsed.providers)],
+  };
+}
+
+function splitCsv(value) {
+  return String(value)
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function truthy(value) {
+  return /^(?:1|true|yes|on)$/i.test(String(value ?? '').trim());
 }
 
 function envValue(...names) {

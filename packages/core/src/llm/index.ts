@@ -12,6 +12,21 @@ export {
   providerSupportsNativePdfDocuments,
   isLikelyFreeRoute,
 } from './capabilities.js';
+export {
+  buildByokBenchmarkEvidenceContract,
+  buildByokBenchmarkPrompt,
+  buildByokBenchmarkReport,
+  buildByokProviderBenchmarkProfile,
+  validateByokBenchmarkResponse,
+  type ByokBenchmarkEvidenceContract,
+  type ByokBenchmarkEvidenceInput,
+  type ByokBenchmarkEvidenceItem,
+  type ByokBenchmarkProfileId,
+  type ByokBenchmarkReport,
+  type ByokBenchmarkResponseValidation,
+  type ByokBenchmarkRunSummary,
+  type ByokProviderBenchmarkProfile,
+} from './byok-benchmark.js';
 export { sanitizeUpstreamError } from './util.js';
 export { withRetry } from './middleware/retry.js';
 export type {

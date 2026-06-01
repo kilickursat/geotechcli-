@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.90] - 2026-06-01
+
+### BYOK Evidence-Contract Benchmark
+
+- Added a provider-neutral BYOK benchmark contract that sends hosted-beta, OpenAI-compatible, OpenRouter/free, and local/HF-compatible routes the same preprocessed page-evidence prompt.
+- Made BYOK response validation require compact JSON, source-evidence citations, preserved review gates, and no claims of direct image/PDF inspection.
+- Extended `npm run smoke:byok` with structured JSON report output so configured providers can be compared by profile, model, latency, tokens, and evidence-contract failures.
+
 ## [0.4.89] - 2026-06-01
 
 ### Corpus Path-Safety Guardrails
