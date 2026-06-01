@@ -8,6 +8,16 @@ const releases = [
     date: '2026-06-01',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'fix', text: 'Added a machine-readable path-safety block to the internal geotechnical corpus benchmark report' },
+      { type: 'fix', text: 'Made corpus acceptance fail closed when fixture or benchmark inputs contain local absolute paths or secret-shaped values' },
+      { type: 'fix', text: 'Kept path and secret findings redacted in JSON and HTML output so private fixture paths and BYOK tokens are not echoed into persisted artifacts' },
+    ],
+  },
+  {
+    version: '0.4.88',
+    date: '2026-06-01',
+    tag: '0.4.88 Release',
+    changes: [
       { type: 'feat', text: 'Split the internal geotechnical corpus benchmark provider matrix into hosted-beta, OpenAI-compatible BYOK, OpenRouter/free, and local/HF-compatible profiles' },
       { type: 'fix', text: 'Added fail-closed provider evidence checks so text-only, free, and local profiles must consume preprocessed OCR/page evidence instead of direct image or native-PDF tasks' },
       { type: 'feat', text: 'Added corpus-level confidence component summaries and trend fields for extraction, traceability, corroboration, readiness, and page-evidence trust review' },

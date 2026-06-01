@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.89] - 2026-06-01
+
+### Corpus Path-Safety Guardrails
+
+- Added a machine-readable path-safety block to the internal geotechnical corpus benchmark report.
+- Made corpus acceptance fail closed when fixture or benchmark inputs contain local absolute paths or secret-shaped values.
+- Kept path/secret findings redacted in JSON and HTML output so private fixture paths and BYOK tokens are not echoed into persisted benchmark artifacts.
+
 ## [0.4.88] - 2026-06-01
 
 ### Provider Benchmark Hardening

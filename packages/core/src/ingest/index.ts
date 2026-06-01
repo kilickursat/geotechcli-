@@ -94,6 +94,7 @@ export {
 } from './geotech-document-benchmark.js';
 export {
   buildGeotechBenchmarkCorpusReport,
+  redactGeotechBenchmarkCorpusArtifact,
   renderGeotechBenchmarkCorpusHtml,
   renderGeotechBenchmarkCorpusSvg,
   type GeotechBenchmarkCorpusFixture,

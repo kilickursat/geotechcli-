@@ -2,7 +2,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { basename, dirname, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -32,6 +32,7 @@ if (!existsSync(coreBenchmarkEntry)) {
 
 const {
   buildGeotechBenchmarkCorpusReport,
+  redactGeotechBenchmarkCorpusArtifact,
   renderGeotechBenchmarkCorpusHtml,
   renderGeotechBenchmarkCorpusSvg,
 } = await import(pathToFileURL(coreCorpusEntry).href);
@@ -105,7 +106,7 @@ async function main(argv) {
         continue;
       }
       if (!existsSync(resolvedInput.path)) {
-        const reason = `${fixture.id}: skipped; ${resolvedInput.envName} points to a missing file: ${resolvedInput.path}`;
+        const reason = `${fixture.id}: skipped; ${resolvedInput.envName} points to a missing local fixture file.`;
         if (required) {
           console.error(reason);
           process.exit(1);
@@ -226,13 +227,13 @@ async function main(argv) {
   writeJson(join(outputDir, 'registry.resolved.json'), {
     kind: registry.kind,
     schemaVersion: registry.schemaVersion,
-    registryPath: relative(repoRoot, registryPath),
+    registryPath: safeRepoRelativePath(registryPath, '<external-registry>'),
     mode: realFixtures ? 'real-fixtures' : 'cached-fixtures',
-    ...(realFixtures ? {} : { sourceBenchmarkPath: relative(repoRoot, sourceBenchmarkPath) }),
+    ...(realFixtures ? {} : { sourceBenchmarkPath: safeRepoRelativePath(sourceBenchmarkPath, '<external-source-benchmark>') }),
     providerProfiles: resolvedProviderProfiles,
     preprocessingModes,
     skippedFixtures,
-    fixtures: registry.fixtures,
+    fixtures: redactGeotechBenchmarkCorpusArtifact(registry.fixtures),
   });
   writeJson(reportPath, report);
   writeJson(historyPath, trend.history);
@@ -729,6 +730,15 @@ function parseCsvArg(value) {
 
 function uniqueSorted(values) {
   return [...new Set(values.filter(Boolean))].sort((left, right) => left.localeCompare(right));
+}
+
+function safeRepoRelativePath(filePath, externalLabel) {
+  const resolvedPath = resolve(filePath);
+  const relativePath = relative(repoRoot, resolvedPath);
+  if (!relativePath.startsWith('..') && !isAbsolute(relativePath)) {
+    return relativePath;
+  }
+  return externalLabel;
 }
 
 function readJson(filePath) {

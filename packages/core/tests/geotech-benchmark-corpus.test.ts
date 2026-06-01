@@ -121,6 +121,10 @@ describe('geotech benchmark corpus', () => {
     expect(report.runs[0]?.reviewGates).toEqual(expect.arrayContaining([
       'human-engineering-review-required',
     ]));
+    expect(report.pathSafety).toMatchObject({
+      passed: true,
+      leakCount: 0,
+    });
     const freeRoute = report.runs.find((run) =>
       run.providerProfile === 'openrouter-free' && run.preprocessingMode === 'region-v2',
     );
@@ -172,6 +176,47 @@ describe('geotech benchmark corpus', () => {
     expect(report.failures.join(' ')).toMatch(/must not accept direct image tasks/i);
     expect(report.failures.join(' ')).toMatch(/missing capacity\/feature review gate/i);
     expect(report.failures.join(' ')).toMatch(/missing text-evidence review gate/i);
+  });
+
+  it('fails closed on private path or secret-like benchmark leaks without echoing the values', () => {
+    const fixture = {
+      ...(readJson(corpusRegistryPath).fixtures[0] as GeotechBenchmarkCorpusFixture),
+      source: 'C:/Users/Databil/private/reports/source-registry.pdf',
+      expectations: {
+        ...(readJson(corpusRegistryPath).fixtures[0] as GeotechBenchmarkCorpusFixture).expectations,
+        knownLimitations: ['temporary token=abcdefghijklmnopqrstuvwxyz123456'],
+      },
+    };
+    const unsafe = makeBenchmarkVariant('region-v2', 'openai-compatible-byok');
+    unsafe.source.filePath = 'C:/Users/Databil/private/reports/site-investigation.pdf';
+    (unsafe as any).diagnostics = {
+      providerError: 'upstream failed with key sk-or-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    };
+
+    const report = buildGeotechBenchmarkCorpusReport([{
+      fixture,
+      benchmark: unsafe,
+      providerProfile: 'openai-compatible-byok',
+      preprocessingMode: 'region-v2',
+    }], {
+      generatedAt: '2026-05-31T00:00:00.000Z',
+    });
+    const serialized = JSON.stringify(report);
+
+    expect(report.summary.passed).toBe(false);
+    expect(report.pathSafety).toMatchObject({
+      passed: false,
+      leakCount: 4,
+    });
+    expect(report.failures.join(' ')).toMatch(/contains absolute-path/i);
+    expect(report.failures.join(' ')).toMatch(/contains secret-like-value/i);
+    expect(serialized).not.toContain('C:/Users/Databil/private');
+    expect(serialized).not.toContain('sk-or-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    expect(serialized).not.toContain('abcdefghijklmnopqrstuvwxyz123456');
+    expect(serialized).toContain('<absolute-path>');
+    expect(serialized).toContain('<secret-like-value>');
+    expect(report.fixtures[0]?.source).toBe('<absolute-path>');
+    expect(report.warnings.join(' ')).toContain('<secret-like-value>');
   });
 
   it('fails region-v2 acceptance when borehole/table pages produce no preprocessing regions', () => {

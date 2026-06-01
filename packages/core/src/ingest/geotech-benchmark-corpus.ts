@@ -97,6 +97,24 @@ export interface GeotechBenchmarkCorpusConfidenceSummary {
   reviewGates: string[];
 }
 
+export type GeotechBenchmarkCorpusPathSafetyLeakKind =
+  | 'absolute-path'
+  | 'secret-like-value';
+
+export interface GeotechBenchmarkCorpusPathSafetyLeak {
+  kind: GeotechBenchmarkCorpusPathSafetyLeakKind;
+  source: 'fixture' | 'benchmark';
+  location: string;
+  redactedValue: '<absolute-path>' | '<secret-like-value>';
+}
+
+export interface GeotechBenchmarkCorpusPathSafety {
+  passed: boolean;
+  checkedStringFields: number;
+  leakCount: number;
+  leaks: GeotechBenchmarkCorpusPathSafetyLeak[];
+}
+
 export interface GeotechBenchmarkCorpusReportOptions {
   generatedAt?: string | Date;
   label?: string;
@@ -176,6 +194,7 @@ export interface GeotechBenchmarkCorpusReport {
   fixtures: GeotechBenchmarkCorpusFixture[];
   runs: GeotechBenchmarkCorpusRun[];
   preprocessingComparisons: GeotechBenchmarkCorpusPreprocessingComparison[];
+  pathSafety: GeotechBenchmarkCorpusPathSafety;
   failures: string[];
   warnings: string[];
 }
@@ -184,11 +203,16 @@ export function buildGeotechBenchmarkCorpusReport(
   inputs: GeotechBenchmarkCorpusRunInput[],
   options: GeotechBenchmarkCorpusReportOptions = {},
 ): GeotechBenchmarkCorpusReport {
-  const fixtures = normalizeFixtures(inputs.map((input) => input.fixture));
+  const fixtures = redactGeotechBenchmarkCorpusArtifact(normalizeFixtures(inputs.map((input) => input.fixture)));
   const runs = inputs.map((input) => buildCorpusRun(input));
+  const pathSafety = inspectCorpusPathSafety(inputs);
+  const pathSafetyFailures = pathSafety.leaks.map((leak) =>
+    `${leak.source} ${leak.location} contains ${leak.kind}; value redacted from corpus output`,
+  );
   const fixtureFailures = validateFixtureCoverage(fixtures, runs);
   const failures = [
     ...runs.flatMap((run) => run.failures.map((failure) => `${run.fixtureId}/${run.providerProfile}/${run.preprocessingMode}: ${failure}`)),
+    ...pathSafetyFailures,
     ...fixtureFailures,
   ];
   const warnings = [
@@ -207,9 +231,14 @@ export function buildGeotechBenchmarkCorpusReport(
     fixtures,
     runs,
     preprocessingComparisons: buildPreprocessingComparisons(runs),
+    pathSafety,
     failures: [...new Set(failures)],
     warnings: [...new Set(warnings)],
   };
+}
+
+export function redactGeotechBenchmarkCorpusArtifact<T>(value: T): T {
+  return redactCorpusArtifactValue(value, new WeakMap()) as T;
 }
 
 export function renderGeotechBenchmarkCorpusSvg(report: GeotechBenchmarkCorpusReport): string {
@@ -307,6 +336,7 @@ th{background:#0f172a;color:#f8fafc}
   <div class="metric"><span>Traceability</span><strong>${Math.round(report.summary.averageTraceabilityRate * 100)}%</strong></div>
   <div class="metric"><span>Trust Components</span><strong>${report.summary.averageConfidenceBreakdown.extractionConfidence}/${report.summary.averageConfidenceBreakdown.traceabilityScore}/${report.summary.averageConfidenceBreakdown.corroborationScore}</strong></div>
   <div class="metric"><span>Preprocessing Quality</span><strong>${Math.round(report.summary.averagePreprocessingQualityScore * 100)}%</strong></div>
+  <div class="metric"><span>Path Safety</span><strong class="${report.pathSafety.passed ? 'pass' : 'fail'}">${report.pathSafety.passed ? 'PASS' : 'FAIL'}</strong></div>
 </section>
 <h2>Runs</h2>
 <table><thead><tr><th>Fixture</th><th>Category</th><th>Provider</th><th>Evidence input</th><th>Preprocessing</th><th>Trust E/T/C</th><th>Trace</th><th>GM score</th><th>Quality</th><th>Review gates</th><th>Pages</th><th>Calls</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>
@@ -713,6 +743,153 @@ function buildRunWarnings(
     run.sourceType === 'synthetic' ? 'synthetic benchmark fixture; use for guardrail logic, not production accuracy claims' : null,
     fixture.sourceType === 'local-private' ? 'local private fixture; do not commit source report bytes' : null,
   ].filter((value): value is string => value != null);
+}
+
+function inspectCorpusPathSafety(inputs: GeotechBenchmarkCorpusRunInput[]): GeotechBenchmarkCorpusPathSafety {
+  const leaks: GeotechBenchmarkCorpusPathSafetyLeak[] = [];
+  let checkedStringFields = 0;
+
+  for (const [index, input] of inputs.entries()) {
+    const fixtureScan = scanObjectForPathSafetyLeaks(input.fixture, `inputs[${index}].fixture`);
+    const benchmarkScan = scanObjectForPathSafetyLeaks(input.benchmark, `inputs[${index}].benchmark`);
+    checkedStringFields += fixtureScan.checkedStringFields + benchmarkScan.checkedStringFields;
+    leaks.push(
+      ...fixtureScan.leaks.map((leak) => ({ ...leak, source: 'fixture' as const })),
+      ...benchmarkScan.leaks.map((leak) => ({ ...leak, source: 'benchmark' as const })),
+    );
+  }
+
+  const uniqueLeaks = deduplicatePathSafetyLeaks(leaks).slice(0, 50);
+  return {
+    passed: uniqueLeaks.length === 0,
+    checkedStringFields,
+    leakCount: uniqueLeaks.length,
+    leaks: uniqueLeaks,
+  };
+}
+
+function redactCorpusArtifactValue(value: unknown, seen: WeakMap<object, unknown>): unknown {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (looksLikeAbsoluteLocalPath(trimmed)) {
+      return '<absolute-path>';
+    }
+    if (looksLikeSecretValue(trimmed)) {
+      return '<secret-like-value>';
+    }
+    return value;
+  }
+
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+  if (seen.has(value)) {
+    return seen.get(value);
+  }
+  if (Array.isArray(value)) {
+    const clone: unknown[] = [];
+    seen.set(value, clone);
+    for (const item of value) {
+      clone.push(redactCorpusArtifactValue(item, seen));
+    }
+    return clone;
+  }
+
+  const clone: Record<string, unknown> = {};
+  seen.set(value, clone);
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    clone[key] = redactCorpusArtifactValue(child, seen);
+  }
+  return clone;
+}
+
+function scanObjectForPathSafetyLeaks(value: unknown, rootLocation: string): {
+  checkedStringFields: number;
+  leaks: Omit<GeotechBenchmarkCorpusPathSafetyLeak, 'source'>[];
+} {
+  const leaks: Omit<GeotechBenchmarkCorpusPathSafetyLeak, 'source'>[] = [];
+  let checkedStringFields = 0;
+  const seen = new WeakSet<object>();
+
+  function visit(current: unknown, location: string): void {
+    if (typeof current === 'string') {
+      checkedStringFields += 1;
+      const trimmed = current.trim();
+      if (looksLikeAbsoluteLocalPath(trimmed)) {
+        leaks.push({
+          kind: 'absolute-path',
+          location,
+          redactedValue: '<absolute-path>',
+        });
+      }
+      if (looksLikeSecretValue(trimmed)) {
+        leaks.push({
+          kind: 'secret-like-value',
+          location,
+          redactedValue: '<secret-like-value>',
+        });
+      }
+      return;
+    }
+
+    if (!current || typeof current !== 'object') {
+      return;
+    }
+    if (seen.has(current)) {
+      return;
+    }
+    seen.add(current);
+
+    if (Array.isArray(current)) {
+      current.forEach((item, index) => visit(item, `${location}[${index}]`));
+      return;
+    }
+
+    for (const [key, child] of Object.entries(current as Record<string, unknown>)) {
+      visit(child, `${location}.${sanitizeLocationKey(key)}`);
+    }
+  }
+
+  visit(value, rootLocation);
+  return { checkedStringFields, leaks };
+}
+
+function deduplicatePathSafetyLeaks(
+  leaks: GeotechBenchmarkCorpusPathSafetyLeak[],
+): GeotechBenchmarkCorpusPathSafetyLeak[] {
+  const seen = new Set<string>();
+  const unique: GeotechBenchmarkCorpusPathSafetyLeak[] = [];
+  for (const leak of leaks) {
+    const key = `${leak.kind}:${leak.source}:${leak.location}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    unique.push(leak);
+  }
+  return unique;
+}
+
+function sanitizeLocationKey(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_$-]/g, '_');
+}
+
+function looksLikeAbsoluteLocalPath(value: string): boolean {
+  if (!value || /^(?:https?|s3|gs|file):\/\//i.test(value)) {
+    return false;
+  }
+  return /^[a-zA-Z]:[\\/][^"'<>|]+/.test(value)
+    || /^\\\\[^\\/\s]+[\\/][^\\/\s]+/.test(value)
+    || /^\/(?:Users|home|private|tmp|var|mnt|Volumes|workspace|runner|project|repo)\//.test(value);
+}
+
+function looksLikeSecretValue(value: string): boolean {
+  if (!value || /^GEOTECHCLI_|^OPENROUTER_|^OPENAI_|^ZHIPU_|^ANTHROPIC_|^HF_/i.test(value)) {
+    return false;
+  }
+  return /\bsk-(?:or-v1|proj|ant|live|test)?-[A-Za-z0-9_-]{16,}\b/.test(value)
+    || /\bgh[pousr]_[A-Za-z0-9_]{24,}\b/.test(value)
+    || /\b(?:api[_-]?key|token|secret|password)\s*[:=]\s*['"]?[A-Za-z0-9._-]{20,}/i.test(value);
 }
 
 function collectReviewGates(benchmark: GeotechDocumentBenchmark): string[] {
