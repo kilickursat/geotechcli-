@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.107] - 2026-06-03
+
+### FEM Solver Reliability and Approval Gates
+
+- Added explicit nonlinear FEM convergence reporting with per-load-step residual histories, termination reasons, and fail-closed nonconvergence metadata for the benchmark-scale Drucker-Prager plane-strain kernel and nonlinear consolidation-column manifest.
+- Hardened the experimental Biot u-p consolidation preview with a bounded transient step policy, pore-pressure diagnostics, pressure-overshoot rejection, and manifest validation for pressure-dissipation metrics.
+- Blocked `production-design` FEM approval scope in reviewer approval records and CLI runs until production solver, benchmark, support-design, and jurisdiction-specific acceptance gates are implemented.
+
 ## [0.4.106] - 2026-06-03
 
 ### FEM Biot Preview Route and Ingest Job Reads

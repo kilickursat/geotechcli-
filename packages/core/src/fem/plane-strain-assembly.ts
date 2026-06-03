@@ -92,6 +92,32 @@ export interface FemPlaneStrainDruckerPragerGaussPointResult extends FemPlaneStr
   state: 'elastic' | 'plastic';
 }
 
+export type FemPlaneStrainDruckerPragerTerminationReason =
+  | 'converged'
+  | 'max_iterations'
+  | 'force_residual_exceeded'
+  | 'yield_residual_exceeded';
+
+export interface FemPlaneStrainDruckerPragerResidualHistoryEntry {
+  iteration: number;
+  maxFreeResidualKn: number;
+  residualNormRatio: number;
+  forceBalanceTolerance: number;
+  reactionBalanceRatio: number;
+  maxYieldResidualRatio: number;
+  yieldResidualTolerance: number;
+  converged: boolean;
+}
+
+export interface FemPlaneStrainDruckerPragerFailure {
+  step: number;
+  loadFactor: number;
+  terminationReason: FemPlaneStrainDruckerPragerTerminationReason;
+  residualNormRatio: number;
+  maxYieldResidualRatio: number;
+  message: string;
+}
+
 export interface FemPlaneStrainDruckerPragerStepResult {
   step: number;
   loadFactor: number;
@@ -103,6 +129,8 @@ export interface FemPlaneStrainDruckerPragerStepResult {
   maxEquivalentPlasticStrain: number;
   plasticGaussPointCount: number;
   converged: boolean;
+  terminationReason: FemPlaneStrainDruckerPragerTerminationReason;
+  residualHistory: FemPlaneStrainDruckerPragerResidualHistoryEntry[];
 }
 
 export interface FemPlaneStrainDruckerPragerResult {
@@ -126,6 +154,8 @@ export interface FemPlaneStrainDruckerPragerResult {
   maxEquivalentPlasticStrain: number;
   plasticGaussPointCount: number;
   converged: boolean;
+  status: 'converged' | 'nonconverged';
+  failure?: FemPlaneStrainDruckerPragerFailure;
   policy: FemConvergencePolicy;
   limitations: string[];
 }
@@ -250,6 +280,7 @@ export interface FemPlaneStrainBiotStepResult {
   freePorePressureResidualL1M3PerS: number;
   massBalanceErrorRatio: number;
   pressureAudit: FemPlaneStrainBiotPressureAudit;
+  pressureDiagnostics: FemPlaneStrainBiotPressureDiagnostics;
   minPorePressureKpa: number;
   maxPorePressureKpa: number;
   maxVerticalSettlementM: number;
@@ -265,6 +296,8 @@ export interface FemPlaneStrainBiotNumericalContract {
   totalStressRelation: 'sigma_total_xx_yy = sigma_effective_xx_yy - alpha_B * p; shear unchanged';
   darcyFluxRelation: 'q = -k/gamma_water * grad(p)';
   storageConvention: 'specificStorage1PerM is head-based; pressure storage uses Ss / gamma_water';
+  transientStepPolicy: 'fixed backward-Euler grid requires minAcceptedSteps and bounded step-growth ratio';
+  maxTimeStepGrowthRatio: number;
   gammaWaterKpaPerM: number;
 }
 
@@ -276,6 +309,15 @@ export interface FemPlaneStrainBiotPressureAudit {
   storageRateSumM3PerS: number;
   couplingRateSumM3PerS: number;
   darcyFlowRateSumM3PerS: number;
+}
+
+export interface FemPlaneStrainBiotPressureDiagnostics {
+  averagePorePressureKpa: number;
+  averageFreePorePressureKpa: number;
+  porePressureDissipationRatio: number;
+  maxPorePressureChangeKpa: number;
+  maxPorePressureChangeRateKpaPerS: number;
+  pressureOvershootKpa: number;
 }
 
 export interface FemPlaneStrainBiotConsolidationResult {
@@ -310,6 +352,7 @@ export interface FemPlaneStrainBiotConsolidationResult {
   maxFreePorePressureResidualM3PerS: number;
   freePorePressureResidualL1M3PerS: number;
   pressureAudit: FemPlaneStrainBiotPressureAudit;
+  pressureDiagnostics: FemPlaneStrainBiotPressureDiagnostics;
   massBalanceErrorRatio: number;
   minPorePressureKpa: number;
   maxPorePressureKpa: number;
@@ -326,6 +369,7 @@ const GAUSS_POINTS: Array<[number, number, number]> = [
   [-1 / Math.sqrt(3), 1 / Math.sqrt(3), 1],
 ];
 const MAX_DENSE_DOF_COUNT = 800;
+const MAX_BIOT_TIME_STEP_GROWTH_RATIO = 8;
 
 function assertFinite(value: number, label: string): void {
   if (!Number.isFinite(value)) throw new Error(`${label} must be finite.`);
@@ -384,6 +428,32 @@ function validateConvergencePolicy(policy: FemConvergencePolicy): void {
   assertPositiveInteger(policy.minAcceptedSteps, 'policy.minAcceptedSteps');
   if (policy.minAcceptedSteps > policy.maxIterations) {
     throw new Error('policy.minAcceptedSteps must be less than or equal to policy.maxIterations.');
+  }
+}
+
+function validateBiotTransientStepPolicy(timeStepsSeconds: number[], policy: FemConvergencePolicy): void {
+  if (timeStepsSeconds.length < policy.minAcceptedSteps) {
+    throw new Error(`timeStepsSeconds must include at least ${policy.minAcceptedSteps} accepted transient steps for the Biot consolidation preview.`);
+  }
+
+  let previousTimeSeconds = 0;
+  let previousDeltaTimeSeconds: number | undefined;
+  for (const [index, timeSeconds] of timeStepsSeconds.entries()) {
+    assertFinitePositive(timeSeconds, `timeStepsSeconds.${index}`);
+    if (timeSeconds <= previousTimeSeconds) {
+      throw new Error(`timeStepsSeconds.${index} must be strictly increasing.`);
+    }
+    const deltaTimeSeconds = timeSeconds - previousTimeSeconds;
+    if (
+      previousDeltaTimeSeconds != null &&
+      deltaTimeSeconds / previousDeltaTimeSeconds > MAX_BIOT_TIME_STEP_GROWTH_RATIO
+    ) {
+      throw new Error(
+        `timeStepsSeconds.${index} step growth ratio must not exceed ${MAX_BIOT_TIME_STEP_GROWTH_RATIO} for the Biot consolidation preview.`,
+      );
+    }
+    previousTimeSeconds = timeSeconds;
+    previousDeltaTimeSeconds = deltaTimeSeconds;
   }
 }
 
@@ -1080,21 +1150,13 @@ export function runPlaneStrainBiotConsolidation(
 
   const policy = model.policy ?? DEFAULT_FEM_CONVERGENCE_POLICY;
   validateConvergencePolicy(policy);
+  validateBiotTransientStepPolicy(model.timeStepsSeconds, policy);
   const nodeIndexById = new Map(model.nodes.map((node, index) => [node.id, index]));
   const materialById = new Map(model.materials.map((material) => [material.id, material]));
   const displacementDofCount = model.nodes.length * 2;
   const porePressureDofCount = model.nodes.length;
   if (displacementDofCount + porePressureDofCount > MAX_DENSE_DOF_COUNT) {
     throw new Error(`Plane-strain Biot consolidation dense assembly is capped at ${MAX_DENSE_DOF_COUNT} coupled DOFs for benchmark-scale evidence runs.`);
-  }
-
-  let previousTimeSeconds = 0;
-  for (const [index, timeSeconds] of model.timeStepsSeconds.entries()) {
-    assertFinitePositive(timeSeconds, `timeStepsSeconds.${index}`);
-    if (timeSeconds <= previousTimeSeconds) {
-      throw new Error(`timeStepsSeconds.${index} must be strictly increasing.`);
-    }
-    previousTimeSeconds = timeSeconds;
   }
 
   for (const node of model.nodes) {
@@ -1131,6 +1193,9 @@ export function runPlaneStrainBiotConsolidation(
     if (nodeIndex == null) throw new Error(`Unknown Biot nodal flux node: ${flux.nodeId}.`);
     const flowM3PerS = flux.flowM3PerS ?? 0;
     assertFinite(flowM3PerS, `nodal flux ${flux.nodeId}.flowM3PerS`);
+    if (flowM3PerS < 0) {
+      throw new Error(`nodal flux ${flux.nodeId}.flowM3PerS must be non-negative; extraction-driven suction is unsupported by this saturated excess-pressure Biot evidence kernel.`);
+    }
     fluxes[nodeIndex] += flowM3PerS;
   }
 
@@ -1264,6 +1329,11 @@ export function runPlaneStrainBiotConsolidation(
   const porePressure = new Array<number>(porePressureDofCount).fill(initialPorePressureKpa);
   for (const [index, value] of prescribedDisplacements) displacement[index] = value;
   for (const [index, value] of prescribedPressures) porePressure[index] = value;
+  const pressureUpperBoundKpa = Math.max(initialPorePressureKpa, ...Array.from(prescribedPressures.values()));
+  const averagePressure = (dofs: number[]) => dofs.length > 0
+    ? dofs.reduce((sum, index) => sum + porePressure[index], 0) / dofs.length
+    : 0;
+  const initialAverageFreePorePressureKpa = averagePressure(freePressureDofs);
   let previousDisplacement = [...displacement];
   let previousPorePressure = [...porePressure];
   let lastMechanicalResidual = new Array<number>(displacementDofCount).fill(0);
@@ -1281,6 +1351,14 @@ export function runPlaneStrainBiotConsolidation(
     storageRateSumM3PerS: 0,
     couplingRateSumM3PerS: 0,
     darcyFlowRateSumM3PerS: 0,
+  };
+  let lastPressureDiagnostics: FemPlaneStrainBiotPressureDiagnostics = {
+    averagePorePressureKpa: round(porePressure.reduce((sum, value) => sum + value, 0) / porePressure.length, 8),
+    averageFreePorePressureKpa: round(initialAverageFreePorePressureKpa, 8),
+    porePressureDissipationRatio: 0,
+    maxPorePressureChangeKpa: 0,
+    maxPorePressureChangeRateKpaPerS: 0,
+    pressureOvershootKpa: 0,
   };
   let lastMinPorePressureKpa = Math.min(...porePressure);
   let lastMaxPorePressureKpa = Math.max(...porePressure);
@@ -1423,6 +1501,28 @@ export function runPlaneStrainBiotConsolidation(
     const massBalanceErrorRatio = freePressureResidualSum / pressureScale;
     const minPorePressureKpa = Math.min(...porePressure);
     const maxPorePressureKpa = Math.max(...porePressure);
+    const pressureOvershootKpa = Math.max(0, maxPorePressureKpa - pressureUpperBoundKpa);
+    if (pressureOvershootKpa > 1e-6) {
+      throw new Error(`Plane-strain Biot step ${stepIndex + 1} pore pressure exceeded the initial/prescribed pressure envelope by ${pressureOvershootKpa} kPa.`);
+    }
+    const averagePorePressureKpa = porePressure.reduce((sum, value) => sum + value, 0) / porePressure.length;
+    const averageFreePorePressureKpa = averagePressure(freePressureDofs);
+    const dissipationReferenceKpa = Math.max(initialAverageFreePorePressureKpa, 1e-12);
+    const porePressureDissipationRatio = Math.min(
+      1,
+      Math.max(0, (initialAverageFreePorePressureKpa - averageFreePorePressureKpa) / dissipationReferenceKpa),
+    );
+    const maxPorePressureChangeKpa = Math.max(
+      ...porePressure.map((value, index) => Math.abs(value - previousPorePressure[index])),
+    );
+    const pressureDiagnostics: FemPlaneStrainBiotPressureDiagnostics = {
+      averagePorePressureKpa: round(averagePorePressureKpa, 8),
+      averageFreePorePressureKpa: round(averageFreePorePressureKpa, 8),
+      porePressureDissipationRatio: round(porePressureDissipationRatio, 12),
+      maxPorePressureChangeKpa: round(maxPorePressureChangeKpa, 8),
+      maxPorePressureChangeRateKpaPerS: Number((maxPorePressureChangeKpa / deltaTimeSeconds).toExponential(12)),
+      pressureOvershootKpa: round(pressureOvershootKpa, 8),
+    };
     const maxVerticalSettlementM = Math.max(0, -Math.min(...model.nodes.map((_, index) => displacement[dofIndex(index, 'uy')])));
     const converged = residualNormRatio <= policy.forceBalanceTolerance &&
       massBalanceErrorRatio <= policy.porePressureMassBalanceTolerance;
@@ -1437,6 +1537,7 @@ export function runPlaneStrainBiotConsolidation(
       freePorePressureResidualL1M3PerS: Number(freePressureResidualSum.toExponential(12)),
       massBalanceErrorRatio: round(massBalanceErrorRatio, 12),
       pressureAudit,
+      pressureDiagnostics,
       minPorePressureKpa: round(minPorePressureKpa, 8),
       maxPorePressureKpa: round(maxPorePressureKpa, 8),
       maxVerticalSettlementM: round(maxVerticalSettlementM, 12),
@@ -1453,6 +1554,7 @@ export function runPlaneStrainBiotConsolidation(
     lastMaxFreePorePressureResidualM3PerS = maxFreePorePressureResidualM3PerS;
     lastFreePorePressureResidualL1M3PerS = freePressureResidualSum;
     lastPressureAudit = pressureAudit;
+    lastPressureDiagnostics = pressureDiagnostics;
     lastMinPorePressureKpa = minPorePressureKpa;
     lastMaxPorePressureKpa = maxPorePressureKpa;
   }
@@ -1527,6 +1629,8 @@ export function runPlaneStrainBiotConsolidation(
       totalStressRelation: 'sigma_total_xx_yy = sigma_effective_xx_yy - alpha_B * p; shear unchanged',
       darcyFluxRelation: 'q = -k/gamma_water * grad(p)',
       storageConvention: 'specificStorage1PerM is head-based; pressure storage uses Ss / gamma_water',
+      transientStepPolicy: 'fixed backward-Euler grid requires minAcceptedSteps and bounded step-growth ratio',
+      maxTimeStepGrowthRatio: MAX_BIOT_TIME_STEP_GROWTH_RATIO,
       gammaWaterKpaPerM: round(gammaWaterKpaPerM, 8),
     },
     nodes: model.nodes.map((node, index) => ({
@@ -1553,6 +1657,7 @@ export function runPlaneStrainBiotConsolidation(
     maxFreePorePressureResidualM3PerS: Number(lastMaxFreePorePressureResidualM3PerS.toExponential(12)),
     freePorePressureResidualL1M3PerS: Number(lastFreePorePressureResidualL1M3PerS.toExponential(12)),
     pressureAudit: lastPressureAudit,
+    pressureDiagnostics: lastPressureDiagnostics,
     massBalanceErrorRatio: round(lastMassBalanceErrorRatio, 12),
     minPorePressureKpa: round(lastMinPorePressureKpa, 8),
     maxPorePressureKpa: round(lastMaxPorePressureKpa, 8),
@@ -2052,6 +2157,43 @@ function normalizeLoadStepFractions(loadStepFractions?: readonly number[]): numb
   return fractions;
 }
 
+function isDruckerPragerStepConverged(
+  evaluation: ReturnType<typeof evaluatePlaneStrainDruckerPragerState>,
+  policy: FemConvergencePolicy,
+): boolean {
+  return evaluation.residualNormRatio <= policy.forceBalanceTolerance &&
+    evaluation.maxYieldResidualRatio <= policy.residualTolerance;
+}
+
+function druckerPragerResidualHistoryEntry(
+  iteration: number,
+  evaluation: ReturnType<typeof evaluatePlaneStrainDruckerPragerState>,
+  policy: FemConvergencePolicy,
+): FemPlaneStrainDruckerPragerResidualHistoryEntry {
+  return {
+    iteration,
+    maxFreeResidualKn: round(evaluation.maxFreeResidualKn, 12),
+    residualNormRatio: round(evaluation.residualNormRatio, 12),
+    forceBalanceTolerance: policy.forceBalanceTolerance,
+    reactionBalanceRatio: round(evaluation.reactionBalanceRatio, 12),
+    maxYieldResidualRatio: round(evaluation.maxYieldResidualRatio, 12),
+    yieldResidualTolerance: policy.residualTolerance,
+    converged: isDruckerPragerStepConverged(evaluation, policy),
+  };
+}
+
+function druckerPragerTerminationReason(
+  evaluation: ReturnType<typeof evaluatePlaneStrainDruckerPragerState>,
+  policy: FemConvergencePolicy,
+  converged: boolean,
+  iterations: number,
+): FemPlaneStrainDruckerPragerTerminationReason {
+  if (converged) return 'converged';
+  if (iterations >= policy.maxIterations) return 'max_iterations';
+  if (evaluation.residualNormRatio > policy.forceBalanceTolerance) return 'force_residual_exceeded';
+  return 'yield_residual_exceeded';
+}
+
 export function runPlaneStrainDruckerPragerLoadSteps(
   model: FemPlaneStrainModel,
   options: { loadStepFractions?: readonly number[] } = {},
@@ -2067,8 +2209,10 @@ export function runPlaneStrainDruckerPragerLoadSteps(
     for (const [index, value] of system.prescribed) displacement[index] = value * loadFactor;
     let evaluation = evaluatePlaneStrainDruckerPragerState({ system, displacement, loadFactor });
     let iterations = 0;
-    let converged = evaluation.residualNormRatio <= system.policy.forceBalanceTolerance &&
-      evaluation.maxYieldResidualRatio <= system.policy.residualTolerance;
+    let converged = isDruckerPragerStepConverged(evaluation, system.policy);
+    const residualHistory: FemPlaneStrainDruckerPragerResidualHistoryEntry[] = [
+      druckerPragerResidualHistoryEntry(iterations, evaluation, system.policy),
+    ];
 
     while (!converged && iterations < system.policy.maxIterations) {
       iterations += 1;
@@ -2080,11 +2224,12 @@ export function runPlaneStrainDruckerPragerLoadSteps(
       }
       for (const [index, value] of system.prescribed) displacement[index] = value * loadFactor;
       evaluation = evaluatePlaneStrainDruckerPragerState({ system, displacement, loadFactor });
-      converged = evaluation.residualNormRatio <= system.policy.forceBalanceTolerance &&
-        evaluation.maxYieldResidualRatio <= system.policy.residualTolerance;
+      converged = isDruckerPragerStepConverged(evaluation, system.policy);
+      residualHistory.push(druckerPragerResidualHistoryEntry(iterations, evaluation, system.policy));
     }
 
     finalEvaluation = evaluation;
+    const terminationReason = druckerPragerTerminationReason(evaluation, system.policy, converged, iterations);
     loadSteps.push({
       step: stepIndex + 1,
       loadFactor: round(loadFactor, 8),
@@ -2096,12 +2241,16 @@ export function runPlaneStrainDruckerPragerLoadSteps(
       maxEquivalentPlasticStrain: round(evaluation.maxEquivalentPlasticStrain, 12),
       plasticGaussPointCount: evaluation.plasticGaussPointCount,
       converged,
+      terminationReason,
+      residualHistory,
     });
   }
 
   if (!finalEvaluation) {
     throw new Error('Plane-strain nonlinear load-step solver requires at least one load step.');
   }
+  const failedStep = loadSteps.find((step) => !step.converged);
+  const status = failedStep ? 'nonconverged' : 'converged';
 
   return {
     schemaVersion: 'fem-plane-strain-drucker-prager-result.v1',
@@ -2124,10 +2273,22 @@ export function runPlaneStrainDruckerPragerLoadSteps(
     maxYieldResidualRatio: round(finalEvaluation.maxYieldResidualRatio, 12),
     maxEquivalentPlasticStrain: round(finalEvaluation.maxEquivalentPlasticStrain, 12),
     plasticGaussPointCount: finalEvaluation.plasticGaussPointCount,
-    converged: loadSteps.every((step) => step.converged),
+    converged: status === 'converged',
+    status,
+    ...(failedStep ? {
+      failure: {
+        step: failedStep.step,
+        loadFactor: failedStep.loadFactor,
+        terminationReason: failedStep.terminationReason,
+        residualNormRatio: failedStep.residualNormRatio,
+        maxYieldResidualRatio: failedStep.maxYieldResidualRatio,
+        message: `Plane-strain Drucker-Prager load step ${failedStep.step} did not satisfy the configured convergence policy.`,
+      },
+    } : {}),
     policy: system.policy,
     limitations: [
       'Benchmark-scale modified-Newton plane-strain plasticity evidence kernel only.',
+      ...(failedStep ? ['Nonconverged load-step result is reported fail-closed and must not be treated as an accepted engineering solve.'] : []),
       'Uses elastic global tangent with Gauss-point Drucker-Prager stress projection; no production consistent tangent, sparse solver, hardening calibration, staged activation, pore-pressure DOF, or route-backed result manifest is provided.',
       'Use for deterministic evidence and regression tests only until independent published/commercial benchmark comparison and licensed production approval gates are complete.',
     ],

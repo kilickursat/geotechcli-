@@ -37,6 +37,7 @@ describe('FEM production readiness contract', () => {
       'support-design-engine-coupled-to-staged-excavation-route',
       'workspace-to-run-acceptance-validator-enforced',
       'published-benchmark-corpus-approved',
+      'production-design-approval-scope-fails-closed-until-production-acceptance',
       'reviewer-approval-record-enforced-by-cli-run',
     ]));
     expect(report.engineeringEvidence).toMatchObject({

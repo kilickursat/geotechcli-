@@ -499,6 +499,17 @@ function optionText(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
 }
 
+function normalizeFemApprovalScope(value: unknown): FemReviewerApprovalRecord['scope'] {
+  const scope = optionText(value) ?? 'experimental-preview';
+  if (scope === 'experimental-preview') return 'experimental-preview';
+  if (scope === 'production-design') {
+    throw new Error(
+      'FEM production-design approval scope is blocked in strong beta. Persist experimental-preview reviewer records only until production acceptance gates are implemented.',
+    );
+  }
+  throw new Error(`Unsupported FEM approval scope: ${scope}. Use experimental-preview; production-design is blocked in strong beta.`);
+}
+
 function buildFemReviewerApprovalRecord(
   analysisCase: FemAnalysisCase,
   sourceText: string,
@@ -509,8 +520,22 @@ function buildFemReviewerApprovalRecord(
   const reviewerName = optionText(opts.reviewerName);
   const reviewerLicense = optionText(opts.reviewerLicense);
   const reviewerJurisdiction = optionText(opts.reviewerJurisdiction);
-  const hasApprovalOptions = Boolean(approvalOutput || reviewerName || reviewerLicense || reviewerJurisdiction);
+  const requestedScope = optionText(opts.approvalScope);
+  const approvalStatement = optionText(opts.approvalStatement);
+  const additionalAssumptions = parseOptionalCsvText(opts.approvalAssumptions);
+  const additionalLimitations = parseOptionalCsvText(opts.approvalLimitations);
+  const hasApprovalOptions = Boolean(
+    approvalOutput ||
+      reviewerName ||
+      reviewerLicense ||
+      reviewerJurisdiction ||
+      requestedScope ||
+      approvalStatement ||
+      additionalAssumptions.length > 0 ||
+      additionalLimitations.length > 0
+  );
   if (!hasApprovalOptions) return undefined;
+  const approvalScope = normalizeFemApprovalScope(requestedScope);
   if (!approvalOutput) {
     throw new Error('FEM approval metadata must be persisted. Provide --approval-output <file> when reviewer metadata is supplied.');
   }
@@ -520,11 +545,11 @@ function buildFemReviewerApprovalRecord(
 
   const assumptions = [
     ...analysisCase.assumptions.map((item) => `${item.parameter}: ${item.value}${item.unit ? ` ${item.unit}` : ''}`),
-    ...parseOptionalCsvText(opts.approvalAssumptions),
+    ...additionalAssumptions,
   ];
   const limitations = [
     ...analysisCase.limitations,
-    ...parseOptionalCsvText(opts.approvalLimitations),
+    ...additionalLimitations,
   ];
   const record: FemReviewerApprovalRecord = {
     schemaVersion: 'fem-reviewer-approval.v1',
@@ -543,10 +568,10 @@ function buildFemReviewerApprovalRecord(
       jurisdiction: reviewerJurisdiction,
     },
     approvedAt: new Date().toISOString(),
-    scope: opts.approvalScope === 'production-design' ? 'production-design' : 'experimental-preview',
+    scope: approvalScope,
     assumptions,
     limitations,
-    approvalStatement: optionText(opts.approvalStatement)
+    approvalStatement: approvalStatement
       ?? 'Reviewed and accepted for experimental preview execution.',
   };
   const approvalValidation = validateFemReviewerApprovalRecord(record);
@@ -987,7 +1012,7 @@ export function registerFemCommand(program: Command): void {
     .option('--reviewer-name <name>', 'Reviewer name for persisted FEM approval metadata')
     .option('--reviewer-license <id>', 'Reviewer license or registration id for persisted FEM approval metadata')
     .option('--reviewer-jurisdiction <code>', 'Reviewer license jurisdiction for persisted FEM approval metadata')
-    .option('--approval-scope <scope>', 'Approval scope: experimental-preview or production-design')
+    .option('--approval-scope <scope>', 'Approval scope: experimental-preview only; production-design fails closed in strong beta')
     .option('--approval-statement <text>', 'Reviewer approval statement; defaults to reviewed and accepted for experimental preview execution')
     .option('--approval-assumptions <csv>', 'Additional comma-separated assumptions to persist in the FEM approval record')
     .option('--approval-limitations <csv>', 'Additional comma-separated limitations to persist in the FEM approval record')
@@ -1002,8 +1027,9 @@ export function registerFemCommand(program: Command): void {
 
   This command executes only deterministic built-in preview/nonlinear-column/biot-up backends from a reviewed analysis_case.json.
   It requires --reviewed as an explicit human-review acknowledgement.
-  Use --approval-output with reviewer metadata to persist identity, license, assumptions, limitations, validation summary, and case hash.
+  Use --approval-output with reviewer metadata to persist identity, license, assumptions, limitations, validation summary, experimental-preview scope, and case hash.
   Use --approval-record to fail closed when a prior approval record is stale or does not match the current case hash.
+  production-design approval scope fails closed in strong beta until production acceptance gates are implemented.
   It is not exposed as an agent tool; LLMs can plan, draft, and validate FEM cases, but users approve runs.
 `)
     .action(async (caseFilePath: string, opts) => {

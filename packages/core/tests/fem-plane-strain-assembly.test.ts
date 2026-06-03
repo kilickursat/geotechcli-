@@ -261,6 +261,8 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
       unsupportedNegativePressurePolicy: 'reject-negative-free-pressure-solve',
       stressConvention: 'tension-positive-plane-strain-output',
       darcyFluxRelation: 'q = -k/gamma_water * grad(p)',
+      transientStepPolicy: 'fixed backward-Euler grid requires minAcceptedSteps and bounded step-growth ratio',
+      maxTimeStepGrowthRatio: 8,
       gammaWaterKpaPerM: 9.81,
     });
     expect(result.displacementDofCount).toBe(mesh.nodes.length * 2);
@@ -280,6 +282,11 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
     expect(result.pressureAudit.freePorePressureResidualL1M3PerS).toBe(
       result.timeSteps.at(-1)?.pressureAudit.freePorePressureResidualL1M3PerS,
     );
+    expect(result.pressureDiagnostics).toEqual(result.timeSteps.at(-1)?.pressureDiagnostics);
+    expect(result.pressureDiagnostics.averagePorePressureKpa).toBeGreaterThanOrEqual(0);
+    expect(result.pressureDiagnostics.porePressureDissipationRatio).toBeGreaterThanOrEqual(0);
+    expect(result.pressureDiagnostics.porePressureDissipationRatio).toBeLessThanOrEqual(1);
+    expect(result.pressureDiagnostics.pressureOvershootKpa).toBe(0);
     expect(result.pressureAudit.prescribedPorePressureResidualL1M3PerS).toBeGreaterThan(0);
     expect(result.maxBiotCouplingKpa).toBeGreaterThan(0);
     expect(coupledTopSettlement).not.toBeCloseTo(drainedTopSettlement, 12);
@@ -324,7 +331,7 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
         ...topNodes.map((node) => ({ nodeId: node.id, porePressureKpa: 0 })),
       ],
       initialPorePressureKpa: 100,
-      timeStepsSeconds: [1_000],
+      timeStepsSeconds: [1_000, 2_000, 3_000],
     });
 
     const firstGauss = result.elements[0].gaussPoints[0];
@@ -387,7 +394,7 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
       ],
       nodalLoads,
       initialPorePressureKpa: 80,
-      timeStepsSeconds: [600, 1_200],
+      timeStepsSeconds: [600, 1_200, 1_800],
     });
 
     for (const drainedNode of drained.nodes) {
@@ -491,7 +498,7 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
           { nodeId: node.id, dof: 'uy' as const },
         ]),
       porePressureBoundaryConditions: [{ nodeId: 'n-0-0', porePressureKpa: 0 }],
-      timeStepsSeconds: [1],
+      timeStepsSeconds: [1, 2, 3],
     };
 
     expect(() => runPlaneStrainBiotConsolidation({
@@ -504,8 +511,16 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
     })).toThrow(/at least one pore-pressure boundary condition/);
     expect(() => runPlaneStrainBiotConsolidation({
       ...model,
-      timeStepsSeconds: [2, 1],
-    })).toThrow(/timeStepsSeconds\.1 must be strictly increasing/);
+      timeStepsSeconds: [1],
+    })).toThrow(/at least 3 accepted transient steps/);
+    expect(() => runPlaneStrainBiotConsolidation({
+      ...model,
+      timeStepsSeconds: [1, 3, 2],
+    })).toThrow(/timeStepsSeconds\.2 must be strictly increasing/);
+    expect(() => runPlaneStrainBiotConsolidation({
+      ...model,
+      timeStepsSeconds: [1, 2, 30],
+    })).toThrow(/step growth ratio must not exceed 8/);
     expect(() => runPlaneStrainBiotConsolidation({
       ...model,
       porePressureBoundaryConditions: [
@@ -520,7 +535,7 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
     expect(() => runPlaneStrainBiotConsolidation({
       ...model,
       nodalFluxes: [{ nodeId: 'n-1-1', flowM3PerS: -1e-3 }],
-    })).toThrow(/solved negative pore pressure/i);
+    })).toThrow(/extraction-driven suction is unsupported/i);
   });
 
   it('reproduces a prescribed affine displacement patch at every Gauss point', () => {
@@ -760,10 +775,14 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
     const topSettlements = topNodes.map((node) => result.nodes.find((resultNode) => resultNode.id === node.id)?.uyM ?? 0);
 
     expect(result.converged).toBe(true);
+    expect(result.status).toBe('converged');
     expect(result.loadSteps).toHaveLength(4);
     expect(result.loadSteps.every((step) => step.converged)).toBe(true);
+    expect(result.loadSteps.every((step) => step.terminationReason === 'converged')).toBe(true);
+    expect(result.loadSteps.every((step) => step.residualHistory.length === step.iterations + 1)).toBe(true);
     expect(result.loadSteps.at(-1)?.loadFactor).toBe(1);
     expect(result.loadSteps.at(-1)?.plasticGaussPointCount).toBeGreaterThan(0);
+    expect(result.loadSteps.at(-1)?.residualHistory.at(-1)?.converged).toBe(true);
     expect(result.plasticGaussPointCount).toBeGreaterThan(0);
     expect(result.maxEquivalentPlasticStrain).toBeGreaterThan(0);
     expect(result.residualNormRatio).toBeLessThanOrEqual(result.policy.forceBalanceTolerance);
@@ -773,6 +792,58 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
       expect(result.loadSteps[index].maxEquivalentPlasticStrain)
         .toBeGreaterThanOrEqual(result.loadSteps[index - 1].maxEquivalentPlasticStrain);
     }
+  });
+
+  it('fails closed when nonlinear plane-strain load steps exceed the iteration budget', () => {
+    const mesh = buildPlaneStrainRectangularMesh({
+      widthM: 2,
+      heightM: 1,
+      divisionsX: 2,
+      divisionsY: 1,
+      materialId: 'soil',
+    });
+    const topNodes = mesh.nodes.filter((node) => node.yM === 1);
+    const bottomNodes = mesh.nodes.filter((node) => node.yM === 0);
+    const result = runPlaneStrainDruckerPragerLoadSteps({
+      schemaVersion: 'fem-plane-strain-model.v1',
+      nodes: mesh.nodes,
+      elements: mesh.elements,
+      materials: [{
+        id: 'soil',
+        elasticModulusKpa: 25_000,
+        poissonRatio: 0.28,
+        frictionAngleDeg: 32,
+        cohesionKpa: 2,
+        dilationAngleDeg: 0,
+      }],
+      boundaryConditions: bottomNodes.flatMap((node) => [
+        { nodeId: node.id, dof: 'ux' as const },
+        { nodeId: node.id, dof: 'uy' as const },
+      ]),
+      nodalLoads: topNodes.map((node) => ({ nodeId: node.id, fyKn: -60 })),
+      policy: {
+        schemaVersion: 'fem-convergence-policy.v1',
+        residualTolerance: 1e-14,
+        forceBalanceTolerance: 1e-14,
+        porePressureMassBalanceTolerance: 1e-3,
+        maxIterations: 1,
+        minAcceptedSteps: 1,
+      },
+    }, {
+      loadStepFractions: [1],
+    });
+
+    expect(result.converged).toBe(false);
+    expect(result.status).toBe('nonconverged');
+    expect(result.failure).toMatchObject({
+      step: 1,
+      loadFactor: 1,
+      terminationReason: 'max_iterations',
+    });
+    expect(result.loadSteps[0].converged).toBe(false);
+    expect(result.loadSteps[0].residualHistory).toHaveLength(2);
+    expect(result.loadSteps[0].residualHistory.at(-1)?.converged).toBe(false);
+    expect(result.limitations.join(' ')).toMatch(/fail-closed/i);
   });
 
   it('keeps nonlinear plane-strain evidence out of the production-ready gate', () => {

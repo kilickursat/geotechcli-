@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   buildExcavationDemoAnalysisCase,
   buildRaftDemoAnalysisCase,
+  buildSeepageBiotPlaneStrainDemoAnalysisCase,
   buildStagedSettlementConsolidationDemoAnalysisCase,
   buildTunnelVolumeLossDemoAnalysisCase,
   renderFemWebglHtml,
+  runBuiltinBiotUpPlaneStrainPreview,
   runBuiltinElasticExcavationDemo,
   runBuiltinElasticRaftDemo,
   runBuiltinStagedSettlementConsolidationDemo,
@@ -71,6 +73,30 @@ describe('experimental FEM raft demo', () => {
     expect(validation.status).toBe('review');
     expect(validation.blockers).toBe(0);
     expect(validation.findings.map((finding) => finding.code)).toContain('consolidation.1d-preview');
+  });
+
+  it('builds a review-gated deterministic Biot pore-pressure analysis case with an accepted transient schedule', () => {
+    const analysisCase = buildSeepageBiotPlaneStrainDemoAnalysisCase();
+    const validation = validateFemAnalysisCase(analysisCase);
+
+    expect(analysisCase.schemaVersion).toBe('fem-analysis-case.v0');
+    expect(analysisCase.experimental).toBe(true);
+    expect(analysisCase.objective).toBe('seepage_groundwater_coupling');
+    expect(analysisCase.analysisType).toBe('time_dependent_2d_biot_consolidation');
+    expect(analysisCase.geometry.biot?.timeStepsSeconds.length).toBeGreaterThanOrEqual(3);
+    expect(validation.status).toBe('review');
+    expect(validation.blockers).toBe(0);
+    expect(validation.findings.map((finding) => finding.code)).toContain('biot.up-preview-only');
+
+    const tooFewSteps = buildSeepageBiotPlaneStrainDemoAnalysisCase();
+    tooFewSteps.geometry.biot!.timeStepsSeconds = [1, 2];
+    const abruptStepGrowth = buildSeepageBiotPlaneStrainDemoAnalysisCase();
+    abruptStepGrowth.geometry.biot!.timeStepsSeconds = [1, 2, 30];
+
+    expect(validateFemAnalysisCase(tooFewSteps).findings.map((finding) => finding.code))
+      .toContain('geometry.biot.time-steps.too-few');
+    expect(validateFemAnalysisCase(abruptStepGrowth).findings.map((finding) => finding.code))
+      .toContain('geometry.biot.time-steps.2.growth-ratio');
   });
 
   it('returns a finite result envelope and self-contained visualization mesh', () => {
@@ -178,6 +204,27 @@ describe('experimental FEM raft demo', () => {
     expect(manifest.resultFields?.map((field) => field.id)).toContain('final_degree_of_consolidation');
     expect(manifest.steps?.map((step) => step.id)).toEqual(['stage-1', 'stage-2', 'stage-3']);
     expect(manifest.datasets?.filter((dataset) => dataset.source === 'visualization.frame')).toHaveLength(3);
+    expect(validation.status).toBe('review');
+    expect(validation.blockers).toBe(0);
+  });
+
+  it('returns a finite Biot u-p preview manifest with pressure diagnostics', () => {
+    const manifest = runBuiltinBiotUpPlaneStrainPreview();
+    const validation = validateFemResultManifest(manifest);
+
+    expect(manifest.schemaVersion).toBe('fem-result-manifest.v0');
+    expect(manifest.analysisCase.objective).toBe('seepage_groundwater_coupling');
+    expect(manifest.backend.id).toBe('builtin-biot-up-plane-strain-v0');
+    expect(manifest.envelope.timeStepCount).toBe(manifest.analysisCase.geometry.biot?.timeStepsSeconds.length);
+    expect(manifest.envelope.minPorePressureKpa).toBe(0);
+    expect(manifest.envelope.maxPorePressureKpa).toBeLessThanOrEqual(100);
+    expect(manifest.envelope.averagePorePressureKpa).toBeGreaterThanOrEqual(0);
+    expect(manifest.envelope.averagePorePressureKpa).toBeLessThanOrEqual(manifest.envelope.maxPorePressureKpa!);
+    expect(manifest.envelope.porePressureDissipationRatio).toBeGreaterThan(0);
+    expect(manifest.envelope.porePressureDissipationRatio).toBeLessThanOrEqual(1);
+    expect(manifest.envelope.maxPorePressureChangeRateKpaPerS).toBeGreaterThan(0);
+    expect(manifest.pressureAudit?.freePorePressureResidualL1M3PerS)
+      .toBe(manifest.envelope.freePorePressureResidualL1M3PerS);
     expect(validation.status).toBe('review');
     expect(validation.blockers).toBe(0);
   });

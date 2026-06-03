@@ -8,6 +8,16 @@ const releases = [
     date: '2026-06-03',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added explicit nonlinear FEM convergence reporting with per-load-step residual histories, termination reasons, and fail-closed nonconvergence metadata' },
+      { type: 'feat', text: 'Hardened the experimental Biot u-p preview with bounded transient step policy, pore-pressure diagnostics, pressure-overshoot rejection, and manifest validation' },
+      { type: 'fix', text: 'Blocked production-design FEM approval scope in reviewer records and CLI runs until production solver, benchmark, support-design, and jurisdiction-specific gates are implemented' },
+    ],
+  },
+  {
+    version: '0.4.106',
+    date: '2026-06-03',
+    tag: '0.4.106 Release',
+    changes: [
       { type: 'feat', text: 'Added route-backed experimental geotech fem demo biot and geotech fem run --backend biot-up paths for reviewed plane-strain Biot u-p seepage/groundwater cases' },
       { type: 'feat', text: 'Updated GroundModel, ingest dossier, benchmark, production-readiness, and mocked default GLM surfaces so seepage/groundwater coupling appears as a human-reviewed preview route' },
       { type: 'fix', text: 'Hardened large foreground ingest jobs by extending bounded transient job.json read retries and reusing the last valid live-progress snapshot through partial checkpoint reads' },

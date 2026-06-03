@@ -1042,7 +1042,11 @@ export function validateFemReviewerApprovalRecord(
   if (!record.reviewer?.name || record.reviewer.name.trim().length < 3) blockers.push('reviewer.name.missing');
   if (!record.reviewer?.licenseId || record.reviewer.licenseId.trim().length < 3) blockers.push('reviewer.license-id.missing');
   if (!record.reviewer?.jurisdiction || record.reviewer.jurisdiction.trim().length < 2) blockers.push('reviewer.jurisdiction.missing');
-  if (record.scope !== 'experimental-preview' && record.scope !== 'production-design') blockers.push('scope.unsupported');
+  if (record.scope !== 'experimental-preview' && record.scope !== 'production-design') {
+    blockers.push('scope.unsupported');
+  } else if (record.scope === 'production-design') {
+    blockers.push('scope.production-design-blocked');
+  }
   if (!Array.isArray(record.assumptions) || record.assumptions.length === 0) blockers.push('assumptions.missing');
   if (!Array.isArray(record.limitations) || record.limitations.length === 0) blockers.push('limitations.missing');
   if (!record.approvalStatement || !/\b(reviewed|approved|accepted)\b/i.test(record.approvalStatement)) {
@@ -1054,10 +1058,6 @@ export function validateFemReviewerApprovalRecord(
     blockers.push('approved-at.invalid');
   } else if (approvedAt > Date.now() + 60_000) {
     blockers.push('approved-at.future');
-  }
-
-  if (record.scope === 'production-design') {
-    warnings.push('production-design-scope-requires-solver-and-jurisdiction-policy-enforcement');
   }
 
   return {
@@ -1662,7 +1662,7 @@ export function runFemEngineeringEvidenceSuite(
       ...biotPatchTopNodes.map((node) => ({ nodeId: node.id, porePressureKpa: 0 })),
     ],
     initialPorePressureKpa: 100,
-    timeStepsSeconds: [1_000],
+    timeStepsSeconds: [1_000, 2_000, 3_000],
     policy,
   });
   const biotPatchGauss = biotPressurePatch.elements[0].gaussPoints[0];
@@ -1718,7 +1718,7 @@ export function runFemEngineeringEvidenceSuite(
     ],
     nodalLoads: biotAlphaZeroLoads,
     initialPorePressureKpa: 100,
-    timeStepsSeconds: [3_600, 7_200],
+    timeStepsSeconds: [3_600, 7_200, 14_400],
     policy,
   });
   const alphaZeroDisplacementError = Math.max(
@@ -1907,6 +1907,7 @@ export function runFemEngineeringEvidenceSuite(
       'biot-u-p-route-backed-preview-is-not-production-sparse-solver',
       'support-design-is-screening-level-and-not-jurisdiction-specific-structural-design',
       'published-commercial-cross-solver-benchmark-corpus-not-approved',
+      'production-design-approval-scope-fails-closed-until-production-acceptance',
       'reviewer-approval-record-validator-exists-but-cli-run-does-not-enforce-persistence-for-every-run',
     ],
     releasePositioning:

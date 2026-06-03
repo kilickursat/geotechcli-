@@ -35,6 +35,8 @@ function isNonEmptyString(value: unknown): value is string {
 
 const FEM_WEBGL_UINT16_INDEX_LIMIT = 65_535;
 const FEM_MAX_PREVIEW_MESH_NODES = FEM_WEBGL_UINT16_INDEX_LIMIT + 1;
+const FEM_MIN_BIOT_TRANSIENT_STEPS = 3;
+const FEM_MAX_BIOT_TIME_STEP_GROWTH_RATIO = 8;
 
 function expectedMeshCounts(mesh: FemAnalysisCase['mesh']): { nodes: number; elements: number } {
   if (mesh.elementType === 'quad4_plane_strain') {
@@ -304,6 +306,10 @@ function validateOptionalResultMetadata(
     ['max_free_pore_pressure_residual', manifest.envelope.maxFreePorePressureResidualM3PerS],
     ['free_pore_pressure_residual_l1', manifest.envelope.freePorePressureResidualL1M3PerS],
     ['prescribed_pore_pressure_residual_l1', manifest.envelope.prescribedPorePressureResidualL1M3PerS],
+    ['average_pore_pressure', manifest.envelope.averagePorePressureKpa],
+    ['average_free_pore_pressure', manifest.envelope.averageFreePorePressureKpa],
+    ['pore_pressure_dissipation_ratio', manifest.envelope.porePressureDissipationRatio],
+    ['max_pore_pressure_change_rate', manifest.envelope.maxPorePressureChangeRateKpaPerS],
     ['coupled_unknown_count', manifest.envelope.coupledUnknownCount],
     ['displacement_dof_count', manifest.envelope.displacementDofCount],
     ['pore_pressure_dof_count', manifest.envelope.porePressureDofCount],
@@ -917,13 +923,34 @@ export function validateFemAnalysisCase(caseFile: FemAnalysisCase): FemValidatio
       if (!Array.isArray(biot.timeStepsSeconds) || biot.timeStepsSeconds.length === 0) {
         findings.push(finding('blocker', 'geometry.biot.time-steps-missing', 'Biot consolidation cases require at least one positive time step.'));
       } else {
+        if (biot.timeStepsSeconds.length < FEM_MIN_BIOT_TRANSIENT_STEPS) {
+          findings.push(finding(
+            'blocker',
+            'geometry.biot.time-steps.too-few',
+            `Biot consolidation cases require at least ${FEM_MIN_BIOT_TRANSIENT_STEPS} accepted transient steps for preview diagnostics.`,
+          ));
+        }
         let previousStepSeconds = 0;
+        let previousDeltaSeconds: number | undefined;
         for (const [index, timeSeconds] of biot.timeStepsSeconds.entries()) {
           if (!Number.isFinite(timeSeconds) || timeSeconds <= previousStepSeconds) {
             findings.push(finding('blocker', `geometry.biot.time-steps.${index}.invalid`, 'Biot time steps must be finite, positive, and strictly increasing.'));
             break;
           }
+          const deltaSeconds = timeSeconds - previousStepSeconds;
+          if (
+            previousDeltaSeconds != null &&
+            deltaSeconds / previousDeltaSeconds > FEM_MAX_BIOT_TIME_STEP_GROWTH_RATIO
+          ) {
+            findings.push(finding(
+              'blocker',
+              `geometry.biot.time-steps.${index}.growth-ratio`,
+              `Biot time-step growth ratio must not exceed ${FEM_MAX_BIOT_TIME_STEP_GROWTH_RATIO} between accepted steps.`,
+            ));
+            break;
+          }
           previousStepSeconds = timeSeconds;
+          previousDeltaSeconds = deltaSeconds;
         }
       }
       if (!Array.isArray(biot.porePressureBoundaries) || biot.porePressureBoundaries.length === 0) {
@@ -1297,6 +1324,148 @@ function pushApproximateMatchFinding(
   }
 }
 
+function validateNonlinearSolverConvergenceReport(
+  findings: FemValidationFinding[],
+  manifest: FemResultManifest,
+  expectedLoadSteps: number,
+): { forceBalanceTolerance: number; residualTolerance: number } {
+  const fallback = { forceBalanceTolerance: 1e-3, residualTolerance: 1e-6 };
+  const report = manifest.solverConvergence;
+  if (!isRecord(report)) {
+    findings.push(finding(
+      'blocker',
+      'result.solver-convergence.missing',
+      'Nonlinear column solver manifests must include explicit convergence policy and load-step residual history.',
+    ));
+    return fallback;
+  }
+
+  if (report.schemaVersion !== 'fem-solver-convergence-report.v1') {
+    findings.push(finding('blocker', 'result.solver-convergence.schema-invalid', 'Unsupported solver convergence report schema.'));
+  }
+  if (report.status !== 'converged' && report.status !== 'nonconverged') {
+    findings.push(finding('blocker', 'result.solver-convergence.status-invalid', 'Solver convergence status must be converged or nonconverged.'));
+  }
+  if (report.status === 'nonconverged') {
+    findings.push(finding('blocker', 'result.solver-convergence.nonconverged', 'Nonlinear column solver did not satisfy its configured convergence policy.'));
+  }
+
+  const policy = report.policy;
+  let forceBalanceTolerance = fallback.forceBalanceTolerance;
+  let residualTolerance = fallback.residualTolerance;
+  if (!isRecord(policy)) {
+    findings.push(finding('blocker', 'result.solver-convergence.policy.missing', 'Solver convergence report must include a policy object.'));
+  } else {
+    if (policy.schemaVersion !== 'fem-convergence-policy.v1') {
+      findings.push(finding('blocker', 'result.solver-convergence.policy.schema-invalid', 'Solver convergence policy schema is unsupported.'));
+    }
+    if (pushFiniteNumberFinding(findings, policy.forceBalanceTolerance, 'result.solver-convergence.policy.force-balance-tolerance', 'Solver force-balance tolerance', { positive: true })) {
+      forceBalanceTolerance = policy.forceBalanceTolerance;
+    }
+    if (pushFiniteNumberFinding(findings, policy.residualTolerance, 'result.solver-convergence.policy.residual-tolerance', 'Solver residual tolerance', { positive: true })) {
+      residualTolerance = policy.residualTolerance;
+    }
+    pushFiniteNumberFinding(findings, policy.porePressureMassBalanceTolerance, 'result.solver-convergence.policy.pore-pressure-mass-balance-tolerance', 'Solver pore-pressure mass-balance tolerance', { positive: true });
+    if (!Number.isInteger(policy.maxIterations) || policy.maxIterations < 1) {
+      findings.push(finding('blocker', 'result.solver-convergence.policy.max-iterations-invalid', 'Solver maxIterations must be a positive integer.'));
+    }
+    if (!Number.isInteger(policy.minAcceptedSteps) || policy.minAcceptedSteps < 1) {
+      findings.push(finding('blocker', 'result.solver-convergence.policy.min-accepted-steps-invalid', 'Solver minAcceptedSteps must be a positive integer.'));
+    }
+  }
+
+  if (!Array.isArray(report.loadSteps)) {
+    findings.push(finding('blocker', 'result.solver-convergence.load-steps.invalid', 'Solver convergence loadSteps must be an array.'));
+    return { forceBalanceTolerance, residualTolerance };
+  }
+  if (report.loadSteps.length !== expectedLoadSteps) {
+    findings.push(finding('blocker', 'result.solver-convergence.load-steps.count-mismatch', 'Solver convergence load steps must match consolidation stages.'));
+  }
+
+  const validTerminationReasons = new Set([
+    'converged',
+    'max_iterations',
+    'force_residual_exceeded',
+    'yield_residual_exceeded',
+    'material_nonconvergence',
+    'consolidation_nonconvergence',
+  ]);
+  for (const [index, step] of report.loadSteps.entries()) {
+    const prefix = `result.solver-convergence.loadSteps.${index}`;
+    if (!isRecord(step)) {
+      findings.push(finding('blocker', `${prefix}.shape-invalid`, 'Solver convergence load step must be an object.'));
+      continue;
+    }
+    const stepOk = pushFiniteNumberFinding(findings, step.step, `${prefix}.step`, 'Solver convergence load-step number', { positive: true });
+    if (stepOk && (!Number.isInteger(step.step) || step.step !== index + 1)) {
+      findings.push(finding('blocker', `${prefix}.step.sequence-invalid`, 'Solver convergence load-step numbers must be sequential.'));
+    }
+    if (step.stageId != null && !isNonEmptyString(step.stageId)) {
+      findings.push(finding('blocker', `${prefix}.stage-id.invalid`, 'Solver convergence stageId must be a non-empty string when present.'));
+    }
+    if (!Number.isInteger(step.iterations) || step.iterations < 0) {
+      findings.push(finding('blocker', `${prefix}.iterations.invalid`, 'Solver convergence iterations must be a non-negative integer.'));
+    }
+    const residualOk = pushFiniteNumberFinding(findings, step.residualRatio, `${prefix}.residual-ratio`, 'Solver convergence residual ratio', { nonNegative: true });
+    const forceToleranceOk = pushFiniteNumberFinding(findings, step.forceBalanceTolerance, `${prefix}.force-balance-tolerance`, 'Solver convergence force-balance tolerance', { positive: true });
+    const stepForceTolerance = forceToleranceOk ? step.forceBalanceTolerance : forceBalanceTolerance;
+    if (step.yieldResidualRatio != null) {
+      const yieldResidualOk = pushFiniteNumberFinding(findings, step.yieldResidualRatio, `${prefix}.yield-residual-ratio`, 'Solver convergence yield residual ratio', { nonNegative: true });
+      const stepResidualTolerance = isFiniteNumber(step.residualTolerance) && step.residualTolerance > 0
+        ? step.residualTolerance
+        : residualTolerance;
+      if (yieldResidualOk && step.yieldResidualRatio > stepResidualTolerance) {
+        findings.push(finding('blocker', `${prefix}.yield-residual-too-large`, 'Solver convergence yield residual exceeds the reported tolerance.'));
+      }
+    }
+    if (step.residualTolerance != null) {
+      pushFiniteNumberFinding(findings, step.residualTolerance, `${prefix}.residual-tolerance`, 'Solver convergence residual tolerance', { positive: true });
+    }
+    if (typeof step.converged !== 'boolean') {
+      findings.push(finding('blocker', `${prefix}.converged.invalid`, 'Solver convergence load-step converged must be boolean.'));
+    } else if (!step.converged) {
+      findings.push(finding('blocker', `${prefix}.nonconverged`, 'Solver convergence load step did not satisfy the reported policy.'));
+    }
+    if (typeof step.terminationReason !== 'string' || !validTerminationReasons.has(step.terminationReason)) {
+      findings.push(finding('blocker', `${prefix}.termination-reason.invalid`, 'Solver convergence termination reason is unsupported.'));
+    }
+    if (residualOk && step.residualRatio > stepForceTolerance) {
+      findings.push(finding('blocker', `${prefix}.force-residual-too-large`, 'Solver convergence force residual exceeds the reported tolerance.'));
+    }
+    if (!Array.isArray(step.residualHistory) || step.residualHistory.length === 0) {
+      findings.push(finding('blocker', `${prefix}.residual-history.missing`, 'Solver convergence load step must include non-empty residual history.'));
+      continue;
+    }
+    for (const [historyIndex, history] of step.residualHistory.entries()) {
+      const historyPrefix = `${prefix}.residualHistory.${historyIndex}`;
+      if (!isRecord(history)) {
+        findings.push(finding('blocker', `${historyPrefix}.shape-invalid`, 'Solver convergence residual history entry must be an object.'));
+        continue;
+      }
+      if (!Number.isInteger(history.iteration) || history.iteration < 0) {
+        findings.push(finding('blocker', `${historyPrefix}.iteration.invalid`, 'Solver convergence residual history iteration must be a non-negative integer.'));
+      }
+      pushFiniteNumberFinding(findings, history.residualRatio, `${historyPrefix}.residual-ratio`, 'Solver convergence residual history ratio', { nonNegative: true });
+      pushFiniteNumberFinding(findings, history.forceBalanceTolerance, `${historyPrefix}.force-balance-tolerance`, 'Solver convergence residual history force-balance tolerance', { positive: true });
+      if (history.yieldResidualRatio != null) {
+        pushFiniteNumberFinding(findings, history.yieldResidualRatio, `${historyPrefix}.yield-residual-ratio`, 'Solver convergence residual history yield residual ratio', { nonNegative: true });
+      }
+      if (history.residualTolerance != null) {
+        pushFiniteNumberFinding(findings, history.residualTolerance, `${historyPrefix}.residual-tolerance`, 'Solver convergence residual history residual tolerance', { positive: true });
+      }
+      if (typeof history.converged !== 'boolean') {
+        findings.push(finding('blocker', `${historyPrefix}.converged.invalid`, 'Solver convergence residual history converged must be boolean.'));
+      }
+    }
+  }
+
+  if (report.status === 'nonconverged' && !isRecord(report.failure)) {
+    findings.push(finding('blocker', 'result.solver-convergence.failure.missing', 'Nonconverged solver reports must include failure details.'));
+  }
+
+  return { forceBalanceTolerance, residualTolerance };
+}
+
 function validateResultEnvelopeSemantics(
   findings: FemValidationFinding[],
   manifest: FemResultManifest,
@@ -1445,6 +1614,7 @@ function validateResultEnvelopeSemantics(
     pushApproximateMatchFinding(findings, envelope.drainagePathM, expectedDrainagePathM, 'result.envelope.consolidation-drainage-path-mismatch', 'Consolidation drainage path', 0.001);
     pushApproximateMatchFinding(findings, envelope.consolidationDurationYears, expectedDurationYears, 'result.envelope.consolidation-duration-mismatch', 'Consolidation duration', 0.001);
     if (manifest.backend.id === 'builtin-nonlinear-column-v0') {
+      const solverTolerances = validateNonlinearSolverConvergenceReport(findings, manifest, consolidation.stages.length);
       const loadStepsOk = pushFiniteNumberFinding(findings, envelope.solverLoadSteps, 'result.envelope.solver-load-steps', 'Envelope solver load steps', { positive: true });
       const iterationsOk = pushFiniteNumberFinding(findings, envelope.solverIterations, 'result.envelope.solver-iterations', 'Envelope solver iterations', { positive: true });
       const solverResidualOk = pushFiniteNumberFinding(findings, envelope.maxSolverResidualRatio, 'result.envelope.max-solver-residual-ratio', 'Envelope max solver residual ratio', { nonNegative: true });
@@ -1456,10 +1626,10 @@ function validateResultEnvelopeSemantics(
       if (iterationsOk && !Number.isInteger(envelope.solverIterations)) {
         findings.push(finding('blocker', 'result.envelope.solver-iterations-integer', 'Nonlinear column solver iterations must be an integer.'));
       }
-      if (solverResidualOk && envelope.maxSolverResidualRatio! > 1e-3) {
+      if (solverResidualOk && envelope.maxSolverResidualRatio! > solverTolerances.forceBalanceTolerance) {
         findings.push(finding('blocker', 'result.envelope.solver-residual-too-large', 'Nonlinear column solver residual exceeds the force-balance tolerance.'));
       }
-      if (yieldResidualOk && envelope.maxYieldResidualRatio! > 1e-6) {
+      if (yieldResidualOk && envelope.maxYieldResidualRatio! > solverTolerances.residualTolerance) {
         findings.push(finding('blocker', 'result.envelope.yield-residual-too-large', 'Nonlinear column solver yield residual exceeds the material return-map tolerance.'));
       }
     }
@@ -1478,6 +1648,10 @@ function validateResultEnvelopeSemantics(
     pushFiniteNumberFinding(findings, envelope.maxFreePorePressureResidualM3PerS, 'result.envelope.max-free-pore-pressure-residual', 'Envelope maximum free pore-pressure residual', { nonNegative: true });
     pushFiniteNumberFinding(findings, envelope.freePorePressureResidualL1M3PerS, 'result.envelope.free-pore-pressure-residual-l1', 'Envelope free pore-pressure residual L1 norm', { nonNegative: true });
     pushFiniteNumberFinding(findings, envelope.prescribedPorePressureResidualL1M3PerS, 'result.envelope.prescribed-pore-pressure-residual-l1', 'Envelope prescribed pore-pressure residual L1 norm', { nonNegative: true });
+    const averagePorePressureOk = pushFiniteNumberFinding(findings, envelope.averagePorePressureKpa, 'result.envelope.average-pore-pressure', 'Envelope average pore pressure', { nonNegative: true });
+    const averageFreePorePressureOk = pushFiniteNumberFinding(findings, envelope.averageFreePorePressureKpa, 'result.envelope.average-free-pore-pressure', 'Envelope average free pore pressure', { nonNegative: true });
+    const dissipationRatioOk = pushFiniteNumberFinding(findings, envelope.porePressureDissipationRatio, 'result.envelope.pore-pressure-dissipation-ratio', 'Envelope pore-pressure dissipation ratio', { nonNegative: true });
+    pushFiniteNumberFinding(findings, envelope.maxPorePressureChangeRateKpaPerS, 'result.envelope.max-pore-pressure-change-rate', 'Envelope maximum pore-pressure change rate', { nonNegative: true });
     const timeStepCountOk = pushFiniteNumberFinding(findings, envelope.timeStepCount, 'result.envelope.time-step-count', 'Envelope time-step count', { positive: true });
     const coupledUnknownsOk = pushFiniteNumberFinding(findings, envelope.coupledUnknownCount, 'result.envelope.coupled-unknown-count', 'Envelope coupled unknown count', { positive: true });
     const displacementDofsOk = pushFiniteNumberFinding(findings, envelope.displacementDofCount, 'result.envelope.displacement-dof-count', 'Envelope displacement DOF count', { positive: true });
@@ -1489,11 +1663,26 @@ function validateResultEnvelopeSemantics(
     if (maxPorePressureOk && envelope.maxPorePressureKpa! > expectedMaxPressureKpa + 1e-6) {
       findings.push(finding('blocker', 'result.envelope.pore-pressure-upper-bound-invalid', 'Envelope maximum pore pressure cannot exceed the initial or prescribed boundary pressure envelope.'));
     }
+    if (averagePorePressureOk && minPorePressureOk && maxPorePressureOk && (
+      envelope.averagePorePressureKpa! < envelope.minPorePressureKpa! - 1e-6 ||
+      envelope.averagePorePressureKpa! > envelope.maxPorePressureKpa! + 1e-6
+    )) {
+      findings.push(finding('blocker', 'result.envelope.average-pore-pressure-range-invalid', 'Envelope average pore pressure must stay within the reported pore-pressure range.'));
+    }
+    if (averageFreePorePressureOk && maxPorePressureOk && envelope.averageFreePorePressureKpa! > envelope.maxPorePressureKpa! + 1e-6) {
+      findings.push(finding('blocker', 'result.envelope.average-free-pore-pressure-range-invalid', 'Envelope average free pore pressure cannot exceed the reported maximum pore pressure.'));
+    }
+    if (dissipationRatioOk && envelope.porePressureDissipationRatio! > 1) {
+      findings.push(finding('blocker', 'result.envelope.pore-pressure-dissipation-ratio-invalid', 'Envelope pore-pressure dissipation ratio must be between 0 and 1.'));
+    }
     if (maxExcessOk && maxPorePressureOk) {
       pushApproximateMatchFinding(findings, envelope.maxExcessPorePressureKpa, envelope.maxPorePressureKpa!, 'result.envelope.max-excess-pore-pressure-mismatch', 'Maximum excess pore pressure', 1e-6);
     }
     if (timeStepCountOk && (!Number.isInteger(envelope.timeStepCount) || envelope.timeStepCount !== biot.timeStepsSeconds.length)) {
       findings.push(finding('blocker', 'result.envelope.time-step-count-mismatch', 'Biot envelope time-step count must match the embedded time-step schedule.'));
+    }
+    if (timeStepCountOk && envelope.timeStepCount! < FEM_MIN_BIOT_TRANSIENT_STEPS) {
+      findings.push(finding('blocker', 'result.envelope.time-step-count-too-small', 'Biot envelope time-step count is below the preview transient-step policy.'));
     }
     if (coupledUnknownsOk && !Number.isInteger(envelope.coupledUnknownCount)) {
       findings.push(finding('blocker', 'result.envelope.coupled-unknown-count-integer', 'Coupled unknown count must be an integer.'));

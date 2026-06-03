@@ -238,6 +238,29 @@ describe('FEM engineering evidence kernels', () => {
       approvalStatement: 'looks fine',
     });
 
+    const productionDesign = validateFemReviewerApprovalRecord({
+      schemaVersion: 'fem-reviewer-approval.v1',
+      recordId: 'fem-approval-production',
+      caseId: 'raft-settlement-demo',
+      caseHashSha256: 'c'.repeat(64),
+      validationSummary: {
+        status: 'review',
+        blockers: 0,
+        reviewItems: 3,
+        findingCodes: ['experimental-only', 'not-design-calculation'],
+      },
+      reviewer: {
+        name: 'Jane Engineer',
+        licenseId: 'PE-98765',
+        jurisdiction: 'US-NY',
+      },
+      approvedAt: '2026-06-01T00:00:00.000Z',
+      scope: 'production-design',
+      assumptions: ['Geometry and load inputs reviewed.'],
+      limitations: ['Not a production design calculation.'],
+      approvalStatement: 'Reviewed and approved for production design.',
+    });
+
     expect(accepted.status).toBe('accepted');
     expect(blocked.status).toBe('blocked');
     expect(blocked.blockerCodes).toEqual(expect.arrayContaining([
@@ -248,6 +271,8 @@ describe('FEM engineering evidence kernels', () => {
       'assumptions.missing',
       'limitations.missing',
     ]));
+    expect(productionDesign.status).toBe('blocked');
+    expect(productionDesign.blockerCodes).toContain('scope.production-design-blocked');
   });
 
   it('runs the full evidence suite without changing the public production gate', () => {

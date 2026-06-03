@@ -995,6 +995,7 @@ describe('registerFemCommand', () => {
 
       expect(payload.approvalPath).toBe(approvalPath);
       expect(payload.approvalRecord.schemaVersion).toBe('fem-reviewer-approval.v1');
+      expect(payload.approvalRecord.scope).toBe('experimental-preview');
       expect(payload.approvalRecord.reviewer.licenseId).toBe('PE-98765');
       expect(payload.approvalRecord.caseHashSha256).toMatch(/^[a-f0-9]{64}$/);
       expect(approvalRecord.validationSummary.blockers).toBe(0);
@@ -1045,6 +1046,42 @@ describe('registerFemCommand', () => {
         '--json',
       ], { from: 'user' }),
     ).rejects.toThrow(/approval record is stale/i);
+  });
+
+  it('fails closed when a FEM run requests production-design approval scope', async () => {
+    const { buildRaftDemoAnalysisCase } = await import('../../core/src/fem/index.js');
+    const registerFemCommand = await loadRegisterFemCommand();
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-fem-production-scope-'));
+    tempDirs.push(dir);
+    const casePath = join(dir, 'analysis_case.json');
+    const approvalPath = join(dir, 'fem-production-approval.json');
+    await writeFile(casePath, JSON.stringify(buildRaftDemoAnalysisCase(), null, 2), 'utf-8');
+    const program = new Command();
+    program.exitOverride();
+    registerFemCommand(program);
+
+    await expect(
+      program.parseAsync([
+        'fem',
+        'run',
+        casePath,
+        '--experimental',
+        '--reviewed',
+        '--approval-scope',
+        'production-design',
+        '--approval-output',
+        approvalPath,
+        '--reviewer-name',
+        'Jane Engineer',
+        '--reviewer-license',
+        'PE-98765',
+        '--reviewer-jurisdiction',
+        'US-CA',
+        '--no-open',
+        '--json',
+      ], { from: 'user' }),
+    ).rejects.toThrow(/production-design approval scope is blocked/i);
+    expect(existsSync(approvalPath)).toBe(false);
   });
 
   it('dispatches reviewed excavation, tunnel, and consolidation FEM analysis cases through deterministic run backends', async () => {

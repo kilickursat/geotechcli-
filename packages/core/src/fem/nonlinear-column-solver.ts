@@ -1,4 +1,5 @@
 import {
+  DEFAULT_FEM_CONVERGENCE_POLICY,
   runDruckerPragerMaterialPoint,
   runTerzaghiConsolidationTimeStepper,
   type FemConvergencePolicy,
@@ -6,7 +7,14 @@ import {
   type FemPrincipalVector,
 } from './engineering-evidence.js';
 import { runBuiltinStagedSettlementConsolidationDemo } from './demo.js';
-import type { FemAnalysisCase, FemResultDataset, FemResultManifest } from './types.js';
+import type {
+  FemAnalysisCase,
+  FemResultDataset,
+  FemResultManifest,
+  FemSolverLoadStepConvergence,
+  FemSolverResidualHistoryEntry,
+  FemSolverTerminationReason,
+} from './types.js';
 import { validateFemAnalysisCase } from './validation.js';
 
 interface ColumnStageSolution {
@@ -23,6 +31,9 @@ interface ColumnStageSolution {
   solverIterations: number;
   residualRatio: number;
   yieldResidualRatio: number;
+  converged: boolean;
+  terminationReason: FemSolverTerminationReason;
+  residualHistory: FemSolverResidualHistoryEntry[];
   materialPoint: FemDruckerPragerMaterialPointResult;
 }
 
@@ -33,6 +44,32 @@ function round(value: number, digits = 6): number {
 
 function nonNegativeFinite(value: number | undefined, fallback: number): number {
   return Number.isFinite(value) && value! >= 0 ? value! : fallback;
+}
+
+function assertFinitePositive(value: number, label: string): void {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`${label} must be a finite positive number.`);
+  }
+}
+
+function assertPositiveInteger(value: number, label: string): void {
+  if (!Number.isFinite(value) || !Number.isInteger(value) || value < 1) {
+    throw new Error(`${label} must be a finite positive integer.`);
+  }
+}
+
+function validateColumnConvergencePolicy(policy: FemConvergencePolicy): void {
+  if (policy.schemaVersion !== 'fem-convergence-policy.v1') {
+    throw new Error('policy.schemaVersion must be fem-convergence-policy.v1.');
+  }
+  assertFinitePositive(policy.residualTolerance, 'policy.residualTolerance');
+  assertFinitePositive(policy.forceBalanceTolerance, 'policy.forceBalanceTolerance');
+  assertFinitePositive(policy.porePressureMassBalanceTolerance, 'policy.porePressureMassBalanceTolerance');
+  assertPositiveInteger(policy.maxIterations, 'policy.maxIterations');
+  assertPositiveInteger(policy.minAcceptedSteps, 'policy.minAcceptedSteps');
+  if (policy.minAcceptedSteps > policy.maxIterations) {
+    throw new Error('policy.minAcceptedSteps must be less than or equal to policy.maxIterations.');
+  }
 }
 
 function buildUniformAxialStrainIncrements(
@@ -92,28 +129,76 @@ function buildMaterialPoint(
   });
 }
 
+function activeYieldResidualRatio(materialPoint: FemDruckerPragerMaterialPointResult): number {
+  return materialPoint.finalStep.state === 'plastic'
+    ? materialPoint.finalStep.yieldResidualRatio
+    : 0;
+}
+
+function columnResidualHistoryEntry(input: {
+  iteration: number;
+  point: FemDruckerPragerMaterialPointResult;
+  targetLoadKpa: number;
+  targetVerticalStressKpa: number;
+  axialStrain: number;
+  policy: FemConvergencePolicy;
+}): FemSolverResidualHistoryEntry {
+  const verticalStressKpa = input.point.finalStep.principalEffectiveStressKpa[0];
+  const residualRatio = Math.abs(verticalStressKpa - input.targetVerticalStressKpa) /
+    Math.max(input.targetLoadKpa, 1e-9);
+  const yieldResidualRatio = activeYieldResidualRatio(input.point);
+  return {
+    iteration: input.iteration,
+    residualRatio: round(residualRatio, 12),
+    forceBalanceTolerance: input.policy.forceBalanceTolerance,
+    yieldResidualRatio: round(yieldResidualRatio, 12),
+    residualTolerance: input.policy.residualTolerance,
+    axialStrain: round(input.axialStrain, 12),
+    verticalStressKpa: round(verticalStressKpa, 8),
+    converged: residualRatio <= input.policy.forceBalanceTolerance && input.point.converged,
+  };
+}
+
 function solveLoadControlledColumnStage(input: {
   caseFile: FemAnalysisCase;
   targetLoadKpa: number;
   initialPrincipalEffectiveStressKpa: FemPrincipalVector;
   incrementCount: number;
-  policy?: FemConvergencePolicy;
+  policy: FemConvergencePolicy;
 }): {
   axialStrain: number;
   materialPoint: FemDruckerPragerMaterialPointResult;
   residualRatio: number;
   iterations: number;
+  converged: boolean;
+  terminationReason: FemSolverTerminationReason;
+  residualHistory: FemSolverResidualHistoryEntry[];
 } {
   const { caseFile, targetLoadKpa, initialPrincipalEffectiveStressKpa, incrementCount, policy } = input;
   if (targetLoadKpa <= 0) {
     const materialPoint = buildMaterialPoint(caseFile, 0, incrementCount, initialPrincipalEffectiveStressKpa, policy);
-    return { axialStrain: 0, materialPoint, residualRatio: 0, iterations: 0 };
+    const residualHistory = [columnResidualHistoryEntry({
+      iteration: 0,
+      point: materialPoint,
+      targetLoadKpa,
+      targetVerticalStressKpa: initialPrincipalEffectiveStressKpa[0],
+      axialStrain: 0,
+      policy,
+    })];
+    return {
+      axialStrain: 0,
+      materialPoint,
+      residualRatio: 0,
+      iterations: 0,
+      converged: materialPoint.converged,
+      terminationReason: materialPoint.converged ? 'converged' : 'material_nonconvergence',
+      residualHistory,
+    };
   }
 
   const material = caseFile.materials[0];
   const modulus = Math.max(material.constrainedModulusKpa ?? material.elasticModulusKpa, 1);
   const targetVerticalStressKpa = initialPrincipalEffectiveStressKpa[0] + targetLoadKpa;
-  const maxIterations = policy?.maxIterations ?? 40;
   let lower = 0;
   let upper = Math.max(targetLoadKpa / modulus, 1e-5);
   let upperPoint = buildMaterialPoint(caseFile, upper, incrementCount, initialPrincipalEffectiveStressKpa, policy);
@@ -127,19 +212,36 @@ function solveLoadControlledColumnStage(input: {
   let bestStrain = upper;
   let bestResidual = Math.abs(upperPoint.finalStep.principalEffectiveStressKpa[0] - targetVerticalStressKpa) /
     Math.max(targetLoadKpa, 1e-9);
+  const residualHistory: FemSolverResidualHistoryEntry[] = [columnResidualHistoryEntry({
+    iteration: 0,
+    point: upperPoint,
+    targetLoadKpa,
+    targetVerticalStressKpa,
+    axialStrain: upper,
+    policy,
+  })];
   let iterations = 0;
 
-  for (iterations = 1; iterations <= maxIterations; iterations += 1) {
+  for (let iteration = 1; iteration <= policy.maxIterations; iteration += 1) {
+    iterations = iteration;
     const mid = (lower + upper) / 2;
     const point = buildMaterialPoint(caseFile, mid, incrementCount, initialPrincipalEffectiveStressKpa, policy);
     const verticalStress = point.finalStep.principalEffectiveStressKpa[0];
     const residual = Math.abs(verticalStress - targetVerticalStressKpa) / Math.max(targetLoadKpa, 1e-9);
+    residualHistory.push(columnResidualHistoryEntry({
+      iteration,
+      point,
+      targetLoadKpa,
+      targetVerticalStressKpa,
+      axialStrain: mid,
+      policy,
+    }));
     if (residual < bestResidual) {
       bestResidual = residual;
       bestPoint = point;
       bestStrain = mid;
     }
-    if (residual <= (policy?.forceBalanceTolerance ?? 1e-3)) break;
+    if (residual <= policy.forceBalanceTolerance && point.converged) break;
     if (verticalStress < targetVerticalStressKpa) {
       lower = mid;
     } else {
@@ -147,11 +249,21 @@ function solveLoadControlledColumnStage(input: {
     }
   }
 
+  const converged = bestResidual <= policy.forceBalanceTolerance && bestPoint.converged;
+  const terminationReason: FemSolverTerminationReason = converged
+    ? 'converged'
+    : !bestPoint.converged
+      ? 'material_nonconvergence'
+      : 'max_iterations';
+
   return {
     axialStrain: bestStrain,
     materialPoint: bestPoint,
     residualRatio: bestResidual,
     iterations,
+    converged,
+    terminationReason,
+    residualHistory,
   };
 }
 
@@ -172,7 +284,8 @@ export function runBuiltinNonlinearConsolidationColumnSolver(
     throw new Error('The nonlinear consolidation column solver requires consolidation geometry and at least one material.');
   }
 
-  const policy = options.policy;
+  const policy = options.policy ?? DEFAULT_FEM_CONVERGENCE_POLICY;
+  validateColumnConvergencePolicy(policy);
   const phi = material.frictionAngleDeg ?? 30;
   const k0 = Math.max(0.2, Math.min(1.2, 1 - Math.sin((phi * Math.PI) / 180)));
   const initialVerticalEffectiveStressKpa = Math.max(1, material.unitWeightKnM3 * consolidation.layerThicknessM * 0.5);
@@ -225,6 +338,12 @@ export function runBuiltinNonlinearConsolidationColumnSolver(
     const yieldResidualRatio = loadSolution.materialPoint.finalStep.state === 'plastic'
       ? loadSolution.materialPoint.finalStep.yieldResidualRatio
       : 0;
+    const stageConverged = loadSolution.converged && consolidationStep.converged;
+    const terminationReason: FemSolverTerminationReason = loadSolution.converged
+      ? consolidationStep.converged
+        ? 'converged'
+        : 'consolidation_nonconvergence'
+      : loadSolution.terminationReason;
     maxSolverResidualRatio = Math.max(maxSolverResidualRatio, loadSolution.residualRatio);
     maxYieldResidualRatio = Math.max(maxYieldResidualRatio, yieldResidualRatio);
     solverIterations += loadSolution.iterations;
@@ -243,6 +362,9 @@ export function runBuiltinNonlinearConsolidationColumnSolver(
       solverIterations: loadSolution.iterations,
       residualRatio: round(loadSolution.residualRatio, 12),
       yieldResidualRatio: round(yieldResidualRatio, 12),
+      converged: stageConverged,
+      terminationReason,
+      residualHistory: loadSolution.residualHistory,
       materialPoint: loadSolution.materialPoint,
     });
   }
@@ -275,6 +397,40 @@ export function runBuiltinNonlinearConsolidationColumnSolver(
     maxYieldResidualRatio: round(maxYieldResidualRatio, 12),
     nonlinearPlasticStrain: round(finalStage?.materialPoint.finalStep.equivalentPlasticStrain ?? 0, 12),
   };
+  const convergenceLoadSteps: FemSolverLoadStepConvergence[] = stageSolutions.map((stage) => {
+    const sourceStage = consolidation.stages[stage.stageIndex];
+    return {
+      step: stage.stageIndex + 1,
+      stageId: stage.stageId,
+      stageLabel: sourceStage?.label,
+      cumulativeLoadKpa: stage.cumulativeLoadKpa,
+      iterations: stage.solverIterations,
+      residualRatio: stage.residualRatio,
+      forceBalanceTolerance: policy.forceBalanceTolerance,
+      yieldResidualRatio: stage.yieldResidualRatio,
+      residualTolerance: policy.residualTolerance,
+      converged: stage.converged,
+      terminationReason: stage.terminationReason,
+      residualHistory: stage.residualHistory,
+    };
+  });
+  const failedStep = convergenceLoadSteps.find((step) => !step.converged);
+  const solverConvergence: FemResultManifest['solverConvergence'] = {
+    schemaVersion: 'fem-solver-convergence-report.v1',
+    status: failedStep ? 'nonconverged' : 'converged',
+    policy,
+    loadSteps: convergenceLoadSteps,
+    ...(failedStep ? {
+      failure: {
+        step: failedStep.step,
+        stageId: failedStep.stageId,
+        terminationReason: failedStep.terminationReason,
+        residualRatio: failedStep.residualRatio,
+        ...(failedStep.yieldResidualRatio != null ? { yieldResidualRatio: failedStep.yieldResidualRatio } : {}),
+        message: `Nonlinear column solver stage ${failedStep.step} did not satisfy the configured convergence policy.`,
+      },
+    } : {}),
+  };
 
   return {
     ...baseManifest,
@@ -286,6 +442,7 @@ export function runBuiltinNonlinearConsolidationColumnSolver(
       version: '0.1.0',
     },
     envelope,
+    solverConvergence,
     datasets: updateEnvelopeDatasets(baseManifest.datasets, {
       final_settlement: envelope.finalSettlementMm,
       plastic_settlement: envelope.plasticSettlementMm,
@@ -299,6 +456,7 @@ export function runBuiltinNonlinearConsolidationColumnSolver(
       'Nonlinear 1D column solver preview only; not a production 2D/3D geotechnical FEM design model.',
       'Solves vertical load-controlled column equilibrium with Drucker-Prager/Mohr-Coulomb-compatible material-point return mapping.',
       'Uses Terzaghi 1D consolidation for time-rate settlement; no global pore-pressure DOF or Biot matrix coupling is assembled.',
+      ...(failedStep ? ['Nonconverged nonlinear column stage is reported fail-closed and must not be treated as an accepted engineering solve.'] : []),
       'Independent published/commercial solver benchmarks and reviewer approval enforcement are still required before production design use.',
       ...baseManifest.limitations,
     ],

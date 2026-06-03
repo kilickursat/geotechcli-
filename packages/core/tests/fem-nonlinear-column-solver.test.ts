@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildStagedSettlementConsolidationDemoAnalysisCase,
+  DEFAULT_FEM_CONVERGENCE_POLICY,
   runBuiltinNonlinearConsolidationColumnSolver,
   validateFemResultManifest,
   type FemAnalysisCase,
@@ -64,6 +65,18 @@ describe('FEM nonlinear consolidation column solver', () => {
     expect(manifest.envelope.maxSolverResidualRatio).toBeLessThanOrEqual(1e-3);
     expect(manifest.envelope.maxYieldResidualRatio).toBeLessThanOrEqual(1e-6);
     expect(manifest.envelope.finalSettlementMm).toBeGreaterThan(0);
+    expect(manifest.solverConvergence?.schemaVersion).toBe('fem-solver-convergence-report.v1');
+    expect(manifest.solverConvergence?.status).toBe('converged');
+    expect(manifest.solverConvergence?.policy).toEqual(DEFAULT_FEM_CONVERGENCE_POLICY);
+    expect(manifest.solverConvergence?.loadSteps).toHaveLength(3);
+    for (const step of manifest.solverConvergence?.loadSteps ?? []) {
+      expect(step.converged).toBe(true);
+      expect(step.terminationReason).toBe('converged');
+      expect(step.residualRatio).toBeLessThanOrEqual(step.forceBalanceTolerance);
+      expect(step.yieldResidualRatio).toBeLessThanOrEqual(step.residualTolerance!);
+      expect(step.residualHistory.length).toBeGreaterThan(0);
+      expect(step.residualHistory.at(-1)?.converged).toBe(true);
+    }
     expect(manifest.datasets?.find((dataset) => dataset.fieldId === 'final_settlement')?.values[0])
       .toBe(manifest.envelope.finalSettlementMm);
     expect(validation.status).toBe('review');
@@ -114,5 +127,35 @@ describe('FEM nonlinear consolidation column solver', () => {
     expect(staged.envelope.nonlinearPlasticStrain).toBeGreaterThan(0);
     expect(staged.envelope.plasticSettlementMm).toBeGreaterThan(0);
     expect(staged.envelope.maxMobilizedStrengthRatio).toBeCloseTo(1, 6);
+  });
+
+  it('fails closed with residual history when the nonlinear load solve does not converge', () => {
+    const manifest = runBuiltinNonlinearConsolidationColumnSolver(buildColumnCase({
+      stageLoadsKpa: [120, 180, 240],
+      stageDurationsYears: [0.1, 0.1, 0.1],
+      constrainedModulusKpa: 2_500,
+      elasticModulusKpa: 18_000,
+      frictionAngleDeg: 12,
+      cohesionKpa: 0,
+      cv: 0.1,
+    }), {
+      policy: {
+        ...DEFAULT_FEM_CONVERGENCE_POLICY,
+        forceBalanceTolerance: 1e-12,
+        maxIterations: 1,
+        minAcceptedSteps: 1,
+      },
+    });
+    const validation = validateFemResultManifest(manifest);
+    const failedStep = manifest.solverConvergence?.loadSteps.find((step) => !step.converged);
+
+    expect(manifest.solverConvergence?.status).toBe('nonconverged');
+    expect(manifest.solverConvergence?.failure?.step).toBe(failedStep?.step);
+    expect(failedStep?.terminationReason).not.toBe('converged');
+    expect(failedStep?.residualHistory).toHaveLength((failedStep?.iterations ?? 0) + 1);
+    expect(failedStep?.residualHistory.at(-1)?.converged).toBe(false);
+    expect(manifest.limitations.join(' ')).toMatch(/fail-closed/i);
+    expect(validation.status).toBe('blocked');
+    expect(validation.findings.map((finding) => finding.code)).toContain('result.solver-convergence.nonconverged');
   });
 });

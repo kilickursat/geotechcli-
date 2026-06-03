@@ -1,3 +1,5 @@
+import type { FemConvergencePolicy } from './engineering-evidence.js';
+
 export type FemObjective =
   | 'foundation_settlement'
   | 'excavation_deformation'
@@ -293,6 +295,10 @@ export interface FemResultEnvelope {
   maxFreePorePressureResidualM3PerS?: number;
   freePorePressureResidualL1M3PerS?: number;
   prescribedPorePressureResidualL1M3PerS?: number;
+  averagePorePressureKpa?: number;
+  averageFreePorePressureKpa?: number;
+  porePressureDissipationRatio?: number;
+  maxPorePressureChangeRateKpaPerS?: number;
   coupledUnknownCount?: number;
   displacementDofCount?: number;
   porePressureDofCount?: number;
@@ -313,6 +319,61 @@ export interface FemResultPressureAudit {
   storageRateSumM3PerS: number;
   couplingRateSumM3PerS: number;
   darcyFlowRateSumM3PerS: number;
+}
+
+export type FemSolverConvergenceStatus = 'converged' | 'nonconverged';
+
+export type FemSolverTerminationReason =
+  | 'converged'
+  | 'max_iterations'
+  | 'force_residual_exceeded'
+  | 'yield_residual_exceeded'
+  | 'material_nonconvergence'
+  | 'consolidation_nonconvergence';
+
+export interface FemSolverResidualHistoryEntry {
+  iteration: number;
+  residualRatio: number;
+  forceBalanceTolerance: number;
+  yieldResidualRatio?: number;
+  residualTolerance?: number;
+  maxFreeResidualKn?: number;
+  axialStrain?: number;
+  verticalStressKpa?: number;
+  converged: boolean;
+}
+
+export interface FemSolverLoadStepConvergence {
+  step: number;
+  stageId?: string;
+  stageLabel?: string;
+  loadFactor?: number;
+  cumulativeLoadKpa?: number;
+  iterations: number;
+  residualRatio: number;
+  forceBalanceTolerance: number;
+  yieldResidualRatio?: number;
+  residualTolerance?: number;
+  converged: boolean;
+  terminationReason: FemSolverTerminationReason;
+  residualHistory: FemSolverResidualHistoryEntry[];
+}
+
+export interface FemSolverConvergenceFailure {
+  step: number;
+  stageId?: string;
+  terminationReason: FemSolverTerminationReason;
+  residualRatio: number;
+  yieldResidualRatio?: number;
+  message: string;
+}
+
+export interface FemSolverConvergenceReport {
+  schemaVersion: 'fem-solver-convergence-report.v1';
+  status: FemSolverConvergenceStatus;
+  policy: FemConvergencePolicy;
+  loadSteps: FemSolverLoadStepConvergence[];
+  failure?: FemSolverConvergenceFailure;
 }
 
 export interface FemResultManifest {
@@ -339,6 +400,7 @@ export interface FemResultManifest {
   };
   envelope: FemResultEnvelope;
   pressureAudit?: FemResultPressureAudit;
+  solverConvergence?: FemSolverConvergenceReport;
   visualization: FemVisualizationMesh;
   resultFields?: FemResultField[];
   steps?: FemResultStep[];
