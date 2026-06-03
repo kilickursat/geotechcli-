@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.113] - 2026-06-04
+
+### FEM Effective-Stress Evidence and Workspace Acceptance
+
+- Added a kernel-only one-way prescribed pore-pressure increment path to the benchmark-scale plane-strain Drucker-Prager solver, including effective-vs-total stress reporting, Biot stress-reduction audit metadata, pressure-load residual balance, alpha-zero decoupling, and unsafe-input regression coverage.
+- Added schema-backed external benchmark comparison validation for scalar and series-summary records with solver metadata, result hashes, coverage summaries, and fail-closed blocker codes while keeping default accepted external comparison results at zero until real published/commercial artifacts are supplied.
+- Added JSON workspace-to-run acceptance output for `geotech fem draft --workspace ... --json`, including blocked acceptance for incomplete workspace inputs and accepted reviewed-run commands when explicit user inputs write a validated case path.
+- Confirmed with deterministic FEM smoke scenarios and the default hosted GLM FEM agent path that full production FEM remains blocked behind production coupled solvers, independent published/commercial benchmarks, support-design approval, and persisted reviewer workflows.
+
 ## [0.4.112] - 2026-06-04
 
 ### Large PDF Ingest Checkpoint Replay

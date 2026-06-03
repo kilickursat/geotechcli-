@@ -22,15 +22,19 @@ import {
   runBuiltinStagedSettlementConsolidationDemo,
   runBuiltinTunnelVolumeLossDemo,
   validateFemAnalysisCase,
+  validateFemWorkspaceToRunAcceptance,
   validateFemReviewerApprovalRecord,
   validateFemResultManifest,
   type AgentStep,
   type FemAnalysisCase,
   type FemAnalysisCaseDraft,
   type FemGroundModelDraftBridge,
+  type FemGroundModelDraftCandidate,
+  type FemGroundModelExecutionBoundary,
   type FemReviewerApprovalRecord,
   type FemResultManifest,
   type FemRouteObjective,
+  type FemWorkspaceToRunAcceptance,
   type PrepareFemAnalysisCaseDraftInput,
   type ProjectManifest,
 } from '@geotechcli/core';
@@ -118,6 +122,7 @@ interface FemDraftJsonEnvelope {
   };
   draftPath?: string;
   casePath?: string;
+  workspaceAcceptance?: FemWorkspaceToRunAcceptance;
   warnings: string[];
 }
 
@@ -486,6 +491,106 @@ function buildFemDraftInput(
     groundwater,
     evidenceRefs: Array.isArray(parsed.evidenceRefs) ? parsed.evidenceRefs : [],
   };
+}
+
+function quoteCommandPath(filePath: string): string {
+  return /\s|"/.test(filePath) ? `"${filePath.replace(/"/g, '\\"')}"` : filePath;
+}
+
+function renderAnalysisCasePath(command: string, casePath: string | undefined): string {
+  return casePath ? command.replaceAll('<analysis_case.json>', quoteCommandPath(casePath)) : command;
+}
+
+function renderHumanRunCommand(
+  draft: FemAnalysisCaseDraft,
+  casePath: string | undefined,
+): string | undefined {
+  const template = draft.capability.runCommandTemplate;
+  if (!template || !casePath) return undefined;
+  return renderAnalysisCasePath(template, casePath);
+}
+
+function buildFemWorkspaceExecutionBoundary(
+  draft: FemAnalysisCaseDraft,
+  draftCommand: string,
+  casePath: string | undefined,
+): FemGroundModelExecutionBoundary {
+  const caseOutputAvailable = Boolean(casePath && draft.analysisCase && draft.validation?.status !== 'blocked');
+  const humanRunCommand = caseOutputAvailable && draft.recommendedAction === 'run-reviewed-case'
+    ? renderHumanRunCommand(draft, casePath)
+    : undefined;
+  const blockedReviewGates = draft.capability.executionMode === 'contract-only'
+    ? draft.reviewGates
+    : draft.reviewGates.filter((gate) =>
+      gate === 'missing-user-inputs'
+      || gate === 'planned-only'
+      || gate === 'solver-backend-not-implemented'
+      || gate === 'agent-run-disabled'
+      || gate === 'human-review-required'
+    );
+  const blockedReasons = [
+    ...draft.missingUserInputs,
+    ...(!casePath ? ['case-output-not-written'] : []),
+    ...(!humanRunCommand ? ['reviewed-run-command-not-available'] : []),
+    ...(draft.contractReadiness?.blockedUntil ?? []),
+    ...blockedReviewGates,
+  ];
+
+  return {
+    schemaVersion: 'fem-ground-model-execution-boundary.v1',
+    executionMode: draft.capability.executionMode,
+    agentRunAllowed: false,
+    agentWebglRenderAllowed: false,
+    agentResultManifestAllowed: false,
+    humanReviewRequired: true,
+    caseOutputAvailable,
+    draftCommand,
+    ...(humanRunCommand ? { humanRunCommand } : {}),
+    blockedReasons: [...new Set(blockedReasons)],
+  };
+}
+
+function buildFemWorkspaceAcceptance(
+  workspaceBridge: { manifest: ProjectManifest; bridge: FemGroundModelDraftBridge },
+  draftInput: PrepareFemAnalysisCaseDraftInput,
+  draft: FemAnalysisCaseDraft,
+  casePath: string | undefined,
+): FemWorkspaceToRunAcceptance {
+  const bridgeEvidenceIds = workspaceBridge.bridge.readiness.evidenceIds;
+  const inputEvidenceIds = (draftInput.evidenceRefs ?? []).map((ref) => ref.id);
+  const evidenceIds = [...new Set([...bridgeEvidenceIds, ...inputEvidenceIds])];
+  const bridge: FemGroundModelDraftBridge = {
+    ...workspaceBridge.bridge,
+    input: {
+      ...draftInput,
+      evidenceRefs: draftInput.evidenceRefs ?? workspaceBridge.bridge.input.evidenceRefs ?? [],
+    },
+    readiness: {
+      ...workspaceBridge.bridge.readiness,
+      missingUserInputs: draft.missingUserInputs,
+      evidenceIds,
+    },
+  };
+  const draftCommand = renderAnalysisCasePath(
+    draft.capability.draftCommandTemplate ?? draft.capability.command ?? `geotech fem draft ${draft.objective} --input <json>`,
+    casePath,
+  );
+  const candidate: FemGroundModelDraftCandidate = {
+    schemaVersion: 'fem-ground-model-draft-candidate.v1',
+    objective: draft.objective,
+    workflow: bridge.readiness.workflow,
+    status: bridge.readiness.status,
+    score: bridge.readiness.score,
+    command: draftCommand,
+    canAutoProceed: false,
+    missingUserInputs: draft.missingUserInputs,
+    reviewGates: draft.reviewGates,
+    evidenceIds,
+    bridge,
+    draft,
+    executionBoundary: buildFemWorkspaceExecutionBoundary(draft, draftCommand, casePath),
+  };
+  return validateFemWorkspaceToRunAcceptance(candidate);
 }
 
 function writeUtf8File(filePath: string, content: string): string {
@@ -1143,9 +1248,12 @@ export function registerFemCommand(program: Command): void {
       let casePath: string | undefined;
       if (typeof opts.caseOutput === 'string' && opts.caseOutput.trim()) {
         if (!femDraft.analysisCase) {
-          throw new Error('Cannot write --case-output because the FEM draft is missing required inputs and has no analysisCase.');
+          if (!workspaceBridge || !flags.json) {
+            throw new Error('Cannot write --case-output because the FEM draft is missing required inputs and has no analysisCase.');
+          }
+        } else {
+          casePath = writeUtf8File(opts.caseOutput, JSON.stringify(femDraft.analysisCase, null, 2));
         }
-        casePath = writeUtf8File(opts.caseOutput, JSON.stringify(femDraft.analysisCase, null, 2));
       }
 
       const warnings = [
@@ -1155,6 +1263,9 @@ export function registerFemCommand(program: Command): void {
       ];
       let draftPath: string | undefined = typeof flags.output === 'string' && flags.output.trim()
         ? resolve(flags.output)
+        : undefined;
+      const workspaceAcceptance = workspaceBridge
+        ? buildFemWorkspaceAcceptance(workspaceBridge, draftInput, femDraft, casePath)
         : undefined;
       const envelope: FemDraftJsonEnvelope = {
         kind: 'geotech-fem-draft-result',
@@ -1167,6 +1278,7 @@ export function registerFemCommand(program: Command): void {
         } : undefined,
         draftPath,
         casePath,
+        workspaceAcceptance,
         warnings,
       };
       if (draftPath) {

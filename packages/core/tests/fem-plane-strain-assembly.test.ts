@@ -837,6 +837,104 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
     }
   });
 
+  it('couples prescribed pore-pressure increments into Drucker-Prager effective-stress equilibrium', () => {
+    const mesh = buildPlaneStrainRectangularMesh({
+      widthM: 1,
+      heightM: 1,
+      divisionsX: 1,
+      divisionsY: 1,
+      materialId: 'soil',
+    });
+    const bottomNodes = mesh.nodes.filter((node) => node.yM === 0);
+    const topNodes = mesh.nodes.filter((node) => node.yM === 1);
+    const commonModel: FemPlaneStrainModel = {
+      schemaVersion: 'fem-plane-strain-model.v1',
+      nodes: mesh.nodes,
+      elements: mesh.elements,
+      materials: [{
+        id: 'soil',
+        elasticModulusKpa: 30_000,
+        poissonRatio: 0.3,
+        frictionAngleDeg: 35,
+        cohesionKpa: 10_000,
+        dilationAngleDeg: 0,
+        biotCoefficient: 0.8,
+      }],
+      boundaryConditions: bottomNodes.flatMap((node) => [
+        { nodeId: node.id, dof: 'ux' as const },
+        { nodeId: node.id, dof: 'uy' as const },
+      ]),
+    };
+    const drained = runPlaneStrainDruckerPragerLoadSteps(commonModel, { loadStepFractions: [1] });
+    const pressured = runPlaneStrainDruckerPragerLoadSteps({
+      ...commonModel,
+      prescribedPorePressureIncrements: mesh.nodes.map((node) => ({
+        nodeId: node.id,
+        porePressureIncrementKpa: 100,
+      })),
+    }, { loadStepFractions: [1] });
+    const firstPoint = pressured.elements[0].gaussPoints[0];
+    const maxTopUplift = Math.max(
+      ...topNodes.map((node) => pressured.nodes.find((resultNode) => resultNode.id === node.id)?.uyM ?? 0),
+    );
+
+    expect(drained.nodes.every((node) => Math.abs(node.uxM) <= 1e-12 && Math.abs(node.uyM) <= 1e-12)).toBe(true);
+    expect(pressured.converged).toBe(true);
+    expect(pressured.hydroMechanicalCoupling).toMatchObject({
+      schemaVersion: 'fem-plane-strain-dp-prescribed-pressure-coupling.v1',
+      mode: 'one-way-prescribed-pore-pressure-increment',
+      porePressureDofCount: 0,
+      maxAbsInputPorePressureIncrementKpa: 100,
+      maxAbsAppliedPorePressureIncrementKpa: 100,
+      maxAbsAppliedEffectiveStressReductionKpa: 80,
+    });
+    expect(pressured.limitations.join(' ')).toMatch(/one-way prescribed pore-pressure increment/i);
+    expect(pressured.reactionBalanceRatio).toBeGreaterThan(0.999);
+    expect(maxTopUplift).toBeGreaterThan(0);
+    expect(firstPoint.porePressureIncrementKpa).toBeCloseTo(100, 8);
+    expect(firstPoint.biotCoefficient).toBeCloseTo(0.8, 8);
+    expect(firstPoint.biotStressReductionKpa).toBeCloseTo(80, 8);
+    expect(firstPoint.stressKpa[0] - firstPoint.totalStressKpa![0]).toBeCloseTo(80, 8);
+    expect(firstPoint.stressKpa[1] - firstPoint.totalStressKpa![1]).toBeCloseTo(80, 8);
+    expect(firstPoint.totalStressKpa![2]).toBeCloseTo(firstPoint.stressKpa[2], 8);
+    expect(pressured).not.toHaveProperty('productionReady');
+  });
+
+  it('decouples prescribed Drucker-Prager pore-pressure increments when Biot alpha is zero', () => {
+    const { model } = druckerPragerSettlementPatch({
+      loadKnPerTopNode: 10,
+      cohesionKpa: 10_000,
+      frictionAngleDeg: 35,
+    });
+    const alphaZeroModel: FemPlaneStrainModel = {
+      ...model,
+      materials: model.materials.map((material) => ({ ...material, biotCoefficient: 0 })),
+    };
+    const drained = runPlaneStrainDruckerPragerLoadSteps(alphaZeroModel, { loadStepFractions: [1] });
+    const pressured = runPlaneStrainDruckerPragerLoadSteps({
+      ...alphaZeroModel,
+      prescribedPorePressureIncrements: alphaZeroModel.nodes.map((node) => ({
+        nodeId: node.id,
+        porePressureIncrementKpa: 75,
+      })),
+    }, { loadStepFractions: [1] });
+    const firstPoint = pressured.elements[0].gaussPoints[0];
+
+    expect(pressured.hydroMechanicalCoupling?.maxAbsAppliedEffectiveStressReductionKpa).toBe(0);
+    expect(firstPoint.porePressureIncrementKpa).toBeCloseTo(75, 8);
+    expect(firstPoint.biotCoefficient).toBe(0);
+    expect(firstPoint.biotStressReductionKpa).toBe(0);
+    expect(firstPoint.totalStressKpa).toEqual(firstPoint.stressKpa);
+    expect(pressured.maxEquivalentPlasticStrain).toBeCloseTo(drained.maxEquivalentPlasticStrain, 12);
+    for (const drainedNode of drained.nodes) {
+      const pressuredNode = pressured.nodes.find((node) => node.id === drainedNode.id)!;
+      expect(pressuredNode.uxM).toBeCloseTo(drainedNode.uxM, 12);
+      expect(pressuredNode.uyM).toBeCloseTo(drainedNode.uyM, 12);
+      expect(pressuredNode.rxnXKn).toBeCloseTo(drainedNode.rxnXKn, 8);
+      expect(pressuredNode.rxnYKn).toBeCloseTo(drainedNode.rxnYKn, 8);
+    }
+  });
+
   it('solves oversized nonlinear evidence meshes only through the experimental sparse backend', () => {
     const mesh = buildPlaneStrainRectangularMesh({
       widthM: 20,
@@ -1239,6 +1337,25 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
     expect(() => runPlaneStrainQuad4Assembly(baseModel({
       nodalLoads: {} as any,
     }))).toThrow(/nodalLoads must be an array/);
+
+    expect(() => runPlaneStrainDruckerPragerLoadSteps(baseModel({
+      prescribedPorePressureIncrements: {} as any,
+    }))).toThrow(/prescribedPorePressureIncrements must be an array/);
+
+    expect(() => runPlaneStrainDruckerPragerLoadSteps(baseModel({
+      prescribedPorePressureIncrements: [{ nodeId: 'missing', porePressureIncrementKpa: 1 }],
+    }))).toThrow(/Unknown prescribed pore-pressure increment node: missing/);
+
+    expect(() => runPlaneStrainDruckerPragerLoadSteps(baseModel({
+      prescribedPorePressureIncrements: [{ nodeId: 'n3', porePressureIncrementKpa: Number.NaN }],
+    }))).toThrow(/prescribed pore-pressure increment n3\.porePressureIncrementKpa must be finite/);
+
+    expect(() => runPlaneStrainDruckerPragerLoadSteps(baseModel({
+      prescribedPorePressureIncrements: [
+        { nodeId: 'n3', porePressureIncrementKpa: 10 },
+        { nodeId: 'n3', porePressureIncrementKpa: 20 },
+      ],
+    }))).toThrow(/Conflicting prescribed pore-pressure increment for n3/);
 
     expect(() => runPlaneStrainQuad4Assembly(baseModel({
       policy: {

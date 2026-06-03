@@ -556,31 +556,44 @@ describe('registerFemCommand', () => {
     expect(payload.warnings.join(' ')).toMatch(/Workspace GroundModel prefilled material/i);
   });
 
-  it('does not write a run-ready analysis case from workspace prefill alone', async () => {
+  it('outputs blocked workspace acceptance instead of throwing when workspace inputs are incomplete', async () => {
     coreMocks.analyzeWorkspace.mockResolvedValue(makeFemWorkspaceManifest());
     const registerFemCommand = await loadRegisterFemCommand();
     const program = new Command();
     const dir = await mkdtemp(join(tmpdir(), 'geotech-fem-workspace-draft-'));
     tempDirs.push(dir);
     const casePath = join(dir, 'analysis_case.json');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     program.exitOverride();
     registerFemCommand(program);
 
-    await expect(
-      program.parseAsync([
-        'fem',
-        'draft',
-        'foundation-settlement',
-        '--workspace',
-        'C:/site-data',
-        '--case-output',
-        casePath,
-        '--json',
-      ], { from: 'user' }),
-    ).rejects.toThrow(/Cannot write --case-output.*no analysisCase/i);
+    await program.parseAsync([
+      'fem',
+      'draft',
+      'foundation-settlement',
+      '--workspace',
+      'C:/site-data',
+      '--case-output',
+      casePath,
+      '--json',
+    ], { from: 'user' });
 
+    const payload = JSON.parse(collectLogText(logSpy).trim());
     expect(existsSync(casePath)).toBe(false);
     expect(coreMocks.analyzeWorkspace).toHaveBeenCalledWith('C:/site-data', { includeCalculationInputDrafts: true });
+    expect(payload.casePath).toBeUndefined();
+    expect(payload.workspaceAcceptance).toMatchObject({
+      schemaVersion: 'fem-workspace-to-run-acceptance.v1',
+      status: 'blocked',
+      objective: 'foundation-settlement',
+      caseOutputAvailable: false,
+    });
+    expect(payload.workspaceAcceptance.blockerCodes).toEqual(expect.arrayContaining([
+      'fem_workspace_user_inputs_missing',
+      'fem_workspace_case_output_not_available',
+      'fem_workspace_draft_not_recommended_for_reviewed_run',
+      'fem_workspace_reviewed_run_command_missing',
+    ]));
   });
 
   it('lets explicit FEM draft flags override workspace prefill and write the analysis case', async () => {
@@ -589,7 +602,7 @@ describe('registerFemCommand', () => {
     const program = new Command();
     const dir = await mkdtemp(join(tmpdir(), 'geotech-fem-workspace-draft-'));
     tempDirs.push(dir);
-    const casePath = join(dir, 'analysis_case.json');
+    const casePath = join(dir, 'analysis case.json');
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     program.exitOverride();
     registerFemCommand(program);
@@ -618,6 +631,15 @@ describe('registerFemCommand', () => {
     expect(payload.draft.analysisCase.geometry.raft.lengthM).toBe(11);
     expect(payload.draft.analysisCase.materials[0].elasticModulusKpa).toBe(25_000);
     expect(payload.draft.analysisCase.groundwater.depthM).toBe(2.1);
+    expect(payload.workspaceAcceptance).toMatchObject({
+      schemaVersion: 'fem-workspace-to-run-acceptance.v1',
+      status: 'accepted',
+      objective: 'foundation-settlement',
+      caseOutputAvailable: true,
+      humanRunCommand: `geotech fem run "${casePath}" --experimental --reviewed`,
+      blockerCodes: [],
+      evidenceIds: ['ev-es-1', 'ev-gw-1'],
+    });
     expect(caseFile.evidenceRefs.map((item: { id: string }) => item.id)).toEqual(['ev-es-1', 'ev-gw-1']);
   });
 

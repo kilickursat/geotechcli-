@@ -52,6 +52,11 @@ describe('FEM production readiness contract', () => {
       schemaVersion: 'fem-external-benchmark-acceptance.v2',
       status: 'blocked',
       productionReadinessBlocked: true,
+      coverageSummary: expect.objectContaining({
+        acceptedComparisonCount: 0,
+        acceptedCommercialComparisonCount: 0,
+        missingRequiredSourceTypes: ['published-source', 'commercial-solver'],
+      }),
       blockerCodes: expect.arrayContaining([
         'external-benchmark-commercial-solver-citation-missing',
         'external-benchmark-comparison-results-missing',

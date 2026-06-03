@@ -327,6 +327,7 @@ export type FemExternalBenchmarkSourceType =
   | 'open-source-solver';
 
 export type FemExternalBenchmarkToleranceType = 'absolute' | 'relative' | 'absolute-or-relative';
+export type FemExternalBenchmarkComparisonKind = 'scalar' | 'series-summary';
 
 export interface FemExternalBenchmarkPublishedCitation {
   title: string;
@@ -357,6 +358,38 @@ export interface FemExternalBenchmarkReference {
   referenceSolver?: FemExternalBenchmarkReferenceSolverCitation;
 }
 
+export interface FemExternalBenchmarkSolverRunMetadata {
+  name: string;
+  version: string;
+  vendor?: string;
+  solverType: 'geotechcli-kernel' | 'published-reference' | 'commercial-solver' | 'open-source-solver' | 'deterministic-fixture';
+  analysisProcedure?: string;
+  elementType?: string;
+  runId?: string;
+}
+
+export interface FemExternalBenchmarkSeriesStatistics {
+  min: number;
+  max: number;
+  final: number;
+  mean?: number;
+}
+
+export interface FemExternalBenchmarkSeriesSummary {
+  xQuantity: string;
+  xUnit: string;
+  yQuantity: string;
+  yUnit: string;
+  pointCount: number;
+  actual: FemExternalBenchmarkSeriesStatistics;
+  expected: FemExternalBenchmarkSeriesStatistics;
+  maxAbsoluteError: number;
+  maxRelativeError: number;
+  rmsError?: number;
+  seriesHashSha256: string;
+  notes?: string[];
+}
+
 export interface FemExternalBenchmarkQuantityRequirement {
   id: string;
   feature: FemEngineeringKernelFeature;
@@ -372,6 +405,8 @@ export interface FemExternalBenchmarkComparisonResult {
   quantityRequirementId: string;
   referenceId: string;
   caseId: string;
+  comparisonKind?: FemExternalBenchmarkComparisonKind;
+  metricName?: string;
   quantity: string;
   unit: string;
   actual: number;
@@ -379,8 +414,24 @@ export interface FemExternalBenchmarkComparisonResult {
   tolerance: number;
   toleranceType: FemExternalBenchmarkToleranceType;
   accepted: boolean;
+  candidateSolver?: FemExternalBenchmarkSolverRunMetadata;
+  referenceSolver?: FemExternalBenchmarkSolverRunMetadata;
   evidenceHashSha256?: string;
+  resultHashSha256?: string;
+  seriesSummary?: FemExternalBenchmarkSeriesSummary;
   notes?: string[];
+}
+
+export interface FemExternalBenchmarkCoverageSummary {
+  schemaVersion: 'fem-external-benchmark-coverage.v1';
+  acceptedComparisonCount: number;
+  acceptedPublishedComparisonCount: number;
+  acceptedCommercialComparisonCount: number;
+  acceptedOpenSourceComparisonCount: number;
+  requiredQuantityCount: number;
+  partiallyCoveredRequiredQuantityIds: string[];
+  fullyCoveredRequiredQuantityIds: string[];
+  missingRequiredSourceTypes: FemExternalBenchmarkSourceType[];
 }
 
 export interface FemExternalBenchmarkAcceptanceContract {
@@ -391,6 +442,7 @@ export interface FemExternalBenchmarkAcceptanceContract {
   references: FemExternalBenchmarkReference[];
   requiredQuantities: FemExternalBenchmarkQuantityRequirement[];
   comparisonResults: FemExternalBenchmarkComparisonResult[];
+  coverageSummary: FemExternalBenchmarkCoverageSummary;
   blockerCodes: string[];
   acceptanceStatement: string;
 }
@@ -609,6 +661,55 @@ function hasValidSha256(value: unknown): value is string {
   return typeof value === 'string' && /^[a-f0-9]{64}$/i.test(value);
 }
 
+function hasSolverRunMetadata(value: unknown): value is FemExternalBenchmarkSolverRunMetadata {
+  if (value == null || typeof value !== 'object') return false;
+  const metadata = value as Partial<FemExternalBenchmarkSolverRunMetadata>;
+  return isNonEmptyString(metadata.name) &&
+    isNonEmptyString(metadata.version) &&
+    (
+      metadata.solverType === 'geotechcli-kernel' ||
+      metadata.solverType === 'published-reference' ||
+      metadata.solverType === 'commercial-solver' ||
+      metadata.solverType === 'open-source-solver' ||
+      metadata.solverType === 'deterministic-fixture'
+    );
+}
+
+function hasFiniteSeriesStatistics(value: unknown): value is FemExternalBenchmarkSeriesStatistics {
+  if (value == null || typeof value !== 'object') return false;
+  const statistics = value as Partial<FemExternalBenchmarkSeriesStatistics>;
+  return Number.isFinite(statistics.min) &&
+    Number.isFinite(statistics.max) &&
+    Number.isFinite(statistics.final) &&
+    (statistics.mean == null || Number.isFinite(statistics.mean));
+}
+
+function hasValidSeriesSummary(value: unknown): value is FemExternalBenchmarkSeriesSummary {
+  if (value == null || typeof value !== 'object') return false;
+  const summary = value as Partial<FemExternalBenchmarkSeriesSummary>;
+  const pointCount = summary.pointCount;
+  const maxAbsoluteError = summary.maxAbsoluteError;
+  const maxRelativeError = summary.maxRelativeError;
+  const rmsError = summary.rmsError;
+  return isNonEmptyString(summary.xQuantity) &&
+    isNonEmptyString(summary.xUnit) &&
+    isNonEmptyString(summary.yQuantity) &&
+    isNonEmptyString(summary.yUnit) &&
+    typeof pointCount === 'number' &&
+    Number.isInteger(pointCount) &&
+    pointCount > 0 &&
+    hasFiniteSeriesStatistics(summary.actual) &&
+    hasFiniteSeriesStatistics(summary.expected) &&
+    typeof maxAbsoluteError === 'number' &&
+    Number.isFinite(maxAbsoluteError) &&
+    maxAbsoluteError >= 0 &&
+    typeof maxRelativeError === 'number' &&
+    Number.isFinite(maxRelativeError) &&
+    maxRelativeError >= 0 &&
+    (rmsError == null || (Number.isFinite(rmsError) && rmsError >= 0)) &&
+    hasValidSha256(summary.seriesHashSha256);
+}
+
 function copyExternalBenchmarkReference(
   reference: FemExternalBenchmarkReference,
 ): FemExternalBenchmarkReference {
@@ -644,6 +745,24 @@ function copyExternalBenchmarkComparisonResult(
 ): FemExternalBenchmarkComparisonResult {
   return {
     ...result,
+    candidateSolver: result.candidateSolver != null
+      ? { ...result.candidateSolver }
+      : result.candidateSolver,
+    ...(result.referenceSolver ? { referenceSolver: { ...result.referenceSolver } } : {}),
+    ...(result.seriesSummary
+      ? {
+          seriesSummary: {
+            ...result.seriesSummary,
+            actual: result.seriesSummary.actual != null
+              ? { ...result.seriesSummary.actual }
+              : result.seriesSummary.actual,
+            expected: result.seriesSummary.expected != null
+              ? { ...result.seriesSummary.expected }
+              : result.seriesSummary.expected,
+            ...(result.seriesSummary.notes ? { notes: [...result.seriesSummary.notes] } : {}),
+          },
+        }
+      : {}),
     ...(result.notes ? { notes: [...result.notes] } : {}),
   };
 }
@@ -662,6 +781,43 @@ export function buildFemExternalBenchmarkAcceptanceContract(options: {
   const blockerCodes: string[] = [];
   const referenceById = new Map(references.map((reference) => [reference.id, reference]));
   const quantityById = new Map(requiredQuantities.map((requirement) => [requirement.id, requirement]));
+
+  function referenceRequiresSolverRunMetadata(reference: FemExternalBenchmarkReference | undefined): boolean {
+    return reference?.sourceType === 'commercial-solver' || reference?.sourceType === 'open-source-solver';
+  }
+
+  function comparisonIsAcceptedForRequirement(
+    result: FemExternalBenchmarkComparisonResult,
+    requirement: FemExternalBenchmarkQuantityRequirement,
+    reference: FemExternalBenchmarkReference | undefined,
+    sourceType?: FemExternalBenchmarkSourceType,
+  ): boolean {
+    if (!reference) return false;
+    if (sourceType && reference.sourceType !== sourceType) return false;
+    if (result.quantityRequirementId !== requirement.id || !result.accepted) return false;
+    if (result.comparisonKind !== 'scalar' && result.comparisonKind !== 'series-summary') return false;
+    if (result.comparisonKind === 'series-summary' && !hasValidSeriesSummary(result.seriesSummary)) return false;
+    if (!isNonEmptyString(result.metricName)) return false;
+    if (!hasSolverRunMetadata(result.candidateSolver)) return false;
+    if (referenceRequiresSolverRunMetadata(reference) && !hasSolverRunMetadata(result.referenceSolver)) return false;
+    if (result.referenceSolver != null && !hasSolverRunMetadata(result.referenceSolver)) return false;
+    if (!Number.isFinite(result.actual) || !Number.isFinite(result.expected)) return false;
+    if (!hasValidSha256(result.evidenceHashSha256) || !hasValidSha256(result.resultHashSha256)) return false;
+    if (result.quantity !== requirement.quantity || result.unit !== requirement.unit) return false;
+    if (result.toleranceType !== requirement.toleranceType || result.tolerance > requirement.tolerance) {
+      return false;
+    }
+    const tolerance = evaluateFemTolerance(
+      requirement.quantity,
+      result.actual,
+      result.expected,
+      requirement.toleranceType === 'relative' ? 0 : requirement.tolerance,
+      requirement.toleranceType === 'absolute'
+        ? { unit: requirement.unit }
+        : { relativeTolerance: requirement.tolerance, unit: requirement.unit },
+    );
+    return tolerance.accepted;
+  }
 
   if (references.length === 0) {
     blockerCodes.push('external-benchmark-reference-corpus-missing');
@@ -773,6 +929,12 @@ export function buildFemExternalBenchmarkAcceptanceContract(options: {
     if (!isNonEmptyString(result.caseId)) {
       blockerCodes.push(`external-benchmark.comparison-results.${resultCode}.case-id-missing`);
     }
+    if (result.comparisonKind !== 'scalar' && result.comparisonKind !== 'series-summary') {
+      blockerCodes.push(`external-benchmark.comparison-results.${resultCode}.comparison-kind-invalid`);
+    }
+    if (!isNonEmptyString(result.metricName)) {
+      blockerCodes.push(`external-benchmark.comparison-results.${resultCode}.metric-name-missing`);
+    }
     if (!isNonEmptyString(result.quantity)) {
       blockerCodes.push(`external-benchmark.comparison-results.${resultCode}.quantity-missing`);
     }
@@ -794,6 +956,23 @@ export function buildFemExternalBenchmarkAcceptanceContract(options: {
     }
     if (!hasValidSha256(result.evidenceHashSha256)) {
       blockerCodes.push(`external-benchmark.comparison-results.${resultCode}.evidence-hash-missing`);
+    }
+    if (!hasValidSha256(result.resultHashSha256)) {
+      blockerCodes.push(`external-benchmark.comparison-results.${resultCode}.result-hash-missing`);
+    }
+    if (!hasSolverRunMetadata(result.candidateSolver)) {
+      blockerCodes.push(`external-benchmark.comparison-results.${resultCode}.candidate-solver-metadata-missing`);
+    }
+    const reference = referenceById.get(result.referenceId);
+    if (referenceRequiresSolverRunMetadata(reference) && !hasSolverRunMetadata(result.referenceSolver)) {
+      blockerCodes.push(`external-benchmark.comparison-results.${resultCode}.reference-solver-metadata-missing`);
+    } else if (result.referenceSolver != null && !hasSolverRunMetadata(result.referenceSolver)) {
+      blockerCodes.push(`external-benchmark.comparison-results.${resultCode}.reference-solver-metadata-invalid`);
+    }
+    if (result.comparisonKind === 'series-summary' && !hasValidSeriesSummary(result.seriesSummary)) {
+      blockerCodes.push(`external-benchmark.comparison-results.${resultCode}.series-summary-invalid`);
+    } else if (result.seriesSummary != null && !hasValidSeriesSummary(result.seriesSummary)) {
+      blockerCodes.push(`external-benchmark.comparison-results.${resultCode}.series-summary-invalid`);
     }
     const requirement = quantityById.get(result.quantityRequirementId);
     if (requirement) {
@@ -834,30 +1013,43 @@ export function buildFemExternalBenchmarkAcceptanceContract(options: {
     }
   }
 
+  const acceptedComparisons = comparisonResults
+    .map((result) => ({
+      result,
+      requirement: quantityById.get(result.quantityRequirementId),
+      reference: referenceById.get(result.referenceId),
+    }))
+    .filter((item): item is {
+      result: FemExternalBenchmarkComparisonResult;
+      requirement: FemExternalBenchmarkQuantityRequirement;
+      reference: FemExternalBenchmarkReference;
+    } => item.requirement != null &&
+      item.reference != null &&
+      comparisonIsAcceptedForRequirement(item.result, item.requirement, item.reference));
+  const partiallyCoveredRequiredQuantityIds: string[] = [];
+  const fullyCoveredRequiredQuantityIds: string[] = [];
+
   for (const requirement of requiredQuantities) {
     if (!isNonEmptyString(requirement.id)) continue;
+    const acceptedSourceTypesForRequirement = new Set(
+      acceptedComparisons
+        .filter((item) => item.requirement.id === requirement.id)
+        .map((item) => item.reference.sourceType),
+    );
+    if (acceptedSourceTypesForRequirement.size > 0) {
+      partiallyCoveredRequiredQuantityIds.push(requirement.id);
+    }
+    if (
+      requirement.requiredReferenceSourceTypes.length > 0 &&
+      requirement.requiredReferenceSourceTypes.every((sourceType) =>
+        acceptedSourceTypesForRequirement.has(sourceType))
+    ) {
+      fullyCoveredRequiredQuantityIds.push(requirement.id);
+    }
     for (const sourceType of requirement.requiredReferenceSourceTypes) {
-      const hasAcceptedComparison = comparisonResults.some((result) => {
-        const reference = referenceById.get(result.referenceId);
-        if (!reference || reference.sourceType !== sourceType) return false;
-        if (result.quantityRequirementId !== requirement.id || !result.accepted) return false;
-        if (!Number.isFinite(result.actual) || !Number.isFinite(result.expected)) return false;
-        if (!hasValidSha256(result.evidenceHashSha256)) return false;
-        if (result.quantity !== requirement.quantity || result.unit !== requirement.unit) return false;
-        if (result.toleranceType !== requirement.toleranceType || result.tolerance > requirement.tolerance) {
-          return false;
-        }
-        const tolerance = evaluateFemTolerance(
-          requirement.quantity,
-          result.actual,
-          result.expected,
-          requirement.toleranceType === 'relative' ? 0 : requirement.tolerance,
-          requirement.toleranceType === 'absolute'
-            ? { unit: requirement.unit }
-            : { relativeTolerance: requirement.tolerance, unit: requirement.unit },
-        );
-        return tolerance.accepted;
-      });
+      const hasAcceptedComparison = acceptedComparisons.some((item) =>
+        item.requirement.id === requirement.id &&
+        item.reference.sourceType === sourceType);
       if (!hasAcceptedComparison) {
         blockerCodes.push(
           `external-benchmark.required-quantities.${requirement.id}.accepted-comparison-missing.${sourceType}`,
@@ -866,8 +1058,30 @@ export function buildFemExternalBenchmarkAcceptanceContract(options: {
     }
   }
 
+  const acceptedSourceTypes = new Set(acceptedComparisons.map((item) => item.reference.sourceType));
+  const coverageSummary: FemExternalBenchmarkCoverageSummary = {
+    schemaVersion: 'fem-external-benchmark-coverage.v1',
+    acceptedComparisonCount: acceptedComparisons.length,
+    acceptedPublishedComparisonCount: acceptedComparisons
+      .filter((item) => item.reference.sourceType === 'published-source').length,
+    acceptedCommercialComparisonCount: acceptedComparisons
+      .filter((item) => item.reference.sourceType === 'commercial-solver').length,
+    acceptedOpenSourceComparisonCount: acceptedComparisons
+      .filter((item) => item.reference.sourceType === 'open-source-solver').length,
+    requiredQuantityCount: requiredQuantities.length,
+    partiallyCoveredRequiredQuantityIds,
+    fullyCoveredRequiredQuantityIds,
+    missingRequiredSourceTypes: REQUIRED_EXTERNAL_BENCHMARK_SOURCE_TYPES
+      .filter((sourceType) => !acceptedSourceTypes.has(sourceType)),
+  };
+
+  if (coverageSummary.fullyCoveredRequiredQuantityIds.length < requiredQuantities.length) {
+    blockerCodes.push('external-benchmark-comparison-results-missing');
+  }
+
   const uniqueBlockerCodes = [...new Set(blockerCodes)];
   const productionReadinessBlocked = uniqueBlockerCodes.length > 0;
+  const hasPartialAcceptedEvidence = coverageSummary.acceptedComparisonCount > 0;
 
   return {
     schemaVersion: 'fem-external-benchmark-acceptance.v2',
@@ -877,9 +1091,12 @@ export function buildFemExternalBenchmarkAcceptanceContract(options: {
     references,
     requiredQuantities,
     comparisonResults,
+    coverageSummary,
     blockerCodes: uniqueBlockerCodes,
     acceptanceStatement: productionReadinessBlocked
-      ? 'External benchmark acceptance is incomplete; production readiness remains blocked until source citations, commercial solver references, and accepted comparison results cover every required FEM quantity.'
+      ? hasPartialAcceptedEvidence
+        ? `Partial external benchmark evidence is present (${coverageSummary.acceptedComparisonCount} accepted comparison summaries), but production readiness remains blocked until published and commercial solver references and accepted comparison results cover every required FEM quantity.`
+        : 'External benchmark acceptance is incomplete; production readiness remains blocked until source citations, commercial solver references, and accepted comparison results cover every required FEM quantity.'
       : 'External benchmark references and comparison results cover the required FEM quantities; this still does not approve production design without solver-route and reviewer-workflow acceptance.',
   };
 }

@@ -46,6 +46,11 @@ export interface FemPlaneStrainNodalLoad {
   fyKn?: number;
 }
 
+export interface FemPlaneStrainPrescribedPorePressureIncrement {
+  nodeId: string;
+  porePressureIncrementKpa: number;
+}
+
 export interface FemPlaneStrainModel {
   schemaVersion: 'fem-plane-strain-model.v1';
   nodes: FemPlaneStrainNode[];
@@ -53,6 +58,7 @@ export interface FemPlaneStrainModel {
   materials: FemPlaneStrainMaterial[];
   boundaryConditions: FemPlaneStrainBoundaryCondition[];
   nodalLoads?: FemPlaneStrainNodalLoad[];
+  prescribedPorePressureIncrements?: FemPlaneStrainPrescribedPorePressureIncrement[];
   defaultThicknessM?: number;
   policy?: FemConvergencePolicy;
 }
@@ -91,6 +97,10 @@ export interface FemPlaneStrainAssemblyResult {
 export interface FemPlaneStrainDruckerPragerGaussPointResult extends FemPlaneStrainGaussPointResult {
   outOfPlaneStressKpa: number;
   compressionPositivePrincipalStressKpa: [number, number, number];
+  porePressureIncrementKpa?: number;
+  biotCoefficient?: number;
+  biotStressReductionKpa?: number;
+  totalStressKpa?: [number, number, number];
   strainIncrement: [number, number, number];
   previousEquivalentPlasticStrain: number;
   equivalentPlasticStrainIncrement: number;
@@ -217,6 +227,20 @@ export interface FemPlaneStrainDruckerPragerAdaptiveLoadStepAttemptAudit {
   committedStateSignatureAfter: string;
 }
 
+export interface FemPlaneStrainDruckerPragerHydroMechanicalCouplingAudit {
+  schemaVersion: 'fem-plane-strain-dp-prescribed-pressure-coupling.v1';
+  mode: 'one-way-prescribed-pore-pressure-increment';
+  porePressureDofCount: 0;
+  pressureRamp: 'load-factor-scaled-increment';
+  appliedLoadFactor: number;
+  maxAbsInputPorePressureIncrementKpa: number;
+  maxAbsAppliedPorePressureIncrementKpa: number;
+  maxAbsAppliedEffectiveStressReductionKpa: number;
+  stressConvention: 'stressKpa is effective skeleton stress; totalStressKpa applies Biot pore-pressure reduction to xx/yy only';
+  totalStressRelation: 'sigma_total_xx_yy = sigma_effective_xx_yy - alpha_B * delta_p; shear unchanged';
+  limitations: string[];
+}
+
 export interface FemPlaneStrainDruckerPragerResult {
   schemaVersion: 'fem-plane-strain-drucker-prager-result.v1';
   method: 'quad4-plane-strain-drucker-prager-modified-newton';
@@ -235,6 +259,7 @@ export interface FemPlaneStrainDruckerPragerResult {
   globalTangent: 'elastic';
   materialIntegration: 'incremental-committed-drucker-prager-return-mapping';
   stateStorage: 'committed-gauss-point-history';
+  hydroMechanicalCoupling?: FemPlaneStrainDruckerPragerHydroMechanicalCouplingAudit;
   adaptiveLoadStepping: FemPlaneStrainDruckerPragerAdaptiveLoadSteppingAudit;
   loadSteps: FemPlaneStrainDruckerPragerStepResult[];
   maxFreeResidualKn: number;
@@ -965,6 +990,14 @@ function elementMatrices(input: {
   return { stiffness: k, areaM2, gauss };
 }
 
+function resolveBiotCoefficient(material: FemPlaneStrainMaterial): number {
+  const biotCoefficient = material.biotCoefficient ?? 1;
+  if (!Number.isFinite(biotCoefficient) || biotCoefficient < 0 || biotCoefficient > 1) {
+    throw new Error(`material ${material.id} biotCoefficient must be finite and between 0 and 1.`);
+  }
+  return biotCoefficient;
+}
+
 function validateHydraulicMaterial(material: FemPlaneStrainMaterial): {
   kxMPerS: number;
   kyMPerS: number;
@@ -977,10 +1010,7 @@ function validateHydraulicMaterial(material: FemPlaneStrainMaterial): {
   assertFinitePositive(kxMPerS, `material ${material.id} hydraulicConductivityXMPerS`);
   const kyMPerS = material.hydraulicConductivityYMPerS ?? kxMPerS;
   assertFinitePositive(kyMPerS, `material ${material.id} hydraulicConductivityYMPerS`);
-  const biotCoefficient = material.biotCoefficient ?? 1;
-  if (!Number.isFinite(biotCoefficient) || biotCoefficient < 0 || biotCoefficient > 1) {
-    throw new Error(`material ${material.id} biotCoefficient must be finite and between 0 and 1.`);
-  }
+  const biotCoefficient = resolveBiotCoefficient(material);
   return { kxMPerS, kyMPerS, biotCoefficient };
 }
 
@@ -2169,6 +2199,10 @@ interface PlaneStrainAssemblySystem {
   stiffness?: number[][];
   stiffnessTriplets: FemSparseTriplet[];
   loads: number[];
+  pressureEquivalentLoads: number[];
+  prescribedPorePressureIncrementActive: boolean;
+  maxAbsInputPorePressureIncrementKpa: number;
+  maxAbsEffectiveStressReductionKpa: number;
   prescribed: Map<number, number>;
   freeDofs: number[];
   dofCount: number;
@@ -2176,6 +2210,11 @@ interface PlaneStrainAssemblySystem {
     element: FemPlaneStrainQuad4Element;
     globalDofs: number[];
     gauss: Array<{ xi: number; eta: number; detJ: number; b: number[][] }>;
+    pressureGauss: Array<{
+      porePressureIncrementKpa: number;
+      biotCoefficient: number;
+      biotStressReductionKpa: number;
+    }>;
     areaM2: number;
     thicknessM: number;
   }>;
@@ -2197,6 +2236,9 @@ function assemblePlaneStrainSystem(
   if (model.materials.length < 1) throw new Error('Plane-strain model requires at least one material.');
   if (model.defaultThicknessM != null) assertFinitePositive(model.defaultThicknessM, 'defaultThicknessM');
   if (model.nodalLoads != null) assertArray(model.nodalLoads, 'nodalLoads');
+  if (model.prescribedPorePressureIncrements != null) {
+    assertArray(model.prescribedPorePressureIncrements, 'prescribedPorePressureIncrements');
+  }
   assertUniqueIds(model.nodes, 'node');
   assertUniqueIds(model.materials, 'material');
   assertUniqueIds(model.elements, 'element');
@@ -2219,6 +2261,11 @@ function assemblePlaneStrainSystem(
     : undefined;
   const stiffnessTriplets: FemSparseTriplet[] = [];
   const loads = new Array<number>(dofCount).fill(0);
+  const pressureEquivalentLoads = new Array<number>(dofCount).fill(0);
+  const porePressureIncrements = new Array<number>(model.nodes.length).fill(0);
+  let prescribedPorePressureIncrementActive = false;
+  let maxAbsInputPorePressureIncrementKpa = 0;
+  let maxAbsEffectiveStressReductionKpa = 0;
 
   for (const node of model.nodes) {
     assertFinite(node.xM, `node ${node.id} xM`);
@@ -2241,6 +2288,26 @@ function assemblePlaneStrainSystem(
     loads[dofIndex(nodeIndex, 'ux')] += fxKn;
     loads[dofIndex(nodeIndex, 'uy')] += fyKn;
   }
+  const prescribedPorePressureIncrements = new Map<number, number>();
+  for (const increment of model.prescribedPorePressureIncrements ?? []) {
+    const nodeIndex = nodeIndexById.get(increment.nodeId);
+    if (nodeIndex == null) throw new Error(`Unknown prescribed pore-pressure increment node: ${increment.nodeId}.`);
+    assertFinite(
+      increment.porePressureIncrementKpa,
+      `prescribed pore-pressure increment ${increment.nodeId}.porePressureIncrementKpa`,
+    );
+    const existing = prescribedPorePressureIncrements.get(nodeIndex);
+    if (existing != null && Math.abs(existing - increment.porePressureIncrementKpa) > 1e-12) {
+      throw new Error(`Conflicting prescribed pore-pressure increment for ${increment.nodeId}.`);
+    }
+    prescribedPorePressureIncrements.set(nodeIndex, increment.porePressureIncrementKpa);
+    porePressureIncrements[nodeIndex] = increment.porePressureIncrementKpa;
+    maxAbsInputPorePressureIncrementKpa = Math.max(
+      maxAbsInputPorePressureIncrementKpa,
+      Math.abs(increment.porePressureIncrementKpa),
+    );
+    if (Math.abs(increment.porePressureIncrementKpa) > 0) prescribedPorePressureIncrementActive = true;
+  }
 
   const elementGaussCache: PlaneStrainAssemblySystem['elementGaussCache'] = [];
   for (const element of model.elements) {
@@ -2258,6 +2325,7 @@ function assemblePlaneStrainSystem(
     });
     const material = materialById.get(element.materialId);
     if (!material) throw new Error(`Unknown element material: ${element.materialId}.`);
+    const biotCoefficient = resolveBiotCoefficient(material);
     const thicknessM = element.thicknessM ?? model.defaultThicknessM ?? 1;
     assertFinitePositive(thicknessM, `element ${element.id} thicknessM`);
     const nodes = nodeIndices.map((index) => model.nodes[index]);
@@ -2272,10 +2340,35 @@ function assemblePlaneStrainSystem(
         if (stiffness) stiffness[row][col] += value;
       }
     }
+    const pressureGauss = elementData.gauss.map((point) => {
+      const shape = shapeFunctions(point.xi, point.eta);
+      const porePressureIncrementKpa = shape.reduce(
+        (sum, value, localNodeIndex) => sum + value * porePressureIncrements[nodeIndices[localNodeIndex]],
+        0,
+      );
+      const biotStressReductionKpa = biotCoefficient * porePressureIncrementKpa;
+      maxAbsEffectiveStressReductionKpa = Math.max(
+        maxAbsEffectiveStressReductionKpa,
+        Math.abs(biotStressReductionKpa),
+      );
+      if (prescribedPorePressureIncrementActive && biotCoefficient !== 0) {
+        for (let localDof = 0; localDof < 8; localDof += 1) {
+          const volumetricShapeDerivative = point.b[0][localDof] + point.b[1][localDof];
+          pressureEquivalentLoads[globalDofs[localDof]] +=
+            biotStressReductionKpa * volumetricShapeDerivative * point.detJ * thicknessM;
+        }
+      }
+      return {
+        porePressureIncrementKpa,
+        biotCoefficient,
+        biotStressReductionKpa,
+      };
+    });
     elementGaussCache.push({
       element,
       globalDofs,
       gauss: elementData.gauss,
+      pressureGauss,
       areaM2: elementData.areaM2,
       thicknessM,
     });
@@ -2312,6 +2405,10 @@ function assemblePlaneStrainSystem(
     stiffness,
     stiffnessTriplets,
     loads,
+    pressureEquivalentLoads,
+    prescribedPorePressureIncrementActive,
+    maxAbsInputPorePressureIncrementKpa,
+    maxAbsEffectiveStressReductionKpa,
     prescribed,
     freeDofs,
     dofCount,
@@ -2375,6 +2472,15 @@ function evaluatePlaneStrainDruckerPragerState(input: {
         internal[entry.globalDofs[localDof]] += force;
       }
 
+      const pressurePoint = entry.pressureGauss[index];
+      const porePressureIncrementKpa = pressurePoint.porePressureIncrementKpa * loadFactor;
+      const biotStressReductionKpa = pressurePoint.biotStressReductionKpa * loadFactor;
+      const totalStressKpa: [number, number, number] = [
+        projected.stressKpa[0] - biotStressReductionKpa,
+        projected.stressKpa[1] - biotStressReductionKpa,
+        projected.stressKpa[2],
+      ];
+
       return {
         elementId: entry.element.id,
         gaussPoint: index + 1,
@@ -2397,6 +2503,16 @@ function evaluatePlaneStrainDruckerPragerState(input: {
           round(projected.compressionPositivePrincipalStressKpa[1], 8),
           round(projected.compressionPositivePrincipalStressKpa[2], 8),
         ] as [number, number, number],
+        ...(system.prescribedPorePressureIncrementActive ? {
+          porePressureIncrementKpa: round(porePressureIncrementKpa, 8),
+          biotCoefficient: round(pressurePoint.biotCoefficient, 8),
+          biotStressReductionKpa: round(biotStressReductionKpa, 8),
+          totalStressKpa: [
+            round(totalStressKpa[0], 8),
+            round(totalStressKpa[1], 8),
+            round(totalStressKpa[2], 8),
+          ] as [number, number, number],
+        } : {}),
         strainIncrement: [
           round(projected.strainIncrement[0], 12),
           round(projected.strainIncrement[1], 12),
@@ -2426,19 +2542,27 @@ function evaluatePlaneStrainDruckerPragerState(input: {
   });
 
   const loadsAtStep = system.loads.map((load) => load * loadFactor);
-  const residual = internal.map((value, index) => value - loadsAtStep[index]);
+  const pressureEquivalentLoadsAtStep = system.pressureEquivalentLoads.map((load) => load * loadFactor);
+  const totalAppliedLoadsAtStep = loadsAtStep.map((load, index) => load + pressureEquivalentLoadsAtStep[index]);
+  const residual = internal.map((value, index) => value - totalAppliedLoadsAtStep[index]);
   const maxFreeResidualKn = system.freeDofs.length > 0
     ? Math.max(...system.freeDofs.map((index) => Math.abs(residual[index])))
     : 0;
   const loadNorm = Math.max(
     Math.hypot(...loadsAtStep),
+    Math.hypot(...pressureEquivalentLoadsAtStep),
+    Math.hypot(...totalAppliedLoadsAtStep),
     Math.hypot(...internal),
     Math.hypot(...Array.from(system.prescribed.keys()).map((index) => residual[index])),
     1,
   );
   const residualNormRatio = maxFreeResidualKn / loadNorm;
-  const externalLoadSumX = loadsAtStep.filter((_, index) => index % 2 === 0).reduce((sum, value) => sum + value, 0);
-  const externalLoadSumY = loadsAtStep.filter((_, index) => index % 2 === 1).reduce((sum, value) => sum + value, 0);
+  const externalLoadSumX = totalAppliedLoadsAtStep
+    .filter((_, index) => index % 2 === 0)
+    .reduce((sum, value) => sum + value, 0);
+  const externalLoadSumY = totalAppliedLoadsAtStep
+    .filter((_, index) => index % 2 === 1)
+    .reduce((sum, value) => sum + value, 0);
   const reactionSumX = Array.from(system.prescribed.keys())
     .filter((index) => index % 2 === 0)
     .reduce((sum, index) => sum + residual[index], 0);
@@ -2961,6 +3085,33 @@ export function runPlaneStrainDruckerPragerLoadSteps(
     attempts: adaptiveAttemptAudits,
     blockerCodes: [...new Set(adaptiveBlockerCodes)],
   };
+  const finalAppliedLoadFactor = loadSteps.at(-1)?.loadFactor ?? round(currentLoadFactor, 8);
+  const hydroMechanicalCoupling: FemPlaneStrainDruckerPragerHydroMechanicalCouplingAudit | undefined =
+    system.prescribedPorePressureIncrementActive
+      ? {
+        schemaVersion: 'fem-plane-strain-dp-prescribed-pressure-coupling.v1',
+        mode: 'one-way-prescribed-pore-pressure-increment',
+        porePressureDofCount: 0,
+        pressureRamp: 'load-factor-scaled-increment',
+        appliedLoadFactor: round(finalAppliedLoadFactor, 8),
+        maxAbsInputPorePressureIncrementKpa: round(system.maxAbsInputPorePressureIncrementKpa, 8),
+        maxAbsAppliedPorePressureIncrementKpa: round(
+          system.maxAbsInputPorePressureIncrementKpa * finalAppliedLoadFactor,
+          8,
+        ),
+        maxAbsAppliedEffectiveStressReductionKpa: round(
+          system.maxAbsEffectiveStressReductionKpa * finalAppliedLoadFactor,
+          8,
+        ),
+        stressConvention: 'stressKpa is effective skeleton stress; totalStressKpa applies Biot pore-pressure reduction to xx/yy only',
+        totalStressRelation: 'sigma_total_xx_yy = sigma_effective_xx_yy - alpha_B * delta_p; shear unchanged',
+        limitations: [
+          'One-way prescribed pore-pressure increment only; no pore-pressure DOFs, pressure equation, seepage solve, or Biot-plastic consistent tangent is assembled.',
+          'Pressure increment is ramped by the same load factor history as mechanical loads and prescribed displacements.',
+          'Use for deterministic effective-stress evidence only until coupled nonlinear hydro-mechanical benchmarks and reviewer approval gates are complete.',
+        ],
+      }
+      : undefined;
 
   return {
     schemaVersion: 'fem-plane-strain-drucker-prager-result.v1',
@@ -2981,6 +3132,7 @@ export function runPlaneStrainDruckerPragerLoadSteps(
     globalTangent: 'elastic',
     materialIntegration: 'incremental-committed-drucker-prager-return-mapping',
     stateStorage: 'committed-gauss-point-history',
+    ...(hydroMechanicalCoupling ? { hydroMechanicalCoupling } : {}),
     adaptiveLoadStepping,
     loadSteps,
     maxFreeResidualKn: round(acceptedFinalEvaluation.maxFreeResidualKn, 12),
@@ -3008,6 +3160,9 @@ export function runPlaneStrainDruckerPragerLoadSteps(
       ...(failedStep ? ['Nonconverged load-step result is reported fail-closed and must not be treated as an accepted engineering solve.'] : []),
       ...(adaptiveOptions.enabled
         ? ['Adaptive cutback-bisection load stepping can subdivide rejected nonlinear increments with rollback audit, but it is still not an arc-length or production consistent-tangent strategy.']
+        : []),
+      ...(hydroMechanicalCoupling
+        ? ['Includes a one-way prescribed pore-pressure increment in the effective-stress residual; this is not a coupled Biot-plastic production solve and introduces no pore-pressure DOFs.']
         : []),
       linearSolver === 'sparse-csr-cg'
         ? 'Uses an experimental CSR Conjugate Gradient linear solve audit, elastic global tangent, and committed Gauss-point Drucker-Prager return mapping; no production consistent tangent, hardening calibration, staged activation, pore-pressure DOF, or route-backed result manifest is provided.'

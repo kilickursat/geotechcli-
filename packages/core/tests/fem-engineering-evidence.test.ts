@@ -16,6 +16,45 @@ import {
 } from '../src/fem/index.js';
 
 describe('FEM engineering evidence kernels', () => {
+  function localCandidateSolver(runId = 'case-1') {
+    return {
+      name: 'geotechCLI local fixture',
+      version: 'test-fixture',
+      solverType: 'geotechcli-kernel' as const,
+      analysisProcedure: 'deterministic local benchmark fixture',
+      elementType: 'quad4 fixture',
+      runId,
+    };
+  }
+
+  function commercialReferenceSolver(runId = 'commercial-fixture-1') {
+    return {
+      name: 'Reference FEM Solver',
+      version: '2024.1',
+      vendor: 'Reference Vendor',
+      solverType: 'commercial-solver' as const,
+      analysisProcedure: 'plane-strain consolidation',
+      elementType: 'quad4 u-p',
+      runId,
+    };
+  }
+
+  function seriesSummary(hashDigit = 'e') {
+    return {
+      xQuantity: 'time',
+      xUnit: 'years',
+      yQuantity: 'settlement',
+      yUnit: 'mm',
+      pointCount: 4,
+      actual: { min: 0, max: 49.7, final: 49.7, mean: 25.1 },
+      expected: { min: 0, max: 50, final: 50, mean: 25.2 },
+      maxAbsoluteError: 0.3,
+      maxRelativeError: 0.006,
+      rmsError: 0.2,
+      seriesHashSha256: hashDigit.repeat(64),
+    };
+  }
+
   it('verifies Mohr-Coulomb material-point plasticity against closed-form triaxial strength', () => {
     const result = runMohrCoulombMaterialPoint({
       confiningEffectiveStressKpa: 100,
@@ -332,6 +371,17 @@ describe('FEM engineering evidence kernels', () => {
       }),
     ]));
     expect(report.externalBenchmarkAcceptance.comparisonResults).toEqual([]);
+    expect(report.externalBenchmarkAcceptance.coverageSummary).toMatchObject({
+      schemaVersion: 'fem-external-benchmark-coverage.v1',
+      acceptedComparisonCount: 0,
+      acceptedPublishedComparisonCount: 0,
+      acceptedCommercialComparisonCount: 0,
+      acceptedOpenSourceComparisonCount: 0,
+      fullyCoveredRequiredQuantityIds: [],
+      partiallyCoveredRequiredQuantityIds: [],
+      missingRequiredSourceTypes: ['published-source', 'commercial-solver'],
+    });
+    expect(report.externalBenchmarkAcceptance.acceptanceStatement).toContain('External benchmark acceptance is incomplete');
     expect(report.externalBenchmarkAcceptance.requiredQuantities).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: 'consolidation-settlement-time-curve',
@@ -410,6 +460,8 @@ describe('FEM engineering evidence kernels', () => {
           quantityRequirementId: 'settlement-time',
           referenceId: 'published-benchmark-1',
           caseId: 'plane-strain-consolidation-fixture',
+          comparisonKind: 'series-summary',
+          metricName: 'settlementAtFinalTime',
           quantity: 'settlement-time curve',
           unit: 'mm',
           actual: 49.7,
@@ -417,13 +469,18 @@ describe('FEM engineering evidence kernels', () => {
           tolerance: 0.02,
           toleranceType: 'relative',
           accepted: true,
+          candidateSolver: localCandidateSolver('plane-strain-consolidation-fixture'),
           evidenceHashSha256: 'a'.repeat(64),
+          resultHashSha256: 'b'.repeat(64),
+          seriesSummary: seriesSummary('c'),
         },
         {
           id: 'commercial-settlement-time-curve',
           quantityRequirementId: 'settlement-time',
           referenceId: 'commercial-solver-1',
           caseId: 'plane-strain-consolidation-fixture',
+          comparisonKind: 'scalar',
+          metricName: 'settlementAtFinalTime',
           quantity: 'settlement-time curve',
           unit: 'mm',
           actual: 50.4,
@@ -431,7 +488,10 @@ describe('FEM engineering evidence kernels', () => {
           tolerance: 0.02,
           toleranceType: 'relative',
           accepted: true,
-          evidenceHashSha256: 'b'.repeat(64),
+          candidateSolver: localCandidateSolver('plane-strain-consolidation-fixture'),
+          referenceSolver: commercialReferenceSolver('commercial-plane-strain-consolidation-fixture'),
+          evidenceHashSha256: 'd'.repeat(64),
+          resultHashSha256: 'e'.repeat(64),
         },
       ],
     });
@@ -459,6 +519,21 @@ describe('FEM engineering evidence kernels', () => {
     ]);
     expect(contract.comparisonResults).toHaveLength(2);
     expect(contract.comparisonResults.every((result) => result.accepted)).toBe(true);
+    expect(contract.comparisonResults[0]).toMatchObject({
+      comparisonKind: 'series-summary',
+      metricName: 'settlementAtFinalTime',
+      resultHashSha256: 'b'.repeat(64),
+      seriesSummary: expect.objectContaining({
+        seriesHashSha256: 'c'.repeat(64),
+      }),
+    });
+    expect(contract.coverageSummary).toMatchObject({
+      acceptedComparisonCount: 2,
+      acceptedPublishedComparisonCount: 1,
+      acceptedCommercialComparisonCount: 1,
+      fullyCoveredRequiredQuantityIds: ['settlement-time'],
+      missingRequiredSourceTypes: [],
+    });
     expect(contract.requiredQuantities).toEqual([
       expect.objectContaining({
         quantity: 'settlement-time curve',
@@ -523,6 +598,8 @@ describe('FEM engineering evidence kernels', () => {
           quantityRequirementId: 'settlement-time',
           referenceId: 'published-benchmark-1',
           caseId: 'case-1',
+          comparisonKind: 'scalar',
+          metricName: 'settlementAtFinalTime',
           quantity: 'settlement-time curve',
           unit: 'mm',
           actual: 54,
@@ -530,13 +607,17 @@ describe('FEM engineering evidence kernels', () => {
           tolerance: 0.10,
           toleranceType: 'relative',
           accepted: true,
+          candidateSolver: localCandidateSolver('case-1'),
           evidenceHashSha256: 'c'.repeat(64),
+          resultHashSha256: 'd'.repeat(64),
         },
         {
           id: 'commercial-accepted',
           quantityRequirementId: 'settlement-time',
           referenceId: 'commercial-solver-1',
           caseId: 'case-1',
+          comparisonKind: 'scalar',
+          metricName: 'settlementAtFinalTime',
           quantity: 'settlement-time curve',
           unit: 'mm',
           actual: 50.1,
@@ -544,7 +625,10 @@ describe('FEM engineering evidence kernels', () => {
           tolerance: 0.02,
           toleranceType: 'relative',
           accepted: true,
-          evidenceHashSha256: 'd'.repeat(64),
+          candidateSolver: localCandidateSolver('case-1'),
+          referenceSolver: commercialReferenceSolver('commercial-case-1'),
+          evidenceHashSha256: 'e'.repeat(64),
+          resultHashSha256: 'f'.repeat(64),
         },
       ],
     });
@@ -554,6 +638,70 @@ describe('FEM engineering evidence kernels', () => {
       'external-benchmark.comparison-results.published-too-loose.tolerance-too-loose',
       'external-benchmark.comparison-results.published-too-loose.not-accepted',
       'external-benchmark.required-quantities.settlement-time.accepted-comparison-missing.published-source',
+    ]));
+  });
+
+  it('blocks external comparison results without metric names, solver metadata, hashes, or valid series summaries', () => {
+    const contract = buildFemExternalBenchmarkAcceptanceContract({
+      references: [
+        {
+          id: 'commercial-solver-1',
+          sourceType: 'commercial-solver',
+          label: 'Commercial solver archive',
+          citation: 'Commercial solver result archive.',
+          referenceSolver: {
+            name: 'Reference FEM Solver',
+            version: '2024.1',
+          },
+        },
+      ],
+      requiredQuantities: [
+        {
+          id: 'settlement-time',
+          feature: 'consolidation',
+          quantity: 'settlement-time curve',
+          unit: 'mm',
+          tolerance: 0.02,
+          toleranceType: 'relative',
+          requiredReferenceSourceTypes: ['commercial-solver'],
+        },
+      ],
+      comparisonResults: [
+        {
+          id: 'bad-series-metadata',
+          quantityRequirementId: 'settlement-time',
+          referenceId: 'commercial-solver-1',
+          caseId: 'case-1',
+          comparisonKind: 'series-summary',
+          metricName: '',
+          quantity: 'settlement-time curve',
+          unit: 'mm',
+          actual: 50,
+          expected: 50,
+          tolerance: 0.02,
+          toleranceType: 'relative',
+          accepted: true,
+          candidateSolver: {} as any,
+          evidenceHashSha256: 'not-a-hash',
+          resultHashSha256: 'also-not-a-hash',
+          seriesSummary: {
+            ...seriesSummary('a'),
+            seriesHashSha256: 'bad-series-hash',
+          },
+        },
+      ],
+    });
+
+    expect(contract.status).toBe('blocked');
+    expect(contract.coverageSummary.acceptedComparisonCount).toBe(0);
+    expect(contract.blockerCodes).toEqual(expect.arrayContaining([
+      'external-benchmark.comparison-results.bad-series-metadata.metric-name-missing',
+      'external-benchmark.comparison-results.bad-series-metadata.evidence-hash-missing',
+      'external-benchmark.comparison-results.bad-series-metadata.result-hash-missing',
+      'external-benchmark.comparison-results.bad-series-metadata.candidate-solver-metadata-missing',
+      'external-benchmark.comparison-results.bad-series-metadata.reference-solver-metadata-missing',
+      'external-benchmark.comparison-results.bad-series-metadata.series-summary-invalid',
+      'external-benchmark.required-quantities.settlement-time.accepted-comparison-missing.commercial-solver',
     ]));
   });
 
