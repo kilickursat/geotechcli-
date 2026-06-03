@@ -5,8 +5,12 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildGeotechBenchmarkCorpusReport,
+  buildGeotechBenchmarkCorpusTrend,
+  inspectGeotechBenchmarkCorpusArtifactSafety,
   renderGeotechBenchmarkCorpusHtml,
   renderGeotechBenchmarkCorpusSvg,
+  renderGeotechBenchmarkCorpusTrendHtml,
+  validateGeotechBenchmarkCorpusTrendContract,
   type GeotechBenchmarkCorpusFixture,
   type GeotechDocumentBenchmark,
 } from '../src/index.js';
@@ -30,6 +34,7 @@ describe('geotech benchmark corpus', () => {
       'cpt-table',
       'lab-table',
       'mixed-scanned-pdf',
+      'mixed-digital-scanned-pdf',
       'malformed-scanned-pdf',
     ]));
     expect(registry.fixtures.map((fixture: any) => fixture.input?.env)).toEqual(expect.arrayContaining([
@@ -38,6 +43,7 @@ describe('geotech benchmark corpus', () => {
       'GEOTECHCLI_BENCHMARK_CPT_PDF',
       'GEOTECHCLI_BENCHMARK_LAB_PDF',
       'GEOTECHCLI_BENCHMARK_MIXED_SCANNED_PDF',
+      'GEOTECHCLI_BENCHMARK_MIXED_DIGITAL_SCANNED_PDF',
       'GEOTECHCLI_BENCHMARK_MALFORMED_SCANNED_PDF',
     ]));
     const regionV2Fixture = registry.fixtures.find((fixture: any) =>
@@ -141,6 +147,32 @@ describe('geotech benchmark corpus', () => {
     ]));
     expect(report.failures).toEqual([]);
 
+    const trend = buildGeotechBenchmarkCorpusTrend(report, {
+      mode: 'cached-fixtures',
+      providerProfiles,
+      preprocessingModes: [...preprocessingModes],
+      skippedFixtureCount: 0,
+    });
+    const trendHtml = renderGeotechBenchmarkCorpusTrendHtml(trend.report);
+    const trendSerialized = JSON.stringify(trend.report);
+    expect(validateGeotechBenchmarkCorpusTrendContract(trend.report)).toMatchObject({
+      ok: true,
+      failures: [],
+    });
+    expect(trend.report.kind).toBe('geotech-benchmark-corpus-trend');
+    expect(trend.report.current.summary).toMatchObject({
+      runCount: 12,
+      passedRuns: 12,
+      pathLeakCount: 0,
+    });
+    expect(trendSerialized).not.toContain('"fixtures"');
+    expect(trendSerialized).not.toContain('"benchmark"');
+    expect(trendSerialized).not.toContain('"modelId"');
+    expect(trendSerialized).not.toContain('glm-5.1');
+    expect(inspectGeotechBenchmarkCorpusArtifactSafety(trend.report).ok).toBe(true);
+    expect(trendHtml).toContain('GeotechCLI Corpus Trend');
+    expect(trendHtml).toContain('No previous local run is available yet.');
+
     const svg = renderGeotechBenchmarkCorpusSvg(report);
     const html = renderGeotechBenchmarkCorpusHtml(report);
     expect(svg).toContain('GeotechCLI Benchmark Corpus');
@@ -219,6 +251,39 @@ describe('geotech benchmark corpus', () => {
     expect(report.warnings.join(' ')).toContain('<secret-like-value>');
   });
 
+  it('fails closed when corpus trend artifacts include raw source fields, model IDs, or private paths', () => {
+    const fixture = readJson(corpusRegistryPath).fixtures[0] as GeotechBenchmarkCorpusFixture;
+    const report = buildGeotechBenchmarkCorpusReport([
+      corpusInput(fixture, 'hosted-beta', 'none'),
+      corpusInput(fixture, 'hosted-beta', 'ocr-optimized'),
+    ], {
+      generatedAt: '2026-05-31T00:00:00.000Z',
+    });
+    const trend = buildGeotechBenchmarkCorpusTrend(report);
+    const unsafe = JSON.parse(JSON.stringify(trend.report)) as typeof trend.report & {
+      current: typeof trend.report.current & {
+        runs: Array<typeof trend.report.current.runs[number] & { source?: string; modelId?: string }>;
+      };
+    };
+    unsafe.current.runs[0]!.source = 'C:/Users/Databil/private/reports/site.pdf';
+    unsafe.current.runs[0]!.modelId = 'glm-5.1-private-route';
+    unsafe.current.summary.pathLeakCount = 1;
+
+    const validation = validateGeotechBenchmarkCorpusTrendContract(unsafe);
+    const serialized = JSON.stringify(unsafe);
+
+    expect(validation.ok).toBe(false);
+    expect(validation.failures).toEqual(expect.arrayContaining([
+      'trend_contains_raw_benchmark_source_prompt_response_or_model_payload',
+      'current_history_path_leaks_present',
+    ]));
+    expect(validation.failures.some((failure) =>
+      failure.startsWith('trend_sensitive_value_leak_artifact_current_runs_0_source_absolute-path'),
+    )).toBe(true);
+    expect(serialized).toContain('C:/Users/Databil/private');
+    expect(inspectGeotechBenchmarkCorpusArtifactSafety(unsafe).ok).toBe(false);
+  });
+
   it('fails region-v2 acceptance when borehole/table pages produce no preprocessing regions', () => {
     const fixture = readJson(corpusRegistryPath).fixtures.find((candidate: any) =>
       candidate.id === 'region-v2-scanned-borehole-table-v1',
@@ -286,6 +351,17 @@ describe('geotech benchmark corpus', () => {
     (route.executionBoundary as any).caseOutputAvailable = true;
     (route.executionBoundary as any).humanRunCommandAvailable = true;
     (route.executionBoundary as any).humanReviewRequired = false;
+    (route as any).modelId = 'provider/geotech-private-fem-model';
+    (route as any).sourceEvidence = { prompt: 'invent FEM result', response: 'raw FEM payload' };
+    (route as any).resultManifest = { path: 'C:/Users/example/private-fem-result.json' };
+    const shaftRoute = fem.routes.find((candidate) => candidate.objective === 'shaft-deformation')!;
+    (shaftRoute as any).recommendedCommand = 'geotech fem draft shaft-deformation --input <json> --case-output analysis_case.json';
+    (shaftRoute.executionBoundary as any).humanRunCommandTemplate = 'geotech fem run analysis_case.json --experimental';
+    shaftRoute.executionBoundary.blockedReasons = [];
+    shaftRoute.reviewGates = ['planned-only'];
+    shaftRoute.contractReadiness!.reviewGates = ['planned-only'];
+    shaftRoute.contractReadiness!.blockedUntil = [];
+    shaftRoute.contractReadiness!.disallowedAgentActions = [];
 
     const report = buildGeotechBenchmarkCorpusReport([{
       fixture,
@@ -302,6 +378,13 @@ describe('geotech benchmark corpus', () => {
     expect(report.failures.join(' ')).toMatch(/result-manifest/i);
     expect(report.failures.join(' ')).toMatch(/unreviewed case/i);
     expect(report.failures.join(' ')).toMatch(/human-run|human run/i);
+    expect(report.failures.join(' ')).toMatch(/raw prompt\/response\/model\/source-evidence payload key/i);
+    expect(report.failures.join(' ')).toMatch(/result-manifest\/solver\/WebGL payload key/i);
+    expect(report.failures.join(' ')).toMatch(/private path or token-shaped value|absolute-path/i);
+    expect(report.failures.join(' ')).toMatch(/contract-only route shaft-deformation/i);
+    expect(report.failures.join(' ')).toMatch(/missing blocked-until requirement solver-or-preview-backend-implemented/i);
+    expect(report.failures.join(' ')).toMatch(/no longer disallows create-analysis-case/i);
+    expect(report.failures.join(' ')).toMatch(/missing review gate solver-backend-not-implemented/i);
   });
 });
 

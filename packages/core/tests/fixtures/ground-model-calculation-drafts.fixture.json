@@ -1,0 +1,89 @@
+{
+  "schemaVersion": "ground-model-calculation-draft-acceptance.v1",
+  "description": "Acceptance fixture for opt-in GroundModel-to-calculation input drafts. These are evidence-bound draft inputs only; they must not become automatic design execution or result payloads.",
+  "workflows": [
+    {
+      "workflow": "bearing-capacity",
+      "toolName": "calculate_bearing_capacity",
+      "requiredMissingUserInputs": ["foundation width", "embedment depth"],
+      "requiredInputKeys": ["unitWeight", "cohesion", "frictionAngle", "method", "factorOfSafety", "waterTableDepth"],
+      "requiredEvidenceIds": ["ev-strata-1", "ev-gamma-1", "ev-phi-1", "ev-c-1", "ev-gw-1"],
+      "requiredSourcePages": [
+        { "sourcePath": "site-report.pdf", "pageNumber": 3 },
+        { "sourcePath": "site-report.pdf", "pageNumber": 5 },
+        { "sourcePath": "lab-summary.pdf", "pageNumber": 7 }
+      ],
+      "prohibitedCommandPatterns": ["fem run", "--experimental", "--case-output"]
+    },
+    {
+      "workflow": "settlement",
+      "toolName": "calculate_schmertmann_settlement",
+      "requiredMissingUserInputs": ["applied stress", "foundation width"],
+      "requiredInputKeys": ["layers", "embedmentDepth", "unitWeight", "timeFactor"],
+      "requiredEvidenceIds": ["ev-strata-1", "ev-es-1", "ev-spt-1", "ev-gamma-1"],
+      "requiredSourcePages": [
+        { "sourcePath": "site-report.pdf", "pageNumber": 3 },
+        { "sourcePath": "site-report.pdf", "pageNumber": 4 },
+        { "sourcePath": "lab-summary.pdf", "pageNumber": 8 }
+      ],
+      "prohibitedCommandPatterns": ["fem run", "--experimental", "--case-output"]
+    },
+    {
+      "workflow": "pile-capacity",
+      "toolName": "calculate_pile_capacity",
+      "requiredMissingUserInputs": ["pile diameter", "pile length"],
+      "requiredInputKeys": ["pileType", "pileShape", "layers", "waterTableDepth", "factorOfSafety", "method"],
+      "requiredEvidenceIds": ["ev-strata-1", "ev-spt-1", "ev-gamma-1", "ev-phi-1", "ev-c-1", "ev-gw-1"],
+      "requiredSourcePages": [
+        { "sourcePath": "site-report.pdf", "pageNumber": 3 },
+        { "sourcePath": "site-report.pdf", "pageNumber": 4 },
+        { "sourcePath": "site-report.pdf", "pageNumber": 5 }
+      ],
+      "prohibitedCommandPatterns": ["fem run", "--experimental", "--case-output"]
+    },
+    {
+      "workflow": "liquefaction",
+      "toolName": "calculate_liquefaction",
+      "requiredMissingUserInputs": ["PGA", "earthquake magnitude"],
+      "requiredInputKeys": ["layers", "earthquakeMagnitude", "pga"],
+      "requiredEvidenceIds": ["ev-spt-1", "ev-gw-1", "ev-fines-1"],
+      "requiredSourcePages": [
+        { "sourcePath": "site-report.pdf", "pageNumber": 4 },
+        { "sourcePath": "site-report.pdf", "pageNumber": 5 },
+        { "sourcePath": "lab-summary.pdf", "pageNumber": 8 }
+      ],
+      "prohibitedCommandPatterns": ["fem run", "--experimental", "--case-output"]
+    },
+    {
+      "workflow": "slope-stability",
+      "toolName": "calculate_slope_stability",
+      "requiredMissingUserInputs": ["slope height", "slope angle"],
+      "requiredInputKeys": ["soilLayers", "waterTableDepth", "surcharge", "seismicCoefficient", "method"],
+      "requiredEvidenceIds": ["ev-strata-1", "ev-gamma-1", "ev-phi-1", "ev-c-1", "ev-gw-1"],
+      "requiredSourcePages": [
+        { "sourcePath": "site-report.pdf", "pageNumber": 3 },
+        { "sourcePath": "site-report.pdf", "pageNumber": 5 },
+        { "sourcePath": "lab-summary.pdf", "pageNumber": 7 }
+      ],
+      "prohibitedCommandPatterns": ["fem run", "--experimental", "--case-output"]
+    }
+  ],
+  "prohibitedPayloadKeys": [
+    "prompt",
+    "response",
+    "model",
+    "modelId",
+    "visionModelId",
+    "provider",
+    "sourceEvidence",
+    "sourceEvidenceSnippet",
+    "sourceEvidenceSnippets",
+    "rawText",
+    "apiKey",
+    "token"
+  ],
+  "requiredReviewGate": {
+    "code": "missing_user_inputs",
+    "severity": "blocking"
+  }
+}

@@ -32,9 +32,12 @@ if (!existsSync(coreBenchmarkEntry)) {
 
 const {
   buildGeotechBenchmarkCorpusReport,
+  buildGeotechBenchmarkCorpusTrend,
   redactGeotechBenchmarkCorpusArtifact,
   renderGeotechBenchmarkCorpusHtml,
   renderGeotechBenchmarkCorpusSvg,
+  renderGeotechBenchmarkCorpusTrendHtml,
+  validateGeotechBenchmarkCorpusTrendContract,
 } = await import(pathToFileURL(coreCorpusEntry).href);
 const { compareGeotechDocumentBenchmarks } = await import(pathToFileURL(coreBenchmarkEntry).href);
 
@@ -214,15 +217,19 @@ async function main(argv) {
   const trendHtmlPath = join(outputDir, 'corpus-trend.html');
   const previousReport = existsSync(reportPath) ? safeReadJson(reportPath) : null;
   const previousHistory = readCorpusHistory(historyPath);
-  const trend = buildCorpusTrend({
-    report,
-    previousReport,
-    previousHistory,
+  const trend = buildGeotechBenchmarkCorpusTrend(report, {
     mode: realFixtures ? 'real-fixtures' : 'cached-fixtures',
     providerProfiles: resolvedProviderProfiles,
     preprocessingModes,
     skippedFixtureCount: skippedFixtures.length,
+    previousHistory,
+    previousReport,
   });
+  const trendValidation = validateGeotechBenchmarkCorpusTrendContract(trend.report);
+  if (!trendValidation.ok) {
+    console.error(`Corpus benchmark trend failed contract: ${trendValidation.failures.join(', ')}`);
+    process.exit(1);
+  }
 
   writeJson(join(outputDir, 'registry.resolved.json'), {
     kind: registry.kind,
@@ -240,7 +247,7 @@ async function main(argv) {
   writeJson(trendPath, trend.report);
   writeFileSync(svgPath, `${renderGeotechBenchmarkCorpusSvg(report)}\n`);
   writeFileSync(htmlPath, renderGeotechBenchmarkCorpusHtml(report));
-  writeFileSync(trendHtmlPath, renderCorpusTrendHtml(trend.report));
+  writeFileSync(trendHtmlPath, renderGeotechBenchmarkCorpusTrendHtml(trend.report));
 
   console.log('\nGeotech benchmark corpus');
   console.log(`Output: ${relative(repoRoot, outputDir)}`);
@@ -330,6 +337,7 @@ function defaultFixtureEnv(category) {
     'cpt-table': 'GEOTECHCLI_BENCHMARK_CPT_PDF',
     'lab-table': 'GEOTECHCLI_BENCHMARK_LAB_PDF',
     'mixed-scanned-digital': 'GEOTECHCLI_BENCHMARK_MIXED_SCANNED_PDF',
+    'mixed-digital-scanned-pdf': 'GEOTECHCLI_BENCHMARK_MIXED_DIGITAL_SCANNED_PDF',
     'mixed-scanned-pdf': 'GEOTECHCLI_BENCHMARK_MIXED_SCANNED_PDF',
     'malformed-scanned-pdf': 'GEOTECHCLI_BENCHMARK_MALFORMED_SCANNED_PDF',
   }[category] ?? null;
@@ -764,237 +772,4 @@ function clone(value) {
 function readCorpusHistory(filePath) {
   const parsed = existsSync(filePath) ? safeReadJson(filePath) : null;
   return Array.isArray(parsed) ? parsed.filter((item) => item?.kind === 'geotech-benchmark-corpus-history-entry') : [];
-}
-
-function buildCorpusTrend(options) {
-  const current = buildHistoryEntry(options.report, {
-    mode: options.mode,
-    providerProfiles: options.providerProfiles,
-    preprocessingModes: options.preprocessingModes,
-    skippedFixtureCount: options.skippedFixtureCount,
-  });
-  const previousFromHistory = options.previousHistory.at(-1) ?? null;
-  const previous = previousFromHistory ?? (options.previousReport ? buildHistoryEntry(options.previousReport, {
-    mode: 'previous-local-report',
-    providerProfiles: options.previousReport.summary?.providerProfiles ?? [],
-    preprocessingModes: options.previousReport.summary?.preprocessingModes ?? [],
-    skippedFixtureCount: 0,
-  }) : null);
-  const history = [...options.previousHistory, current].slice(-50);
-  return {
-    history,
-    report: {
-      kind: 'geotech-benchmark-corpus-trend',
-      schemaVersion: 1,
-      generatedAt: current.generatedAt,
-      current,
-      previous,
-      delta: previous ? buildSummaryDelta(current.summary, previous.summary) : null,
-      runDeltas: previous ? buildRunDeltas(current.runs, previous.runs) : [],
-      historyCount: history.length,
-      note: 'Local corpus trend output stores benchmark summaries only. Private fixture paths and report bytes are intentionally excluded.',
-    },
-  };
-}
-
-function buildHistoryEntry(report, context) {
-  return {
-    kind: 'geotech-benchmark-corpus-history-entry',
-    schemaVersion: 1,
-    generatedAt: report.generatedAt,
-    mode: context.mode,
-    skippedFixtureCount: context.skippedFixtureCount,
-    providerProfiles: [...context.providerProfiles],
-    preprocessingModes: [...context.preprocessingModes],
-    summary: {
-      fixtureCount: finiteNumber(report.summary?.fixtureCount),
-      runCount: finiteNumber(report.summary?.runCount),
-      passedRuns: finiteNumber(report.summary?.passedRuns),
-      failedRuns: finiteNumber(report.summary?.failedRuns),
-      passed: Boolean(report.summary?.passed),
-      averageConfidence: finiteNumber(report.summary?.averageConfidence),
-      averageConfidenceBreakdown: summarizeHistoryConfidenceBreakdown(report.summary?.averageConfidenceBreakdown),
-      averageTraceabilityRate: finiteNumber(report.summary?.averageTraceabilityRate),
-      averageGroundModelReadinessScore: finiteNumber(report.summary?.averageGroundModelReadinessScore),
-      averagePreprocessingQualityScore: finiteNumber(report.summary?.averagePreprocessingQualityScore),
-      totalEstimatedHostedCalls: finiteNumber(report.summary?.totalEstimatedHostedCalls),
-    },
-    runs: Array.isArray(report.runs)
-      ? report.runs.map((run) => ({
-          key: runKey(run),
-          fixtureId: run.fixtureId,
-          category: run.category,
-          providerProfile: run.providerProfile,
-          preprocessingMode: run.preprocessingMode,
-          passed: Boolean(run.passed),
-          successfulPageRate: finiteNumber(run.successfulPageRate),
-          cacheHitRate: finiteNumber(run.cacheHitRate),
-          estimatedHostedCalls: finiteNumber(run.estimatedHostedCalls),
-          directTraceabilityRate: finiteNumber(run.directTraceabilityRate),
-          confidenceBreakdown: summarizeHistoryConfidenceBreakdown(run.confidenceBreakdown),
-          groundModelReadinessScore: finiteNumber(run.groundModelReadinessScore),
-          preprocessingQualityScore: finiteNumber(run.preprocessingQualityScore),
-          preprocessingRegionQualityScore: finiteNumber(run.preprocessingRegionQualityScore),
-          reviewGates: Array.isArray(run.reviewGates) ? [...run.reviewGates] : [],
-          latencyMs: typeof run.latencyMs === 'number' && Number.isFinite(run.latencyMs) ? run.latencyMs : null,
-        }))
-      : [],
-  };
-}
-
-function buildSummaryDelta(current, previous) {
-  return {
-    fixtureCount: current.fixtureCount - previous.fixtureCount,
-    runCount: current.runCount - previous.runCount,
-    passedRuns: current.passedRuns - previous.passedRuns,
-    failedRuns: current.failedRuns - previous.failedRuns,
-    averageConfidence: round(current.averageConfidence - previous.averageConfidence),
-    averageExtractionConfidence: round(
-      finiteNumber(current.averageConfidenceBreakdown?.extractionConfidence)
-      - finiteNumber(previous.averageConfidenceBreakdown?.extractionConfidence),
-    ),
-    averageCorroborationScore: round(
-      finiteNumber(current.averageConfidenceBreakdown?.corroborationScore)
-      - finiteNumber(previous.averageConfidenceBreakdown?.corroborationScore),
-    ),
-    averageTraceabilityRate: round(current.averageTraceabilityRate - previous.averageTraceabilityRate),
-    averageGroundModelReadinessScore: current.averageGroundModelReadinessScore - previous.averageGroundModelReadinessScore,
-    averagePreprocessingQualityScore: round(current.averagePreprocessingQualityScore - previous.averagePreprocessingQualityScore),
-    totalEstimatedHostedCalls: current.totalEstimatedHostedCalls - previous.totalEstimatedHostedCalls,
-  };
-}
-
-function buildRunDeltas(currentRuns, previousRuns) {
-  const previousByKey = new Map(previousRuns.map((run) => [run.key, run]));
-  return currentRuns.map((current) => {
-    const previous = previousByKey.get(current.key);
-    return {
-      key: current.key,
-      fixtureId: current.fixtureId,
-      providerProfile: current.providerProfile,
-      preprocessingMode: current.preprocessingMode,
-      status: previous ? (current.passed === previous.passed ? 'unchanged' : 'changed') : 'new',
-      passed: current.passed,
-      previousPassed: previous?.passed ?? null,
-      cacheHitRateDelta: previous ? round(current.cacheHitRate - previous.cacheHitRate) : null,
-      hostedCallDelta: previous ? current.estimatedHostedCalls - previous.estimatedHostedCalls : null,
-      traceabilityDelta: previous ? round(current.directTraceabilityRate - previous.directTraceabilityRate) : null,
-      extractionConfidenceDelta: previous
-        ? round(
-          finiteNumber(current.confidenceBreakdown?.extractionConfidence)
-          - finiteNumber(previous.confidenceBreakdown?.extractionConfidence),
-        )
-        : null,
-      corroborationScoreDelta: previous
-        ? round(
-          finiteNumber(current.confidenceBreakdown?.corroborationScore)
-          - finiteNumber(previous.confidenceBreakdown?.corroborationScore),
-        )
-        : null,
-      groundModelReadinessDelta: previous ? current.groundModelReadinessScore - previous.groundModelReadinessScore : null,
-      qualityDelta: previous ? round(current.preprocessingQualityScore - previous.preprocessingQualityScore) : null,
-      reviewGateDelta: previous ? current.reviewGates.length - previous.reviewGates.length : null,
-      latencyDeltaMs: previous && current.latencyMs != null && previous.latencyMs != null
-        ? current.latencyMs - previous.latencyMs
-        : null,
-    };
-  }).sort((left, right) => left.key.localeCompare(right.key));
-}
-
-function runKey(run) {
-  return `${run.fixtureId}::${run.providerProfile}::${run.preprocessingMode}`;
-}
-
-function finiteNumber(value) {
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
-}
-
-function summarizeHistoryConfidenceBreakdown(value) {
-  return {
-    overall: finiteNumber(value?.overall),
-    extractionConfidence: finiteNumber(value?.extractionConfidence),
-    engineeringCompleteness: finiteNumber(value?.engineeringCompleteness),
-    traceabilityScore: finiteNumber(value?.traceabilityScore),
-    corroborationScore: finiteNumber(value?.corroborationScore),
-    readinessScore: finiteNumber(value?.readinessScore),
-    pageEvidenceConfidence: finiteNumber(value?.pageEvidenceConfidence),
-  };
-}
-
-function round(value) {
-  return Math.round(value * 1000) / 1000;
-}
-
-function renderCorpusTrendHtml(trend) {
-  const delta = trend.delta;
-  const runRows = trend.runDeltas.map((run) => `
-    <tr>
-      <td>${escapeHtml(run.fixtureId)}</td>
-      <td>${escapeHtml(run.providerProfile)}</td>
-      <td>${escapeHtml(run.preprocessingMode)}</td>
-      <td class="${run.passed ? 'pass' : 'fail'}">${run.passed ? 'pass' : 'fail'}</td>
-      <td>${formatDelta(run.traceabilityDelta, true)}</td>
-      <td>${formatDelta(run.qualityDelta, true)}</td>
-      <td>${formatDelta(run.reviewGateDelta, false)}</td>
-      <td>${formatDelta(run.hostedCallDelta, false)}</td>
-      <td>${formatDelta(run.latencyDeltaMs, false)}</td>
-    </tr>`).join('');
-  return `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>GeotechCLI Corpus Trend</title>
-<style>
-body{margin:0;font-family:Inter,Arial,sans-serif;background:#f8fafc;color:#0f172a}
-main{max-width:1040px;margin:0 auto;padding:32px 20px 56px}
-h1{margin:0 0 8px;font-size:28px}
-.note{color:#475569;font-size:13px}
-.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:22px 0}
-.metric{background:white;border:1px solid #dbe5ea;border-radius:8px;padding:14px}.metric strong{display:block;font-size:24px}
-table{width:100%;border-collapse:collapse;background:white;border:1px solid #dbe5ea;border-radius:8px;overflow:hidden;margin-top:16px}
-th,td{padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:left;font-size:13px}
-th{background:#0f172a;color:#f8fafc}.pass{color:#0f766e;font-weight:700}.fail{color:#b91c1c;font-weight:700}
-</style>
-</head>
-<body>
-<main>
-<h1>GeotechCLI Corpus Trend</h1>
-<p class="note">${escapeHtml(trend.note)} Generated ${escapeHtml(trend.generatedAt)}.</p>
-<section class="summary">
-  <div class="metric"><span>History Entries</span><strong>${trend.historyCount}</strong></div>
-  <div class="metric"><span>Run Delta</span><strong>${delta ? signed(delta.runCount) : 'new'}</strong></div>
-  <div class="metric"><span>Extraction Trust Delta</span><strong>${delta ? signed(delta.averageExtractionConfidence) : 'new'}</strong></div>
-  <div class="metric"><span>Corroboration Delta</span><strong>${delta ? signed(delta.averageCorroborationScore) : 'new'}</strong></div>
-  <div class="metric"><span>Traceability Delta</span><strong>${delta ? signedPercent(delta.averageTraceabilityRate) : 'new'}</strong></div>
-  <div class="metric"><span>Quality Delta</span><strong>${delta ? signedPercent(delta.averagePreprocessingQualityScore) : 'new'}</strong></div>
-</section>
-<h2>Run Deltas</h2>
-<table><thead><tr><th>Fixture</th><th>Provider</th><th>Preprocessing</th><th>Status</th><th>Trace</th><th>Quality</th><th>Review gates</th><th>Hosted calls</th><th>Latency ms</th></tr></thead><tbody>${runRows || '<tr><td colspan="9">No previous local run is available yet.</td></tr>'}</tbody></table>
-</main>
-</body>
-</html>
-`;
-}
-
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;');
-}
-
-function formatDelta(value, asPercent) {
-  if (value == null) return 'new';
-  return asPercent ? signedPercent(value) : signed(value);
-}
-
-function signed(value) {
-  return value > 0 ? `+${value}` : String(value);
-}
-
-function signedPercent(value) {
-  const percent = Math.round(value * 100);
-  return percent > 0 ? `+${percent}%` : `${percent}%`;
 }

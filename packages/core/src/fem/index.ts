@@ -23,7 +23,9 @@ export {
   buildFemDraftInputFromReadiness,
   mapGroundModelEvidenceRefs,
   stripPlaceholderFemValues,
+  validateFemGroundModelDraftCandidate,
   type FemGroundModelDraftCandidate,
+  type FemGroundModelDraftCandidateValidation,
   type FemGroundModelDraftBridge,
   type FemGroundModelExecutionBoundary,
 } from './ground-model-draft.js';

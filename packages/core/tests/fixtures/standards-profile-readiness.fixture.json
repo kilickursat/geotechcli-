@@ -1,0 +1,88 @@
+{
+  "schemaVersion": "standard-profile-readiness-acceptance.v1",
+  "description": "Readiness-only acceptance fixture for deterministic standards/profile validators. These profiles may prepare assumptions and blockers, but must not expose solver, FEM, run-command, or design-result payloads.",
+  "supportedProfiles": ["eurocode7", "aashto", "is", "bs", "astm"],
+  "workflows": ["bearing-capacity", "settlement", "pile-capacity", "liquefaction", "slope-stability"],
+  "evidence": {
+    "hasBoreholes": true,
+    "hasStrata": true,
+    "hasDepthCoverage": true,
+    "hasSpt": true,
+    "hasGroundwater": true,
+    "hasUnitWeight": true,
+    "hasStrength": true,
+    "hasCompressibility": true,
+    "hasFinesOrGradation": true,
+    "hasCoordinates": true
+  },
+  "profiles": [
+    {
+      "id": "eurocode7",
+      "designFormat": "partial-factor",
+      "expectedStatus": "blocked",
+      "minimumSafetyFactorContexts": 3,
+      "expectedBlockerCodes": ["ec7_design_approach_required", "ec7_characteristic_values_required"],
+      "expectedSourceReferences": ["EC7-2.4.7", "EC7-6.5", "EC7-7.6", "EC7-11"]
+    },
+    {
+      "id": "aashto",
+      "designFormat": "lrfd",
+      "expectedStatus": "blocked",
+      "minimumSafetyFactorContexts": 2,
+      "expectedBlockerCodes": ["aashto_limit_state_required", "aashto_resistance_factor_required"],
+      "expectedSourceReferences": ["AASHTO-LRFD-GEOTECH", "ASTM-D1586", "BI-2014"]
+    },
+    {
+      "id": "is",
+      "designFormat": "working-stress",
+      "expectedStatus": "blocked",
+      "minimumSafetyFactorContexts": 2,
+      "expectedBlockerCodes": ["is_code_clause_required", "is_water_table_treatment_required"],
+      "expectedSourceReferences": ["IS-6403", "IS-2911", "BI-2014"]
+    },
+    {
+      "id": "bs",
+      "designFormat": "working-stress",
+      "expectedStatus": "blocked",
+      "minimumSafetyFactorContexts": 2,
+      "expectedBlockerCodes": ["bs_design_basis_required", "bs_groundwater_and_stage_required"],
+      "expectedSourceReferences": ["BS-8004", "BS-8002", "EC7-2.4.7", "EC7-11"]
+    },
+    {
+      "id": "astm",
+      "designFormat": "testing-classification",
+      "expectedStatus": "blocked",
+      "minimumSafetyFactorContexts": 2,
+      "expectedBlockerCodes": ["astm_companion_design_standard_required", "astm_test_method_traceability_required"],
+      "expectedSourceReferences": ["ASTM-D2487", "ASTM-D1586", "ASTM-D5778", "ASTM-D4318", "BI-2014"]
+    }
+  ],
+  "prohibitedExecutionKeys": [
+    "command",
+    "commandTemplate",
+    "runCommand",
+    "toolName",
+    "solver",
+    "solverInput",
+    "solverOutput",
+    "fem",
+    "analysisCase",
+    "caseOutput",
+    "calculationResult",
+    "designResult"
+  ],
+  "prohibitedPayloadKeys": [
+    "prompt",
+    "response",
+    "model",
+    "modelId",
+    "visionModelId",
+    "provider",
+    "sourceEvidence",
+    "sourceEvidenceSnippet",
+    "sourceEvidenceSnippets",
+    "rawText",
+    "apiKey",
+    "token"
+  ]
+}

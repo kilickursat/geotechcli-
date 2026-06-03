@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -13,11 +13,15 @@ if (!existsSync(distEntry)) {
 }
 
 const {
+  attachByokBenchmarkReportContractValidation,
   buildByokBenchmarkPrompt,
   buildByokBenchmarkReport,
+  buildByokBenchmarkTrend,
   buildByokProviderBenchmarkProfile,
   generateText,
+  validateByokBenchmarkReportContract,
   validateByokBenchmarkResponse,
+  validateByokBenchmarkTrendContract,
 } = await import('../packages/core/dist/index.js');
 
 const parsedArgs = parseArgs(process.argv.slice(2));
@@ -89,13 +93,17 @@ const candidates = [
   {
     name: 'openai-compatible',
     profileId: 'openai-compatible',
-    env: ['OPENAI_COMPATIBLE_API_KEY', 'OPENAI_COMPATIBLE_BASE_URL', 'OPENAI_COMPATIBLE_MODEL'],
-    requiresAll: true,
+    env: ['OPENAI_COMPATIBLE_API_KEY', 'OPENAI_COMPATIBLE_BASE_URL', 'OPENAI_COMPATIBLE_MODEL', 'OPENAI_COMPATIBLE_MODEL_ID'],
+    isConfigured: () => Boolean(
+      envValue('OPENAI_COMPATIBLE_API_KEY')
+      && envValue('OPENAI_COMPATIBLE_BASE_URL')
+      && envValue('OPENAI_COMPATIBLE_MODEL', 'OPENAI_COMPATIBLE_MODEL_ID')
+    ),
     config: () => ({
       provider: 'openai-compatible',
       apiKey: envValue('OPENAI_COMPATIBLE_API_KEY'),
       baseUrl: envValue('OPENAI_COMPATIBLE_BASE_URL'),
-      modelId: envValue('OPENAI_COMPATIBLE_MODEL'),
+      modelId: envValue('OPENAI_COMPATIBLE_MODEL', 'OPENAI_COMPATIBLE_MODEL_ID'),
       timeout: timeoutMs(),
     }),
   },
@@ -117,7 +125,9 @@ const selected = candidates.filter((candidate) =>
   requestedProviders.size === 0 || requestedProviders.has(candidate.name),
 );
 const configured = selected.filter((candidate) =>
-  candidate.requiresTruthy
+  typeof candidate.isConfigured === 'function'
+    ? candidate.isConfigured()
+    : candidate.requiresTruthy
     ? candidate.env.some((name) => /^(?:1|true|yes|on)$/i.test(String(process.env[name] ?? '').trim()))
     : candidate.requiresAll
     ? candidate.env.every((name) => Boolean(process.env[name]))
@@ -127,11 +137,9 @@ const configured = selected.filter((candidate) =>
 if (configured.length === 0) {
   const providerHint = requestedProviders.size > 0 ? ` for ${[...requestedProviders].join(', ')}` : '';
   if (parsedArgs.out || parsedArgs.json) {
-    const skippedReport = buildByokBenchmarkReport([]);
+    const skippedReport = attachByokBenchmarkReportContractValidation(buildByokBenchmarkReport([]));
     if (parsedArgs.out) {
-      const outputPath = resolve(parsedArgs.out);
-      mkdirSync(dirname(outputPath), { recursive: true });
-      writeFileSync(outputPath, `${JSON.stringify(skippedReport, null, 2)}\n`);
+      persistByokBenchmarkArtifacts(skippedReport, parsedArgs.out);
       console.log(`BYOK benchmark report: ${parsedArgs.out}`);
     }
     if (parsedArgs.json) {
@@ -139,7 +147,7 @@ if (configured.length === 0) {
     }
   }
   console.log(`BYOK smoke skipped: no matching provider environment keys configured${providerHint}.`);
-  console.log('Supported envs: GEOTECHCLI_BYOK_HOSTED_BETA=1, OPENROUTER_API_KEY, ZHIPU_API_KEY/ZAI_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, HF_TOKEN/HUGGINGFACE_API_KEY, or OPENAI_COMPATIBLE_API_KEY + OPENAI_COMPATIBLE_BASE_URL + OPENAI_COMPATIBLE_MODEL.');
+  console.log('Supported envs: GEOTECHCLI_BYOK_HOSTED_BETA=1, OPENROUTER_API_KEY, ZHIPU_API_KEY/ZAI_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, HF_TOKEN/HUGGINGFACE_API_KEY, or OPENAI_COMPATIBLE_API_KEY + OPENAI_COMPATIBLE_BASE_URL + OPENAI_COMPATIBLE_MODEL (OPENAI_COMPATIBLE_MODEL_ID fallback supported).');
   process.exit(strict ? 1 : 0);
 }
 
@@ -183,11 +191,14 @@ for (const candidate of configured) {
   }
 }
 
-const report = buildByokBenchmarkReport(runs);
+const report = attachByokBenchmarkReportContractValidation(buildByokBenchmarkReport(runs));
+const reportValidation = report.contractValidation ?? validateByokBenchmarkReportContract(report);
+if (!reportValidation.ok) {
+  console.error(`BYOK benchmark report failed contract: ${reportValidation.failures.join(', ')}`);
+  process.exit(1);
+}
 if (parsedArgs.out) {
-  const outputPath = resolve(parsedArgs.out);
-  mkdirSync(dirname(outputPath), { recursive: true });
-  writeFileSync(outputPath, `${JSON.stringify(report, null, 2)}\n`);
+  persistByokBenchmarkArtifacts(report, parsedArgs.out);
 }
 if (parsedArgs.json) {
   console.log(JSON.stringify(report, null, 2));
@@ -299,4 +310,96 @@ function redactSecretLikeText(value) {
     .replace(/sk-or-v1-[A-Za-z0-9_-]{8,}/g, 'sk-or-v1-***')
     .replace(/hf_[A-Za-z0-9_-]{8,}/g, 'hf_***')
     .replace(/\b[A-Za-z0-9_-]{24,}\b/g, '***');
+}
+
+function persistByokBenchmarkArtifacts(report, reportPath) {
+  const outputPath = resolve(reportPath);
+  const outputDir = dirname(outputPath);
+  const historyPath = join(outputDir, 'byok-history.json');
+  const trendPath = join(outputDir, 'byok-trend.json');
+  const trendHtmlPath = join(outputDir, 'byok-trend.html');
+  mkdirSync(outputDir, { recursive: true });
+
+  const reportArtifact = report.contractValidation
+    ? report
+    : attachByokBenchmarkReportContractValidation(report);
+  const reportValidation = reportArtifact.contractValidation ?? validateByokBenchmarkReportContract(reportArtifact);
+  if (!reportValidation.ok) {
+    console.error(`BYOK benchmark report failed contract: ${reportValidation.failures.join(', ')}`);
+    process.exit(1);
+  }
+  const previousHistory = readByokHistory(historyPath);
+  const trend = buildByokBenchmarkTrend(reportArtifact, previousHistory);
+  const trendValidation = validateByokBenchmarkTrendContract(trend.report);
+  if (!trendValidation.ok) {
+    console.error(`BYOK benchmark trend failed contract: ${trendValidation.failures.join(', ')}`);
+    process.exit(1);
+  }
+
+  writeFileSync(outputPath, `${JSON.stringify(reportArtifact, null, 2)}\n`);
+  writeFileSync(historyPath, `${JSON.stringify(trend.history, null, 2)}\n`);
+  writeFileSync(trendPath, `${JSON.stringify(trend.report, null, 2)}\n`);
+  writeFileSync(trendHtmlPath, renderByokTrendHtml(trend.report));
+}
+
+function readByokHistory(filePath) {
+  if (!existsSync(filePath)) return [];
+  try {
+    const parsed = JSON.parse(readFileSync(filePath, 'utf-8'));
+    return Array.isArray(parsed)
+      ? parsed.filter((entry) => entry?.kind === 'geotech-byok-provider-benchmark-history-entry')
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function renderByokTrendHtml(trend) {
+  const current = trend.current.summary;
+  const delta = trend.delta;
+  const profiles = current.profiles.length > 0 ? current.profiles.join(', ') : 'none';
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GeotechCLI BYOK Benchmark Trend</title>
+<style>
+body{margin:0;font-family:Inter,Arial,sans-serif;background:#f8fafc;color:#0f172a}
+main{max-width:920px;margin:0 auto;padding:32px 20px 56px}
+h1{margin:0 0 8px;font-size:28px}.note{color:#475569;font-size:13px;line-height:1.5}
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:22px 0}
+.metric{background:#fff;border:1px solid #dbe5ea;border-radius:8px;padding:14px}.metric strong{display:block;font-size:24px}
+.pass{color:#0f766e}.fail{color:#b91c1c}code{background:#e2e8f0;border-radius:4px;padding:2px 5px}
+</style>
+</head>
+<body>
+<main>
+<h1>GeotechCLI BYOK Benchmark Trend</h1>
+<p class="note">${escapeHtml(trend.note)} Generated ${escapeHtml(trend.generatedAt)}.</p>
+<section class="summary">
+  <div class="metric"><span>Runs</span><strong>${current.runCount}</strong></div>
+  <div class="metric"><span>Passed</span><strong class="${current.passed ? 'pass' : 'fail'}">${current.passed ? 'yes' : 'no'}</strong></div>
+  <div class="metric"><span>Latency Delta</span><strong>${formatDelta(delta?.averageLatencyMs)}</strong></div>
+  <div class="metric"><span>Token Delta</span><strong>${formatDelta(delta?.totalTokens)}</strong></div>
+</section>
+<p>Profiles: <code>${escapeHtml(profiles)}</code></p>
+<p>Evidence input: <code>${escapeHtml(current.evidenceInput)}</code>. Path leak count: <strong>${current.pathLeakCount}</strong>.</p>
+</main>
+</body>
+</html>
+`;
+}
+
+function formatDelta(value) {
+  if (value == null) return 'new';
+  return value > 0 ? `+${value}` : String(value);
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;');
 }

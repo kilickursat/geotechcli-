@@ -219,6 +219,7 @@ export function buildLLMConfig(): import('../llm/types.js').LLMConfig & { timeou
     case 'openai-compatible':
       apiKey = preferEnv(
         process.env.OPENAI_COMPATIBLE_API_KEY,
+        process.env.OPENROUTER_API_KEY,
         process.env.OPENAI_API_KEY,
         config.llm.api_key,
       );
@@ -226,6 +227,7 @@ export function buildLLMConfig(): import('../llm/types.js').LLMConfig & { timeou
     case 'huggingface':
       apiKey = preferEnv(
         process.env.HF_TOKEN,
+        process.env.HUGGINGFACE_API_KEY,
         process.env.HUGGINGFACE_TOKEN,
         config.llm.api_key,
       );
@@ -243,6 +245,8 @@ export function buildLLMConfig(): import('../llm/types.js').LLMConfig & { timeou
   } else if (provider === 'openai-compatible') {
     baseUrl = preferEnv(
       process.env.OPENAI_COMPATIBLE_BASE_URL,
+      process.env.OPENROUTER_BASE_URL,
+      process.env.OPENROUTER_API_KEY ? 'https://openrouter.ai/api/v1' : undefined,
       config.llm.base_url,
     ) || undefined;
   }
@@ -253,6 +257,7 @@ export function buildLLMConfig(): import('../llm/types.js').LLMConfig & { timeou
     modelId = preferEnv(
       process.env.OPENAI_COMPATIBLE_MODEL,
       process.env.OPENAI_COMPATIBLE_MODEL_ID,
+      process.env.OPENROUTER_MODEL,
       config.llm.model,
     ) || undefined;
   }

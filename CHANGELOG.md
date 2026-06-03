@@ -1,5 +1,59 @@
 # Changelog
 
+## Unreleased
+
+### Corpus Mixed Digital/Scanned Coverage
+
+- Added a small cached mixed digital/scanned PDF benchmark fixture to the internal geotechnical corpus registry.
+- Added `GEOTECHCLI_BENCHMARK_MIXED_DIGITAL_SCANNED_PDF` as the private real-fixture env path for mixed native-text plus scanned-page reports.
+- Extended corpus registry coverage so the benchmark harness keeps mixed digital/scanned reports on the same provider, preprocessing, cache-reuse, traceability, GroundModel-readiness, and redaction contract as the other fixture classes.
+- Added a core corpus trend contract validator and renderer for `corpus-history.json`, `corpus-trend.json`, and `corpus-trend.html`.
+- Made corpus trend artifacts summary-only and fail closed if raw benchmark/source fields, model IDs, private paths, or token-shaped values appear.
+
+### Preprocessing Benchmark Guardrails
+
+- Added a typed contract validator for preprocessing fixture benchmark artifacts covering all six fixture categories and all `none`, `ocr-optimized`, and `region-v2` mode runs.
+- Made `npm run benchmark:preprocessing` emit all mode-pair deltas, path/secret safety metadata, report/trend contract validation, and path-safe history/trend JSON plus a trend HTML dashboard.
+- Added focused regression coverage so preprocessing benchmark artifacts fail when region-v2 crop assets regress, mode comparisons disappear, or private paths/token-shaped values leak.
+- Added trend-artifact regression coverage so preprocessing trend JSON fails closed if raw fixture filenames, asset hashes, private paths, prompts, responses, or model payload fields appear.
+
+### BYOK Report Guardrails
+
+- Added a report-level BYOK benchmark contract validator for live smoke artifacts.
+- Added path-safe BYOK smoke history/trend artifacts (`byok-history.json`, `byok-trend.json`, and `byok-trend.html`) that store provider summary metrics only.
+- Made persisted BYOK smoke reports include `contractValidation` metadata, including skipped-provider runs.
+- Made BYOK benchmark report output redact private local paths and provider-token-shaped values before persistence.
+- Restored `OPENAI_COMPATIBLE_MODEL_ID` as the documented fallback alias for OpenAI-compatible BYOK smoke checks.
+- Added runtime OpenRouter and Hugging Face BYOK env aliases so `OPENROUTER_API_KEY`/`OPENROUTER_MODEL` and `HUGGINGFACE_API_KEY` work consistently outside the smoke harness.
+- Added fixture-backed coverage proving hosted-beta, OpenAI-compatible, OpenRouter/free, and local/HF-compatible runs stay on one comparable preprocessed page-evidence contract.
+
+### Signal Analysis Guardrails
+
+- Added a fixture-backed signal-analysis result contract for settlement, piezometer, inclinometer, vibration, and load-test outputs.
+- Added a core signal benchmark artifact contract for comparison and trend JSON, covering all five synthetic instrument classes, zero model calls, direct threshold-profile metrics, direct HTML plot export, and path/secret safety.
+- Made `npm run benchmark:signal-analysis` persist `contractValidation` metadata and fail when benchmark comparison or trend artifacts fall outside that contract.
+- Made signal acceptance fail when deterministic outputs drop trend/rate/series structures, lose threshold-profile review gates, carry model/LLM metadata, or leak private paths/token-shaped values.
+- Made raw `analyzeSignalFile` source labels path-safe by default so direct signal results store basenames instead of local absolute input paths.
+
+### Calculation Draft Guardrails
+
+- Added a fixture-backed contract validator for GroundModel-derived bearing, settlement, pile, liquefaction, and slope calculation input drafts.
+- Made draft acceptance fail if a design-calculation draft becomes auto-ready, loses missing-user-input gates, drops evidence/source references, carries FEM execution or case-output commands, raw prompts/responses/source-evidence/model payload keys, or leaks private paths/tokens.
+- Fixed pile-capacity draft traceability so unit-weight evidence is retained when unit weight is used in the generated pile input draft.
+
+### Standards Profile Guardrails
+
+- Added a fixture-backed runtime contract check for Eurocode 7, AASHTO, IS, BS, and ASTM standards-profile validation output.
+- Made the standards-profile acceptance test fail if readiness output starts exposing run commands, solver/FEM metadata, calculation/design result payloads, raw prompts/responses/source-evidence/model payload keys, private paths, token-shaped values, or source references outside the embedded standards database.
+- Kept standards profiles scoped to assumptions, blockers, safety-factor context, and source references; they remain readiness checks, not automatic design-code calculations.
+
+### FEM Boundary Guardrails
+
+- Added GroundModel-derived planned FEM route acceptance coverage for shaft, pile-group, slope/embankment, retaining-wall/excavation-support, seepage/groundwater, and staged settlement/consolidation contract-only routes.
+- Added benchmark and corpus guardrails that fail when contract-only FEM routes expose case-output creation, run command templates, agent solver/WebGL/result-manifest actions, or lose blocked-until metadata, disallowed agent actions, route-specific review gates, or boundary blocked reasons.
+- Added candidate-level checks so planned FEM draft routes reject raw prompt/response/source-evidence/model payload keys, result-manifest/solver/WebGL payloads, private paths/tokens, and redact local absolute evidence source paths before exposure.
+- Kept planned FEM routes explicitly experimental and non-runnable until deterministic solvers, validation fixtures, engineering benchmark cases, and renderer smoke tests exist.
+
 ## [0.4.90] - 2026-06-01
 
 ### BYOK Evidence-Contract Benchmark

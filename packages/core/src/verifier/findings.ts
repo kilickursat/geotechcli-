@@ -69,6 +69,12 @@ export interface GroundModelCalculationInputDraft {
   readyToRun: boolean;
 }
 
+export interface GroundModelCalculationInputDraftContract {
+  schemaVersion: 'ground-model-calculation-input-draft-contract.v1';
+  ok: boolean;
+  failures: string[];
+}
+
 export interface GroundModelCalculationDraftSourceRef {
   evidenceId: string;
   sourcePath: string;
@@ -126,8 +132,157 @@ export interface GroundModelVerification {
   };
 }
 
+const DESIGN_CALCULATION_DRAFT_WORKFLOWS = new Set<GroundModelCalculationWorkflow>([
+  'bearing-capacity',
+  'settlement',
+  'pile-capacity',
+  'liquefaction',
+  'slope-stability',
+]);
+
+const EXECUTION_RESULT_KEYS = new Set([
+  'analysisCase',
+  'analysisResult',
+  'calculationResult',
+  'caseOutput',
+  'caseOutputPath',
+  'designOutput',
+  'designResult',
+  'factorOfSafetyResult',
+  'manifestPath',
+  'resultManifest',
+  'solverOutput',
+]);
+
+const DRAFT_PROHIBITED_RAW_PAYLOAD_KEYS = new Set([
+  'apiKey',
+  'authorization',
+  'headers',
+  'messages',
+  'model',
+  'modelId',
+  'prompt',
+  'provider',
+  'request',
+  'response',
+  'rawText',
+  'sourceEvidence',
+  'sourceEvidenceSnippet',
+  'sourceEvidenceSnippets',
+  'token',
+  'visionModelId',
+]);
+
 function addFinding(findings: GroundModelFinding[], finding: GroundModelFinding): void {
   findings.push(finding);
+}
+
+export function validateGroundModelCalculationInputDraftContract(
+  value: unknown,
+): GroundModelCalculationInputDraftContract {
+  const failures: string[] = [];
+
+  if (!isRecord(value)) {
+    return {
+      schemaVersion: 'ground-model-calculation-input-draft-contract.v1',
+      ok: false,
+      failures: ['calculation input draft contract must be an object'],
+    };
+  }
+
+  const workflow = typeof value.workflow === 'string' ? value.workflow as GroundModelCalculationWorkflow : undefined;
+  const isDesignCalculationDraft = workflow != null && DESIGN_CALCULATION_DRAFT_WORKFLOWS.has(workflow);
+
+  if (!workflow) {
+    failures.push('calculation input draft must include workflow');
+  }
+  if (!isNonEmptyString(value.toolName)) {
+    failures.push('calculation input draft must include toolName');
+  }
+  if (!isNonEmptyString(value.command)) {
+    failures.push('calculation input draft must include command');
+  }
+  if (!isRecord(value.input)) {
+    failures.push('calculation input draft must include structured input object');
+  }
+  if (!Array.isArray(value.missingUserInputs)) {
+    failures.push('calculation input draft must include missingUserInputs array');
+  }
+  if (!Array.isArray(value.assumptions)) {
+    failures.push('calculation input draft must include assumptions array');
+  }
+  if (!Array.isArray(value.evidenceIds)) {
+    failures.push('calculation input draft must include evidenceIds array');
+  }
+  if (!Array.isArray(value.sourceRefs)) {
+    failures.push('calculation input draft must include sourceRefs array');
+  }
+  if (!Array.isArray(value.sourcePages)) {
+    failures.push('calculation input draft must include sourcePages array');
+  }
+  if (!Array.isArray(value.reviewGates)) {
+    failures.push('calculation input draft must include reviewGates array');
+  }
+  if (typeof value.readyToRun !== 'boolean') {
+    failures.push('calculation input draft must include readyToRun boolean');
+  }
+  if (typeof value.confidence !== 'number' || !Number.isFinite(value.confidence) || value.confidence < 0 || value.confidence > 1) {
+    failures.push('calculation input draft confidence must be a finite 0..1 workflow-trust score');
+  }
+
+  if (isDesignCalculationDraft) {
+    const command = String(value.command ?? '');
+    const missingUserInputs = Array.isArray(value.missingUserInputs) ? value.missingUserInputs.filter(isNonEmptyString) : [];
+    const reviewGates = Array.isArray(value.reviewGates) ? value.reviewGates.filter(isRecord) : [];
+    const evidenceIds = Array.isArray(value.evidenceIds) ? value.evidenceIds.filter(isNonEmptyString) : [];
+    const sourceRefs = Array.isArray(value.sourceRefs) ? value.sourceRefs.filter(isRecord) : [];
+
+    if (value.readyToRun !== false) {
+      failures.push(`${workflow} draft must be opt-in and not readyToRun before explicit user inputs and review`);
+    }
+    if (missingUserInputs.length === 0) {
+      failures.push(`${workflow} draft must expose missing user inputs`);
+    }
+    if (!reviewGates.some((gate) => gate.code === 'missing_user_inputs' && gate.severity === 'blocking')) {
+      failures.push(`${workflow} draft must include a blocking missing_user_inputs review gate`);
+    }
+    if (evidenceIds.length === 0) {
+      failures.push(`${workflow} draft must retain evidenceIds`);
+    }
+    if (sourceRefs.length === 0) {
+      failures.push(`${workflow} draft must retain sourceRefs`);
+    }
+    if (sourceRefs.some((ref) => !isNonEmptyString(ref.evidenceId) || !isNonEmptyString(ref.sourcePath) || !isNonEmptyString(ref.method))) {
+      failures.push(`${workflow} draft sourceRefs must include evidenceId, sourcePath, and method`);
+    }
+    if (/\bfem\s+run\b|--experimental|--case-output/i.test(command)) {
+      failures.push(`${workflow} design-calculation draft must not expose FEM execution or case-output commands`);
+    }
+    if (!/<[^>]+>/.test(command)) {
+      failures.push(`${workflow} draft command must retain placeholders until user inputs are supplied`);
+    }
+    if (/^\s*\{/.test(command) || /^\s*\[/.test(command)) {
+      failures.push(`${workflow} draft command must not be a serialized result payload`);
+    }
+  }
+
+  for (const keyPath of collectExecutionResultKeys(value)) {
+    failures.push(`calculation input draft must not carry execution/result payload key at ${keyPath}`);
+  }
+
+  for (const keyPath of collectDraftRawPayloadKeys(value)) {
+    failures.push(`calculation input draft must not carry raw prompt, response, model, or source-evidence payload key at ${keyPath}`);
+  }
+
+  for (const leak of collectPrivateDraftLeaks(value)) {
+    failures.push(`calculation input draft must not leak private paths or tokens at ${leak}`);
+  }
+
+  return {
+    schemaVersion: 'ground-model-calculation-input-draft-contract.v1',
+    ok: failures.length === 0,
+    failures: [...new Set(failures)],
+  };
 }
 
 export function verifyGroundModel(
@@ -781,6 +936,7 @@ function assessPileReadiness(
       context.strataEvidenceIds,
       context.strengthEvidenceIds,
       context.sptEvidenceIds,
+      context.unitWeightEvidenceIds,
       context.groundwaterEvidenceIds,
     ),
     recommendation: (context.hasBoreholes || context.hasStrata) && context.hasDepthCoverage && context.hasStrengthOrSpt
@@ -1559,4 +1715,78 @@ function presentWhen(condition: boolean, label: string): string[] {
 
 function collectEvidenceIds(...groups: string[][]): string[] {
   return [...new Set(groups.flat().filter(Boolean))];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function collectExecutionResultKeys(value: unknown): string[] {
+  const paths: string[] = [];
+
+  walkUnknown(value, (entry, path) => {
+    if (!isRecord(entry)) {
+      return;
+    }
+
+    for (const key of Object.keys(entry)) {
+      if (EXECUTION_RESULT_KEYS.has(key)) {
+        paths.push(path ? `${path}.${key}` : key);
+      }
+    }
+  });
+
+  return paths;
+}
+
+function collectDraftRawPayloadKeys(value: unknown): string[] {
+  const paths: string[] = [];
+
+  walkUnknown(value, (entry, path) => {
+    if (!isRecord(entry)) {
+      return;
+    }
+
+    for (const key of Object.keys(entry)) {
+      if (DRAFT_PROHIBITED_RAW_PAYLOAD_KEYS.has(key)) {
+        paths.push(path ? `${path}.${key}` : key);
+      }
+    }
+  });
+
+  return paths;
+}
+
+function collectPrivateDraftLeaks(value: unknown): string[] {
+  const paths: string[] = [];
+  const leakPattern = /(?:[A-Za-z]:[\\/](?:Users|home|tmp|var|mnt)[\\/]|\/(?:home|Users|tmp|var|mnt)\/|sk-(?:or-)?[A-Za-z0-9_-]{12,}|api[_-]?key\s*[:=]\s*[A-Za-z0-9_-]{12,})/i;
+
+  walkUnknown(value, (entry, path) => {
+    if (typeof entry === 'string' && leakPattern.test(entry)) {
+      paths.push(path || '<root>');
+    }
+  });
+
+  return paths;
+}
+
+function walkUnknown(value: unknown, visit: (entry: unknown, path: string) => void, path = ''): void {
+  visit(value, path);
+
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => walkUnknown(item, visit, `${path}[${index}]`));
+    return;
+  }
+
+  if (!isRecord(value)) {
+    return;
+  }
+
+  for (const [key, entry] of Object.entries(value)) {
+    walkUnknown(entry, visit, path ? `${path}.${key}` : key);
+  }
 }

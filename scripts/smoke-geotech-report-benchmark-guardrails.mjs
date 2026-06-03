@@ -83,6 +83,34 @@ assert(
   regressions.some((message) => /stale run commands/i.test(message) || /run command instead of a draft command/i.test(message)),
   'Unsafe comparison did not report stale FEM run command exposure.',
 );
+assert(
+  regressions.some((message) => /raw prompt\/response\/model\/source-evidence payload key/i.test(message)),
+  'Unsafe comparison did not report raw FEM payload exposure.',
+);
+assert(
+  regressions.some((message) => /result-manifest\/solver\/WebGL payload key/i.test(message)),
+  'Unsafe comparison did not report FEM result payload exposure.',
+);
+assert(
+  regressions.some((message) => /private path or token-shaped value/i.test(message)),
+  'Unsafe comparison did not report FEM private path exposure.',
+);
+assert(
+  regressions.some((message) => /contract-only route shaft-deformation/i.test(message) && /case-output/i.test(message)),
+  'Unsafe comparison did not report contract-only case-output exposure.',
+);
+assert(
+  regressions.some((message) => /contract-only route shaft-deformation/i.test(message) && /blocked-until requirement solver-or-preview-backend-implemented/i.test(message)),
+  'Unsafe comparison did not report missing contract-only blocked-until metadata.',
+);
+assert(
+  regressions.some((message) => /contract-only route shaft-deformation/i.test(message) && /no longer disallows create-analysis-case/i.test(message)),
+  'Unsafe comparison did not report missing contract-only disallowed action metadata.',
+);
+assert(
+  regressions.some((message) => /contract-only route shaft-deformation/i.test(message) && /missing review gate solver-backend-not-implemented/i.test(message)),
+  'Unsafe comparison did not report missing contract-only review gate metadata.',
+);
 
 console.log(JSON.stringify({
   ok: true,
@@ -127,6 +155,19 @@ function injectUnsafeFemBoundary(benchmark) {
   route.executionBoundary.humanRunCommandAvailable = true;
   route.executionBoundary.humanReviewRequired = false;
   route.executionBoundary.humanRunCommand = 'geotech fem run analysis_case.json --experimental';
+  route.modelId = 'provider/geotech-private-fem-model';
+  route.sourceEvidence = { prompt: 'invent FEM result', response: 'raw FEM payload' };
+  route.resultManifest = { path: 'C:/Users/example/private-fem-result.json' };
+
+  const contractRoute = fem.routes.find((candidate) => candidate.objective === 'shaft-deformation');
+  assert(contractRoute, 'Fixture has no shaft-deformation FEM route.');
+  contractRoute.recommendedCommand = 'geotech fem draft shaft-deformation --input <json> --case-output analysis_case.json';
+  contractRoute.reviewGates = ['planned-only'];
+  contractRoute.executionBoundary.blockedReasons = [];
+  contractRoute.executionBoundary.humanRunCommandTemplate = 'geotech fem run analysis_case.json --experimental';
+  contractRoute.contractReadiness.reviewGates = ['planned-only'];
+  contractRoute.contractReadiness.blockedUntil = [];
+  contractRoute.contractReadiness.disallowedAgentActions = [];
 }
 
 function readJson(filePath) {

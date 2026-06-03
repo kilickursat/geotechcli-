@@ -110,12 +110,56 @@ export interface StandardProfileValidation {
   notes: string[];
 }
 
+export interface StandardProfileValidationContract {
+  schemaVersion: 'standard-profile-validation-contract.v1';
+  ok: boolean;
+  failures: string[];
+}
+
 const STANDARD_VALIDATION_WORKFLOWS = new Set([
   'bearing-capacity',
   'settlement',
   'pile-capacity',
   'liquefaction',
   'slope-stability',
+]);
+
+const STANDARD_PROFILE_PROHIBITED_EXECUTION_KEYS = new Set([
+  'analysisCase',
+  'caseOutput',
+  'caseOutputPath',
+  'calculationOutput',
+  'calculationResult',
+  'command',
+  'commandTemplate',
+  'designOutput',
+  'designResult',
+  'executable',
+  'fem',
+  'runCommand',
+  'solver',
+  'solverInput',
+  'solverOutput',
+  'toolName',
+]);
+
+const STANDARD_PROFILE_PROHIBITED_RAW_PAYLOAD_KEYS = new Set([
+  'apiKey',
+  'authorization',
+  'headers',
+  'messages',
+  'model',
+  'modelId',
+  'prompt',
+  'provider',
+  'request',
+  'response',
+  'rawText',
+  'sourceEvidence',
+  'sourceEvidenceSnippet',
+  'sourceEvidenceSnippets',
+  'token',
+  'visionModelId',
 ]);
 
 const STANDARD_PROFILES: Record<StandardProfileId, StandardProfileAssumptions> = {
@@ -638,6 +682,156 @@ export function validateStandardProfileReadiness(
   };
 }
 
+export function validateStandardProfileValidationContract(
+  value: unknown,
+): StandardProfileValidationContract {
+  const failures: string[] = [];
+
+  if (!isRecord(value)) {
+    return {
+      schemaVersion: 'standard-profile-validation-contract.v1',
+      ok: false,
+      failures: ['standard validation contract must be an object'],
+    };
+  }
+
+  if (value.schemaVersion !== 'standard-profile-validation.v1') {
+    failures.push('standard validation schemaVersion must be standard-profile-validation.v1');
+  }
+
+  if (!['pass', 'review', 'blocked'].includes(String(value.status))) {
+    failures.push('standard validation status must be pass, review, or blocked');
+  }
+
+  const profile = value.profile;
+  if (profile !== null) {
+    if (!isRecord(profile)) {
+      failures.push('standard validation profile must be an object or null');
+    } else {
+      const profileId = typeof profile.id === 'string' ? normalizeStandardProfileId(profile.id) : undefined;
+      if (!profileId) {
+        failures.push('standard validation profile id must be one of eurocode7, aashto, is, bs, or astm');
+      }
+      if (!Array.isArray(profile.sourceReferences) || !profile.sourceReferences.some(isNonEmptyString)) {
+        failures.push('standard validation profile must carry source references');
+      }
+      if (!Array.isArray(profile.requiredAssumptions) || profile.requiredAssumptions.length === 0) {
+        failures.push('standard validation profile must carry required assumptions');
+      }
+      if (!Array.isArray(profile.safetyFactorContext) || profile.safetyFactorContext.length === 0) {
+        failures.push('standard validation profile must carry safety-factor context');
+      }
+    }
+  }
+
+  const blockers = Array.isArray(value.blockers) ? value.blockers : [];
+  const blockerCodes = Array.isArray(value.blockerCodes) ? value.blockerCodes : [];
+  if (!Array.isArray(value.blockers)) {
+    failures.push('standard validation blockers must be an array');
+  }
+  if (!Array.isArray(value.blockerCodes)) {
+    failures.push('standard validation blockerCodes must be an array');
+  }
+  if (String(value.status) === 'blocked' && blockers.length === 0) {
+    failures.push('blocked standard validation must include at least one blocker');
+  }
+
+  for (const code of blockerCodes) {
+    if (!isStableBlockerCode(code)) {
+      failures.push(`standard validation blocker code is not stable: ${String(code)}`);
+    }
+  }
+
+  for (const [index, blocker] of blockers.entries()) {
+    if (!isRecord(blocker)) {
+      failures.push(`standard validation blocker ${index} must be an object`);
+      continue;
+    }
+    if (!isStableBlockerCode(blocker.code)) {
+      failures.push(`standard validation blocker ${index} has unstable code`);
+    }
+    if (!['blocking', 'review', 'info'].includes(String(blocker.severity))) {
+      failures.push(`standard validation blocker ${String(blocker.code)} has invalid severity`);
+    }
+    if (!isNonEmptyString(blocker.message)) {
+      failures.push(`standard validation blocker ${String(blocker.code)} must include a message`);
+    }
+    if (!Array.isArray(blocker.workflows)) {
+      failures.push(`standard validation blocker ${String(blocker.code)} must include workflows`);
+    }
+    if (!Array.isArray(blocker.sourceReferences)) {
+      failures.push(`standard validation blocker ${String(blocker.code)} must include source references`);
+    }
+    if (!Array.isArray(blocker.evidenceIds)) {
+      failures.push(`standard validation blocker ${String(blocker.code)} must include evidenceIds`);
+    }
+    if (!isNonEmptyString(blocker.recommendation)) {
+      failures.push(`standard validation blocker ${String(blocker.code)} must include a recommendation`);
+    }
+  }
+
+  const requiredAssumptions = Array.isArray(value.requiredAssumptions) ? value.requiredAssumptions : [];
+  if (!Array.isArray(value.requiredAssumptions)) {
+    failures.push('standard validation requiredAssumptions must be an array');
+  }
+  for (const [index, assumption] of requiredAssumptions.entries()) {
+    if (!isRecord(assumption)) {
+      failures.push(`standard validation required assumption ${index} must be an object`);
+      continue;
+    }
+    if (!isStableBlockerCode(assumption.code)) {
+      failures.push(`standard validation required assumption ${index} has unstable code`);
+    }
+    if (typeof assumption.declared !== 'boolean') {
+      failures.push(`standard validation required assumption ${String(assumption.code)} must expose declared boolean`);
+    }
+    if (!Array.isArray(assumption.sourceReferences) || !assumption.sourceReferences.some(isNonEmptyString)) {
+      failures.push(`standard validation required assumption ${String(assumption.code)} must include source references`);
+    }
+  }
+
+  const safetyFactorContext = Array.isArray(value.safetyFactorContext) ? value.safetyFactorContext : [];
+  if (!Array.isArray(value.safetyFactorContext)) {
+    failures.push('standard validation safetyFactorContext must be an array');
+  }
+  for (const [index, context] of safetyFactorContext.entries()) {
+    if (!isRecord(context)) {
+      failures.push(`standard validation safety-factor context ${index} must be an object`);
+      continue;
+    }
+    if (!isNonEmptyString(context.workflow)) {
+      failures.push(`standard validation safety-factor context ${index} must include workflow`);
+    }
+    if (!Array.isArray(context.sourceReferences) || !context.sourceReferences.some(isNonEmptyString)) {
+      failures.push(`standard validation safety-factor context ${String(context.workflow)} must include source references`);
+    }
+  }
+
+  for (const keyPath of collectProhibitedStandardProfileKeys(value)) {
+    failures.push(`standard validation must stay readiness-only; prohibited execution key found at ${keyPath}`);
+  }
+
+  for (const keyPath of collectProhibitedStandardProfileRawPayloadKeys(value)) {
+    failures.push(`standard validation must not carry raw prompt, response, model, or source-evidence payload key at ${keyPath}`);
+  }
+
+  for (const leak of collectStandardProfilePrivateLeaks(value)) {
+    failures.push(`standard validation must not leak private paths or tokens at ${leak}`);
+  }
+
+  for (const sourceReference of collectSourceReferences(value)) {
+    if (!getStandardById(sourceReference)) {
+      failures.push(`standard validation source reference is not in the standards database: ${sourceReference}`);
+    }
+  }
+
+  return {
+    schemaVersion: 'standard-profile-validation-contract.v1',
+    ok: failures.length === 0,
+    failures: [...new Set(failures)],
+  };
+}
+
 function buildEvidenceValidationBlockers(
   profile: StandardProfileAssumptions,
   input: StandardProfileValidationInput,
@@ -797,4 +991,98 @@ function filterWorkflows(workflowSet: Set<string>, workflows: string[]): string[
 
 function sanitizeBlockerCode(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isStableBlockerCode(value: unknown): value is string {
+  return isNonEmptyString(value) && /^[a-z][a-z0-9_]*$/.test(value);
+}
+
+function collectSourceReferences(value: unknown): string[] {
+  const references: string[] = [];
+
+  walkUnknown(value, (entry, path) => {
+    if ((path === 'sourceReferences' || path.endsWith('.sourceReferences')) && Array.isArray(entry)) {
+      for (const item of entry) {
+        if (isNonEmptyString(item)) {
+          references.push(item);
+        }
+      }
+    }
+  });
+
+  return [...new Set(references)];
+}
+
+function collectProhibitedStandardProfileKeys(value: unknown): string[] {
+  const paths: string[] = [];
+
+  walkUnknown(value, (entry, path) => {
+    if (!isRecord(entry)) {
+      return;
+    }
+
+    for (const key of Object.keys(entry)) {
+      if (STANDARD_PROFILE_PROHIBITED_EXECUTION_KEYS.has(key)) {
+        paths.push(path ? `${path}.${key}` : key);
+      }
+    }
+  });
+
+  return paths;
+}
+
+function collectProhibitedStandardProfileRawPayloadKeys(value: unknown): string[] {
+  const paths: string[] = [];
+
+  walkUnknown(value, (entry, path) => {
+    if (!isRecord(entry)) {
+      return;
+    }
+
+    for (const key of Object.keys(entry)) {
+      if (STANDARD_PROFILE_PROHIBITED_RAW_PAYLOAD_KEYS.has(key)) {
+        paths.push(path ? `${path}.${key}` : key);
+      }
+    }
+  });
+
+  return paths;
+}
+
+function collectStandardProfilePrivateLeaks(value: unknown): string[] {
+  const paths: string[] = [];
+  const leakPattern = /(?:[A-Za-z]:[\\/](?:Users|home|tmp|var|mnt)[\\/]|\/(?:home|Users|tmp|var|mnt)\/|sk-(?:or-)?[A-Za-z0-9_-]{12,}|api[_-]?key\s*[:=]\s*[A-Za-z0-9_-]{12,})/i;
+
+  walkUnknown(value, (entry, path) => {
+    if (typeof entry === 'string' && leakPattern.test(entry)) {
+      paths.push(path || '<root>');
+    }
+  });
+
+  return paths;
+}
+
+function walkUnknown(value: unknown, visit: (entry: unknown, path: string) => void, path = ''): void {
+  visit(value, path);
+
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => walkUnknown(item, visit, `${path}[${index}]`));
+    return;
+  }
+
+  if (!isRecord(value)) {
+    return;
+  }
+
+  for (const [key, entry] of Object.entries(value)) {
+    walkUnknown(entry, visit, path ? `${path}.${key}` : key);
+  }
 }

@@ -15,6 +15,12 @@ describe('hosted-beta config defaults', () => {
   let previousZhipuBaseUrl: string | undefined;
   let previousOpenAICompatibleModel: string | undefined;
   let previousOpenAICompatibleModelId: string | undefined;
+  let previousOpenRouterApiKey: string | undefined;
+  let previousOpenRouterBaseUrl: string | undefined;
+  let previousOpenRouterModel: string | undefined;
+  let previousHfToken: string | undefined;
+  let previousHuggingFaceApiKey: string | undefined;
+  let previousHuggingFaceToken: string | undefined;
 
   beforeEach(() => {
     previousConfigDir = process.env.GEOTECHCLI_CONFIG_DIR;
@@ -25,6 +31,12 @@ describe('hosted-beta config defaults', () => {
     previousZhipuBaseUrl = process.env.ZHIPU_API_BASE_URL;
     previousOpenAICompatibleModel = process.env.OPENAI_COMPATIBLE_MODEL;
     previousOpenAICompatibleModelId = process.env.OPENAI_COMPATIBLE_MODEL_ID;
+    previousOpenRouterApiKey = process.env.OPENROUTER_API_KEY;
+    previousOpenRouterBaseUrl = process.env.OPENROUTER_BASE_URL;
+    previousOpenRouterModel = process.env.OPENROUTER_MODEL;
+    previousHfToken = process.env.HF_TOKEN;
+    previousHuggingFaceApiKey = process.env.HUGGINGFACE_API_KEY;
+    previousHuggingFaceToken = process.env.HUGGINGFACE_TOKEN;
     configDir = mkdtempSync(join(tmpdir(), 'geotechcli-config-'));
     process.env.GEOTECHCLI_CONFIG_DIR = configDir;
     delete process.env.GEOTECHCLI_PROXY_URL;
@@ -33,6 +45,12 @@ describe('hosted-beta config defaults', () => {
     delete process.env.ZHIPU_API_BASE_URL;
     delete process.env.OPENAI_COMPATIBLE_MODEL;
     delete process.env.OPENAI_COMPATIBLE_MODEL_ID;
+    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.OPENROUTER_BASE_URL;
+    delete process.env.OPENROUTER_MODEL;
+    delete process.env.HF_TOKEN;
+    delete process.env.HUGGINGFACE_API_KEY;
+    delete process.env.HUGGINGFACE_TOKEN;
   });
 
   afterEach(() => {
@@ -82,6 +100,42 @@ describe('hosted-beta config defaults', () => {
       delete process.env.OPENAI_COMPATIBLE_MODEL_ID;
     } else {
       process.env.OPENAI_COMPATIBLE_MODEL_ID = previousOpenAICompatibleModelId;
+    }
+
+    if (previousOpenRouterApiKey === undefined) {
+      delete process.env.OPENROUTER_API_KEY;
+    } else {
+      process.env.OPENROUTER_API_KEY = previousOpenRouterApiKey;
+    }
+
+    if (previousOpenRouterBaseUrl === undefined) {
+      delete process.env.OPENROUTER_BASE_URL;
+    } else {
+      process.env.OPENROUTER_BASE_URL = previousOpenRouterBaseUrl;
+    }
+
+    if (previousOpenRouterModel === undefined) {
+      delete process.env.OPENROUTER_MODEL;
+    } else {
+      process.env.OPENROUTER_MODEL = previousOpenRouterModel;
+    }
+
+    if (previousHfToken === undefined) {
+      delete process.env.HF_TOKEN;
+    } else {
+      process.env.HF_TOKEN = previousHfToken;
+    }
+
+    if (previousHuggingFaceApiKey === undefined) {
+      delete process.env.HUGGINGFACE_API_KEY;
+    } else {
+      process.env.HUGGINGFACE_API_KEY = previousHuggingFaceApiKey;
+    }
+
+    if (previousHuggingFaceToken === undefined) {
+      delete process.env.HUGGINGFACE_TOKEN;
+    } else {
+      process.env.HUGGINGFACE_TOKEN = previousHuggingFaceToken;
     }
 
     rmSync(configDir, { recursive: true, force: true });
@@ -249,5 +303,62 @@ describe('hosted-beta config defaults', () => {
 
     delete process.env.OPENAI_COMPATIBLE_MODEL;
     expect(buildLLMConfig().modelId).toBe('legacy/model-id');
+  });
+
+  it('accepts OpenRouter env aliases for the openai-compatible runtime provider', () => {
+    process.env.OPENROUTER_API_KEY = 'openrouter-env-key';
+    process.env.OPENROUTER_MODEL = 'google/gemma-free';
+
+    saveConfig({
+      llm: {
+        provider: 'openai-compatible',
+        api_key: 'config-key',
+        model: 'config-model',
+        vision_model: '',
+        base_url: '',
+        timeout: 60000,
+      },
+      auth: {
+        api_key: '',
+        tier: 'free',
+      },
+      cli: {
+        color: true,
+        verbose: false,
+      },
+    });
+
+    const llmConfig = buildLLMConfig();
+    expect(llmConfig.provider).toBe('openai-compatible');
+    expect(llmConfig.apiKey).toBe('openrouter-env-key');
+    expect(llmConfig.baseUrl).toBe('https://openrouter.ai/api/v1');
+    expect(llmConfig.modelId).toBe('google/gemma-free');
+  });
+
+  it('accepts HUGGINGFACE_API_KEY as a runtime BYOK alias', () => {
+    process.env.HUGGINGFACE_API_KEY = 'hf-env-key';
+
+    saveConfig({
+      llm: {
+        provider: 'huggingface',
+        api_key: '',
+        model: 'meta-llama/Llama-3.1-8B-Instruct:fastest',
+        vision_model: '',
+        base_url: '',
+        timeout: 60000,
+      },
+      auth: {
+        api_key: '',
+        tier: 'free',
+      },
+      cli: {
+        color: true,
+        verbose: false,
+      },
+    });
+
+    const llmConfig = buildLLMConfig();
+    expect(llmConfig.provider).toBe('huggingface');
+    expect(llmConfig.apiKey).toBe('hf-env-key');
   });
 });

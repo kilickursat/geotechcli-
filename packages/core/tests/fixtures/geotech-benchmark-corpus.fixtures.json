@@ -149,6 +149,28 @@
       }
     },
     {
+      "id": "mixed-digital-scanned-small-v1",
+      "category": "mixed-digital-scanned-pdf",
+      "sourceType": "cached-benchmark",
+      "source": "small-mixed-digital-scanned.fixture.pdf",
+      "input": {
+        "env": "GEOTECHCLI_BENCHMARK_MIXED_DIGITAL_SCANNED_PDF"
+      },
+      "baseline": "geotech-corpus/mixed-digital-scanned-small.benchmark.json",
+      "description": "Small in-repo mixed digital/scanned report benchmark fixture used to exercise native text plus scanned page preprocessing comparisons.",
+      "expectations": {
+        "minSuccessfulPageRate": 1,
+        "maxFailedPages": 0,
+        "minCacheHitRate": 0.95,
+        "minTraceabilityRate": 0.9,
+        "minGroundModelReadinessScore": 50,
+        "maxEstimatedHostedCalls": 0,
+        "requireFemExecutionBoundarySafe": true,
+        "requiredPreprocessingModes": ["none", "ocr-optimized", "region-v2"],
+        "requiredProviderProfiles": ["hosted-beta", "openai-compatible-byok", "openrouter-free", "local-hf-compatible"]
+      }
+    },
+    {
       "id": "malformed-scanned-v1",
       "category": "malformed-scanned-pdf",
       "sourceType": "cached-benchmark",

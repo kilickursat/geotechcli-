@@ -482,12 +482,28 @@ describe('geotech document benchmark', () => {
     expect(shaftRoute?.requiredEvidence).toContain('shaft geometry');
     expect(shaftRoute?.requiredUserInputs).toContain('support sequence');
     expect(shaftRoute?.contractReadiness?.nonRunnableReason).toMatch(/planning contract only/i);
+    expect(shaftRoute?.contractReadiness?.reviewGates).toEqual(expect.arrayContaining([
+      'planned-only',
+      'agent-run-disabled',
+      'solver-backend-not-implemented',
+      'human-review-required',
+    ]));
     expect(shaftRoute?.contractReadiness?.blockedUntil).toContain('acceptance-fixture-approved');
     expect(shaftRoute?.contractReadiness?.disallowedAgentActions).toContain('run-solver');
+    expect(shaftRoute?.reviewGates).toEqual(expect.arrayContaining([
+      'agent-run-disabled',
+      'solver-backend-not-implemented',
+      'human-review-required',
+    ]));
     expect(shaftRoute?.executionBoundary.humanRunCommandTemplate).toBeUndefined();
     expect(shaftRoute?.executionBoundary.blockedReasons).toContain('solver-or-preview-backend-implemented');
     expect(pileRoute?.executionMode).toBe('contract-only');
     expect(pileRoute?.requiredEvidence).toContain('pile layout');
+    expect(pileRoute?.reviewGates).toEqual(expect.arrayContaining([
+      'pile-soil-interface-review',
+      'agent-run-disabled',
+      'solver-backend-not-implemented',
+    ]));
     expect(pileRoute?.contractReadiness?.disallowedAgentActions).toContain('invent-results');
     expect(slopeRoute?.executionMode).toBe('contract-only');
     expect(slopeRoute?.requiredUserInputs).toContain('slope height');
@@ -640,6 +656,9 @@ describe('geotech document benchmark', () => {
     (foundationRoute.executionBoundary as any).caseOutputAvailable = true;
     (foundationRoute.executionBoundary as any).humanRunCommandAvailable = true;
     (foundationRoute.executionBoundary as any).humanReviewRequired = false;
+    (foundationRoute as any).modelId = 'provider/geotech-private-fem-model';
+    (foundationRoute as any).sourceEvidence = { prompt: 'invent FEM result', response: 'raw FEM payload' };
+    (foundationRoute as any).resultManifest = { path: 'C:/Users/example/private-fem-result.json' };
 
     const comparison = compareGeotechDocumentBenchmarks(unsafe, baseline, {
       generatedAt: '2026-05-04T00:01:00.000Z',
@@ -660,6 +679,41 @@ describe('geotech document benchmark', () => {
       'FEM route foundation-settlement exposed an unreviewed human run command.',
       'FEM route foundation-settlement no longer requires human review.',
       'FEM route foundation-settlement recommended a run command instead of a draft command.',
+    ]));
+    expect(comparison.regressions.join('\n')).toMatch(/raw prompt\/response\/model\/source-evidence payload key/i);
+    expect(comparison.regressions.join('\n')).toMatch(/result-manifest\/solver\/WebGL payload key/i);
+    expect(comparison.regressions.join('\n')).toMatch(/private path or token-shaped value/i);
+  });
+
+  it('fails benchmark comparisons when contract-only FEM route metadata regresses', () => {
+    const baseline = buildGeotechDocumentBenchmark(makeResult(), {
+      label: 'baseline',
+      generatedAt: '2026-05-04T00:00:00.000Z',
+    });
+    const unsafe = JSON.parse(JSON.stringify(baseline)) as typeof baseline;
+    unsafe.label = 'unsafe FEM contract metadata';
+    const shaftRoute = unsafe.femDraftReadiness!.routes.find((route) => route.objective === 'shaft-deformation')!;
+    shaftRoute.recommendedCommand = 'geotech fem draft shaft-deformation --input <json> --case-output analysis_case.json';
+    (shaftRoute.executionBoundary as any).humanRunCommandTemplate = 'geotech fem run analysis_case.json --experimental';
+    shaftRoute.executionBoundary.blockedReasons = [];
+    shaftRoute.reviewGates = ['planned-only'];
+    shaftRoute.contractReadiness!.reviewGates = ['planned-only'];
+    shaftRoute.contractReadiness!.blockedUntil = [];
+    shaftRoute.contractReadiness!.disallowedAgentActions = [];
+
+    const comparison = compareGeotechDocumentBenchmarks(unsafe, baseline, {
+      generatedAt: '2026-05-04T00:01:00.000Z',
+    });
+
+    expect(comparison.passed).toBe(false);
+    expect(comparison.regressions).toEqual(expect.arrayContaining([
+      'FEM contract-only route shaft-deformation exposed case-output creation.',
+      'FEM contract-only route shaft-deformation exposed a run command template.',
+      'FEM contract-only route shaft-deformation is missing blocked-until requirement solver-or-preview-backend-implemented.',
+      'FEM contract-only route shaft-deformation boundary is missing blocked reason solver-or-preview-backend-implemented.',
+      'FEM contract-only route shaft-deformation no longer disallows create-analysis-case.',
+      'FEM contract-only route shaft-deformation is missing review gate solver-backend-not-implemented.',
+      'FEM contract-only route shaft-deformation boundary is missing review gate agent-run-disabled.',
     ]));
   });
 

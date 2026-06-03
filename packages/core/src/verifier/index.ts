@@ -1,8 +1,10 @@
 export {
+  validateGroundModelCalculationInputDraftContract,
   verifyGroundModel,
   type GroundModelCalculationDraftReviewGate,
   type GroundModelCalculationDraftSourcePage,
   type GroundModelCalculationDraftSourceRef,
+  type GroundModelCalculationInputDraftContract,
   type GroundModelCalculationInputDraft,
   type GroundModelCalculationReadiness,
   type GroundModelCalculationReadinessStatus,

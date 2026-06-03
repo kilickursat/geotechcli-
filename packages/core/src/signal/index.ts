@@ -137,6 +137,129 @@ export interface SignalAnalyzeResult {
   warnings: string[];
 }
 
+export interface SignalAnalysisResultContract {
+  schemaVersion: 'signal-analysis-result-contract.v1';
+  ok: boolean;
+  failures: string[];
+}
+
+export const SIGNAL_ANALYSIS_BENCHMARK_REQUIRED_TYPES = [
+  'settlement',
+  'piezometer',
+  'inclinometer',
+  'vibration',
+  'load-test',
+] as const;
+
+export type SignalAnalysisBenchmarkRequiredType = typeof SIGNAL_ANALYSIS_BENCHMARK_REQUIRED_TYPES[number];
+
+export interface SignalAnalysisBenchmarkPathSafety {
+  checked: boolean;
+  leaks: string[];
+}
+
+export interface SignalAnalysisBenchmarkComparison {
+  kind: 'signal-analysis-local-benchmark-comparison';
+  schemaVersion: 1;
+  generatedAt: string;
+  outputDir: string;
+  fixtureWorkspace: string;
+  runDir: string;
+  artifacts: Record<string, string>;
+  workflow: {
+    task: string;
+    status?: string;
+    llmRole?: string;
+    modelCallsBytes: number;
+    toolCallCount: number;
+  };
+  signalArtifacts: {
+    sources: number;
+    analyzedSources: number;
+    blockedSources: number;
+    reviewSources: number;
+    rowsAnalyzed: number;
+    series: number;
+    thresholdFlags: number;
+    missingIntervals: number;
+    sourceTypes: Record<string, number>;
+  };
+  directSignal: {
+    rowsAnalyzed: number;
+    thresholdProfile: string | null;
+    thresholdFlags: number;
+    rateThresholdFlags: number;
+    missingIntervals: number;
+    series: number;
+  };
+  directSignalPlot: {
+    htmlBytes: number;
+    chartCount: number;
+    pointCount: number;
+    chartIds: string[];
+    seriesLabels: string[];
+    pathSafety: SignalAnalysisBenchmarkPathSafety;
+  };
+  pathSafety: SignalAnalysisBenchmarkPathSafety;
+  passed: boolean;
+  regressions: string[];
+  contractValidation?: SignalAnalysisBenchmarkContractValidation;
+}
+
+export interface SignalAnalysisBenchmarkHistoryEntry {
+  kind: 'signal-analysis-benchmark-history-entry';
+  schemaVersion: 1;
+  generatedAt: string;
+  passed: boolean;
+  thresholdProfile: string | null;
+  summary: {
+    sources: number;
+    analyzedSources: number;
+    blockedSources: number;
+    rowsAnalyzed: number;
+    series: number;
+    directThresholdFlags: number;
+    directRateThresholdFlags: number;
+    directMissingIntervals: number;
+    directPlotHtmlBytes?: number;
+    directPlotChartCount?: number;
+    modelCallsBytes: number;
+    pathLeakCount: number;
+    sourceTypes: Record<string, number>;
+  };
+}
+
+export interface SignalAnalysisBenchmarkTrendReport {
+  kind: 'signal-analysis-benchmark-trend';
+  schemaVersion: 1;
+  generatedAt: string;
+  current: SignalAnalysisBenchmarkHistoryEntry;
+  previous: SignalAnalysisBenchmarkHistoryEntry | null;
+  delta: Record<string, unknown> | null;
+  historyCount: number;
+  note: string;
+}
+
+export interface SignalAnalysisBenchmarkContractOptions {
+  requiredTypes?: readonly SignalAnalysisBenchmarkRequiredType[];
+  minSources?: number;
+  minRowsAnalyzed?: number;
+  minDirectRowsAnalyzed?: number;
+  minDirectThresholdFlags?: number;
+  minDirectRateThresholdFlags?: number;
+  minDirectMissingIntervals?: number;
+  minDirectPlotHtmlBytes?: number;
+  minDirectPlotChartCount?: number;
+  requireZeroModelCalls?: boolean;
+}
+
+export interface SignalAnalysisBenchmarkContractValidation {
+  schemaVersion: 'signal-analysis-benchmark-contract.v1';
+  ok: boolean;
+  failures: string[];
+  warnings: string[];
+}
+
 interface PreparedTable {
   rows: TabularRow[];
   warnings: string[];
@@ -150,6 +273,27 @@ const EPSILON = 1e-9;
 const EXCEL_SERIAL_MIN = 20_000;
 const EXCEL_SERIAL_MAX = 80_000;
 const EXCEL_SERIAL_EPOCH_MS = Date.UTC(1899, 11, 30);
+
+const SIGNAL_ANALYSIS_TYPES: SignalAnalysisType[] = [
+  'settlement',
+  'piezometer',
+  'inclinometer',
+  'vibration',
+  'load-test',
+  'unknown',
+];
+
+const SIGNAL_OUTPUT_PROHIBITED_KEYS = new Set([
+  'apiKey',
+  'llm',
+  'model',
+  'modelCall',
+  'modelCalls',
+  'prompt',
+  'rawPrompt',
+  'solver',
+  'token',
+]);
 
 export const SIGNAL_THRESHOLD_PROFILES: readonly SignalThresholdProfile[] = [
   {
@@ -210,6 +354,317 @@ export const SIGNAL_THRESHOLD_PROFILES: readonly SignalThresholdProfile[] = [
 ] as const;
 
 export const SIGNAL_THRESHOLD_PROFILE_IDS = SIGNAL_THRESHOLD_PROFILES.map((profile) => profile.id);
+
+export function validateSignalAnalysisBenchmarkComparison(
+  report: unknown,
+  options: SignalAnalysisBenchmarkContractOptions = {},
+): SignalAnalysisBenchmarkContractValidation {
+  const failures: string[] = [];
+  const warnings: string[] = [];
+  const requiredTypes = [...(options.requiredTypes ?? SIGNAL_ANALYSIS_BENCHMARK_REQUIRED_TYPES)];
+  const minSources = options.minSources ?? requiredTypes.length;
+  const minRowsAnalyzed = options.minRowsAnalyzed ?? 15;
+  const minDirectRowsAnalyzed = options.minDirectRowsAnalyzed ?? 3;
+  const minDirectThresholdFlags = options.minDirectThresholdFlags ?? 1;
+  const minDirectRateThresholdFlags = options.minDirectRateThresholdFlags ?? 1;
+  const minDirectMissingIntervals = options.minDirectMissingIntervals ?? 1;
+  const minDirectPlotHtmlBytes = options.minDirectPlotHtmlBytes ?? 1_000;
+  const minDirectPlotChartCount = options.minDirectPlotChartCount ?? 1;
+  const requireZeroModelCalls = options.requireZeroModelCalls ?? true;
+
+  if (!isRecord(report)) {
+    return {
+      schemaVersion: 'signal-analysis-benchmark-contract.v1',
+      ok: false,
+      failures: ['benchmark_comparison_must_be_object'],
+      warnings,
+    };
+  }
+
+  if (report.kind !== 'signal-analysis-local-benchmark-comparison') {
+    failures.push('wrong_benchmark_kind');
+  }
+  if (report.schemaVersion !== 1) {
+    failures.push('wrong_benchmark_schema_version');
+  }
+  if (!isNonEmptyString(report.generatedAt)) {
+    failures.push('missing_generated_at');
+  }
+  if (report.passed !== true) {
+    failures.push('benchmark_not_passed');
+  }
+  if (!Array.isArray(report.regressions)) {
+    failures.push('regressions_must_be_array');
+  } else if (report.regressions.length > 0) {
+    failures.push('benchmark_regressions_present');
+  }
+
+  validateSignalBenchmarkArtifacts(report.artifacts, failures);
+  validateSignalBenchmarkWorkflow(report.workflow, failures, requireZeroModelCalls);
+  validateSignalBenchmarkSignalArtifacts(report.signalArtifacts, failures, {
+    requiredTypes,
+    minSources,
+    minRowsAnalyzed,
+  });
+  validateSignalBenchmarkDirectSignal(report.directSignal, failures, {
+    minDirectRowsAnalyzed,
+    minDirectThresholdFlags,
+    minDirectRateThresholdFlags,
+    minDirectMissingIntervals,
+  });
+  validateSignalBenchmarkDirectSignalPlot(report.directSignalPlot, failures, {
+    minDirectPlotHtmlBytes,
+    minDirectPlotChartCount,
+  });
+  validateSignalBenchmarkPathSafety(report, report.pathSafety, failures, 'comparison');
+
+  return buildSignalBenchmarkContractValidation(failures, warnings);
+}
+
+export function validateSignalAnalysisBenchmarkTrend(
+  report: unknown,
+  options: SignalAnalysisBenchmarkContractOptions = {},
+): SignalAnalysisBenchmarkContractValidation {
+  const failures: string[] = [];
+  const warnings: string[] = [];
+  const requiredTypes = [...(options.requiredTypes ?? SIGNAL_ANALYSIS_BENCHMARK_REQUIRED_TYPES)];
+  const minSources = options.minSources ?? requiredTypes.length;
+  const minRowsAnalyzed = options.minRowsAnalyzed ?? 15;
+  const minDirectThresholdFlags = options.minDirectThresholdFlags ?? 1;
+  const minDirectRateThresholdFlags = options.minDirectRateThresholdFlags ?? 1;
+  const minDirectMissingIntervals = options.minDirectMissingIntervals ?? 1;
+  const minDirectPlotHtmlBytes = options.minDirectPlotHtmlBytes ?? 1_000;
+  const minDirectPlotChartCount = options.minDirectPlotChartCount ?? 1;
+  const requireZeroModelCalls = options.requireZeroModelCalls ?? true;
+
+  if (!isRecord(report)) {
+    return {
+      schemaVersion: 'signal-analysis-benchmark-contract.v1',
+      ok: false,
+      failures: ['benchmark_trend_must_be_object'],
+      warnings,
+    };
+  }
+
+  if (report.kind !== 'signal-analysis-benchmark-trend') {
+    failures.push('wrong_trend_kind');
+  }
+  if (report.schemaVersion !== 1) {
+    failures.push('wrong_trend_schema_version');
+  }
+  if (!isNonEmptyString(report.generatedAt)) {
+    failures.push('trend_missing_generated_at');
+  }
+  if (!isNonNegativeInteger(report.historyCount) || report.historyCount < 1) {
+    failures.push('trend_history_count_invalid');
+  }
+  if (!isNonEmptyString(report.note) || !/private paths|raw monitoring files/i.test(report.note)) {
+    warnings.push('trend_note_should_state_raw_files_and_private_paths_are_excluded');
+  }
+
+  validateSignalBenchmarkHistoryEntry(report.current, failures, 'current', {
+    requiredTypes,
+    minSources,
+    minRowsAnalyzed,
+    minDirectThresholdFlags,
+    minDirectRateThresholdFlags,
+    minDirectMissingIntervals,
+    minDirectPlotHtmlBytes,
+    minDirectPlotChartCount,
+    requireZeroModelCalls,
+    requirePassed: true,
+  });
+  if (report.previous !== null) {
+    validateSignalBenchmarkHistoryEntry(report.previous, failures, 'previous', {
+      requiredTypes,
+      minSources,
+      minRowsAnalyzed,
+      minDirectThresholdFlags,
+      minDirectRateThresholdFlags,
+      minDirectMissingIntervals,
+      minDirectPlotHtmlBytes,
+      minDirectPlotChartCount,
+      requireZeroModelCalls: false,
+      requirePassed: false,
+    });
+  }
+  if (report.previous && !isRecord(report.delta)) {
+    failures.push('trend_delta_required_when_previous_exists');
+  }
+  validateSignalBenchmarkPathSafety(report, null, failures, 'trend');
+
+  return buildSignalBenchmarkContractValidation(failures, warnings);
+}
+
+export function inspectSignalAnalysisBenchmarkPathSafety(value: unknown): SignalAnalysisBenchmarkPathSafety {
+  return {
+    checked: true,
+    leaks: [...new Set(collectSignalBenchmarkPathLeaks(value))],
+  };
+}
+
+export function validateSignalAnalysisResultContract(value: unknown): SignalAnalysisResultContract {
+  const failures: string[] = [];
+
+  if (!isRecord(value)) {
+    return {
+      schemaVersion: 'signal-analysis-result-contract.v1',
+      ok: false,
+      failures: ['signal analysis result contract must be an object'],
+    };
+  }
+
+  if (value.schemaVersion !== 'signal-analysis.v0') {
+    failures.push('signal analysis result schemaVersion must be signal-analysis.v0');
+  }
+  if (!SIGNAL_ANALYSIS_TYPES.includes(value.signalType as SignalAnalysisType)) {
+    failures.push('signal analysis result must include a supported signalType');
+  }
+
+  const source = isRecord(value.source) ? value.source : null;
+  if (!source) {
+    failures.push('signal analysis result must include source metadata');
+  } else {
+    if (!isNonEmptyString(source.path)) {
+      failures.push('signal source path must be a non-empty sanitized label');
+    } else if (hasPrivateOrSecretText(source.path) || /[\\/]/.test(source.path)) {
+      failures.push('signal source path must not include local directories, separators, or token-shaped values');
+    }
+    if (source.format !== 'csv' && source.format !== 'xlsx') {
+      failures.push('signal source format must be csv or xlsx');
+    }
+    if (!isNonNegativeInteger(source.rowsAnalyzed)) {
+      failures.push('signal source rowsAnalyzed must be a nonnegative integer');
+    }
+    if (!isNonNegativeInteger(source.rowsRejected)) {
+      failures.push('signal source rowsRejected must be a nonnegative integer');
+    }
+  }
+
+  const columns = isRecord(value.columns) ? value.columns : null;
+  if (!columns || !isNonEmptyString(columns.value)) {
+    failures.push('signal analysis result must include a value column');
+  }
+  if (columns && !isNonEmptyString(columns.timestamp) && !isNonEmptyString(columns.depth)) {
+    failures.push('signal analysis result must include a timestamp or depth column');
+  }
+
+  if (!Array.isArray(value.trendSummary) || value.trendSummary.length === 0) {
+    failures.push('signal analysis result must include trendSummary entries');
+  }
+  if (!Array.isArray(value.rateOfChange) || value.rateOfChange.length === 0) {
+    failures.push('signal analysis result must include rateOfChange entries');
+  }
+  if (!Array.isArray(value.series) || value.series.length === 0) {
+    failures.push('signal analysis result must include chart-ready series');
+  }
+  if (!Array.isArray(value.thresholdFlags)) {
+    failures.push('signal analysis result must include thresholdFlags array');
+  }
+  if (!Array.isArray(value.missingIntervals)) {
+    failures.push('signal analysis result must include missingIntervals array');
+  }
+  if (!Array.isArray(value.warnings)) {
+    failures.push('signal analysis result must include warnings array');
+  }
+
+  for (const [index, trend] of (Array.isArray(value.trendSummary) ? value.trendSummary : []).entries()) {
+    if (!isRecord(trend)) {
+      failures.push(`signal trendSummary[${index}] must be an object`);
+      continue;
+    }
+    if (!isNonEmptyString(trend.seriesId)) {
+      failures.push(`signal trendSummary[${index}] must include seriesId`);
+    }
+    if (!isNonNegativeInteger(trend.count)) {
+      failures.push(`signal trendSummary[${index}] must include count`);
+    }
+    if (!['increasing', 'decreasing', 'stable', 'insufficient-data'].includes(String(trend.direction))) {
+      failures.push(`signal trendSummary[${index}] has invalid direction`);
+    }
+    if (!['per-day', 'per-meter', 'per-sample'].includes(String(trend.slopeUnit))) {
+      failures.push(`signal trendSummary[${index}] has invalid slopeUnit`);
+    }
+  }
+
+  for (const [index, rate] of (Array.isArray(value.rateOfChange) ? value.rateOfChange : []).entries()) {
+    if (!isRecord(rate)) {
+      failures.push(`signal rateOfChange[${index}] must be an object`);
+      continue;
+    }
+    if (!isNonEmptyString(rate.seriesId)) {
+      failures.push(`signal rateOfChange[${index}] must include seriesId`);
+    }
+    if (!['per-day', 'per-meter', 'per-sample'].includes(String(rate.unit))) {
+      failures.push(`signal rateOfChange[${index}] has invalid unit`);
+    }
+  }
+
+  const profile = isRecord(value.thresholdProfile) ? value.thresholdProfile : null;
+  if (profile) {
+    if (!SIGNAL_THRESHOLD_PROFILE_IDS.includes(profile.id as SignalThresholdProfileId)) {
+      failures.push('signal threshold profile id must be supported');
+    }
+    if (profile.signalType !== value.signalType) {
+      failures.push('signal threshold profile type must match result signalType');
+    }
+    if (profile.source !== 'explicit-profile' && profile.source !== 'auto-profile') {
+      failures.push('signal threshold profile source must be explicit-profile or auto-profile');
+    }
+    if (!Array.isArray(profile.reviewGates) || profile.reviewGates.length === 0) {
+      failures.push('signal threshold profile must include review gates');
+    }
+    if (!isRecord(profile.explicitOverrides)) {
+      failures.push('signal threshold profile must expose explicit override flags');
+    }
+    if (!isNonEmptyString(profile.basis) || !/project-specific|generic|review/i.test(profile.basis)) {
+      failures.push('signal threshold profile basis must clearly mark generic review usage');
+    }
+  }
+
+  for (const [index, flag] of (Array.isArray(value.thresholdFlags) ? value.thresholdFlags : []).entries()) {
+    if (!isRecord(flag)) {
+      failures.push(`signal thresholdFlags[${index}] must be an object`);
+      continue;
+    }
+    if (!['value-threshold', 'rate-threshold'].includes(String(flag.kind))) {
+      failures.push(`signal thresholdFlags[${index}] has invalid kind`);
+    }
+    if (flag.source === 'threshold-profile' && !SIGNAL_THRESHOLD_PROFILE_IDS.includes(flag.profileId as SignalThresholdProfileId)) {
+      failures.push(`signal thresholdFlags[${index}] profile flag must include supported profileId`);
+    }
+  }
+
+  for (const [index, interval] of (Array.isArray(value.missingIntervals) ? value.missingIntervals : []).entries()) {
+    if (!isRecord(interval)) {
+      failures.push(`signal missingIntervals[${index}] must be an object`);
+      continue;
+    }
+    if (!isNonEmptyString(interval.seriesId)) {
+      failures.push(`signal missingIntervals[${index}] must include seriesId`);
+    }
+    if (typeof interval.gapHours !== 'number' || interval.gapHours <= 0) {
+      failures.push(`signal missingIntervals[${index}] must include positive gapHours`);
+    }
+    if (!isNonNegativeInteger(interval.missingIntervals) || interval.missingIntervals < 1) {
+      failures.push(`signal missingIntervals[${index}] must include at least one missing interval`);
+    }
+  }
+
+  for (const keyPath of collectSignalOutputProhibitedKeys(value)) {
+    failures.push(`signal output must remain deterministic; prohibited model/secret key found at ${keyPath}`);
+  }
+
+  for (const leak of collectSignalOutputPrivateLeaks(value)) {
+    failures.push(`signal output must not leak private paths or tokens at ${leak}`);
+  }
+
+  return {
+    schemaVersion: 'signal-analysis-result-contract.v1',
+    ok: failures.length === 0,
+    failures: [...new Set(failures)],
+  };
+}
 
 function normalizeHeader(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
@@ -331,6 +786,13 @@ function toTimestamp(value: TabularCell): string | undefined {
   const date = new Date(raw);
   if (Number.isNaN(date.getTime())) return undefined;
   return date.toISOString();
+}
+
+function sanitizeSignalSourcePath(value: string): string {
+  const normalized = value.trim().replace(/\\/g, '/');
+  const lastSegment = basename(normalized);
+  const safe = lastSegment.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
+  return safe || 'signal-input';
 }
 
 function round(value: number): number {
@@ -639,7 +1101,7 @@ export async function analyzeSignalFile(filePath: string, options: SignalAnalyze
   return {
     schemaVersion: 'signal-analysis.v0',
     source: {
-      path: options.sourcePath ?? filePath,
+      path: sanitizeSignalSourcePath(options.sourcePath ?? filePath),
       format: table.format,
       sheetName: table.sheetName,
       rowsAnalyzed: built.points.length,
@@ -661,4 +1123,431 @@ export async function analyzeSignalFile(filePath: string, options: SignalAnalyze
     series,
     warnings: [...table.warnings, ...built.warnings, ...profileResult.warnings],
   };
+}
+
+function validateSignalBenchmarkArtifacts(artifacts: unknown, failures: string[]): void {
+  if (!isRecord(artifacts)) {
+    failures.push('artifacts_missing');
+    return;
+  }
+
+  for (const key of ['comparison', 'summarySvg', 'directSignal', 'directSignalPlotHtml', 'history', 'trend', 'trendHtml', 'signalIndex']) {
+    if (!isNonEmptyString(artifacts[key])) {
+      failures.push(`artifact_${key}_missing`);
+    }
+  }
+}
+
+function validateSignalBenchmarkWorkflow(
+  workflow: unknown,
+  failures: string[],
+  requireZeroModelCalls: boolean,
+): void {
+  if (!isRecord(workflow)) {
+    failures.push('workflow_missing');
+    return;
+  }
+
+  if (workflow.task !== 'signal-analysis') {
+    failures.push('workflow_task_not_signal_analysis');
+  }
+  if (!isNonEmptyString(workflow.status)) {
+    failures.push('workflow_status_missing');
+  }
+  if (workflow.llmRole !== 'none') {
+    failures.push('workflow_llm_role_not_none');
+  }
+  if (!isNonNegativeInteger(workflow.modelCallsBytes)) {
+    failures.push('workflow_model_calls_bytes_invalid');
+  } else if (requireZeroModelCalls && workflow.modelCallsBytes !== 0) {
+    failures.push('workflow_model_calls_not_empty');
+  }
+  if (!isNonNegativeInteger(workflow.toolCallCount) || workflow.toolCallCount < 1) {
+    failures.push('workflow_tool_calls_missing');
+  }
+}
+
+function validateSignalBenchmarkSignalArtifacts(
+  signalArtifacts: unknown,
+  failures: string[],
+  options: {
+    requiredTypes: readonly SignalAnalysisBenchmarkRequiredType[];
+    minSources: number;
+    minRowsAnalyzed: number;
+  },
+): void {
+  if (!isRecord(signalArtifacts)) {
+    failures.push('signal_artifacts_missing');
+    return;
+  }
+
+  if (!isNonNegativeInteger(signalArtifacts.sources) || signalArtifacts.sources < options.minSources) {
+    failures.push('signal_sources_below_minimum');
+  }
+  if (!isNonNegativeInteger(signalArtifacts.analyzedSources)) {
+    failures.push('signal_analyzed_sources_invalid');
+  } else if (isNonNegativeInteger(signalArtifacts.sources) && signalArtifacts.analyzedSources !== signalArtifacts.sources) {
+    failures.push('signal_analyzed_sources_mismatch');
+  }
+  if (signalArtifacts.blockedSources !== 0) {
+    failures.push('signal_blocked_sources_present');
+  }
+  if (!isNonNegativeInteger(signalArtifacts.rowsAnalyzed) || signalArtifacts.rowsAnalyzed < options.minRowsAnalyzed) {
+    failures.push('signal_rows_analyzed_below_minimum');
+  }
+  if (!isNonNegativeInteger(signalArtifacts.series) || signalArtifacts.series < options.minSources) {
+    failures.push('signal_series_below_minimum');
+  }
+  if (!isNonNegativeInteger(signalArtifacts.thresholdFlags)) {
+    failures.push('signal_threshold_flags_invalid');
+  }
+  if (!isNonNegativeInteger(signalArtifacts.missingIntervals)) {
+    failures.push('signal_missing_intervals_invalid');
+  }
+
+  const sourceTypes = isRecord(signalArtifacts.sourceTypes) ? signalArtifacts.sourceTypes : null;
+  if (!sourceTypes) {
+    failures.push('signal_source_types_missing');
+    return;
+  }
+  for (const type of options.requiredTypes) {
+    if (!isNonNegativeInteger(sourceTypes[type]) || sourceTypes[type] < 1) {
+      failures.push(`signal_source_type_${type}_missing`);
+    }
+  }
+  if (isNonNegativeInteger(sourceTypes.unknown) && sourceTypes.unknown > 0) {
+    failures.push('signal_source_type_unknown_present');
+  }
+}
+
+function validateSignalBenchmarkDirectSignal(
+  directSignal: unknown,
+  failures: string[],
+  options: {
+    minDirectRowsAnalyzed: number;
+    minDirectThresholdFlags: number;
+    minDirectRateThresholdFlags: number;
+    minDirectMissingIntervals: number;
+  },
+): void {
+  if (!isRecord(directSignal)) {
+    failures.push('direct_signal_missing');
+    return;
+  }
+
+  if (!isNonNegativeInteger(directSignal.rowsAnalyzed) || directSignal.rowsAnalyzed < options.minDirectRowsAnalyzed) {
+    failures.push('direct_signal_rows_below_minimum');
+  }
+  if (directSignal.thresholdProfile !== 'settlement-review-mm') {
+    failures.push('direct_signal_threshold_profile_not_settlement_review');
+  }
+  if (!isNonNegativeInteger(directSignal.thresholdFlags) || directSignal.thresholdFlags < options.minDirectThresholdFlags) {
+    failures.push('direct_signal_threshold_flags_below_minimum');
+  }
+  if (!isNonNegativeInteger(directSignal.rateThresholdFlags) || directSignal.rateThresholdFlags < options.minDirectRateThresholdFlags) {
+    failures.push('direct_signal_rate_threshold_flags_below_minimum');
+  }
+  if (!isNonNegativeInteger(directSignal.missingIntervals) || directSignal.missingIntervals < options.minDirectMissingIntervals) {
+    failures.push('direct_signal_missing_intervals_below_minimum');
+  }
+  if (!isNonNegativeInteger(directSignal.series) || directSignal.series < 1) {
+    failures.push('direct_signal_series_missing');
+  }
+}
+
+function validateSignalBenchmarkDirectSignalPlot(
+  directSignalPlot: unknown,
+  failures: string[],
+  options: {
+    minDirectPlotHtmlBytes: number;
+    minDirectPlotChartCount: number;
+  },
+): void {
+  if (!isRecord(directSignalPlot)) {
+    failures.push('direct_signal_plot_missing');
+    return;
+  }
+
+  if (!isNonNegativeInteger(directSignalPlot.htmlBytes) || directSignalPlot.htmlBytes < options.minDirectPlotHtmlBytes) {
+    failures.push('direct_signal_plot_html_bytes_below_minimum');
+  }
+  if (!isNonNegativeInteger(directSignalPlot.chartCount) || directSignalPlot.chartCount < options.minDirectPlotChartCount) {
+    failures.push('direct_signal_plot_chart_count_below_minimum');
+  }
+  if (!isNonNegativeInteger(directSignalPlot.pointCount) || directSignalPlot.pointCount < 1) {
+    failures.push('direct_signal_plot_points_missing');
+  }
+  if (!Array.isArray(directSignalPlot.chartIds) || !directSignalPlot.chartIds.some((id) => id === 'signal-values' || id === 'signal-depth-profile')) {
+    failures.push('direct_signal_plot_signal_chart_missing');
+  }
+  if (!Array.isArray(directSignalPlot.seriesLabels) || directSignalPlot.seriesLabels.length === 0) {
+    failures.push('direct_signal_plot_series_labels_missing');
+  }
+
+  const pathSafety = isRecord(directSignalPlot.pathSafety) ? directSignalPlot.pathSafety : null;
+  if (!pathSafety) {
+    failures.push('direct_signal_plot_path_safety_missing');
+    return;
+  }
+  if (pathSafety.checked !== true) {
+    failures.push('direct_signal_plot_path_safety_not_checked');
+  }
+  if (!Array.isArray(pathSafety.leaks)) {
+    failures.push('direct_signal_plot_path_safety_leaks_missing');
+  } else if (pathSafety.leaks.length > 0) {
+    failures.push('direct_signal_plot_path_safety_leaks_present');
+  }
+}
+
+function validateSignalBenchmarkHistoryEntry(
+  entry: unknown,
+  failures: string[],
+  prefix: string,
+  options: {
+    requiredTypes: readonly SignalAnalysisBenchmarkRequiredType[];
+    minSources: number;
+    minRowsAnalyzed: number;
+    minDirectThresholdFlags: number;
+    minDirectRateThresholdFlags: number;
+    minDirectMissingIntervals: number;
+    minDirectPlotHtmlBytes: number;
+    minDirectPlotChartCount: number;
+    requireZeroModelCalls: boolean;
+    requirePassed: boolean;
+  },
+): void {
+  if (!isRecord(entry)) {
+    failures.push(`${prefix}_history_entry_missing`);
+    return;
+  }
+  if (entry.kind !== 'signal-analysis-benchmark-history-entry') {
+    failures.push(`${prefix}_history_wrong_kind`);
+  }
+  if (entry.schemaVersion !== 1) {
+    failures.push(`${prefix}_history_wrong_schema_version`);
+  }
+  if (!isNonEmptyString(entry.generatedAt)) {
+    failures.push(`${prefix}_history_missing_generated_at`);
+  }
+  if (options.requirePassed && entry.passed !== true) {
+    failures.push(`${prefix}_history_not_passed`);
+  }
+
+  const summary = isRecord(entry.summary) ? entry.summary : null;
+  if (!summary) {
+    failures.push(`${prefix}_history_summary_missing`);
+    return;
+  }
+
+  for (const key of [
+    'sources',
+    'analyzedSources',
+    'blockedSources',
+    'rowsAnalyzed',
+    'series',
+    'directThresholdFlags',
+    'directRateThresholdFlags',
+    'directMissingIntervals',
+    'modelCallsBytes',
+    'pathLeakCount',
+  ]) {
+    if (!isNonNegativeInteger(summary[key])) {
+      failures.push(`${prefix}_history_${key}_invalid`);
+    }
+  }
+
+  if (!options.requirePassed) {
+    return;
+  }
+
+  if ((summary.sources as number) < options.minSources) {
+    failures.push(`${prefix}_history_sources_below_minimum`);
+  }
+  if (summary.analyzedSources !== summary.sources) {
+    failures.push(`${prefix}_history_analyzed_sources_mismatch`);
+  }
+  if (summary.blockedSources !== 0) {
+    failures.push(`${prefix}_history_blocked_sources_present`);
+  }
+  if ((summary.rowsAnalyzed as number) < options.minRowsAnalyzed) {
+    failures.push(`${prefix}_history_rows_below_minimum`);
+  }
+  if ((summary.series as number) < options.minSources) {
+    failures.push(`${prefix}_history_series_below_minimum`);
+  }
+  if ((summary.directThresholdFlags as number) < options.minDirectThresholdFlags) {
+    failures.push(`${prefix}_history_direct_threshold_flags_below_minimum`);
+  }
+  if ((summary.directRateThresholdFlags as number) < options.minDirectRateThresholdFlags) {
+    failures.push(`${prefix}_history_direct_rate_threshold_flags_below_minimum`);
+  }
+  if ((summary.directMissingIntervals as number) < options.minDirectMissingIntervals) {
+    failures.push(`${prefix}_history_direct_missing_intervals_below_minimum`);
+  }
+  if (!isNonNegativeInteger(summary.directPlotHtmlBytes) || summary.directPlotHtmlBytes < options.minDirectPlotHtmlBytes) {
+    failures.push(`${prefix}_history_direct_plot_html_bytes_below_minimum`);
+  }
+  if (!isNonNegativeInteger(summary.directPlotChartCount) || summary.directPlotChartCount < options.minDirectPlotChartCount) {
+    failures.push(`${prefix}_history_direct_plot_chart_count_below_minimum`);
+  }
+  if (options.requireZeroModelCalls && summary.modelCallsBytes !== 0) {
+    failures.push(`${prefix}_history_model_calls_not_empty`);
+  }
+  if (summary.pathLeakCount !== 0) {
+    failures.push(`${prefix}_history_path_leaks_present`);
+  }
+
+  const sourceTypes = isRecord(summary.sourceTypes) ? summary.sourceTypes : null;
+  if (!sourceTypes) {
+    failures.push(`${prefix}_history_source_types_missing`);
+    return;
+  }
+  for (const type of options.requiredTypes) {
+    if (!isNonNegativeInteger(sourceTypes[type]) || sourceTypes[type] < 1) {
+      failures.push(`${prefix}_history_source_type_${type}_missing`);
+    }
+  }
+}
+
+function validateSignalBenchmarkPathSafety(
+  value: unknown,
+  declaredPathSafety: unknown,
+  failures: string[],
+  prefix: string,
+): void {
+  const inspected = inspectSignalAnalysisBenchmarkPathSafety(value);
+  if (inspected.leaks.length > 0) {
+    failures.push(...inspected.leaks.map((leak) =>
+      `${prefix}_sensitive_value_leak_${sanitizeSignalBenchmarkFailureToken(leak)}`,
+    ));
+  }
+
+  if (declaredPathSafety === null) {
+    return;
+  }
+  if (!isRecord(declaredPathSafety)) {
+    failures.push(`${prefix}_path_safety_missing`);
+    return;
+  }
+  if (declaredPathSafety.checked !== true) {
+    failures.push(`${prefix}_path_safety_not_checked`);
+  }
+  if (!Array.isArray(declaredPathSafety.leaks)) {
+    failures.push(`${prefix}_path_safety_leaks_missing`);
+  } else if (declaredPathSafety.leaks.length > 0) {
+    failures.push(`${prefix}_path_safety_leaks_present`);
+  }
+}
+
+function buildSignalBenchmarkContractValidation(
+  failures: string[],
+  warnings: string[],
+): SignalAnalysisBenchmarkContractValidation {
+  return {
+    schemaVersion: 'signal-analysis-benchmark-contract.v1',
+    ok: failures.length === 0,
+    failures: [...new Set(failures)],
+    warnings: [...new Set(warnings)],
+  };
+}
+
+function collectSignalBenchmarkPathLeaks(value: unknown, location = 'report'): string[] {
+  if (typeof value === 'string') {
+    const leaks: string[] = [];
+    if (looksLikeSignalBenchmarkAbsolutePath(value)) {
+      leaks.push(`${location}:absolute-path`);
+    }
+    if (looksLikeSignalBenchmarkSecret(value)) {
+      leaks.push(`${location}:secret-like-value`);
+    }
+    return leaks;
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) => collectSignalBenchmarkPathLeaks(item, `${location}_${index}`));
+  }
+
+  if (!isRecord(value)) {
+    return [];
+  }
+
+  return Object.entries(value).flatMap(([key, child]) =>
+    collectSignalBenchmarkPathLeaks(child, `${location}_${sanitizeSignalBenchmarkFailureToken(key)}`),
+  );
+}
+
+function looksLikeSignalBenchmarkAbsolutePath(value: string): boolean {
+  return /\b[A-Za-z]:[\\/][^\s"',}<\]]+/.test(value)
+    || /(^|[\s"'([{])\/(?:Users|home|tmp|var|private|mnt|Volumes|etc)\/[^\s"',}<\]]+/i.test(value);
+}
+
+function looksLikeSignalBenchmarkSecret(value: string): boolean {
+  return /(sk-or-v1-[A-Za-z0-9_-]{8,}|sk-ant-[A-Za-z0-9_-]{8,}|sk-[A-Za-z0-9_-]{8,}|hf_[A-Za-z0-9_-]{8,}|Bearer\s+[A-Za-z0-9._-]{16,}|(?:api[_-]?key|token|secret)\s*[:=]\s*[A-Za-z0-9._-]{8,})/i.test(value);
+}
+
+function sanitizeSignalBenchmarkFailureToken(value: string): string {
+  return value.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 96) || 'value';
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+}
+
+function hasPrivateOrSecretText(value: string): boolean {
+  return /(?:[A-Za-z]:[\\/](?:Users|home|tmp|var|mnt)[\\/]|\/(?:home|Users|tmp|var|mnt)\/|sk-(?:or-)?[A-Za-z0-9_-]{12,}|api[_-]?key\s*[:=]\s*[A-Za-z0-9_-]{12,})/i.test(value);
+}
+
+function collectSignalOutputProhibitedKeys(value: unknown): string[] {
+  const paths: string[] = [];
+
+  walkUnknown(value, (entry, path) => {
+    if (!isRecord(entry)) {
+      return;
+    }
+
+    for (const key of Object.keys(entry)) {
+      if (SIGNAL_OUTPUT_PROHIBITED_KEYS.has(key)) {
+        paths.push(path ? `${path}.${key}` : key);
+      }
+    }
+  });
+
+  return paths;
+}
+
+function collectSignalOutputPrivateLeaks(value: unknown): string[] {
+  const paths: string[] = [];
+
+  walkUnknown(value, (entry, path) => {
+    if (typeof entry === 'string' && hasPrivateOrSecretText(entry)) {
+      paths.push(path || '<root>');
+    }
+  });
+
+  return paths;
+}
+
+function walkUnknown(value: unknown, visit: (entry: unknown, path: string) => void, path = ''): void {
+  visit(value, path);
+
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => walkUnknown(item, visit, `${path}[${index}]`));
+    return;
+  }
+
+  if (!isRecord(value)) {
+    return;
+  }
+
+  for (const [key, entry] of Object.entries(value)) {
+    walkUnknown(entry, visit, path ? `${path}.${key}` : key);
+  }
 }

@@ -1,0 +1,139 @@
+{
+  "kind": "geotech-document-benchmark",
+  "schemaVersion": 1,
+  "generatedAt": "2026-06-01T00:00:00.000Z",
+  "label": "small mixed digital/scanned report cached benchmark",
+  "source": {
+    "fileName": "small-mixed-digital-scanned.fixture.pdf",
+    "inputKind": "pdf",
+    "totalPages": 5,
+    "successfulPages": 5,
+    "failedPages": 0
+  },
+  "document": {
+    "class": "site-investigation-report",
+    "title": "Mixed Digital and Scanned Ground Investigation",
+    "parseStatus": "partial",
+    "confidence": 70,
+    "reviewRequired": true,
+    "canAutoProceed": false
+  },
+  "pageOutcomes": {
+    "totalAudited": 5,
+    "parsed": 4,
+    "partial": 1,
+    "failed": 0,
+    "failedPages": 0,
+    "warningPages": 2,
+    "averageConfidence": 70
+  },
+  "pageClasses": {
+    "digital-text": 2,
+    "borehole-log": 2,
+    "table": 1
+  },
+  "extractionSources": {
+    "native-text": 2,
+    "pdfjs-text": 0,
+    "local-ocr": 0,
+    "vision-ocr": 0,
+    "vision-visual": 1,
+    "glm-ocr": 2,
+    "none": 0
+  },
+  "hostedCallEstimate": {
+    "pageExtraction": 0,
+    "layoutOcr": 0,
+    "vision": 0,
+    "nativeOrPdfText": 0,
+    "skippedOrUnavailable": 0
+  },
+  "evidenceCache": {
+    "totalAudited": 5,
+    "hit": 5,
+    "miss": 0,
+    "stored": 0,
+    "skipped": 0,
+    "unavailable": 0,
+    "hitRate": 1,
+    "modelVersions": ["fixture-cached"],
+    "preprocessingVersions": ["page-evidence-preprocess-v4"],
+    "schemaVersions": [1]
+  },
+  "latency": {
+    "pageLatencyMs": {
+      "count": 5,
+      "total": 500,
+      "average": 100,
+      "max": 150
+    },
+    "totalKnownLatencyMs": 500
+  },
+  "retainedSignals": {
+    "materials": 7,
+    "classifications": 3,
+    "parameters": 9,
+    "risks": 3,
+    "recommendations": 3,
+    "contentChunks": 5,
+    "synthesisGroundModelItems": 3
+  },
+  "traceability": {
+    "parametersWithSourcePage": 9,
+    "parametersWithoutSourcePage": 0,
+    "directParameterTraceabilityRate": 1,
+    "auditBackedParameterTraceabilityRate": 1,
+    "traceabilityRate": 1,
+    "sourcePages": [1, 2, 3, 4, 5],
+    "auditParameterSourcePages": [2, 3, 5],
+    "reviewFindings": 2,
+    "warnings": 2
+  },
+  "groundModelReadiness": {
+    "status": "needs_engineering_review",
+    "score": 60,
+    "boreholeIds": ["BH1", "BH2"],
+    "maxDepthMeters": 10,
+    "materialKinds": ["fill", "soil", "rock"],
+    "hasGroundModelSynthesis": true,
+    "missingCriticalData": ["groundwater level"],
+    "gates": ["partial-pages-remain", "missing-groundwater-level"]
+  },
+  "femDraftReadiness": {
+    "schemaVersion": 1,
+    "providerNeutral": true,
+    "canAutoProceed": false,
+    "candidateRoutes": 0,
+    "implementedPreviewRoutes": [],
+    "contractOnlyRoutes": [],
+    "agentRunAllowedRoutes": [],
+    "agentWebglAllowedRoutes": [],
+    "agentResultManifestAllowedRoutes": [],
+    "caseOutputAvailableRoutes": [],
+    "humanRunCommandAvailableRoutes": [],
+    "draftCommandRoutes": [],
+    "runCommandRoutes": [],
+    "staleRunCommandRoutes": [],
+    "gates": ["human-review-required"],
+    "routes": []
+  },
+  "evidenceContract": {
+    "schemaVersion": 2,
+    "providerNeutral": true,
+    "pages": 5,
+    "observations": {
+      "materials": 7,
+      "classifications": 3,
+      "parameters": 9,
+      "total": 19
+    },
+    "methodCounts": {
+      "native-pdf-text": 6,
+      "layout-ocr": 9,
+      "visual-reasoning": 4
+    },
+    "sourcePages": [1, 2, 3, 4, 5],
+    "reviewGateCount": 2
+  },
+  "pages": []
+}

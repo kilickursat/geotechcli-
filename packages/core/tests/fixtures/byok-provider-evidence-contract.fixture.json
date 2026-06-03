@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "geotech.byok-provider-evidence-contract.fixture.v1",
+  "requiredProfiles": [
+    {
+      "id": "hosted-beta",
+      "provider": "hosted-beta",
+      "modelId": "glm-5.1",
+      "visionModelId": "glm-5v-turbo",
+      "expectedCapabilityProfile": "hosted-default",
+      "likelyFreeRoute": false,
+      "requiredReviewGates": ["source-evidence-required", "human-engineering-review-required"]
+    },
+    {
+      "id": "openai-compatible",
+      "provider": "openai-compatible",
+      "modelId": "openai-compatible/byok-text-evidence-model",
+      "visionModelId": "",
+      "expectedCapabilityProfile": "open-byok",
+      "likelyFreeRoute": false,
+      "requiredReviewGates": ["native-pdf-unavailable-use-preprocessed-evidence", "source-evidence-required", "human-engineering-review-required"]
+    },
+    {
+      "id": "openrouter-free",
+      "provider": "openai-compatible",
+      "modelId": "google/gemma-4-26b-a4b-it:free",
+      "visionModelId": "",
+      "expectedCapabilityProfile": "open-byok",
+      "likelyFreeRoute": true,
+      "requiredReviewGates": ["native-pdf-unavailable-use-preprocessed-evidence", "free-route-capacity-and-feature-variance", "source-evidence-required", "human-engineering-review-required"]
+    },
+    {
+      "id": "local-hf-compatible",
+      "provider": "huggingface",
+      "modelId": "local-or-hf-compatible/text-evidence-model",
+      "visionModelId": "",
+      "expectedCapabilityProfile": "open-byok",
+      "likelyFreeRoute": false,
+      "requiredReviewGates": ["native-pdf-unavailable-use-preprocessed-evidence", "source-evidence-required", "human-engineering-review-required"]
+    }
+  ],
+  "safeResponse": {
+    "ok": true,
+    "evidence_input": "preprocessed-page-evidence",
+    "cited_evidence_ids": ["ev-page-3-bh1-spt", "ev-page-5-groundwater-gap"],
+    "takeaway": "Source evidence supports SPT N=18 at BH-01, while groundwater remains review-gated.",
+    "review_gates": ["missing-groundwater-review-required", "human-engineering-review-required"]
+  },
+  "unsafeReportLeak": {
+    "model": "C:\\Users\\Databil\\private-models\\byok\\model.gguf",
+    "error": "Provider returned token sk-or-v1-abcdefghijklmnopqrstuvwxyz1234567890"
+  }
+}

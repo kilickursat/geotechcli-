@@ -1,4 +1,7 @@
-import type { GeotechDocumentBenchmark } from './geotech-document-benchmark.js';
+import {
+  collectFemDraftReadinessGuardrailFailures,
+  type GeotechDocumentBenchmark,
+} from './geotech-document-benchmark.js';
 
 export type GeotechBenchmarkCorpusFixtureCategory =
   | 'borehole-log'
@@ -9,6 +12,7 @@ export type GeotechBenchmarkCorpusFixtureCategory =
   | 'sensor-chart'
   | 'pile-load-test'
   | 'mixed-scanned-digital'
+  | 'mixed-digital-scanned-pdf'
   | 'mixed-scanned-pdf'
   | 'malformed-scanned-pdf';
 
@@ -199,6 +203,132 @@ export interface GeotechBenchmarkCorpusReport {
   warnings: string[];
 }
 
+export interface GeotechBenchmarkCorpusArtifactSafetyLeak {
+  kind: GeotechBenchmarkCorpusPathSafetyLeakKind;
+  location: string;
+  redactedValue: '<absolute-path>' | '<secret-like-value>';
+}
+
+export interface GeotechBenchmarkCorpusArtifactSafety {
+  ok: boolean;
+  leakCount: number;
+  leaks: GeotechBenchmarkCorpusArtifactSafetyLeak[];
+}
+
+export interface GeotechBenchmarkCorpusHistoryConfidenceSummary {
+  overall: number;
+  extractionConfidence: number;
+  engineeringCompleteness: number;
+  traceabilityScore: number;
+  corroborationScore: number;
+  readinessScore: number;
+  pageEvidenceConfidence: number;
+}
+
+export interface GeotechBenchmarkCorpusHistoryEntry {
+  kind: 'geotech-benchmark-corpus-history-entry';
+  schemaVersion: 1;
+  generatedAt: string;
+  mode: string;
+  skippedFixtureCount: number;
+  providerProfiles: string[];
+  preprocessingModes: string[];
+  summary: {
+    fixtureCount: number;
+    runCount: number;
+    passedRuns: number;
+    failedRuns: number;
+    passed: boolean;
+    averageConfidence: number;
+    averageConfidenceBreakdown: GeotechBenchmarkCorpusHistoryConfidenceSummary;
+    averageTraceabilityRate: number;
+    averageGroundModelReadinessScore: number;
+    averagePreprocessingQualityScore: number;
+    totalEstimatedHostedCalls: number;
+    pathLeakCount: number;
+  };
+  runs: Array<{
+    key: string;
+    fixtureId: string;
+    category: GeotechBenchmarkCorpusFixtureCategory;
+    providerProfile: string;
+    preprocessingMode: string;
+    passed: boolean;
+    successfulPageRate: number;
+    cacheHitRate: number;
+    estimatedHostedCalls: number;
+    directTraceabilityRate: number;
+    confidenceBreakdown: GeotechBenchmarkCorpusHistoryConfidenceSummary;
+    groundModelReadinessScore: number;
+    preprocessingQualityScore: number;
+    preprocessingRegionQualityScore: number;
+    reviewGates: string[];
+    latencyMs: number | null;
+  }>;
+}
+
+export interface GeotechBenchmarkCorpusTrendReport {
+  kind: 'geotech-benchmark-corpus-trend';
+  schemaVersion: 1;
+  generatedAt: string;
+  current: GeotechBenchmarkCorpusHistoryEntry;
+  previous: GeotechBenchmarkCorpusHistoryEntry | null;
+  delta: {
+    fixtureCount: number;
+    runCount: number;
+    passedRuns: number;
+    failedRuns: number;
+    averageConfidence: number;
+    averageExtractionConfidence: number;
+    averageCorroborationScore: number;
+    averageTraceabilityRate: number;
+    averageGroundModelReadinessScore: number;
+    averagePreprocessingQualityScore: number;
+    totalEstimatedHostedCalls: number;
+    pathLeakCount: number;
+  } | null;
+  runDeltas: Array<{
+    key: string;
+    fixtureId: string;
+    providerProfile: string;
+    preprocessingMode: string;
+    status: 'new' | 'changed' | 'unchanged';
+    passed: boolean;
+    previousPassed: boolean | null;
+    cacheHitRateDelta: number | null;
+    hostedCallDelta: number | null;
+    traceabilityDelta: number | null;
+    extractionConfidenceDelta: number | null;
+    corroborationScoreDelta: number | null;
+    groundModelReadinessDelta: number | null;
+    qualityDelta: number | null;
+    reviewGateDelta: number | null;
+    latencyDeltaMs: number | null;
+  }>;
+  historyCount: number;
+  note: string;
+}
+
+export interface GeotechBenchmarkCorpusTrend {
+  history: GeotechBenchmarkCorpusHistoryEntry[];
+  report: GeotechBenchmarkCorpusTrendReport;
+}
+
+export interface GeotechBenchmarkCorpusTrendOptions {
+  mode?: string;
+  providerProfiles?: string[];
+  preprocessingModes?: string[];
+  skippedFixtureCount?: number;
+  previousHistory?: GeotechBenchmarkCorpusHistoryEntry[];
+  previousReport?: GeotechBenchmarkCorpusReport | null;
+}
+
+export interface GeotechBenchmarkCorpusTrendContractValidation {
+  ok: boolean;
+  failures: string[];
+  warnings: string[];
+}
+
 export function buildGeotechBenchmarkCorpusReport(
   inputs: GeotechBenchmarkCorpusRunInput[],
   options: GeotechBenchmarkCorpusReportOptions = {},
@@ -239,6 +369,109 @@ export function buildGeotechBenchmarkCorpusReport(
 
 export function redactGeotechBenchmarkCorpusArtifact<T>(value: T): T {
   return redactCorpusArtifactValue(value, new WeakMap()) as T;
+}
+
+export function inspectGeotechBenchmarkCorpusArtifactSafety(
+  value: unknown,
+): GeotechBenchmarkCorpusArtifactSafety {
+  const scan = scanObjectForPathSafetyLeaks(value, 'artifact');
+  const leaks = deduplicateArtifactSafetyLeaks(scan.leaks);
+  return {
+    ok: leaks.length === 0,
+    leakCount: leaks.length,
+    leaks,
+  };
+}
+
+export function buildGeotechBenchmarkCorpusTrend(
+  report: GeotechBenchmarkCorpusReport,
+  options: GeotechBenchmarkCorpusTrendOptions = {},
+): GeotechBenchmarkCorpusTrend {
+  const previousHistory = options.previousHistory ?? [];
+  const current = buildGeotechBenchmarkCorpusHistoryEntry(report, {
+    mode: options.mode ?? 'local-corpus-benchmark',
+    providerProfiles: options.providerProfiles ?? report.summary.providerProfiles,
+    preprocessingModes: options.preprocessingModes ?? report.summary.preprocessingModes,
+    skippedFixtureCount: options.skippedFixtureCount ?? 0,
+  });
+  const previous = previousHistory.at(-1)
+    ?? (options.previousReport
+      ? buildGeotechBenchmarkCorpusHistoryEntry(options.previousReport, {
+          mode: 'previous-local-report',
+          providerProfiles: options.previousReport.summary.providerProfiles,
+          preprocessingModes: options.previousReport.summary.preprocessingModes,
+          skippedFixtureCount: 0,
+        })
+      : null);
+  const history = [...previousHistory, current].slice(-50);
+  return {
+    history,
+    report: {
+      kind: 'geotech-benchmark-corpus-trend',
+      schemaVersion: 1,
+      generatedAt: current.generatedAt,
+      current,
+      previous,
+      delta: previous ? buildGeotechBenchmarkCorpusTrendDelta(current, previous) : null,
+      runDeltas: previous ? buildGeotechBenchmarkCorpusRunDeltas(current.runs, previous.runs) : [],
+      historyCount: history.length,
+      note: 'Local corpus trend output stores benchmark summaries only. Raw benchmark JSON, fixture bytes, report text, model IDs, private paths, and provider tokens are intentionally excluded.',
+    },
+  };
+}
+
+export function validateGeotechBenchmarkCorpusTrendContract(
+  report: GeotechBenchmarkCorpusTrendReport,
+): GeotechBenchmarkCorpusTrendContractValidation {
+  const failures: string[] = [];
+  const warnings: string[] = [];
+
+  if (report.kind !== 'geotech-benchmark-corpus-trend') {
+    failures.push('wrong_trend_kind');
+  }
+  if (report.schemaVersion !== 1) {
+    failures.push('wrong_trend_schema_version');
+  }
+  if (!report.generatedAt) {
+    failures.push('trend_missing_generated_at');
+  }
+  if (!Number.isInteger(report.historyCount) || report.historyCount < 1) {
+    failures.push('trend_history_count_invalid');
+  }
+  if (!/raw benchmark JSON|fixture bytes|model IDs|provider tokens/i.test(report.note ?? '')) {
+    warnings.push('trend_note_should_state_excluded_raw_and_sensitive_inputs');
+  }
+
+  validateGeotechBenchmarkCorpusHistoryEntry(report.current, failures, 'current');
+  if (report.previous !== null) {
+    validateGeotechBenchmarkCorpusHistoryEntry(report.previous, failures, 'previous');
+  }
+  if (report.previous && report.delta == null) {
+    failures.push('trend_delta_required_when_previous_exists');
+  }
+  if (!report.previous && report.delta != null) {
+    failures.push('trend_delta_must_be_null_without_previous');
+  }
+  if (report.previous && report.runDeltas.length !== report.current.runs.length) {
+    failures.push('trend_run_delta_count_mismatch');
+  }
+  if (!report.previous && report.runDeltas.length !== 0) {
+    failures.push('trend_run_deltas_must_be_empty_without_previous');
+  }
+
+  const serialized = JSON.stringify(report);
+  if (/"(?:fixtures|benchmark|benchmarks|source|sourceEvidence|snippet|response|prompt|modelId|visionModelId|filePath|sourcePath|pages|rawText|pageText|ocrText|layoutText|modelCalls)"\s*:/.test(serialized)) {
+    failures.push('trend_contains_raw_benchmark_source_prompt_response_or_model_payload');
+  }
+  for (const leak of inspectGeotechBenchmarkCorpusArtifactSafety(report).leaks) {
+    failures.push(`trend_sensitive_value_leak_${sanitizeFailureToken(leak.location)}_${leak.kind}`);
+  }
+
+  return {
+    ok: failures.length === 0,
+    failures: [...new Set(failures)],
+    warnings: [...new Set(warnings)],
+  };
 }
 
 export function renderGeotechBenchmarkCorpusSvg(report: GeotechBenchmarkCorpusReport): string {
@@ -348,6 +581,361 @@ ${report.warnings.length ? `<h2>Warnings</h2><ul>${report.warnings.map((warning)
 </body>
 </html>
 `;
+}
+
+export function renderGeotechBenchmarkCorpusTrendHtml(trend: GeotechBenchmarkCorpusTrendReport): string {
+  const delta = trend.delta;
+  const runRows = trend.runDeltas.map((run) => `
+    <tr>
+      <td>${escapeHtml(run.fixtureId)}</td>
+      <td>${escapeHtml(run.providerProfile)}</td>
+      <td>${escapeHtml(run.preprocessingMode)}</td>
+      <td class="${run.passed ? 'pass' : 'fail'}">${run.passed ? 'pass' : 'fail'}</td>
+      <td>${formatDelta(run.traceabilityDelta, true)}</td>
+      <td>${formatDelta(run.qualityDelta, true)}</td>
+      <td>${formatDelta(run.reviewGateDelta, false)}</td>
+      <td>${formatDelta(run.hostedCallDelta, false)}</td>
+      <td>${formatDelta(run.latencyDeltaMs, false)}</td>
+    </tr>`).join('');
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GeotechCLI Corpus Trend</title>
+<style>
+body{margin:0;font-family:Inter,Arial,sans-serif;background:#f8fafc;color:#0f172a}
+main{max-width:1040px;margin:0 auto;padding:32px 20px 56px}
+h1{margin:0 0 8px;font-size:28px}
+.note{color:#475569;font-size:13px}
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:22px 0}
+.metric{background:white;border:1px solid #dbe5ea;border-radius:8px;padding:14px}.metric strong{display:block;font-size:24px}
+table{width:100%;border-collapse:collapse;background:white;border:1px solid #dbe5ea;border-radius:8px;overflow:hidden;margin-top:16px}
+th,td{padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:left;font-size:13px}
+th{background:#0f172a;color:#f8fafc}.pass{color:#0f766e;font-weight:700}.fail{color:#b91c1c;font-weight:700}
+</style>
+</head>
+<body>
+<main>
+<h1>GeotechCLI Corpus Trend</h1>
+<p class="note">${escapeHtml(trend.note)} Generated ${escapeHtml(trend.generatedAt)}.</p>
+<section class="summary">
+  <div class="metric"><span>History Entries</span><strong>${trend.historyCount}</strong></div>
+  <div class="metric"><span>Run Delta</span><strong>${delta ? signed(delta.runCount) : 'new'}</strong></div>
+  <div class="metric"><span>Extraction Trust Delta</span><strong>${delta ? signed(delta.averageExtractionConfidence) : 'new'}</strong></div>
+  <div class="metric"><span>Corroboration Delta</span><strong>${delta ? signed(delta.averageCorroborationScore) : 'new'}</strong></div>
+  <div class="metric"><span>Traceability Delta</span><strong>${delta ? signedPercent(delta.averageTraceabilityRate) : 'new'}</strong></div>
+  <div class="metric"><span>Quality Delta</span><strong>${delta ? signedPercent(delta.averagePreprocessingQualityScore) : 'new'}</strong></div>
+</section>
+<h2>Run Deltas</h2>
+<table><thead><tr><th>Fixture</th><th>Provider</th><th>Preprocessing</th><th>Status</th><th>Trace</th><th>Quality</th><th>Review gates</th><th>Hosted calls</th><th>Latency ms</th></tr></thead><tbody>${runRows || '<tr><td colspan="9">No previous local run is available yet.</td></tr>'}</tbody></table>
+</main>
+</body>
+</html>
+`;
+}
+
+function buildGeotechBenchmarkCorpusHistoryEntry(
+  report: GeotechBenchmarkCorpusReport,
+  context: {
+    mode: string;
+    providerProfiles: string[];
+    preprocessingModes: string[];
+    skippedFixtureCount: number;
+  },
+): GeotechBenchmarkCorpusHistoryEntry {
+  return {
+    kind: 'geotech-benchmark-corpus-history-entry',
+    schemaVersion: 1,
+    generatedAt: report.generatedAt,
+    mode: context.mode,
+    skippedFixtureCount: context.skippedFixtureCount,
+    providerProfiles: [...context.providerProfiles],
+    preprocessingModes: [...context.preprocessingModes],
+    summary: {
+      fixtureCount: finiteNumber(report.summary.fixtureCount),
+      runCount: finiteNumber(report.summary.runCount),
+      passedRuns: finiteNumber(report.summary.passedRuns),
+      failedRuns: finiteNumber(report.summary.failedRuns),
+      passed: Boolean(report.summary.passed),
+      averageConfidence: finiteNumber(report.summary.averageConfidence),
+      averageConfidenceBreakdown: summarizeHistoryConfidenceBreakdown(report.summary.averageConfidenceBreakdown),
+      averageTraceabilityRate: finiteNumber(report.summary.averageTraceabilityRate),
+      averageGroundModelReadinessScore: finiteNumber(report.summary.averageGroundModelReadinessScore),
+      averagePreprocessingQualityScore: finiteNumber(report.summary.averagePreprocessingQualityScore),
+      totalEstimatedHostedCalls: finiteNumber(report.summary.totalEstimatedHostedCalls),
+      pathLeakCount: report.pathSafety?.leakCount ?? inspectGeotechBenchmarkCorpusArtifactSafety(report).leakCount,
+    },
+    runs: report.runs.map((run) => ({
+      key: corpusRunKey(run),
+      fixtureId: run.fixtureId,
+      category: run.category,
+      providerProfile: run.providerProfile,
+      preprocessingMode: run.preprocessingMode,
+      passed: run.passed,
+      successfulPageRate: finiteNumber(run.successfulPageRate),
+      cacheHitRate: finiteNumber(run.cacheHitRate),
+      estimatedHostedCalls: finiteNumber(run.estimatedHostedCalls),
+      directTraceabilityRate: finiteNumber(run.directTraceabilityRate),
+      confidenceBreakdown: summarizeHistoryConfidenceBreakdown(run.confidenceBreakdown),
+      groundModelReadinessScore: finiteNumber(run.groundModelReadinessScore),
+      preprocessingQualityScore: finiteNumber(run.preprocessingQualityScore),
+      preprocessingRegionQualityScore: finiteNumber(run.preprocessingRegionQualityScore),
+      reviewGates: Array.isArray(run.reviewGates) ? [...run.reviewGates] : [],
+      latencyMs: typeof run.latencyMs === 'number' && Number.isFinite(run.latencyMs) ? run.latencyMs : null,
+    })),
+  };
+}
+
+function validateGeotechBenchmarkCorpusHistoryEntry(
+  entry: GeotechBenchmarkCorpusHistoryEntry | null | undefined,
+  failures: string[],
+  prefix: string,
+): void {
+  if (!entry || typeof entry !== 'object') {
+    failures.push(`${prefix}_history_entry_missing`);
+    return;
+  }
+  if (entry.kind !== 'geotech-benchmark-corpus-history-entry') {
+    failures.push(`${prefix}_history_wrong_kind`);
+  }
+  if (entry.schemaVersion !== 1) {
+    failures.push(`${prefix}_history_wrong_schema_version`);
+  }
+  if (!entry.generatedAt) {
+    failures.push(`${prefix}_history_missing_generated_at`);
+  }
+  if (!entry.mode) {
+    failures.push(`${prefix}_history_mode_missing`);
+  }
+  if (!Number.isInteger(entry.skippedFixtureCount) || entry.skippedFixtureCount < 0) {
+    failures.push(`${prefix}_history_skipped_fixture_count_invalid`);
+  }
+  if (!Array.isArray(entry.providerProfiles)) {
+    failures.push(`${prefix}_history_provider_profiles_invalid`);
+  }
+  if (!Array.isArray(entry.preprocessingModes)) {
+    failures.push(`${prefix}_history_preprocessing_modes_invalid`);
+  }
+
+  const summary = entry.summary;
+  const runs = Array.isArray(entry.runs) ? entry.runs : [];
+  if (!summary || typeof summary !== 'object') {
+    failures.push(`${prefix}_history_summary_missing`);
+    return;
+  }
+  for (const key of [
+    'fixtureCount',
+    'runCount',
+    'passedRuns',
+    'failedRuns',
+    'totalEstimatedHostedCalls',
+    'pathLeakCount',
+  ] as const) {
+    if (!Number.isInteger(summary[key]) || summary[key] < 0) {
+      failures.push(`${prefix}_history_${key}_invalid`);
+    }
+  }
+  for (const key of [
+    'averageConfidence',
+    'averageTraceabilityRate',
+    'averageGroundModelReadinessScore',
+    'averagePreprocessingQualityScore',
+  ] as const) {
+    if (!Number.isFinite(summary[key])) {
+      failures.push(`${prefix}_history_${key}_invalid`);
+    }
+  }
+  validateHistoryConfidenceBreakdown(summary.averageConfidenceBreakdown, failures, `${prefix}_summary`);
+  if (summary.runCount !== runs.length) {
+    failures.push(`${prefix}_history_run_count_mismatch`);
+  }
+  if (summary.passedRuns !== runs.filter((run) => run.passed).length) {
+    failures.push(`${prefix}_history_passed_runs_mismatch`);
+  }
+  if (summary.failedRuns !== runs.filter((run) => !run.passed).length) {
+    failures.push(`${prefix}_history_failed_runs_mismatch`);
+  }
+  if (summary.runCount !== summary.passedRuns + summary.failedRuns) {
+    failures.push(`${prefix}_history_summary_run_count_mismatch`);
+  }
+  if (summary.passed !== (summary.runCount > 0 && summary.failedRuns === 0 && summary.pathLeakCount === 0)) {
+    failures.push(`${prefix}_history_passed_flag_mismatch`);
+  }
+  if (summary.pathLeakCount !== 0) {
+    failures.push(`${prefix}_history_path_leaks_present`);
+  }
+
+  const observedProviders = new Set(runs.map((run) => run.providerProfile));
+  const observedModes = new Set(runs.map((run) => run.preprocessingMode));
+  for (const provider of observedProviders) {
+    if (!entry.providerProfiles.includes(provider)) {
+      failures.push(`${prefix}_history_provider_profile_missing_${sanitizeFailureToken(provider)}`);
+    }
+  }
+  for (const mode of observedModes) {
+    if (!entry.preprocessingModes.includes(mode)) {
+      failures.push(`${prefix}_history_preprocessing_mode_missing_${sanitizeFailureToken(mode)}`);
+    }
+  }
+
+  for (const [index, run] of runs.entries()) {
+    const label = `${prefix}_run_${sanitizeFailureToken(run.key || String(index))}`;
+    if (run.key !== corpusRunKey(run)) {
+      failures.push(`${label}_key_mismatch`);
+    }
+    for (const key of ['fixtureId', 'category', 'providerProfile', 'preprocessingMode'] as const) {
+      if (typeof run[key] !== 'string' || !run[key].trim()) {
+        failures.push(`${label}_${key}_missing`);
+      }
+    }
+    for (const key of [
+      'successfulPageRate',
+      'cacheHitRate',
+      'directTraceabilityRate',
+      'preprocessingQualityScore',
+      'preprocessingRegionQualityScore',
+    ] as const) {
+      if (!Number.isFinite(run[key]) || run[key] < 0 || run[key] > 1) {
+        failures.push(`${label}_${key}_invalid`);
+      }
+    }
+    if (!Number.isInteger(run.estimatedHostedCalls) || run.estimatedHostedCalls < 0) {
+      failures.push(`${label}_estimatedHostedCalls_invalid`);
+    }
+    if (!Number.isFinite(run.groundModelReadinessScore) || run.groundModelReadinessScore < 0) {
+      failures.push(`${label}_groundModelReadinessScore_invalid`);
+    }
+    validateHistoryConfidenceBreakdown(run.confidenceBreakdown, failures, `${label}_confidence`);
+    if (!Array.isArray(run.reviewGates)) {
+      failures.push(`${label}_reviewGates_invalid`);
+    }
+    if (run.latencyMs != null && (!Number.isFinite(run.latencyMs) || run.latencyMs < 0)) {
+      failures.push(`${label}_latencyMs_invalid`);
+    }
+  }
+}
+
+function buildGeotechBenchmarkCorpusTrendDelta(
+  current: GeotechBenchmarkCorpusHistoryEntry,
+  previous: GeotechBenchmarkCorpusHistoryEntry,
+): NonNullable<GeotechBenchmarkCorpusTrendReport['delta']> {
+  return {
+    fixtureCount: current.summary.fixtureCount - previous.summary.fixtureCount,
+    runCount: current.summary.runCount - previous.summary.runCount,
+    passedRuns: current.summary.passedRuns - previous.summary.passedRuns,
+    failedRuns: current.summary.failedRuns - previous.summary.failedRuns,
+    averageConfidence: roundRatio(current.summary.averageConfidence - previous.summary.averageConfidence),
+    averageExtractionConfidence: roundRatio(
+      current.summary.averageConfidenceBreakdown.extractionConfidence
+      - previous.summary.averageConfidenceBreakdown.extractionConfidence,
+    ),
+    averageCorroborationScore: roundRatio(
+      current.summary.averageConfidenceBreakdown.corroborationScore
+      - previous.summary.averageConfidenceBreakdown.corroborationScore,
+    ),
+    averageTraceabilityRate: roundRatio(
+      current.summary.averageTraceabilityRate - previous.summary.averageTraceabilityRate,
+    ),
+    averageGroundModelReadinessScore: current.summary.averageGroundModelReadinessScore
+      - previous.summary.averageGroundModelReadinessScore,
+    averagePreprocessingQualityScore: roundRatio(
+      current.summary.averagePreprocessingQualityScore - previous.summary.averagePreprocessingQualityScore,
+    ),
+    totalEstimatedHostedCalls: current.summary.totalEstimatedHostedCalls - previous.summary.totalEstimatedHostedCalls,
+    pathLeakCount: current.summary.pathLeakCount - previous.summary.pathLeakCount,
+  };
+}
+
+function buildGeotechBenchmarkCorpusRunDeltas(
+  currentRuns: GeotechBenchmarkCorpusHistoryEntry['runs'],
+  previousRuns: GeotechBenchmarkCorpusHistoryEntry['runs'],
+): GeotechBenchmarkCorpusTrendReport['runDeltas'] {
+  const previousByKey = new Map(previousRuns.map((run) => [run.key, run]));
+  return currentRuns.map((current) => {
+    const previous = previousByKey.get(current.key);
+    const status: 'new' | 'changed' | 'unchanged' = previous
+      ? (current.passed === previous.passed ? 'unchanged' : 'changed')
+      : 'new';
+    return {
+      key: current.key,
+      fixtureId: current.fixtureId,
+      providerProfile: current.providerProfile,
+      preprocessingMode: current.preprocessingMode,
+      status,
+      passed: current.passed,
+      previousPassed: previous?.passed ?? null,
+      cacheHitRateDelta: previous ? roundRatio(current.cacheHitRate - previous.cacheHitRate) : null,
+      hostedCallDelta: previous ? current.estimatedHostedCalls - previous.estimatedHostedCalls : null,
+      traceabilityDelta: previous ? roundRatio(current.directTraceabilityRate - previous.directTraceabilityRate) : null,
+      extractionConfidenceDelta: previous
+        ? roundRatio(
+          current.confidenceBreakdown.extractionConfidence
+          - previous.confidenceBreakdown.extractionConfidence,
+        )
+        : null,
+      corroborationScoreDelta: previous
+        ? roundRatio(
+          current.confidenceBreakdown.corroborationScore
+          - previous.confidenceBreakdown.corroborationScore,
+        )
+        : null,
+      groundModelReadinessDelta: previous
+        ? current.groundModelReadinessScore - previous.groundModelReadinessScore
+        : null,
+      qualityDelta: previous ? roundRatio(current.preprocessingQualityScore - previous.preprocessingQualityScore) : null,
+      reviewGateDelta: previous ? current.reviewGates.length - previous.reviewGates.length : null,
+      latencyDeltaMs: previous && current.latencyMs != null && previous.latencyMs != null
+        ? current.latencyMs - previous.latencyMs
+        : null,
+    };
+  }).sort((left, right) => left.key.localeCompare(right.key));
+}
+
+function summarizeHistoryConfidenceBreakdown(
+  value: Partial<GeotechBenchmarkCorpusHistoryConfidenceSummary> | undefined,
+): GeotechBenchmarkCorpusHistoryConfidenceSummary {
+  return {
+    overall: finiteNumber(value?.overall),
+    extractionConfidence: finiteNumber(value?.extractionConfidence),
+    engineeringCompleteness: finiteNumber(value?.engineeringCompleteness),
+    traceabilityScore: finiteNumber(value?.traceabilityScore),
+    corroborationScore: finiteNumber(value?.corroborationScore),
+    readinessScore: finiteNumber(value?.readinessScore),
+    pageEvidenceConfidence: finiteNumber(value?.pageEvidenceConfidence),
+  };
+}
+
+function validateHistoryConfidenceBreakdown(
+  value: GeotechBenchmarkCorpusHistoryConfidenceSummary | undefined,
+  failures: string[],
+  prefix: string,
+): void {
+  if (!value || typeof value !== 'object') {
+    failures.push(`${prefix}_confidence_breakdown_missing`);
+    return;
+  }
+  for (const key of [
+    'overall',
+    'extractionConfidence',
+    'engineeringCompleteness',
+    'traceabilityScore',
+    'corroborationScore',
+    'readinessScore',
+    'pageEvidenceConfidence',
+  ] as const) {
+    if (!Number.isFinite(value[key]) || value[key] < 0) {
+      failures.push(`${prefix}_${key}_invalid`);
+    }
+  }
+}
+
+function corpusRunKey(run: Pick<
+  GeotechBenchmarkCorpusHistoryEntry['runs'][number],
+  'fixtureId' | 'providerProfile' | 'preprocessingMode'
+>): string {
+  return `${run.fixtureId}::${run.providerProfile}::${run.preprocessingMode}`;
 }
 
 function buildCorpusRun(input: GeotechBenchmarkCorpusRunInput): GeotechBenchmarkCorpusRun {
@@ -669,68 +1257,9 @@ function validateFemExecutionBoundary(benchmark: GeotechDocumentBenchmark): stri
   if (!fem) {
     return ['FEM draft readiness block missing from benchmark output'];
   }
-  const agentRunAllowedRoutes = fem.agentRunAllowedRoutes ?? [];
-  const agentWebglAllowedRoutes = fem.agentWebglAllowedRoutes ?? [];
-  const agentResultManifestAllowedRoutes = fem.agentResultManifestAllowedRoutes ?? [];
-  const caseOutputAvailableRoutes = fem.caseOutputAvailableRoutes ?? [];
-  const humanRunCommandAvailableRoutes = fem.humanRunCommandAvailableRoutes ?? [];
-  const staleRunCommandRoutes = fem.staleRunCommandRoutes ?? [];
-  const failures = [
-    fem.canAutoProceed
-      ? 'FEM draft readiness became auto-proceedable'
-      : null,
-    agentRunAllowedRoutes.length > 0
-      ? `FEM benchmark exposed agent-run routes: ${routeList(agentRunAllowedRoutes)}`
-      : null,
-    agentWebglAllowedRoutes.length > 0
-      ? `FEM benchmark exposed agent WebGL routes: ${routeList(agentWebglAllowedRoutes)}`
-      : null,
-    agentResultManifestAllowedRoutes.length > 0
-      ? `FEM benchmark exposed agent result-manifest routes: ${routeList(agentResultManifestAllowedRoutes)}`
-      : null,
-    caseOutputAvailableRoutes.length > 0
-      ? `FEM benchmark exposed unreviewed case-output routes: ${routeList(caseOutputAvailableRoutes)}`
-      : null,
-    humanRunCommandAvailableRoutes.length > 0
-      ? `FEM benchmark exposed unreviewed human-run routes: ${routeList(humanRunCommandAvailableRoutes)}`
-      : null,
-    staleRunCommandRoutes.length > 0
-      ? `FEM benchmark recommended stale run commands: ${routeList(staleRunCommandRoutes)}`
-      : null,
-  ];
-
-  for (const route of fem.routes ?? []) {
-    const boundary = route.executionBoundary;
-    if (!boundary) {
-      failures.push(`FEM route ${route.objective} has no execution boundary`);
-      continue;
-    }
-    failures.push(
-      route.agentRunAllowed || boundary.agentRunAllowed
-        ? `FEM route ${route.objective} exposed agent solver execution`
-        : null,
-      boundary.agentWebglRenderAllowed
-        ? `FEM route ${route.objective} exposed agent WebGL rendering`
-        : null,
-      boundary.agentResultManifestAllowed
-        ? `FEM route ${route.objective} exposed agent result-manifest creation`
-        : null,
-      boundary.caseOutputAvailable
-        ? `FEM route ${route.objective} exposed unreviewed case output`
-        : null,
-      boundary.humanRunCommandAvailable
-        ? `FEM route ${route.objective} exposed an unreviewed human run command`
-        : null,
-      !boundary.humanReviewRequired
-        ? `FEM route ${route.objective} no longer requires human review`
-        : null,
-      /\bfem run\b/i.test(route.recommendedCommand ?? '')
-        ? `FEM route ${route.objective} recommended a run command instead of a draft command`
-        : null,
-    );
-  }
-
-  return [...new Set(failures.filter((value): value is string => value != null))];
+  return collectFemDraftReadinessGuardrailFailures(fem).map((failure) =>
+    failure.endsWith('.') ? failure.slice(0, -1) : failure,
+  );
 }
 
 function buildRunWarnings(
@@ -870,8 +1399,28 @@ function deduplicatePathSafetyLeaks(
   return unique;
 }
 
+function deduplicateArtifactSafetyLeaks(
+  leaks: GeotechBenchmarkCorpusArtifactSafetyLeak[],
+): GeotechBenchmarkCorpusArtifactSafetyLeak[] {
+  const seen = new Set<string>();
+  const unique: GeotechBenchmarkCorpusArtifactSafetyLeak[] = [];
+  for (const leak of leaks) {
+    const key = `${leak.kind}:${leak.location}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    unique.push(leak);
+  }
+  return unique;
+}
+
 function sanitizeLocationKey(value: string): string {
   return value.replace(/[^a-zA-Z0-9_$-]/g, '_');
+}
+
+function sanitizeFailureToken(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 72);
 }
 
 function looksLikeAbsoluteLocalPath(value: string): boolean {
@@ -1007,10 +1556,6 @@ function successfulPageRate(benchmark: GeotechDocumentBenchmark): number {
   return totalPages > 0 ? roundRatio(successfulPages / totalPages) : 0;
 }
 
-function routeList(values: string[] | undefined): string {
-  return values && values.length > 0 ? values.join(', ') : 'none';
-}
-
 function formatReviewGates(values: string[]): string {
   return values.length > 0 ? values.join(', ') : 'none';
 }
@@ -1061,6 +1606,17 @@ function formatRatio(value: number): string {
 function signedPercent(value: number): string {
   const sign = value > 0 ? '+' : '';
   return `${sign}${Math.round(value * 100)}%`;
+}
+
+function formatDelta(value: number | null, asPercent: boolean): string {
+  if (value == null) {
+    return 'new';
+  }
+  return asPercent ? signedPercent(value) : signed(value);
+}
+
+function signed(value: number): string {
+  return value > 0 ? `+${value}` : String(value);
 }
 
 function escapeHtml(value: string): string {

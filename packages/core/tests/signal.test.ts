@@ -1,9 +1,43 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { strToU8, zipSync } from 'fflate';
 import { afterEach, describe, expect, it } from 'vitest';
-import { analyzeSignalFile } from '../src/index.js';
+import {
+  analyzeSignalFile,
+  validateSignalAnalysisResultContract,
+  type SignalAnalysisType,
+  type SignalThresholdProfileId,
+} from '../src/index.js';
+
+const testDir = dirname(fileURLToPath(import.meta.url));
+
+interface SignalContractFixture {
+  schemaVersion: string;
+  cases: Array<{
+    signalType: Exclude<SignalAnalysisType, 'unknown'>;
+    fileName: string;
+    thresholdProfile: SignalThresholdProfileId;
+    valueColumn: string;
+    expectedRateUnit: string;
+    minimumRows: number;
+    minimumThresholdFlags: number;
+    minimumMissingIntervals: number;
+    requiredReviewGates: string[];
+    csv: string[];
+  }>;
+  prohibitedOutputKeys: string[];
+}
+
+function loadSignalContractFixture(): SignalContractFixture {
+  return JSON.parse(readFileSync(join(
+    testDir,
+    'fixtures',
+    'signal-analysis-contract.fixture.json',
+  ), 'utf8')) as SignalContractFixture;
+}
 
 function minimalWorkbookXml(sheetXml: string, sheetName = 'Daily'): Uint8Array {
   return zipSync({
@@ -362,6 +396,82 @@ describe('signal analysis', () => {
     expect(load.thresholdFlags).toEqual([
       expect.objectContaining({ kind: 'rate-threshold', value: 12480, threshold: 250 }),
     ]);
+  });
+
+  it('keeps all signal instrument profile outputs fixture-backed, deterministic, and path-safe', async () => {
+    const fixture = loadSignalContractFixture();
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-signal-contract-'));
+    tempDirs.push(dir);
+
+    expect(fixture.schemaVersion).toBe('signal-analysis-contract-acceptance.v1');
+
+    for (const signalCase of fixture.cases) {
+      const filePath = join(dir, signalCase.fileName);
+      await writeFile(filePath, signalCase.csv.join('\n'), 'utf-8');
+
+      const result = await analyzeSignalFile(filePath, {
+        type: signalCase.signalType,
+        thresholdProfile: signalCase.thresholdProfile,
+      });
+      const contract = validateSignalAnalysisResultContract(result);
+
+      expect(contract.failures, signalCase.signalType).toEqual([]);
+      expect(contract.ok, signalCase.signalType).toBe(true);
+      expect(result.source.path, signalCase.signalType).toBe(signalCase.fileName);
+      expect(result.source.path, signalCase.signalType).not.toContain(dir);
+      expect(result.signalType, signalCase.signalType).toBe(signalCase.signalType);
+      expect(result.columns.value, signalCase.signalType).toBe(signalCase.valueColumn);
+      expect(result.source.rowsAnalyzed, signalCase.signalType).toBeGreaterThanOrEqual(signalCase.minimumRows);
+      expect(result.thresholdProfile?.id, signalCase.signalType).toBe(signalCase.thresholdProfile);
+      expect(result.thresholdProfile?.reviewGates, signalCase.signalType).toEqual(
+        expect.arrayContaining(signalCase.requiredReviewGates),
+      );
+      expect(result.rateOfChange[0]?.unit, signalCase.signalType).toBe(signalCase.expectedRateUnit);
+      expect(result.thresholdFlags.length, signalCase.signalType).toBeGreaterThanOrEqual(signalCase.minimumThresholdFlags);
+      expect(result.missingIntervals.length, signalCase.signalType).toBeGreaterThanOrEqual(signalCase.minimumMissingIntervals);
+      expect(result.series.length, signalCase.signalType).toBeGreaterThan(0);
+      expect(result.trendSummary.length, signalCase.signalType).toBe(result.series.length);
+
+      const serialized = JSON.stringify(result);
+      for (const prohibitedKey of fixture.prohibitedOutputKeys) {
+        expect(serialized.includes(`"${prohibitedKey}"`), `${signalCase.signalType} should not expose ${prohibitedKey}`).toBe(false);
+      }
+    }
+  });
+
+  it('fails closed when signal output carries model metadata or private paths', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-signal-unsafe-'));
+    tempDirs.push(dir);
+    const filePath = join(dir, 'settlement.csv');
+    await writeFile(
+      filePath,
+      [
+        'timestamp,instrument,settlement_mm',
+        '2026-01-01T00:00:00Z,SM-1,0',
+        '2026-01-02T00:00:00Z,SM-1,7',
+      ].join('\n'),
+      'utf-8',
+    );
+
+    const result = await analyzeSignalFile(filePath, {
+      type: 'settlement',
+      thresholdProfile: 'auto',
+    });
+    const unsafe = structuredClone(result) as any;
+    unsafe.source.path = filePath;
+    unsafe.modelCalls = [{ model: 'not-allowed' }];
+    unsafe.warnings.push('api_key=sk-or-v1-notallowednotallowed');
+
+    const contract = validateSignalAnalysisResultContract(unsafe);
+
+    expect(contract.ok).toBe(false);
+    expect(contract.failures).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/source path/i),
+        expect.stringMatching(/prohibited model\/secret key/i),
+        expect.stringMatching(/private paths or tokens/i),
+      ]),
+    );
   });
 
   it('rejects mismatched threshold profiles instead of applying wrong instrument limits', async () => {

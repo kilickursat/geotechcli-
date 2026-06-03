@@ -55,6 +55,60 @@ export interface FemGroundModelDraftCandidate {
   executionBoundary: FemGroundModelExecutionBoundary;
 }
 
+export interface FemGroundModelDraftCandidateValidation {
+  schemaVersion: 'fem-ground-model-draft-candidate-validation.v1';
+  status: 'accepted' | 'blocked';
+  blockerCodes: string[];
+  warnings: string[];
+}
+
+const CONTRACT_ONLY_BLOCKED_UNTIL = [
+  'deterministic-analysis-case-schema-accepted',
+  'solver-or-preview-backend-implemented',
+  'result-manifest-validator-implemented',
+  'webgl-renderer-smoke-added',
+  'acceptance-fixture-approved',
+] as const;
+
+const CONTRACT_ONLY_DISALLOWED_ACTIONS = [
+  'run-solver',
+  'create-analysis-case',
+  'render-webgl',
+  'invent-results',
+] as const;
+
+const FEM_PROHIBITED_RAW_PAYLOAD_KEYS = new Set([
+  'apiKey',
+  'authorization',
+  'headers',
+  'messages',
+  'model',
+  'modelId',
+  'prompt',
+  'provider',
+  'request',
+  'response',
+  'rawText',
+  'sourceEvidence',
+  'sourceEvidenceSnippet',
+  'sourceEvidenceSnippets',
+  'token',
+  'visionModelId',
+]);
+
+const FEM_PROHIBITED_EXECUTION_RESULT_KEYS = new Set([
+  'analysisResult',
+  'caseOutput',
+  'caseOutputPath',
+  'modelCalls',
+  'resultManifest',
+  'renderedWebgl',
+  'solverOutput',
+  'webglArtifact',
+  'webglHtml',
+  'webglOutput',
+]);
+
 function isRecord(value: unknown): value is JsonRecord {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
@@ -112,7 +166,7 @@ function mapGroundModelEvidenceRef(evidence: EvidenceRef | undefined, id: string
 
   return {
     id: evidence.id,
-    source: evidence.sourcePath || evidence.location.filePath || 'GroundModel',
+    source: sanitizeFemEvidenceSource(evidence.sourcePath || evidence.location.filePath),
     page: evidence.location.pageNumber,
     note: [
       evidence.method,
@@ -282,16 +336,19 @@ function buildExecutionBoundary(
   const humanRunCommand = draft.recommendedAction === 'run-reviewed-case'
     ? draft.recommendedCommand
     : undefined;
-  const blockedReasons = [
-    ...draft.missingUserInputs,
-    ...(draft.contractReadiness?.blockedUntil ?? []),
-    ...draft.reviewGates.filter((gate) =>
+  const blockedReviewGates = draft.capability.executionMode === 'contract-only'
+    ? draft.reviewGates
+    : draft.reviewGates.filter((gate) =>
       gate === 'missing-user-inputs'
       || gate === 'planned-only'
       || gate === 'solver-backend-not-implemented'
       || gate === 'agent-run-disabled'
       || gate === 'human-review-required'
-    ),
+    );
+  const blockedReasons = [
+    ...draft.missingUserInputs,
+    ...(draft.contractReadiness?.blockedUntil ?? []),
+    ...blockedReviewGates,
   ];
 
   return {
@@ -351,4 +408,191 @@ export function buildFemDraftCandidateFromReadiness(
     draft,
     executionBoundary: buildExecutionBoundary(command, draft),
   };
+}
+
+export function validateFemGroundModelDraftCandidate(
+  candidate: FemGroundModelDraftCandidate,
+): FemGroundModelDraftCandidateValidation {
+  const blockers: string[] = [];
+  const warnings: string[] = [];
+  const boundary = candidate.executionBoundary;
+  const draft = candidate.draft;
+
+  if (candidate.canAutoProceed !== false || draft.canAutoProceed !== false) {
+    blockers.push('fem_candidate_auto_proceed_enabled');
+  }
+  if (!candidate.command.startsWith('geotech fem draft ')) {
+    blockers.push('fem_candidate_command_not_draft');
+  }
+  if (/\bfem run\b/i.test(candidate.command) || /\bfem run\b/i.test(boundary.draftCommand)) {
+    blockers.push('fem_candidate_run_command_exposed');
+  }
+  if (boundary.agentRunAllowed !== false || draft.capability.agentRunAllowed !== false) {
+    blockers.push('fem_candidate_agent_run_enabled');
+  }
+  if (boundary.agentWebglRenderAllowed !== false) {
+    blockers.push('fem_candidate_agent_webgl_enabled');
+  }
+  if (boundary.agentResultManifestAllowed !== false) {
+    blockers.push('fem_candidate_agent_result_manifest_enabled');
+  }
+  if (boundary.humanReviewRequired !== true) {
+    blockers.push('fem_candidate_human_review_not_required');
+  }
+
+  if (draft.capability.executionMode === 'contract-only') {
+    if (draft.recommendedAction !== 'contract-only') {
+      blockers.push('fem_contract_route_not_contract_only');
+    }
+    if (draft.analysisCase != null || boundary.caseOutputAvailable) {
+      blockers.push('fem_contract_route_case_output_available');
+    }
+    if (boundary.humanRunCommand != null) {
+      blockers.push('fem_contract_route_human_run_command_available');
+    }
+    if (boundary.draftCommand.includes('--case-output')) {
+      blockers.push('fem_contract_route_case_output_flag_exposed');
+    }
+    const contract = draft.contractReadiness;
+    if (!contract) {
+      blockers.push('fem_contract_route_missing_contract_readiness');
+    } else {
+      for (const requirement of CONTRACT_ONLY_BLOCKED_UNTIL) {
+        if (!contract.blockedUntil.includes(requirement)) {
+          blockers.push(`fem_contract_route_missing_blocked_until_${requirement}`);
+        }
+      }
+      for (const action of CONTRACT_ONLY_DISALLOWED_ACTIONS) {
+        if (!contract.disallowedAgentActions.includes(action)) {
+          blockers.push(`fem_contract_route_missing_disallowed_action_${action}`);
+        }
+      }
+      if (!contract.reviewGates.includes('agent-run-disabled')) {
+        blockers.push('fem_contract_route_missing_agent_run_gate');
+      }
+      if (!contract.reviewGates.includes('solver-backend-not-implemented')) {
+        blockers.push('fem_contract_route_missing_solver_backend_gate');
+      }
+      if (!contract.reviewGates.includes('human-review-required')) {
+        blockers.push('fem_contract_route_missing_human_review_gate');
+      }
+    }
+  } else if (draft.recommendedAction === 'run-reviewed-case') {
+    if (!draft.analysisCase || !boundary.caseOutputAvailable) {
+      blockers.push('fem_preview_route_missing_reviewable_case_output');
+    }
+    if (!boundary.humanRunCommand?.startsWith('geotech fem run ')) {
+      blockers.push('fem_preview_route_missing_human_run_command');
+    }
+    if (draft.validation?.status === 'blocked') {
+      blockers.push('fem_preview_route_validation_blocked_but_runnable');
+    }
+  } else if (boundary.humanRunCommand != null || boundary.caseOutputAvailable) {
+    blockers.push('fem_preview_route_unreviewed_run_boundary_exposed');
+  }
+
+  for (const keyPath of collectFemRawPayloadKeys(candidate)) {
+    blockers.push(`fem_candidate_raw_payload_key_${sanitizeBlockerCode(keyPath)}`);
+  }
+
+  for (const keyPath of collectFemExecutionResultKeys(candidate)) {
+    blockers.push(`fem_candidate_execution_result_payload_key_${sanitizeBlockerCode(keyPath)}`);
+  }
+
+  for (const leakPath of collectFemPrivateLeaks(candidate)) {
+    blockers.push(`fem_candidate_private_path_or_token_leak_${sanitizeBlockerCode(leakPath)}`);
+  }
+
+  if ((candidate.bridge.input.evidenceRefs?.length ?? 0) === 0 && candidate.evidenceIds.length > 0) {
+    warnings.push('fem_candidate_evidence_ids_not_mapped_to_refs');
+  }
+
+  return {
+    schemaVersion: 'fem-ground-model-draft-candidate-validation.v1',
+    status: blockers.length === 0 ? 'accepted' : 'blocked',
+    blockerCodes: [...new Set(blockers)],
+    warnings,
+  };
+}
+
+function sanitizeFemEvidenceSource(value: string | undefined): string {
+  if (!value) {
+    return 'GroundModel';
+  }
+
+  return isAbsoluteLocalPath(value) || hasSecretLikeValue(value)
+    ? basenameLike(value) || 'GroundModel'
+    : value;
+}
+
+function collectFemRawPayloadKeys(value: unknown): string[] {
+  return collectFemProhibitedKeys(value, FEM_PROHIBITED_RAW_PAYLOAD_KEYS);
+}
+
+function collectFemExecutionResultKeys(value: unknown): string[] {
+  return collectFemProhibitedKeys(value, FEM_PROHIBITED_EXECUTION_RESULT_KEYS);
+}
+
+function collectFemProhibitedKeys(value: unknown, prohibitedKeys: Set<string>): string[] {
+  const paths: string[] = [];
+
+  walkUnknown(value, (entry, path) => {
+    if (!isRecord(entry)) {
+      return;
+    }
+
+    for (const key of Object.keys(entry)) {
+      if (prohibitedKeys.has(key)) {
+        paths.push(path ? `${path}.${key}` : key);
+      }
+    }
+  });
+
+  return paths;
+}
+
+function collectFemPrivateLeaks(value: unknown): string[] {
+  const paths: string[] = [];
+
+  walkUnknown(value, (entry, path) => {
+    if (typeof entry === 'string' && (isAbsoluteLocalPath(entry) || hasSecretLikeValue(entry))) {
+      paths.push(path || '<root>');
+    }
+  });
+
+  return paths;
+}
+
+function walkUnknown(value: unknown, visit: (entry: unknown, path: string) => void, path = ''): void {
+  visit(value, path);
+
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => walkUnknown(item, visit, `${path}[${index}]`));
+    return;
+  }
+
+  if (!isRecord(value)) {
+    return;
+  }
+
+  for (const [key, entry] of Object.entries(value)) {
+    walkUnknown(entry, visit, path ? `${path}.${key}` : key);
+  }
+}
+
+function isAbsoluteLocalPath(value: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(value) || /^\/(?:home|Users|tmp|var|mnt)\//i.test(value);
+}
+
+function hasSecretLikeValue(value: string): boolean {
+  return /(?:sk-(?:or-)?[A-Za-z0-9_-]{12,}|api[_-]?key\s*[:=]\s*[A-Za-z0-9_-]{12,}|token\s*[:=]\s*[A-Za-z0-9_-]{12,})/i.test(value);
+}
+
+function basenameLike(value: string): string {
+  const normalized = value.replace(/\\/g, '/');
+  return normalized.split('/').filter(Boolean).pop() ?? '';
+}
+
+function sanitizeBlockerCode(value: string): string {
+  return value.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
 }

@@ -1,6 +1,42 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-import { verifyGroundModel, type GroundModel } from '../src/index.js';
+import {
+  validateGroundModelCalculationInputDraftContract,
+  verifyGroundModel,
+  type GroundModel,
+  type GroundModelCalculationWorkflow,
+} from '../src/index.js';
+
+const testDir = dirname(fileURLToPath(import.meta.url));
+
+interface CalculationDraftAcceptanceFixture {
+  schemaVersion: string;
+  workflows: Array<{
+    workflow: GroundModelCalculationWorkflow;
+    toolName: string;
+    requiredMissingUserInputs: string[];
+    requiredInputKeys: string[];
+    requiredEvidenceIds: string[];
+    requiredSourcePages: Array<{ sourcePath: string; pageNumber: number }>;
+    prohibitedCommandPatterns: string[];
+  }>;
+  prohibitedPayloadKeys: string[];
+  requiredReviewGate: {
+    code: string;
+    severity: string;
+  };
+}
+
+function loadCalculationDraftFixture(): CalculationDraftAcceptanceFixture {
+  return JSON.parse(readFileSync(join(
+    testDir,
+    'fixtures',
+    'ground-model-calculation-drafts.fixture.json',
+  ), 'utf8')) as CalculationDraftAcceptanceFixture;
+}
 
 function makeGroundModel(overrides: Partial<GroundModel> = {}): GroundModel {
   const model: GroundModel = {
@@ -484,6 +520,90 @@ describe('GroundModel calculation readiness', () => {
     expect(assumptionWorkflows['bearing-capacity']?.inputDraft?.reviewGates).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ code: 'assumption_review_required', severity: 'review' }),
+      ]),
+    );
+  });
+
+  it('keeps bearing, settlement, pile, liquefaction, and slope drafts fixture-backed and non-executing', () => {
+    const fixture = loadCalculationDraftFixture();
+    const verification = verifyGroundModel(makeGroundModel(), { includeCalculationInputDrafts: true });
+    const workflows = Object.fromEntries(
+      verification.calculationReadiness.workflows.map((workflow) => [workflow.workflow, workflow]),
+    );
+
+    expect(fixture.schemaVersion).toBe('ground-model-calculation-draft-acceptance.v1');
+
+    for (const expectation of fixture.workflows) {
+      const workflow = workflows[expectation.workflow];
+      const draft = workflow?.inputDraft;
+
+      expect(draft, expectation.workflow).toBeDefined();
+      expect(draft?.workflow, expectation.workflow).toBe(expectation.workflow);
+      expect(draft?.toolName, expectation.workflow).toBe(expectation.toolName);
+      expect(draft?.readyToRun, expectation.workflow).toBe(false);
+      expect(draft?.missingUserInputs, expectation.workflow).toEqual(expectation.requiredMissingUserInputs);
+      expect(draft?.reviewGates, expectation.workflow).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining(fixture.requiredReviewGate),
+        ]),
+      );
+      expect(draft?.evidenceIds, expectation.workflow).toEqual(
+        expect.arrayContaining(expectation.requiredEvidenceIds),
+      );
+      for (const key of expectation.requiredInputKeys) {
+        expect(Object.prototype.hasOwnProperty.call(draft?.input ?? {}, key), `${expectation.workflow} input key ${key}`).toBe(true);
+      }
+      expect(draft?.sourceRefs.map((ref) => ref.evidenceId), expectation.workflow).toEqual(
+        expect.arrayContaining(expectation.requiredEvidenceIds),
+      );
+      for (const sourcePage of expectation.requiredSourcePages) {
+        expect(draft?.sourcePages, `${expectation.workflow} source page ${sourcePage.sourcePath}:${sourcePage.pageNumber}`).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining(sourcePage),
+          ]),
+        );
+      }
+      for (const pattern of expectation.prohibitedCommandPatterns) {
+        expect(draft?.command.toLowerCase(), `${expectation.workflow} command should not contain ${pattern}`).not.toContain(
+          pattern.toLowerCase(),
+        );
+      }
+      const serialized = JSON.stringify(draft);
+      for (const prohibitedKey of fixture.prohibitedPayloadKeys) {
+        expect(serialized.includes(`"${prohibitedKey}"`), `${expectation.workflow} should not expose ${prohibitedKey}`).toBe(false);
+      }
+
+      const contract = validateGroundModelCalculationInputDraftContract(draft);
+      expect(contract.failures, expectation.workflow).toEqual([]);
+      expect(contract.ok, expectation.workflow).toBe(true);
+    }
+  });
+
+  it('fails closed when calculation drafts carry execution payloads or private paths', () => {
+    const verification = verifyGroundModel(makeGroundModel(), { includeCalculationInputDrafts: true });
+    const bearing = verification.calculationReadiness.workflows.find((workflow) =>
+      workflow.workflow === 'bearing-capacity')?.inputDraft;
+    expect(bearing).toBeDefined();
+
+    const unsafe = structuredClone(bearing!) as Record<string, unknown>;
+    unsafe.readyToRun = true;
+    unsafe.command = 'geotech fem run C:/Users/example/private-case.json --experimental --case-output result.json';
+    unsafe.resultManifest = { path: 'C:/Users/example/private-result.json' };
+    unsafe.prompt = 'prepare final bearing output';
+    unsafe.response = { text: 'raw model trace' };
+    unsafe.modelId = 'provider/geotech-private-model';
+    unsafe.sourceEvidence = { snippet: 'raw OCR page text' };
+
+    const contract = validateGroundModelCalculationInputDraftContract(unsafe);
+
+    expect(contract.ok).toBe(false);
+    expect(contract.failures).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/not readyToRun/i),
+        expect.stringMatching(/FEM execution/i),
+        expect.stringMatching(/execution\/result payload key/i),
+        expect.stringMatching(/raw prompt, response, model, or source-evidence payload key/i),
+        expect.stringMatching(/private paths or tokens/i),
       ]),
     );
   });

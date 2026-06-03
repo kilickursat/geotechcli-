@@ -1,11 +1,51 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import {
+  attachByokBenchmarkReportContractValidation,
   buildByokBenchmarkPrompt,
   buildByokBenchmarkReport,
+  buildByokBenchmarkTrend,
   buildByokProviderBenchmarkProfile,
+  inspectByokBenchmarkArtifactSafety,
   validateByokBenchmarkResponse,
+  validateByokBenchmarkReportContract,
+  validateByokBenchmarkTrendContract,
+  type ByokBenchmarkProfileId,
+  type ByokBenchmarkReport,
+  type LLMConfig,
+  type ProviderCapabilityProfileId,
 } from '../src/llm/index.js';
+
+const testDir = dirname(fileURLToPath(import.meta.url));
+
+interface ByokProviderEvidenceFixture {
+  schemaVersion: string;
+  requiredProfiles: Array<{
+    id: ByokBenchmarkProfileId;
+    provider: LLMConfig['provider'];
+    modelId: string;
+    visionModelId: string;
+    expectedCapabilityProfile: ProviderCapabilityProfileId;
+    likelyFreeRoute: boolean;
+    requiredReviewGates: string[];
+  }>;
+  safeResponse: Record<string, unknown>;
+  unsafeReportLeak: {
+    model: string;
+    error: string;
+  };
+}
+
+function loadByokProviderEvidenceFixture(): ByokProviderEvidenceFixture {
+  return JSON.parse(readFileSync(join(
+    testDir,
+    'fixtures',
+    'byok-provider-evidence-contract.fixture.json',
+  ), 'utf8')) as ByokProviderEvidenceFixture;
+}
 
 describe('BYOK provider benchmark contract', () => {
   it('uses the same preprocessed page-evidence contract for hosted and OpenRouter/free providers', () => {
@@ -129,10 +169,17 @@ describe('BYOK provider benchmark contract', () => {
       profiles: ['hosted-beta', 'local-hf-compatible'],
     });
     expect(report.runs[1]?.profile.evidenceContract.prohibitedInputs).toEqual(['direct-image', 'native-pdf']);
+    const artifact = attachByokBenchmarkReportContractValidation(report);
+    expect(artifact.contractValidation).toMatchObject({
+      ok: true,
+      failures: [],
+      profiles: ['hosted-beta', 'local-hf-compatible'],
+    });
   });
 
   it('does not mark an empty skipped benchmark as passed', () => {
     const report = buildByokBenchmarkReport([], '2026-06-01T00:00:00.000Z');
+    const artifact = attachByokBenchmarkReportContractValidation(report);
 
     expect(report.summary).toMatchObject({
       runCount: 0,
@@ -141,5 +188,206 @@ describe('BYOK provider benchmark contract', () => {
       passed: false,
       profiles: [],
     });
+    expect(artifact.contractValidation).toMatchObject({
+      ok: true,
+      warnings: ['report_has_no_runs'],
+    });
+  });
+
+  it('fixture-checks the live provider matrix against one comparable evidence contract', () => {
+    const fixture = loadByokProviderEvidenceFixture();
+    const requiredProfiles = fixture.requiredProfiles.map((entry) => entry.id);
+    const runs = fixture.requiredProfiles.map((entry, index) => {
+      const profile = buildByokProviderBenchmarkProfile(entry.id, {
+        provider: entry.provider,
+        modelId: entry.modelId,
+        visionModelId: entry.visionModelId,
+      });
+      const response = validateByokBenchmarkResponse(
+        JSON.stringify(fixture.safeResponse),
+        profile.evidenceContract,
+      );
+
+      expect(profile.capabilityProfile.id).toBe(entry.expectedCapabilityProfile);
+      expect(profile.capabilityProfile.likelyFreeRoute).toBe(entry.likelyFreeRoute);
+      expect(profile.requestContainsImageInput).toBe(false);
+      expect(profile.requestContainsNativePdfInput).toBe(false);
+      expect(profile.evidenceContract.evidenceInput).toBe('preprocessed-page-evidence');
+      expect(profile.evidenceContract.prohibitedInputs).toEqual(['direct-image', 'native-pdf']);
+      expect(profile.evidenceContract.reviewGates).toEqual(expect.arrayContaining(entry.requiredReviewGates));
+
+      return {
+        profile,
+        ok: response.ok,
+        model: profile.modelId,
+        latencyMs: 100 + index,
+        totalTokens: 50 + index,
+        response,
+      };
+    });
+
+    const report = buildByokBenchmarkReport(runs, '2026-06-01T00:00:00.000Z');
+    const validation = validateByokBenchmarkReportContract(report, { requiredProfiles });
+    const artifact = attachByokBenchmarkReportContractValidation(report, { requiredProfiles });
+
+    expect(validation).toMatchObject({
+      ok: true,
+      failures: [],
+      profiles: ['hosted-beta', 'local-hf-compatible', 'openai-compatible', 'openrouter-free'],
+    });
+    expect(report.summary).toMatchObject({
+      runCount: 4,
+      passedRuns: 4,
+      failedRuns: 0,
+      passed: true,
+    });
+    expect(artifact.contractValidation).toMatchObject({
+      ok: true,
+      failures: [],
+      profiles: ['hosted-beta', 'local-hf-compatible', 'openai-compatible', 'openrouter-free'],
+    });
+    expect(JSON.stringify(artifact)).toContain('"contractValidation"');
+    expect(inspectByokBenchmarkArtifactSafety(artifact).ok).toBe(true);
+  });
+
+  it('redacts report paths/secrets and fails raw unsafe provider reports', () => {
+    const fixture = loadByokProviderEvidenceFixture();
+    const profile = buildByokProviderBenchmarkProfile('openrouter-free', {
+      provider: 'openai-compatible',
+      modelId: 'google/gemma-4-26b-a4b-it:free',
+      visionModelId: '',
+    });
+    const response = validateByokBenchmarkResponse(JSON.stringify(fixture.safeResponse), profile.evidenceContract);
+    const safeReport = buildByokBenchmarkReport([
+      {
+        profile,
+        ok: true,
+        model: fixture.unsafeReportLeak.model,
+        latencyMs: 120,
+        totalTokens: 40,
+        response,
+        error: fixture.unsafeReportLeak.error,
+      },
+    ], '2026-06-01T00:00:00.000Z');
+
+    const serialized = JSON.stringify(safeReport);
+    expect(serialized).not.toContain('C:\\Users\\Databil');
+    expect(serialized).not.toContain('sk-or-v1-abcdefghijklmnopqrstuvwxyz');
+    expect(serialized).toContain('[redacted-path]');
+    expect(serialized).toContain('sk-or-v1-***');
+    expect(validateByokBenchmarkReportContract(safeReport).ok).toBe(true);
+
+    const firstRun = safeReport.runs[0]!;
+    const rawUnsafeReport = {
+      ...safeReport,
+      runs: [
+        {
+          ...firstRun,
+          model: fixture.unsafeReportLeak.model,
+          error: fixture.unsafeReportLeak.error,
+          profile: {
+            ...firstRun.profile,
+            requestContainsImageInput: true,
+            evidenceContract: {
+              ...firstRun.profile.evidenceContract,
+              evidenceInput: 'native-pdf',
+              sourceEvidence: [
+                {
+                  ...firstRun.profile.evidenceContract.sourceEvidence[0]!,
+                  evidenceId: 'model-specific-native-pdf-page',
+                  snippet: `I inspected ${fixture.unsafeReportLeak.model} directly.`,
+                },
+              ],
+            },
+          },
+        },
+      ],
+      summary: {
+        ...safeReport.summary,
+        profiles: ['openrouter-free'],
+      },
+    } as unknown as ByokBenchmarkReport;
+
+    const unsafeValidation = validateByokBenchmarkReportContract(rawUnsafeReport, {
+      requiredProfiles: ['hosted-beta', 'openai-compatible', 'openrouter-free', 'local-hf-compatible'],
+    });
+
+    expect(unsafeValidation.ok).toBe(false);
+    expect(unsafeValidation.failures).toEqual(expect.arrayContaining([
+      'missing_required_profile_hosted-beta',
+      'missing_required_profile_openai-compatible',
+      'missing_required_profile_local-hf-compatible',
+      'profile_openrouter-free_contains_image_input',
+      'profile_openrouter-free_wrong_evidence_input',
+    ]));
+    expect(unsafeValidation.failures.some((failure) =>
+      failure.startsWith('sensitive_value_leak_report_runs_0_model'),
+    )).toBe(true);
+    expect(unsafeValidation.failures.some((failure) =>
+      failure.startsWith('sensitive_value_leak_report_runs_0_error'),
+    )).toBe(true);
+  });
+
+  it('builds path-safe BYOK trend artifacts without raw prompts, responses, or source evidence', () => {
+    const fixture = loadByokProviderEvidenceFixture();
+    const runs = fixture.requiredProfiles.slice(0, 2).map((entry, index) => {
+      const profile = buildByokProviderBenchmarkProfile(entry.id, {
+        provider: entry.provider,
+        modelId: entry.modelId,
+        visionModelId: entry.visionModelId,
+      });
+      const response = validateByokBenchmarkResponse(
+        JSON.stringify(fixture.safeResponse),
+        profile.evidenceContract,
+      );
+      return {
+        profile,
+        ok: response.ok,
+        model: profile.modelId,
+        latencyMs: 100 + index * 10,
+        totalTokens: 40 + index,
+        response,
+      };
+    });
+    const first = buildByokBenchmarkReport(runs, '2026-06-01T00:00:00.000Z');
+    const second = buildByokBenchmarkReport([
+      ...runs,
+      {
+        ...runs[0]!,
+        latencyMs: 150,
+        totalTokens: 44,
+      },
+    ], '2026-06-01T01:00:00.000Z');
+    const firstTrend = buildByokBenchmarkTrend(first);
+    const secondTrend = buildByokBenchmarkTrend(second, firstTrend.history);
+
+    expect(validateByokBenchmarkTrendContract(firstTrend.report)).toMatchObject({
+      ok: true,
+      failures: [],
+    });
+    expect(validateByokBenchmarkTrendContract(secondTrend.report)).toMatchObject({
+      ok: true,
+      failures: [],
+    });
+    expect(secondTrend.report.historyCount).toBe(2);
+    expect(secondTrend.report.current.summary).toMatchObject({
+      runCount: 3,
+      passedRuns: 3,
+      failedRuns: 0,
+      passed: true,
+      evidenceInput: 'preprocessed-page-evidence',
+      pathLeakCount: 0,
+    });
+    expect(secondTrend.report.delta).toMatchObject({
+      runCount: 1,
+      failedRuns: 0,
+      pathLeakCount: 0,
+    });
+
+    const serialized = JSON.stringify(secondTrend.report);
+    expect(serialized).not.toContain('"sourceEvidence"');
+    expect(serialized).not.toContain('"snippet"');
+    expect(serialized).not.toContain('"citedEvidenceIds"');
+    expect(inspectByokBenchmarkArtifactSafety(secondTrend.report).ok).toBe(true);
   });
 });

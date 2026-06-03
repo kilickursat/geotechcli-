@@ -7,6 +7,7 @@ import { performance } from 'node:perf_hooks';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const coreIndexEntry = join(repoRoot, 'packages', 'core', 'dist', 'index.js');
 const corePreprocessEntry = join(repoRoot, 'packages', 'core', 'dist', 'vision', 'preprocess.js');
 const fixtureDir = join(repoRoot, 'packages', 'core', 'tests', 'fixtures', 'geotech-corpus');
 const outputDir = resolve(readOutputDir(process.env.GEOTECHCLI_PREPROCESSING_BENCHMARK_OUTPUT_DIR || '__benchmark-preprocessing-fixtures'));
@@ -21,13 +22,22 @@ const fixtures = [
   { id: 'malformed-scanned', category: 'malformed-scanned-pdf', fileName: 'preprocess-v2-malformed-scanned.fixture.pdf', page: 1, minRegionV2Crops: 1 },
 ];
 
-if (!existsSync(corePreprocessEntry)) {
-  console.error(`Core preprocessing build was not found: ${corePreprocessEntry}`);
+if (!existsSync(corePreprocessEntry) || !existsSync(coreIndexEntry)) {
+  console.error(`Core build was not found: ${existsSync(corePreprocessEntry) ? coreIndexEntry : corePreprocessEntry}`);
   console.error('Run npm run build before npm run benchmark:preprocessing.');
   process.exit(1);
 }
 
 const { renderPdfPageToImageBuffer } = await import(pathToFileURL(corePreprocessEntry).href);
+const {
+  buildPreprocessingFixtureBenchmarkComparisons,
+  buildPreprocessingFixtureBenchmarkSummary,
+  buildPreprocessingFixtureBenchmarkTrend,
+  inspectPreprocessingFixtureBenchmarkPathSafety,
+  redactPreprocessingFixtureBenchmarkArtifact,
+  validatePreprocessingFixtureBenchmarkReport,
+  validatePreprocessingFixtureBenchmarkTrendContract,
+} = await import(pathToFileURL(coreIndexEntry).href);
 
 mkdirSync(outputDir, { recursive: true });
 
@@ -106,83 +116,81 @@ for (const fixture of fixtures) {
   }
 }
 
-const comparisons = buildComparisons(runs);
-const report = {
+const comparisons = buildPreprocessingFixtureBenchmarkComparisons(runs);
+const reportPath = join(outputDir, 'preprocessing-fixture-benchmark.json');
+const historyPath = join(outputDir, 'preprocessing-fixture-history.json');
+const trendPath = join(outputDir, 'preprocessing-fixture-trend.json');
+const trendHtmlPath = join(outputDir, 'preprocessing-fixture-trend.html');
+const previousReport = existsSync(reportPath) ? safeReadJson(reportPath) : null;
+const previousHistory = readPreprocessingHistory(historyPath);
+const summary = buildPreprocessingFixtureBenchmarkSummary(
+  runs,
+  fixtures.map(({ id, category, fileName, page }) => ({ id, category, fileName: basename(fileName), page })),
+  modes,
+  comparisons,
+);
+let report = {
   kind: 'geotech-preprocessing-fixture-benchmark',
   schemaVersion: 1,
   generatedAt: new Date().toISOString(),
   modes,
-  summary: summarize(runs),
+  summary,
   fixtures: fixtures.map(({ id, category, fileName, page }) => ({ id, category, fileName, page })),
   runs,
   comparisons,
+  pathSafety: {
+    passed: true,
+    leakCount: 0,
+    leaks: [],
+  },
 };
-const serialized = JSON.stringify(report, null, 2);
-const leakPatterns = [repoRoot, process.env.USERPROFILE, process.env.HOME].filter(Boolean);
-const leaked = leakPatterns.some((pattern) => serialized.includes(pattern));
-report.summary.pathLeakDetected = leaked;
-report.summary.passed = report.summary.passed && !leaked;
+report.pathSafety = inspectPreprocessingFixtureBenchmarkPathSafety(report);
+report.summary.pathLeakDetected = !report.pathSafety.passed;
+report.summary.passed = report.summary.passed && report.pathSafety.passed;
+report = redactPreprocessingFixtureBenchmarkArtifact(report);
+report.contractValidation = validatePreprocessingFixtureBenchmarkReport(report);
+report.summary.passed = report.summary.passed && report.contractValidation.ok;
+const trend = buildPreprocessingFixtureBenchmarkTrend(report, previousHistory, previousReport);
+const trendValidation = validatePreprocessingFixtureBenchmarkTrendContract(trend.report);
+if (!trendValidation.ok) {
+  report.summary.passed = false;
+  report.contractValidation = {
+    ...report.contractValidation,
+    ok: false,
+    failures: [
+      ...report.contractValidation.failures,
+      ...trendValidation.failures,
+    ],
+    warnings: [
+      ...report.contractValidation.warnings,
+      ...trendValidation.warnings,
+    ],
+  };
+}
 
-writeFileSync(join(outputDir, 'preprocessing-fixture-benchmark.json'), `${JSON.stringify(report, null, 2)}\n`, 'utf-8');
+writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`, 'utf-8');
 writeFileSync(join(outputDir, 'preprocessing-fixture-summary.html'), renderHtml(report), 'utf-8');
 writeFileSync(join(outputDir, 'preprocessing-fixture-summary.svg'), renderSvg(report), 'utf-8');
+if (trendValidation.ok) {
+  writeFileSync(historyPath, `${JSON.stringify(trend.history, null, 2)}\n`, 'utf-8');
+  writeFileSync(trendPath, `${JSON.stringify(trend.report, null, 2)}\n`, 'utf-8');
+  writeFileSync(trendHtmlPath, renderTrendHtml(trend.report), 'utf-8');
+} else {
+  console.error(`Preprocessing fixture trend failed contract: ${trendValidation.failures.join(', ')}`);
+}
 
 console.log(`Preprocessing fixture benchmark: ${report.summary.passed ? 'PASS' : 'FAIL'}`);
 console.log(`Output: ${outputDir}`);
 console.log(`Runs: ${report.summary.passedRuns}/${report.summary.runCount} passed`);
 console.log(`Region-v2 average crops: ${report.summary.regionV2AverageCropCount}`);
 console.log(`Region-v2 average region quality: ${report.summary.regionV2AverageRegionQuality}`);
+console.log(`Mode comparisons: ${report.summary.comparisonCount}`);
 console.log(`Path leak detected: ${report.summary.pathLeakDetected ? 'yes' : 'no'}`);
+console.log(`Trend: ${trendPath}`);
+console.log(`Trend HTML: ${trendHtmlPath}`);
 
 if (!report.summary.passed) {
   process.exit(1);
-}
-
-function buildComparisons(allRuns) {
-  const byFixture = new Map();
-  for (const run of allRuns) {
-    if (!run.mode) continue;
-    const key = `${run.fixtureId}:${run.page}`;
-    const list = byFixture.get(key) ?? [];
-    list.push(run);
-    byFixture.set(key, list);
-  }
-  const comparisons = [];
-  for (const list of byFixture.values()) {
-    const baseline = list.find((run) => run.mode === 'none');
-    const region = list.find((run) => run.mode === 'region-v2');
-    if (!baseline || !region) continue;
-    comparisons.push({
-      fixtureId: region.fixtureId,
-      page: region.page,
-      currentMode: 'region-v2',
-      baselineMode: 'none',
-      qualityDelta: round((region.preprocessing?.qualityScore ?? 0) - (baseline.preprocessing?.qualityScore ?? 0)),
-      regionCountDelta: (region.preprocessing?.regionCount ?? 0) - (baseline.preprocessing?.regionCount ?? 0),
-      cropAssetDelta: (region.preprocessing?.cropAssetCount ?? 0) - (baseline.preprocessing?.cropAssetCount ?? 0),
-      regionQualityDelta: round((region.preprocessing?.averageRegionQuality ?? 0) - (baseline.preprocessing?.averageRegionQuality ?? 0)),
-      latencyDeltaMs: region.latencyMs - baseline.latencyMs,
-    });
-  }
-  return comparisons;
-}
-
-function summarize(allRuns) {
-  const regionRuns = allRuns.filter((run) => run.mode === 'region-v2');
-  const passedRuns = allRuns.filter((run) => run.passed).length;
-  const runCount = allRuns.length;
-  return {
-    fixtureCount: fixtures.length,
-    runCount,
-    passedRuns,
-    failedRuns: runCount - passedRuns,
-    passed: runCount > 0 && passedRuns === runCount,
-    modes,
-    averageLatencyMs: round(avg(allRuns.map((run) => run.latencyMs).filter(Number.isFinite))),
-    regionV2AverageCropCount: round(avg(regionRuns.map((run) => run.preprocessing?.regionV2CropCount ?? 0))),
-    regionV2AverageRegionQuality: round(avg(regionRuns.map((run) => run.preprocessing?.averageRegionQuality ?? 0))),
-    pathLeakDetected: false,
-  };
 }
 
 function renderHtml(report) {
@@ -200,9 +208,11 @@ function renderHtml(report) {
   const comparisonRows = report.comparisons.map((comparison) => `
     <tr>
       <td>${escapeHtml(comparison.fixtureId)}</td>
+      <td>${escapeHtml(comparison.currentMode)} vs ${escapeHtml(comparison.baselineMode)}</td>
       <td>${comparison.qualityDelta}</td>
       <td>${comparison.regionCountDelta}</td>
       <td>${comparison.cropAssetDelta}</td>
+      <td>${comparison.regionV2CropDelta}</td>
       <td>${comparison.regionQualityDelta}</td>
       <td>${comparison.latencyDeltaMs}</td>
     </tr>`).join('');
@@ -219,11 +229,11 @@ th{background:#e2e8f0}
 </style>
 <h1>GeotechCLI Preprocessing Fixture Benchmark</h1>
 <p class="${report.summary.passed ? 'pass' : 'fail'}">Status: ${report.summary.passed ? 'PASS' : 'FAIL'}</p>
-<p>Fixtures: ${report.summary.fixtureCount}; runs: ${report.summary.passedRuns}/${report.summary.runCount}; region-v2 average crops: ${report.summary.regionV2AverageCropCount}; region quality: ${report.summary.regionV2AverageRegionQuality}; path leak: ${report.summary.pathLeakDetected ? 'yes' : 'no'}</p>
+<p>Fixtures: ${report.summary.fixtureCount}; categories: ${report.summary.categoryCount}; runs: ${report.summary.passedRuns}/${report.summary.runCount}; comparisons: ${report.summary.comparisonCount}; region-v2 average crops: ${report.summary.regionV2AverageCropCount}; region quality: ${report.summary.regionV2AverageRegionQuality}; path leak: ${report.summary.pathLeakDetected ? 'yes' : 'no'}</p>
 <h2>Runs</h2>
 <table><thead><tr><th>Fixture</th><th>Mode</th><th>Status</th><th>Latency ms</th><th>Quality</th><th>Region-v2 crops</th><th>Region quality</th><th>Failures</th></tr></thead><tbody>${rows}</tbody></table>
-<h2>Region-v2 versus none</h2>
-<table><thead><tr><th>Fixture</th><th>Quality delta</th><th>Region count delta</th><th>Crop asset delta</th><th>Region quality delta</th><th>Latency delta ms</th></tr></thead><tbody>${comparisonRows}</tbody></table>
+<h2>Mode Comparisons</h2>
+<table><thead><tr><th>Fixture</th><th>Pair</th><th>Quality delta</th><th>Region count delta</th><th>Crop asset delta</th><th>Region-v2 crop delta</th><th>Region quality delta</th><th>Latency delta ms</th></tr></thead><tbody>${comparisonRows}</tbody></table>
 </html>`;
 }
 
@@ -235,9 +245,47 @@ function renderSvg(report) {
   <text x="32" y="48" font-family="Arial" font-size="24" font-weight="700" fill="#0f172a">GeotechCLI Preprocessing Fixture Benchmark</text>
   <text x="32" y="86" font-family="Arial" font-size="18" fill="${report.summary.passed ? '#047857' : '#b91c1c'}">Status: ${report.summary.passed ? 'PASS' : 'FAIL'}</text>
   <text x="32" y="122" font-family="Arial" font-size="15" fill="#334155">Runs: ${report.summary.passedRuns}/${report.summary.runCount} | Fixtures: ${report.summary.fixtureCount} | Avg latency: ${report.summary.averageLatencyMs} ms</text>
-  <text x="32" y="152" font-family="Arial" font-size="15" fill="#334155">Region-v2 average crops: ${report.summary.regionV2AverageCropCount} | Avg region quality: ${report.summary.regionV2AverageRegionQuality}</text>
+  <text x="32" y="152" font-family="Arial" font-size="15" fill="#334155">Mode comparisons: ${report.summary.comparisonCount} | Region-v2 average crops: ${report.summary.regionV2AverageCropCount} | Avg region quality: ${report.summary.regionV2AverageRegionQuality}</text>
   <text x="32" y="182" font-family="Arial" font-size="15" fill="#334155">Path leak detected: ${report.summary.pathLeakDetected ? 'yes' : 'no'}</text>
 </svg>`;
+}
+
+function renderTrendHtml(trend) {
+  const delta = trend.delta;
+  const runRows = trend.runDeltas.map((run) => `
+    <tr>
+      <td>${escapeHtml(run.fixtureId)}</td>
+      <td>${escapeHtml(run.mode ?? 'missing')}</td>
+      <td>${escapeHtml(run.status)}</td>
+      <td class="${run.passed ? 'pass' : 'fail'}">${run.passed ? 'PASS' : 'FAIL'}</td>
+      <td>${formatDelta(run.qualityDelta)}</td>
+      <td>${formatDelta(run.regionV2CropDelta)}</td>
+      <td>${formatDelta(run.regionQualityDelta)}</td>
+      <td>${formatDelta(run.latencyDeltaMs)}</td>
+    </tr>`).join('');
+  return `<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>GeotechCLI Preprocessing Fixture Trend</title>
+<style>
+body{font-family:Arial,sans-serif;margin:32px;background:#f8fafc;color:#0f172a}
+table{border-collapse:collapse;width:100%;margin:16px 0;background:white}
+th,td{border:1px solid #cbd5e1;padding:8px;text-align:left;font-size:13px}
+th{background:#e2e8f0}.pass{color:#047857}.fail{color:#b91c1c}.note{color:#475569}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:16px 0}.metric{background:white;border:1px solid #cbd5e1;padding:12px}.metric strong{display:block;font-size:22px}
+</style>
+<h1>GeotechCLI Preprocessing Fixture Trend</h1>
+<p class="note">${escapeHtml(trend.note)} Generated ${escapeHtml(trend.generatedAt)}.</p>
+<section class="metrics">
+  <div class="metric"><span>History entries</span><strong>${trend.historyCount}</strong></div>
+  <div class="metric"><span>Run delta</span><strong>${delta ? signed(delta.runCount) : 'new'}</strong></div>
+  <div class="metric"><span>Pass delta</span><strong>${delta ? signed(delta.passedRuns) : 'new'}</strong></div>
+  <div class="metric"><span>Region crop delta</span><strong>${delta ? signed(delta.regionV2AverageCropCount) : 'new'}</strong></div>
+  <div class="metric"><span>Region quality delta</span><strong>${delta ? signed(delta.regionV2AverageRegionQuality) : 'new'}</strong></div>
+  <div class="metric"><span>Path leak delta</span><strong>${delta ? signed(delta.pathLeakCount) : 'new'}</strong></div>
+</section>
+<table><thead><tr><th>Fixture</th><th>Mode</th><th>Status</th><th>Pass</th><th>Quality delta</th><th>Region-v2 crop delta</th><th>Region quality delta</th><th>Latency delta ms</th></tr></thead><tbody>${runRows}</tbody></table>
+</html>`;
 }
 
 function readOption(name, fallback) {
@@ -260,16 +308,37 @@ function readListOption(name, fallback) {
     .filter(Boolean);
 }
 
+function safeReadJson(filePath) {
+  try {
+    return JSON.parse(readFileSync(filePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function readPreprocessingHistory(filePath) {
+  const parsed = existsSync(filePath) ? safeReadJson(filePath) : null;
+  return Array.isArray(parsed)
+    ? parsed.filter((item) => item?.kind === 'geotech-preprocessing-fixture-history-entry')
+    : [];
+}
+
 function sha256(buffer) {
   return createHash('sha256').update(buffer).digest('hex');
 }
 
-function avg(values) {
-  return values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
-}
-
 function round(value) {
   return Number.isFinite(value) ? Math.round(value * 1000) / 1000 : 0;
+}
+
+function signed(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '-';
+  if (value > 0) return `+${value}`;
+  return String(value);
+}
+
+function formatDelta(value) {
+  return value == null ? 'new' : signed(value);
 }
 
 function escapeHtml(value) {

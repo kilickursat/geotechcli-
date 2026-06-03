@@ -305,7 +305,9 @@
             "webgl-renderer-smoke-added",
             "acceptance-fixture-approved",
             "human-review-required",
-            "analysis-case-not-reviewed"
+            "analysis-case-not-reviewed",
+            "agent-run-disabled",
+            "solver-backend-not-implemented"
           ]
         },
         "recommendedCommand": "geotech fem draft shaft-deformation --input <json>",
@@ -325,7 +327,10 @@
         ],
         "reviewGates": [
           "planned-only",
-          "not-design-calculation"
+          "not-design-calculation",
+          "agent-run-disabled",
+          "solver-backend-not-implemented",
+          "human-review-required"
         ],
         "limitations": [
           "No production solver or code acceptance check is available yet."
@@ -350,6 +355,13 @@
             "create-analysis-case",
             "render-webgl",
             "invent-results"
+          ],
+          "reviewGates": [
+            "planned-only",
+            "not-design-calculation",
+            "agent-run-disabled",
+            "solver-backend-not-implemented",
+            "human-review-required"
           ]
         }
       },
@@ -436,7 +448,9 @@
             "webgl-renderer-smoke-added",
             "acceptance-fixture-approved",
             "human-review-required",
-            "analysis-case-not-reviewed"
+            "analysis-case-not-reviewed",
+            "agent-run-disabled",
+            "solver-backend-not-implemented"
           ]
         },
         "recommendedCommand": "geotech fem draft pile-group-elastic-interaction --input <json>",
@@ -458,7 +472,10 @@
         "reviewGates": [
           "planned-only",
           "pile-soil-interface-review",
-          "not-design-calculation"
+          "not-design-calculation",
+          "agent-run-disabled",
+          "solver-backend-not-implemented",
+          "human-review-required"
         ],
         "limitations": [
           "No pile group solver or code acceptance check is available yet."
@@ -483,6 +500,14 @@
             "create-analysis-case",
             "render-webgl",
             "invent-results"
+          ],
+          "reviewGates": [
+            "planned-only",
+            "pile-soil-interface-review",
+            "not-design-calculation",
+            "agent-run-disabled",
+            "solver-backend-not-implemented",
+            "human-review-required"
           ]
         }
       },
@@ -515,7 +540,9 @@
             "webgl-renderer-smoke-added",
             "acceptance-fixture-approved",
             "human-review-required",
-            "analysis-case-not-reviewed"
+            "analysis-case-not-reviewed",
+            "agent-run-disabled",
+            "solver-backend-not-implemented"
           ]
         },
         "recommendedCommand": "geotech fem draft slope-embankment-deformation --input <json>",
@@ -539,7 +566,10 @@
           "planned-only",
           "slope-stability-precheck-required",
           "not-limit-equilibrium-check",
-          "not-design-calculation"
+          "not-design-calculation",
+          "agent-run-disabled",
+          "solver-backend-not-implemented",
+          "human-review-required"
         ],
         "limitations": [
           "No slope deformation FEM backend, stability verification, or acceptance check is available yet."
@@ -564,6 +594,15 @@
             "create-analysis-case",
             "render-webgl",
             "invent-results"
+          ],
+          "reviewGates": [
+            "planned-only",
+            "slope-stability-precheck-required",
+            "not-limit-equilibrium-check",
+            "not-design-calculation",
+            "agent-run-disabled",
+            "solver-backend-not-implemented",
+            "human-review-required"
           ]
         }
       },
@@ -597,7 +636,9 @@
             "webgl-renderer-smoke-added",
             "acceptance-fixture-approved",
             "human-review-required",
-            "analysis-case-not-reviewed"
+            "analysis-case-not-reviewed",
+            "agent-run-disabled",
+            "solver-backend-not-implemented"
           ]
         },
         "recommendedCommand": "geotech fem draft retaining-wall-excavation-support --input <json>",
@@ -624,7 +665,10 @@
           "wall-design-not-implemented",
           "basal-heave-not-verified",
           "seepage-not-solved",
-          "not-design-calculation"
+          "not-design-calculation",
+          "agent-run-disabled",
+          "solver-backend-not-implemented",
+          "human-review-required"
         ],
         "limitations": [
           "No retaining wall design, basal heave, anchor design, or seepage solver is available yet."
@@ -649,6 +693,16 @@
             "create-analysis-case",
             "render-webgl",
             "invent-results"
+          ],
+          "reviewGates": [
+            "planned-only",
+            "wall-design-not-implemented",
+            "basal-heave-not-verified",
+            "seepage-not-solved",
+            "not-design-calculation",
+            "agent-run-disabled",
+            "solver-backend-not-implemented",
+            "human-review-required"
           ]
         }
       },
@@ -681,7 +735,9 @@
             "webgl-renderer-smoke-added",
             "acceptance-fixture-approved",
             "human-review-required",
-            "analysis-case-not-reviewed"
+            "analysis-case-not-reviewed",
+            "agent-run-disabled",
+            "solver-backend-not-implemented"
           ]
         },
         "recommendedCommand": "geotech fem draft seepage-groundwater-coupling --input <json>",
@@ -705,7 +761,10 @@
           "planned-only",
           "seepage-solver-not-implemented",
           "hydraulic-boundary-review-required",
-          "not-design-calculation"
+          "not-design-calculation",
+          "agent-run-disabled",
+          "solver-backend-not-implemented",
+          "human-review-required"
         ],
         "limitations": [
           "No seepage solver, transient flow, piping, uplift, or coupled consolidation backend is available yet."
@@ -730,6 +789,15 @@
             "create-analysis-case",
             "render-webgl",
             "invent-results"
+          ],
+          "reviewGates": [
+            "planned-only",
+            "seepage-solver-not-implemented",
+            "hydraulic-boundary-review-required",
+            "not-design-calculation",
+            "agent-run-disabled",
+            "solver-backend-not-implemented",
+            "human-review-required"
           ]
         }
       },
@@ -762,7 +830,9 @@
             "webgl-renderer-smoke-added",
             "acceptance-fixture-approved",
             "human-review-required",
-            "analysis-case-not-reviewed"
+            "analysis-case-not-reviewed",
+            "agent-run-disabled",
+            "solver-backend-not-implemented"
           ]
         },
         "recommendedCommand": "geotech fem draft staged-settlement-consolidation --input <json>",
@@ -786,7 +856,10 @@
           "planned-only",
           "consolidation-backend-not-implemented",
           "time-rate-review-required",
-          "not-design-calculation"
+          "not-design-calculation",
+          "agent-run-disabled",
+          "solver-backend-not-implemented",
+          "human-review-required"
         ],
         "limitations": [
           "No time-dependent FEM/consolidation backend, creep model, or monitoring calibration solver is available yet."
@@ -811,6 +884,15 @@
             "create-analysis-case",
             "render-webgl",
             "invent-results"
+          ],
+          "reviewGates": [
+            "planned-only",
+            "consolidation-backend-not-implemented",
+            "time-rate-review-required",
+            "not-design-calculation",
+            "agent-run-disabled",
+            "solver-backend-not-implemented",
+            "human-review-required"
           ]
         }
       }

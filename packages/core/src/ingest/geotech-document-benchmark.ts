@@ -213,6 +213,7 @@ export interface GeotechDocumentBenchmark {
       limitations: string[];
       contractReadiness?: {
         nonRunnableReason: string;
+        reviewGates: string[];
         blockedUntil: string[];
         allowedAgentActions: string[];
         disallowedAgentActions: string[];
@@ -431,6 +432,232 @@ function routeList(values: FemRouteObjective[] | undefined): string {
   return values && values.length > 0 ? values.join(', ') : 'none';
 }
 
+type FemDraftBenchmark = NonNullable<GeotechDocumentBenchmark['femDraftReadiness']>;
+type FemDraftBenchmarkRoute = FemDraftBenchmark['routes'][number];
+
+const FEM_CONTRACT_ONLY_BLOCKED_UNTIL = [
+  'deterministic-analysis-case-schema-accepted',
+  'solver-or-preview-backend-implemented',
+  'result-manifest-validator-implemented',
+  'webgl-renderer-smoke-added',
+  'acceptance-fixture-approved',
+];
+
+const FEM_CONTRACT_ONLY_DISALLOWED_ACTIONS = [
+  'run-solver',
+  'create-analysis-case',
+  'render-webgl',
+  'invent-results',
+];
+
+const FEM_CONTRACT_ONLY_REQUIRED_GATES = [
+  'planned-only',
+  'solver-backend-not-implemented',
+  'agent-run-disabled',
+  'human-review-required',
+];
+
+const FEM_BENCHMARK_PROHIBITED_RAW_PAYLOAD_KEYS = new Set([
+  'apiKey',
+  'authorization',
+  'headers',
+  'messages',
+  'model',
+  'modelId',
+  'prompt',
+  'provider',
+  'request',
+  'response',
+  'rawText',
+  'sourceEvidence',
+  'sourceEvidenceSnippet',
+  'sourceEvidenceSnippets',
+  'token',
+  'visionModelId',
+]);
+
+const FEM_BENCHMARK_PROHIBITED_EXECUTION_RESULT_KEYS = new Set([
+  'analysisResult',
+  'caseOutput',
+  'caseOutputPath',
+  'modelCalls',
+  'resultManifest',
+  'renderedWebgl',
+  'solverOutput',
+  'webglArtifact',
+  'webglHtml',
+  'webglOutput',
+]);
+
+export function collectFemDraftReadinessGuardrailFailures(fem: FemDraftBenchmark): string[] {
+  const failures: Array<string | null> = [
+    fem.canAutoProceed
+      ? 'FEM draft readiness became auto-proceedable; FEM must remain review-gated.'
+      : null,
+    fem.agentRunAllowedRoutes.length > 0
+      ? `FEM benchmark exposed agent-run routes: ${routeList(fem.agentRunAllowedRoutes)}.`
+      : null,
+    fem.agentWebglAllowedRoutes.length > 0
+      ? `FEM benchmark exposed agent WebGL routes: ${routeList(fem.agentWebglAllowedRoutes)}.`
+      : null,
+    fem.agentResultManifestAllowedRoutes.length > 0
+      ? `FEM benchmark exposed agent result-manifest routes: ${routeList(fem.agentResultManifestAllowedRoutes)}.`
+      : null,
+    fem.caseOutputAvailableRoutes.length > 0
+      ? `FEM benchmark exposed unreviewed case-output routes: ${routeList(fem.caseOutputAvailableRoutes)}.`
+      : null,
+    fem.humanRunCommandAvailableRoutes.length > 0
+      ? `FEM benchmark exposed unreviewed human-run routes: ${routeList(fem.humanRunCommandAvailableRoutes)}.`
+      : null,
+    fem.staleRunCommandRoutes.length > 0
+      ? `FEM benchmark recommended stale run commands: ${routeList(fem.staleRunCommandRoutes)}.`
+      : null,
+  ];
+
+  for (const route of fem.routes) {
+    failures.push(...collectFemRouteGuardrailFailures(route));
+  }
+  for (const keyPath of collectFemBenchmarkProhibitedKeys(fem, FEM_BENCHMARK_PROHIBITED_RAW_PAYLOAD_KEYS)) {
+    failures.push(`FEM benchmark carried raw prompt/response/model/source-evidence payload key at ${keyPath}.`);
+  }
+  for (const keyPath of collectFemBenchmarkProhibitedKeys(fem, FEM_BENCHMARK_PROHIBITED_EXECUTION_RESULT_KEYS)) {
+    failures.push(`FEM benchmark carried result-manifest/solver/WebGL payload key at ${keyPath}.`);
+  }
+  for (const leakPath of collectFemBenchmarkPrivateLeaks(fem)) {
+    failures.push(`FEM benchmark leaked private path or token-shaped value at ${leakPath}.`);
+  }
+
+  return [...new Set(failures.filter((value): value is string => value != null))];
+}
+
+function collectFemRouteGuardrailFailures(route: FemDraftBenchmarkRoute): string[] {
+  const failures: Array<string | null> = [];
+  const boundary = route.executionBoundary;
+
+  failures.push(
+    route.agentRunAllowed || boundary.agentRunAllowed
+      ? `FEM route ${route.objective} exposed agent solver execution.`
+      : null,
+    boundary.agentWebglRenderAllowed
+      ? `FEM route ${route.objective} exposed agent WebGL rendering.`
+      : null,
+    boundary.agentResultManifestAllowed
+      ? `FEM route ${route.objective} exposed agent result-manifest creation.`
+      : null,
+    boundary.caseOutputAvailable
+      ? `FEM route ${route.objective} exposed unreviewed case output.`
+      : null,
+    boundary.humanRunCommandAvailable
+      ? `FEM route ${route.objective} exposed an unreviewed human run command.`
+      : null,
+    !boundary.humanReviewRequired
+      ? `FEM route ${route.objective} no longer requires human review.`
+      : null,
+    /\bfem run\b/i.test(route.recommendedCommand ?? '')
+      ? `FEM route ${route.objective} recommended a run command instead of a draft command.`
+      : null,
+  );
+
+  if (route.executionMode === 'contract-only') {
+    const contract = route.contractReadiness;
+    const contractReviewGates = contract?.reviewGates ?? [];
+    if (!route.recommendedCommand?.startsWith('geotech fem draft ')) {
+      failures.push(`FEM contract-only route ${route.objective} no longer recommends a draft command.`);
+    }
+    if (route.recommendedCommand?.includes('--case-output') || boundary.draftCommand?.includes('--case-output')) {
+      failures.push(`FEM contract-only route ${route.objective} exposed case-output creation.`);
+    }
+    if (boundary.humanRunCommandTemplate || route.runCommandTemplate) {
+      failures.push(`FEM contract-only route ${route.objective} exposed a run command template.`);
+    }
+    if (!contract) {
+      failures.push(`FEM contract-only route ${route.objective} is missing contract readiness metadata.`);
+    } else {
+      if (!Array.isArray(contract.reviewGates)) {
+        failures.push(`FEM contract-only route ${route.objective} is missing contract review-gate metadata.`);
+      }
+      for (const requirement of FEM_CONTRACT_ONLY_BLOCKED_UNTIL) {
+        if (!contract.blockedUntil.includes(requirement)) {
+          failures.push(`FEM contract-only route ${route.objective} is missing blocked-until requirement ${requirement}.`);
+        }
+        if (!boundary.blockedReasons.includes(requirement)) {
+          failures.push(`FEM contract-only route ${route.objective} boundary is missing blocked reason ${requirement}.`);
+        }
+      }
+      for (const action of FEM_CONTRACT_ONLY_DISALLOWED_ACTIONS) {
+        if (!contract.disallowedAgentActions.includes(action)) {
+          failures.push(`FEM contract-only route ${route.objective} no longer disallows ${action}.`);
+        }
+      }
+      for (const gate of FEM_CONTRACT_ONLY_REQUIRED_GATES) {
+        if (!contractReviewGates.includes(gate) || !route.reviewGates.includes(gate)) {
+          failures.push(`FEM contract-only route ${route.objective} is missing review gate ${gate}.`);
+        }
+        if (!boundary.blockedReasons.includes(gate)) {
+          failures.push(`FEM contract-only route ${route.objective} boundary is missing review gate ${gate}.`);
+        }
+      }
+    }
+  }
+
+  return failures.filter((value): value is string => value != null);
+}
+
+function collectFemBenchmarkProhibitedKeys(value: unknown, prohibitedKeys: Set<string>): string[] {
+  const paths: string[] = [];
+
+  walkUnknown(value, (entry, path) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      return;
+    }
+
+    for (const key of Object.keys(entry)) {
+      if (prohibitedKeys.has(key)) {
+        paths.push(path ? `${path}.${key}` : key);
+      }
+    }
+  });
+
+  return paths;
+}
+
+function collectFemBenchmarkPrivateLeaks(value: unknown): string[] {
+  const paths: string[] = [];
+
+  walkUnknown(value, (entry, path) => {
+    if (typeof entry === 'string' && (looksLikeAbsoluteLocalPath(entry) || looksLikeSecretValue(entry))) {
+      paths.push(path || '<root>');
+    }
+  });
+
+  return paths;
+}
+
+function walkUnknown(value: unknown, visit: (entry: unknown, path: string) => void, path = ''): void {
+  visit(value, path);
+
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => walkUnknown(item, visit, `${path}[${index}]`));
+    return;
+  }
+
+  if (!value || typeof value !== 'object') {
+    return;
+  }
+
+  for (const [key, entry] of Object.entries(value)) {
+    walkUnknown(entry, visit, path ? `${path}.${key}` : key);
+  }
+}
+
+function looksLikeAbsoluteLocalPath(value: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(value) || /^\/(?:Users|home|private|tmp|var|mnt|Volumes|workspace|runner|project|repo)\//.test(value);
+}
+
+function looksLikeSecretValue(value: string): boolean {
+  return /(?:sk-(?:or-)?[A-Za-z0-9_-]{12,}|api[_-]?key\s*[:=]\s*[A-Za-z0-9_-]{12,}|token\s*[:=]\s*[A-Za-z0-9_-]{12,})/i.test(value);
+}
+
 function collectFemBoundaryRegressions(
   current: GeotechDocumentBenchmark,
   baseline: GeotechDocumentBenchmark,
@@ -447,54 +674,7 @@ function collectFemBoundaryRegressions(
     return [];
   }
 
-  regressions.push(
-    currentFem.canAutoProceed
-      ? 'FEM draft readiness became auto-proceedable; FEM must remain review-gated.'
-      : null,
-    currentFem.agentRunAllowedRoutes.length > 0
-      ? `FEM benchmark exposed agent-run routes: ${routeList(currentFem.agentRunAllowedRoutes)}.`
-      : null,
-    currentFem.agentWebglAllowedRoutes.length > 0
-      ? `FEM benchmark exposed agent WebGL routes: ${routeList(currentFem.agentWebglAllowedRoutes)}.`
-      : null,
-    currentFem.agentResultManifestAllowedRoutes.length > 0
-      ? `FEM benchmark exposed agent result-manifest routes: ${routeList(currentFem.agentResultManifestAllowedRoutes)}.`
-      : null,
-    currentFem.caseOutputAvailableRoutes.length > 0
-      ? `FEM benchmark exposed unreviewed case-output routes: ${routeList(currentFem.caseOutputAvailableRoutes)}.`
-      : null,
-    currentFem.humanRunCommandAvailableRoutes.length > 0
-      ? `FEM benchmark exposed unreviewed human-run routes: ${routeList(currentFem.humanRunCommandAvailableRoutes)}.`
-      : null,
-    currentFem.staleRunCommandRoutes.length > 0
-      ? `FEM benchmark recommended stale run commands: ${routeList(currentFem.staleRunCommandRoutes)}.`
-      : null,
-  );
-
-  for (const route of currentFem.routes) {
-    const boundary = route.executionBoundary;
-    if (route.agentRunAllowed || boundary.agentRunAllowed) {
-      regressions.push(`FEM route ${route.objective} exposed agent solver execution.`);
-    }
-    if (boundary.agentWebglRenderAllowed) {
-      regressions.push(`FEM route ${route.objective} exposed agent WebGL rendering.`);
-    }
-    if (boundary.agentResultManifestAllowed) {
-      regressions.push(`FEM route ${route.objective} exposed agent result-manifest creation.`);
-    }
-    if (boundary.caseOutputAvailable) {
-      regressions.push(`FEM route ${route.objective} exposed unreviewed case output.`);
-    }
-    if (boundary.humanRunCommandAvailable) {
-      regressions.push(`FEM route ${route.objective} exposed an unreviewed human run command.`);
-    }
-    if (!boundary.humanReviewRequired) {
-      regressions.push(`FEM route ${route.objective} no longer requires human review.`);
-    }
-    if (/\bfem run\b/i.test(route.recommendedCommand ?? '')) {
-      regressions.push(`FEM route ${route.objective} recommended a run command instead of a draft command.`);
-    }
-  }
+  regressions.push(...collectFemDraftReadinessGuardrailFailures(currentFem));
 
   return [...new Set(regressions.filter((value): value is string => value != null))];
 }
@@ -935,10 +1115,11 @@ function summarizeFemDraftReadiness(
     const contractReadiness = capability.executionMode === 'contract-only'
       ? prepareFemAnalysisCaseDraft({ objective: capability.objective }).contractReadiness
       : undefined;
+    const reviewGates = contractReadiness?.reviewGates ?? capability.reviewGates;
     const blockedReasons = [
       ...readiness.gates.map((gate) => `ground-model-${gate}`),
       ...readiness.missingCriticalData.map((item) => `missing-${item.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`),
-      ...capability.reviewGates,
+      ...reviewGates,
       ...(contractReadiness?.blockedUntil ?? []),
       'human-review-required',
       'analysis-case-not-reviewed',
@@ -966,11 +1147,12 @@ function summarizeFemDraftReadiness(
       readinessScore: readiness.score,
       requiredEvidence: capability.requiredEvidence,
       requiredUserInputs: capability.requiredUserInputs,
-      reviewGates: capability.reviewGates,
+      reviewGates,
       limitations: capability.limitations,
       ...(contractReadiness ? {
         contractReadiness: {
           nonRunnableReason: contractReadiness.nonRunnableReason,
+          reviewGates: contractReadiness.reviewGates,
           blockedUntil: contractReadiness.blockedUntil,
           allowedAgentActions: contractReadiness.allowedAgentActions,
           disallowedAgentActions: contractReadiness.disallowedAgentActions,

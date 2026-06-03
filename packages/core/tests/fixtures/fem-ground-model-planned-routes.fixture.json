@@ -1,0 +1,161 @@
+{
+  "schemaVersion": "fem-ground-model-planned-routes-acceptance.v1",
+  "description": "Acceptance expectations for GroundModel-derived FEM routes that must remain contract-only until deterministic backends, validators, renderer smokes, and benchmark cases exist.",
+  "blockedUntil": [
+    "deterministic-analysis-case-schema-accepted",
+    "solver-or-preview-backend-implemented",
+    "result-manifest-validator-implemented",
+    "webgl-renderer-smoke-added",
+    "acceptance-fixture-approved"
+  ],
+  "disallowedAgentActions": [
+    "run-solver",
+    "create-analysis-case",
+    "render-webgl",
+    "invent-results"
+  ],
+  "prohibitedPayloadKeys": [
+    "prompt",
+    "response",
+    "model",
+    "modelId",
+    "visionModelId",
+    "provider",
+    "sourceEvidence",
+    "sourceEvidenceSnippet",
+    "sourceEvidenceSnippets",
+    "rawText",
+    "resultManifest",
+    "solverOutput",
+    "webglArtifact",
+    "apiKey",
+    "token"
+  ],
+  "routes": [
+    {
+      "workflow": "fem-shaft-deformation",
+      "objective": "shaft-deformation",
+      "draftCommand": "geotech fem draft shaft-deformation --input <json>",
+      "missingUserInputs": [
+        "shaft diameter/shape",
+        "final depth",
+        "support sequence",
+        "groundwater handling"
+      ],
+      "requiredReviewGates": [
+        "planned-only",
+        "solver-backend-not-implemented",
+        "agent-run-disabled",
+        "human-review-required"
+      ]
+    },
+    {
+      "workflow": "fem-pile-group-elastic-interaction",
+      "objective": "pile-group-elastic-interaction",
+      "draftCommand": "geotech fem draft pile-group-elastic-interaction --input <json>",
+      "missingUserInputs": [
+        "pile diameter",
+        "pile length",
+        "pile spacing",
+        "load case",
+        "pile head condition"
+      ],
+      "requiredReviewGates": [
+        "planned-only",
+        "pile-soil-interface-review",
+        "solver-backend-not-implemented",
+        "agent-run-disabled",
+        "human-review-required"
+      ]
+    },
+    {
+      "workflow": "fem-slope-embankment-deformation",
+      "objective": "slope-embankment-deformation",
+      "draftCommand": "geotech fem draft slope-embankment-deformation --input <json>",
+      "missingUserInputs": [
+        "slope height",
+        "slope angle / embankment geometry",
+        "construction or excavation stages",
+        "surcharge/seismic assumptions",
+        "drainage and groundwater handling"
+      ],
+      "requiredReviewGates": [
+        "planned-only",
+        "slope-stability-precheck-required",
+        "solver-backend-not-implemented",
+        "agent-run-disabled",
+        "human-review-required"
+      ]
+    },
+    {
+      "workflow": "fem-retaining-wall-excavation-support",
+      "objective": "retaining-wall-excavation-support",
+      "draftCommand": "geotech fem draft retaining-wall-excavation-support --input <json>",
+      "missingUserInputs": [
+        "wall type",
+        "excavation depth",
+        "toe embedment",
+        "prop/anchor levels",
+        "surcharge/load cases",
+        "groundwater and dewatering assumptions"
+      ],
+      "requiredReviewGates": [
+        "planned-only",
+        "wall-design-not-implemented",
+        "basal-heave-not-verified",
+        "seepage-not-solved",
+        "solver-backend-not-implemented",
+        "agent-run-disabled",
+        "human-review-required"
+      ]
+    },
+    {
+      "workflow": "fem-seepage-groundwater-coupling",
+      "objective": "seepage-groundwater-coupling",
+      "draftCommand": "geotech fem draft seepage-groundwater-coupling --input <json>",
+      "missingUserInputs": [
+        "upstream/downstream heads",
+        "piezometric surfaces",
+        "permeability values",
+        "drainage or pump assumptions",
+        "coupling mode and review limits"
+      ],
+      "requiredReviewGates": [
+        "planned-only",
+        "seepage-solver-not-implemented",
+        "hydraulic-boundary-review-required",
+        "solver-backend-not-implemented",
+        "agent-run-disabled",
+        "human-review-required"
+      ]
+    },
+    {
+      "workflow": "fem-staged-settlement-consolidation",
+      "objective": "staged-settlement-consolidation",
+      "draftCommand": "geotech fem draft staged-settlement-consolidation --input <json>",
+      "missingUserInputs": [
+        "load or fill stages",
+        "stage durations",
+        "foundation footprint",
+        "drainage path assumptions",
+        "target settlement or monitoring triggers"
+      ],
+      "requiredReviewGates": [
+        "planned-only",
+        "consolidation-backend-not-implemented",
+        "time-rate-review-required",
+        "solver-backend-not-implemented",
+        "agent-run-disabled",
+        "human-review-required"
+      ]
+    }
+  ],
+  "requiredPrefill": {
+    "elasticModulusKpa": 18000,
+    "unitWeightKnM3": 18.5,
+    "groundwaterDepthM": 1.8,
+    "evidenceRefIds": [
+      "ev-gw-1"
+    ]
+  }
+}

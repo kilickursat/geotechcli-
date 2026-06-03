@@ -3,15 +3,17 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const outputDir = resolve(readOption('--out', process.env.GEOTECHCLI_SIGNAL_BENCHMARK_OUTPUT_DIR || '__benchmark-signal-analysis'));
 const fixtureWorkspace = resolve(readOption('--workspace', process.env.GEOTECHCLI_SIGNAL_BENCHMARK_WORKSPACE || join(outputDir, 'fixture-workspace')));
 const cliEntry = join(repoRoot, 'packages', 'cli', 'dist', 'index.js');
+const coreIndexEntry = join(repoRoot, 'packages', 'core', 'dist', 'index.js');
 const comparisonOutput = join(outputDir, 'comparison.json');
 const summarySvgOutput = join(outputDir, 'summary.svg');
 const directSignalOutput = join(outputDir, 'direct-settlement-signal.json');
+const directSignalPlotOutput = join(outputDir, 'direct-settlement-signal.html');
 const historyOutput = join(outputDir, 'signal-history.json');
 const trendOutput = join(outputDir, 'signal-trend.json');
 const trendHtmlOutput = join(outputDir, 'signal-trend.html');
@@ -26,6 +28,18 @@ if (!existsSync(cliEntry)) {
   console.error('Run npm run build before npm run benchmark:signal-analysis.');
   process.exit(1);
 }
+
+if (!existsSync(coreIndexEntry)) {
+  console.error(`Core build was not found: ${coreIndexEntry}`);
+  console.error('Run npm run build before npm run benchmark:signal-analysis.');
+  process.exit(1);
+}
+
+const {
+  inspectSignalAnalysisBenchmarkPathSafety,
+  validateSignalAnalysisBenchmarkComparison,
+  validateSignalAnalysisBenchmarkTrend,
+} = await import(pathToFileURL(coreIndexEntry).href);
 
 mkdirSync(outputDir, { recursive: true });
 prepareSyntheticSignalWorkspace(fixtureWorkspace);
@@ -64,6 +78,9 @@ const directResult = spawnSync(process.execPath, [
   'auto',
   '--output',
   safePath(directSignalOutput),
+  '--save-html',
+  safePath(directSignalPlotOutput),
+  '--no-open',
   '--json',
 ], {
   cwd: repoRoot,
@@ -100,6 +117,7 @@ const analysisArtifacts = existsSync(join(runDir, 'signals'))
   : [];
 const directSignal = redactSignalOutputPaths(readJson(directSignalOutput));
 writeFileSync(directSignalOutput, `${JSON.stringify(directSignal, null, 2)}\n`, 'utf-8');
+const directSignalPlot = inspectSignalPlotOutput(directSignalPlotOutput);
 
 const comparison = summarizeBenchmark({
   runDir,
@@ -109,15 +127,34 @@ const comparison = summarizeBenchmark({
   toolCalls,
   analysisArtifacts,
   directSignal,
+  directSignalPlot,
 });
 const trend = buildSignalTrend({
   comparison,
   previousHistory: readSignalHistory(historyOutput),
 });
-const trendLeaks = detectPathLeaks(JSON.stringify(trend));
-if (trendLeaks.length > 0) {
-  comparison.pathSafety.leaks.push(...trendLeaks);
-  comparison.regressions.push(`Signal trend output contains local path leak(s): ${trendLeaks.slice(0, 3).join(', ')}.`);
+const trendPathSafety = inspectSignalAnalysisBenchmarkPathSafety(trend.report);
+if (trendPathSafety.leaks.length > 0) {
+  comparison.pathSafety.leaks.push(...trendPathSafety.leaks.map((leak) => `trend:${leak}`));
+  comparison.regressions.push(`Signal trend output contains local path or secret leak(s): ${trendPathSafety.leaks.slice(0, 3).join(', ')}.`);
+  comparison.passed = false;
+}
+const comparisonValidation = validateSignalAnalysisBenchmarkComparison(comparison);
+const trendValidation = validateSignalAnalysisBenchmarkTrend(trend.report);
+comparison.contractValidation = {
+  schemaVersion: 'signal-analysis-benchmark-contract.v1',
+  ok: comparisonValidation.ok && trendValidation.ok,
+  failures: [
+    ...comparisonValidation.failures,
+    ...trendValidation.failures.map((failure) => `trend_${failure}`),
+  ],
+  warnings: [
+    ...comparisonValidation.warnings,
+    ...trendValidation.warnings.map((warning) => `trend_${warning}`),
+  ],
+};
+if (!comparison.contractValidation.ok) {
+  comparison.regressions.push(`Signal benchmark contract failed: ${comparison.contractValidation.failures.slice(0, 5).join(', ')}.`);
   comparison.passed = false;
 }
 writeFileSync(comparisonOutput, `${JSON.stringify(comparison, null, 2)}\n`, 'utf-8');
@@ -265,6 +302,18 @@ function summarizeBenchmark(input) {
     directMissingIntervals < 1
       ? 'Direct signal run did not emit missing intervals from the threshold profile interval assumption.'
       : null,
+    input.directSignalPlot.chartCount < 1
+      ? 'Direct signal plot output did not contain a chart payload.'
+      : null,
+    input.directSignalPlot.pointCount < 3
+      ? `Direct signal plot output contained ${input.directSignalPlot.pointCount} point(s); expected at least 3.`
+      : null,
+    !input.directSignalPlot.seriesLabels.includes('SM-1')
+      ? `Direct signal plot output did not retain the expected settlement series label: ${JSON.stringify(input.directSignalPlot.seriesLabels)}.`
+      : null,
+    input.directSignalPlot.pathSafety.leaks.length > 0
+      ? `Direct signal plot output contains local path or secret leak(s): ${input.directSignalPlot.pathSafety.leaks.slice(0, 3).join(', ')}.`
+      : null,
   ].filter(Boolean);
 
   const comparison = {
@@ -278,6 +327,7 @@ function summarizeBenchmark(input) {
       comparison: safePath(comparisonOutput),
       summarySvg: safePath(summarySvgOutput),
       directSignal: safePath(directSignalOutput),
+      directSignalPlotHtml: safePath(directSignalPlotOutput),
       history: safePath(historyOutput),
       trend: safePath(trendOutput),
       trendHtml: safePath(trendHtmlOutput),
@@ -309,6 +359,7 @@ function summarizeBenchmark(input) {
       missingIntervals: directMissingIntervals,
       series: input.directSignal.series.length,
     },
+    directSignalPlot: input.directSignalPlot,
     pathSafety: {
       checked: true,
       leaks: [],
@@ -316,10 +367,10 @@ function summarizeBenchmark(input) {
     passed: false,
     regressions,
   };
-  const pathLeaks = detectPathLeaks(JSON.stringify(comparison));
-  comparison.pathSafety.leaks = pathLeaks;
-  if (pathLeaks.length > 0) {
-    comparison.regressions.push(`Benchmark comparison contains local path leak(s): ${pathLeaks.slice(0, 3).join(', ')}.`);
+  const pathSafety = inspectSignalAnalysisBenchmarkPathSafety(comparison);
+  comparison.pathSafety.leaks = pathSafety.leaks;
+  if (pathSafety.leaks.length > 0) {
+    comparison.regressions.push(`Benchmark comparison contains local path or secret leak(s): ${pathSafety.leaks.slice(0, 3).join(', ')}.`);
   }
   comparison.passed = comparison.regressions.length === 0;
   return comparison;
@@ -383,6 +434,8 @@ function buildSignalHistoryEntry(comparison) {
       directThresholdFlags: finiteNumber(comparison.directSignal.thresholdFlags),
       directRateThresholdFlags: finiteNumber(comparison.directSignal.rateThresholdFlags),
       directMissingIntervals: finiteNumber(comparison.directSignal.missingIntervals),
+      directPlotHtmlBytes: finiteNumber(comparison.directSignalPlot?.htmlBytes),
+      directPlotChartCount: finiteNumber(comparison.directSignalPlot?.chartCount),
       modelCallsBytes: finiteNumber(comparison.workflow.modelCallsBytes),
       pathLeakCount: Array.isArray(comparison.pathSafety?.leaks) ? comparison.pathSafety.leaks.length : 0,
       sourceTypes: { ...(comparison.signalArtifacts.sourceTypes ?? {}) },
@@ -400,6 +453,8 @@ function buildSignalDelta(current, previous) {
     directThresholdFlags: current.directThresholdFlags - previous.directThresholdFlags,
     directRateThresholdFlags: current.directRateThresholdFlags - previous.directRateThresholdFlags,
     directMissingIntervals: current.directMissingIntervals - previous.directMissingIntervals,
+    directPlotHtmlBytes: finiteNumber(current.directPlotHtmlBytes) - finiteNumber(previous.directPlotHtmlBytes),
+    directPlotChartCount: finiteNumber(current.directPlotChartCount) - finiteNumber(previous.directPlotChartCount),
     modelCallsBytes: current.modelCallsBytes - previous.modelCallsBytes,
     pathLeakCount: current.pathLeakCount - previous.pathLeakCount,
     sourceTypes: buildSourceTypeDelta(current.sourceTypes, previous.sourceTypes),
@@ -437,17 +492,52 @@ function redactSignalOutputPaths(signal) {
   };
 }
 
-function detectPathLeaks(serialized) {
-  const leaks = new Set();
-  const normalizedRoot = normalizePath(repoRoot);
-  if (serialized.includes(normalizedRoot)) leaks.add(normalizedRoot);
-  for (const match of serialized.matchAll(/[A-Za-z]:\\\\[^",]+|[A-Za-z]:\/[^",]+/g)) {
-    leaks.add(match[0]);
+function inspectSignalPlotOutput(filePath) {
+  const html = readFileSync(filePath, 'utf-8');
+  const payload = readPlotPayload(html);
+  const charts = Array.isArray(payload?.charts) ? payload.charts : [];
+  const chartIds = charts.map((chart) => String(chart.id ?? 'unknown'));
+  const seriesLabels = [...new Set(charts.flatMap((chart) => {
+    if (Array.isArray(chart.series)) {
+      return chart.series.map((series) => String(series.label ?? 'series'));
+    }
+    return [];
+  }))];
+  const pointCount = charts.reduce((sum, chart) => {
+    if (Array.isArray(chart.series)) {
+      return sum + chart.series.reduce((seriesSum, series) => {
+        if (Array.isArray(series.points)) return seriesSum + series.points.length;
+        if (Array.isArray(series.values)) return seriesSum + series.values.length;
+        return seriesSum;
+      }, 0);
+    }
+    return sum;
+  }, 0);
+
+  return {
+    htmlBytes: Buffer.byteLength(html, 'utf-8'),
+    chartCount: charts.length,
+    pointCount,
+    chartIds,
+    seriesLabels,
+    pathSafety: inspectSignalAnalysisBenchmarkPathSafety({
+      htmlBytes: Buffer.byteLength(html, 'utf-8'),
+      payload,
+    }),
+  };
+}
+
+function readPlotPayload(html) {
+  const prefix = 'const payload = ';
+  const start = html.indexOf(prefix);
+  if (start === -1) return null;
+  const end = html.indexOf(';\n    const palette', start);
+  if (end === -1) return null;
+  try {
+    return JSON.parse(html.slice(start + prefix.length, end));
+  } catch {
+    return null;
   }
-  for (const match of serialized.matchAll(/\/(?:home|Users|tmp|var)\/[^",]+/g)) {
-    leaks.add(match[0]);
-  }
-  return [...leaks];
 }
 
 function renderSummary(comparison, trend) {
@@ -459,6 +549,7 @@ function renderSummary(comparison, trend) {
   console.log(`Rows analyzed: ${comparison.signalArtifacts.rowsAnalyzed}`);
   console.log(`Direct threshold flags: ${comparison.directSignal.thresholdFlags}`);
   console.log(`Direct missing intervals: ${comparison.directSignal.missingIntervals}`);
+  console.log(`Direct plot charts: ${comparison.directSignalPlot.chartCount}`);
   console.log(`Model calls bytes: ${comparison.workflow.modelCallsBytes}`);
   console.log(`Comparison: ${comparisonOutput}`);
   console.log(`Summary SVG: ${summarySvgOutput}`);
@@ -576,7 +667,13 @@ function isInside(parent, child) {
 
 function readOption(name, fallback) {
   const index = process.argv.indexOf(name);
-  if (index === -1) return fallback;
+  if (index === -1) {
+    if (name === '--out') {
+      const positionalOutput = process.argv.slice(2).find((arg) => !arg.startsWith('--'));
+      if (positionalOutput) return positionalOutput;
+    }
+    return fallback;
+  }
   const value = process.argv[index + 1];
   if (!value || value.startsWith('--')) {
     console.error(`Missing value for ${name}`);
