@@ -347,7 +347,24 @@ export interface FemPlaneStrainBiotStepResult {
   minPorePressureKpa: number;
   maxPorePressureKpa: number;
   maxVerticalSettlementM: number;
+  acceptedByPolicy: boolean;
   converged: boolean;
+}
+
+export interface FemPlaneStrainBiotTransientAcceptance {
+  schemaVersion: 'fem-plane-strain-biot-transient-acceptance.v1';
+  accepted: boolean;
+  dissipationCheckMode: 'drained-dissipation' | 'prescribed-gradient-relaxation';
+  acceptedStepCount: number;
+  requiredStepCount: number;
+  maxResidualNormRatio: number;
+  maxMassBalanceErrorRatio: number;
+  maxPressureOvershootKpa: number;
+  monotonicAverageFreePressureDissipation: boolean;
+  monotonicAverageFreePressureDissipationRequired: boolean;
+  monotonicMaxPressureEnvelope: boolean;
+  finalPorePressureDissipationRatio: number;
+  blockerCodes: string[];
 }
 
 export interface FemPlaneStrainBiotNumericalContract {
@@ -416,6 +433,7 @@ export interface FemPlaneStrainBiotConsolidationResult {
   freePorePressureResidualL1M3PerS: number;
   pressureAudit: FemPlaneStrainBiotPressureAudit;
   pressureDiagnostics: FemPlaneStrainBiotPressureDiagnostics;
+  transientAcceptance: FemPlaneStrainBiotTransientAcceptance;
   massBalanceErrorRatio: number;
   minPorePressureKpa: number;
   maxPorePressureKpa: number;
@@ -1686,7 +1704,7 @@ export function runPlaneStrainBiotConsolidation(
       pressureOvershootKpa: round(pressureOvershootKpa, 8),
     };
     const maxVerticalSettlementM = Math.max(0, -Math.min(...model.nodes.map((_, index) => displacement[dofIndex(index, 'uy')])));
-    const converged = residualNormRatio <= policy.forceBalanceTolerance &&
+    const acceptedByPolicy = residualNormRatio <= policy.forceBalanceTolerance &&
       massBalanceErrorRatio <= policy.porePressureMassBalanceTolerance;
 
     timeSteps.push({
@@ -1703,7 +1721,8 @@ export function runPlaneStrainBiotConsolidation(
       minPorePressureKpa: round(minPorePressureKpa, 8),
       maxPorePressureKpa: round(maxPorePressureKpa, 8),
       maxVerticalSettlementM: round(maxVerticalSettlementM, 12),
-      converged,
+      acceptedByPolicy,
+      converged: acceptedByPolicy,
     });
 
     previousDisplacement = [...displacement];
@@ -1720,6 +1739,73 @@ export function runPlaneStrainBiotConsolidation(
     lastMinPorePressureKpa = minPorePressureKpa;
     lastMaxPorePressureKpa = maxPorePressureKpa;
   }
+
+  let monotonicAverageFreePressureDissipation = true;
+  let monotonicMaxPressureEnvelope = true;
+  let previousAverageFreePressure = initialAverageFreePorePressureKpa;
+  let previousMaxPressure = pressureUpperBoundKpa;
+  let maxPressureOvershootKpa = 0;
+  let maxResidualNormRatio = 0;
+  let maxMassBalanceErrorRatio = 0;
+  const pressureMonotonicToleranceKpa = 1e-8;
+  for (const step of timeSteps) {
+    maxResidualNormRatio = Math.max(maxResidualNormRatio, step.residualNormRatio);
+    maxMassBalanceErrorRatio = Math.max(maxMassBalanceErrorRatio, step.massBalanceErrorRatio);
+    maxPressureOvershootKpa = Math.max(maxPressureOvershootKpa, step.pressureDiagnostics.pressureOvershootKpa);
+    if (
+      step.pressureDiagnostics.averageFreePorePressureKpa >
+      previousAverageFreePressure + pressureMonotonicToleranceKpa
+    ) {
+      monotonicAverageFreePressureDissipation = false;
+    }
+    if (step.maxPorePressureKpa > previousMaxPressure + pressureMonotonicToleranceKpa) {
+      monotonicMaxPressureEnvelope = false;
+    }
+    previousAverageFreePressure = step.pressureDiagnostics.averageFreePorePressureKpa;
+    previousMaxPressure = step.maxPorePressureKpa;
+  }
+  const acceptedStepCount = timeSteps.filter((step) => step.acceptedByPolicy).length;
+  const monotonicAverageFreePressureDissipationRequired =
+    Array.from(prescribedPressures.values()).every((value) => value <= pressureMonotonicToleranceKpa) &&
+    fluxes.every((value) => Math.abs(value) <= 1e-15);
+  const dissipationCheckMode = monotonicAverageFreePressureDissipationRequired
+    ? 'drained-dissipation'
+    : 'prescribed-gradient-relaxation';
+  const transientBlockerCodes = [
+    ...(acceptedStepCount < policy.minAcceptedSteps
+      ? ['accepted-step-count-less-than-policy']
+      : []),
+    ...(maxResidualNormRatio > policy.forceBalanceTolerance
+      ? ['force-residual-tolerance-exceeded']
+      : []),
+    ...(maxMassBalanceErrorRatio > policy.porePressureMassBalanceTolerance
+      ? ['pore-pressure-mass-balance-tolerance-exceeded']
+      : []),
+    ...(maxPressureOvershootKpa > 1e-6
+      ? ['pressure-overshoot-nonzero']
+      : []),
+    ...(monotonicAverageFreePressureDissipationRequired && !monotonicAverageFreePressureDissipation
+      ? ['average-free-pore-pressure-dissipation-not-monotonic']
+      : []),
+    ...(!monotonicMaxPressureEnvelope
+      ? ['max-pore-pressure-envelope-not-monotonic']
+      : []),
+  ];
+  const transientAcceptance: FemPlaneStrainBiotTransientAcceptance = {
+    schemaVersion: 'fem-plane-strain-biot-transient-acceptance.v1',
+    accepted: transientBlockerCodes.length === 0,
+    dissipationCheckMode,
+    acceptedStepCount,
+    requiredStepCount: policy.minAcceptedSteps,
+    maxResidualNormRatio: round(maxResidualNormRatio, 12),
+    maxMassBalanceErrorRatio: round(maxMassBalanceErrorRatio, 12),
+    maxPressureOvershootKpa: round(maxPressureOvershootKpa, 8),
+    monotonicAverageFreePressureDissipation,
+    monotonicAverageFreePressureDissipationRequired,
+    monotonicMaxPressureEnvelope,
+    finalPorePressureDissipationRatio: round(lastPressureDiagnostics.porePressureDissipationRatio, 12),
+    blockerCodes: transientBlockerCodes,
+  };
 
   let maxBiotCouplingKpa = 0;
   const elementOutputs = elementGaussCache.map((entry) => {
@@ -1820,10 +1906,11 @@ export function runPlaneStrainBiotConsolidation(
     freePorePressureResidualL1M3PerS: Number(lastFreePorePressureResidualL1M3PerS.toExponential(12)),
     pressureAudit: lastPressureAudit,
     pressureDiagnostics: lastPressureDiagnostics,
+    transientAcceptance,
     massBalanceErrorRatio: round(lastMassBalanceErrorRatio, 12),
     minPorePressureKpa: round(lastMinPorePressureKpa, 8),
     maxPorePressureKpa: round(lastMaxPorePressureKpa, 8),
-    converged: timeSteps.every((step) => step.converged),
+    converged: transientAcceptance.accepted,
     productionReady: false,
     policy,
     limitations: [

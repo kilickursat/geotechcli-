@@ -6,6 +6,7 @@ import {
   runPlaneStrainQuad4Assembly,
   runPlaneStrainSteadySeepage,
 } from './plane-strain-assembly.js';
+import { runFemSupportMemberDesignCheck } from './support-design.js';
 
 export type FemEngineeringKernelFeature =
   | 'global-plane-strain-assembly'
@@ -2030,6 +2031,23 @@ export function runFemEngineeringEvidenceSuite(
     policy.porePressureMassBalanceTolerance,
     'Biot u-p evidence kernel must satisfy the free pore-pressure residual policy for the backward-Euler pressure equation.',
   ));
+  benchmarks.push(benchmark(
+    'quad4-plane-strain-biot-u-p-transient-acceptance-policy',
+    'solver-convergence-and-tolerance',
+    'internal-balance',
+    'transientAcceptance',
+    biot.transientAcceptance.accepted &&
+      biot.transientAcceptance.acceptedStepCount >= policy.minAcceptedSteps &&
+      biot.transientAcceptance.dissipationCheckMode === 'prescribed-gradient-relaxation' &&
+      biot.transientAcceptance.maxResidualNormRatio <= policy.forceBalanceTolerance &&
+      biot.transientAcceptance.maxMassBalanceErrorRatio <= policy.porePressureMassBalanceTolerance &&
+      biot.transientAcceptance.maxPressureOvershootKpa === 0
+      ? 1
+      : 0,
+    1,
+    0,
+    'Biot u-p evidence kernel must report an aggregate transient acceptance audit for residual, mass-balance, pressure-envelope, and prescribed-gradient relaxation checks.',
+  ));
 
   const biotPatchMesh = buildPlaneStrainRectangularMesh({
     widthM: 2,
@@ -2208,6 +2226,22 @@ export function runFemEngineeringEvidenceSuite(
     0.005,
     'Alpha-zero Quad4 Biot pressure diffusion must match Terzaghi average consolidation at Tv = 0.197 for a top-drained column.',
   ));
+  benchmarks.push(benchmark(
+    'quad4-plane-strain-biot-u-p-drained-dissipation-acceptance',
+    'solver-convergence-and-tolerance',
+    'internal-balance',
+    'drainedDissipationAccepted',
+    biotTerzaghi.transientAcceptance.accepted &&
+      biotTerzaghi.transientAcceptance.dissipationCheckMode === 'drained-dissipation' &&
+      biotTerzaghi.transientAcceptance.monotonicAverageFreePressureDissipationRequired &&
+      biotTerzaghi.transientAcceptance.monotonicAverageFreePressureDissipation &&
+      biotTerzaghi.transientAcceptance.monotonicMaxPressureEnvelope
+      ? 1
+      : 0,
+    1,
+    0,
+    'Top-drained alpha-zero Biot Terzaghi fixture must pass the stricter drained-dissipation transient acceptance gate.',
+  ));
 
   const coupling = runHydroMechanicalCoupling1D({
     totalVerticalStressKpa: 200,
@@ -2267,6 +2301,96 @@ export function runFemEngineeringEvidenceSuite(
     1,
     0,
     'Support screening must tie support reaction demand to staged excavation depths while preserving jurisdiction-specific structural design as a production blocker.',
+  ));
+  const supportMember = runFemSupportMemberDesignCheck({
+    schemaVersion: 'fem-support-member-design-input.v1',
+    units: {
+      length: 'm',
+      force: 'kN',
+      stress: 'MPa',
+      area: 'm2',
+      moment: 'kN-m',
+      momentOfInertia: 'm4',
+      sectionModulus: 'm3',
+      utilization: 'ratio',
+    },
+    member: {
+      id: 'support-strut-fixture',
+      kind: 'strut',
+      label: 'Benchmark excavation strut fixture',
+      sectionLabel: 'Reviewed circular hollow strut proxy',
+      unbracedLengthM: 4,
+      effectiveLengthFactor: 1,
+      areaM2: 0.015,
+      weakAxisMomentOfInertiaM4: 1.2e-4,
+      sectionModulusM3: 0.0012,
+      yieldStrengthMpa: 250,
+      elasticModulusMpa: 200_000,
+    },
+    demand: {
+      axialCompressionDemandKn: 900,
+      bendingMomentDemandKnM: 40,
+      source: {
+        source: 'support-reaction-screening',
+        loadCombination: 'temporary-support-envelope',
+        description: 'Fixture support reaction demand from deterministic excavation screening envelope.',
+        caseId: 'support-fixture',
+        stageId: 'stage-2',
+        resultHashSha256: 'd'.repeat(64),
+      },
+    },
+    factors: {
+      demandFactor: 1.2,
+      resistanceFactorCompression: 0.9,
+      resistanceFactorFlexure: 0.9,
+      maximumSlendernessRatio: 160,
+    },
+    review: {
+      schemaVersion: 'fem-support-design-review-metadata.v1',
+      reviewer: {
+        name: 'Licensed Reviewer',
+        licenseId: 'PE-12345',
+        jurisdiction: 'US-CA',
+      },
+      reviewedAt: '2026-06-04T00:00:00.000Z',
+      assumptions: [
+        {
+          id: 'support-effective-length',
+          parameter: 'effective length factor',
+          value: 1,
+          unit: 'ratio',
+          basis: 'Pinned temporary works end-restraint assumption for deterministic benchmark fixture.',
+          confidence: 'review',
+          reviewRequired: true,
+        },
+        {
+          id: 'support-demand-source',
+          parameter: 'support demand source',
+          value: 'support-reaction-screening',
+          basis: 'Demand is supplied explicitly from a reviewed support reaction screening envelope.',
+          confidence: 'review',
+          reviewRequired: true,
+        },
+      ],
+      limitations: ['Connection, local buckling, and jurisdiction-specific code checks remain outside this benchmark fixture.'],
+    },
+    policy,
+  });
+  benchmarks.push(benchmark(
+    'support-member-yield-buckling-interaction',
+    'support-design',
+    'internal-balance',
+    'supportMemberAccepted',
+    supportMember.status === 'accepted' &&
+      supportMember.productionClaim === false &&
+      supportMember.limitStates.every((limitState) => limitState.status === 'accepted') &&
+      supportMember.controllingLimitState.id === 'combined-axial-flexure' &&
+      supportMember.review.reviewer.licenseId.length > 0
+      ? 1
+      : 0,
+    1,
+    0,
+    'Support member fixture must pass deterministic axial yield, Euler buckling, flexural yield, slenderness, and combined utilization checks with reviewer metadata.',
   ));
 
   const reviewerValidation = validateFemReviewerApprovalRecord({

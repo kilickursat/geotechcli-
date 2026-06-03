@@ -1698,6 +1698,10 @@ export function runBuiltinBiotUpPlaneStrainPreview(
     },
     envelope,
     pressureAudit: result.pressureAudit,
+    biotTransientAcceptance: {
+      ...result.transientAcceptance,
+      blockerCodes: [...result.transientAcceptance.blockerCodes],
+    },
     visualization,
     resultFields: buildBiotResultFields(),
     steps: buildBiotResultSteps(result),

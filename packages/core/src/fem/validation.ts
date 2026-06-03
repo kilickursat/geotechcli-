@@ -1493,6 +1493,15 @@ function validateResultEnvelopeSemantics(
     findings.push(finding('blocker', 'result.backend.objective-mismatch', 'Result backend must match the embedded FEM objective.'));
   }
 
+  if (analysisCase.objective !== 'seepage_groundwater_coupling') {
+    if (manifest.pressureAudit != null) {
+      findings.push(finding('blocker', 'result.pressure-audit.unexpected', 'Pressure audit is only valid for Biot u-p seepage result manifests.'));
+    }
+    if (manifest.biotTransientAcceptance != null) {
+      findings.push(finding('blocker', 'result.biot-transient-acceptance.unexpected', 'Biot transient acceptance metadata is only valid for Biot u-p seepage result manifests.'));
+    }
+  }
+
   if (analysisCase.objective === 'foundation_settlement') {
     const raft = analysisCase.geometry.raft;
     if (!raft) return;
@@ -1738,8 +1747,110 @@ function validateResultEnvelopeSemantics(
         1e-12,
       );
     }
-  } else if (manifest.pressureAudit != null) {
-    findings.push(finding('blocker', 'result.pressure-audit.unexpected', 'Pressure audit is only valid for Biot u-p seepage result manifests.'));
+    const transientAcceptance = manifest.biotTransientAcceptance;
+    if (!transientAcceptance) {
+      findings.push(finding('blocker', 'result.biot-transient-acceptance.missing', 'Biot result manifests must include transient acceptance metadata.'));
+    } else {
+      if (transientAcceptance.schemaVersion !== 'fem-plane-strain-biot-transient-acceptance.v1') {
+        findings.push(finding('blocker', 'result.biot-transient-acceptance.schema.unsupported', 'Unsupported Biot transient acceptance schema.'));
+      }
+      if (transientAcceptance.accepted !== true) {
+        findings.push(finding('blocker', 'result.biot-transient-acceptance.not-accepted', 'Biot transient acceptance must be accepted before publishing a preview manifest.'));
+      }
+      if (
+        transientAcceptance.dissipationCheckMode !== 'drained-dissipation' &&
+        transientAcceptance.dissipationCheckMode !== 'prescribed-gradient-relaxation'
+      ) {
+        findings.push(finding('blocker', 'result.biot-transient-acceptance.mode.invalid', 'Biot transient acceptance mode is invalid.'));
+      }
+      const acceptedStepCountOk = pushFiniteNumberFinding(
+        findings,
+        transientAcceptance.acceptedStepCount,
+        'result.biot-transient-acceptance.accepted-step-count',
+        'Biot transient accepted step count',
+        { positive: true },
+      );
+      const requiredStepCountOk = pushFiniteNumberFinding(
+        findings,
+        transientAcceptance.requiredStepCount,
+        'result.biot-transient-acceptance.required-step-count',
+        'Biot transient required step count',
+        { positive: true },
+      );
+      const maxResidualOk = pushFiniteNumberFinding(
+        findings,
+        transientAcceptance.maxResidualNormRatio,
+        'result.biot-transient-acceptance.max-residual-ratio',
+        'Biot transient maximum residual ratio',
+        { nonNegative: true },
+      );
+      const maxMassBalanceOk = pushFiniteNumberFinding(
+        findings,
+        transientAcceptance.maxMassBalanceErrorRatio,
+        'result.biot-transient-acceptance.max-mass-balance-ratio',
+        'Biot transient maximum mass-balance ratio',
+        { nonNegative: true },
+      );
+      pushFiniteNumberFinding(
+        findings,
+        transientAcceptance.maxPressureOvershootKpa,
+        'result.biot-transient-acceptance.max-pressure-overshoot',
+        'Biot transient maximum pressure overshoot',
+        { nonNegative: true },
+      );
+      const finalDissipationOk = pushFiniteNumberFinding(
+        findings,
+        transientAcceptance.finalPorePressureDissipationRatio,
+        'result.biot-transient-acceptance.final-dissipation-ratio',
+        'Biot transient final pore-pressure dissipation ratio',
+        { nonNegative: true },
+      );
+      if (acceptedStepCountOk && timeStepCountOk && transientAcceptance.acceptedStepCount !== envelope.timeStepCount) {
+        findings.push(finding('blocker', 'result.biot-transient-acceptance.accepted-step-count-mismatch', 'Biot accepted step count must match the envelope time-step count.'));
+      }
+      if (requiredStepCountOk && transientAcceptance.requiredStepCount < FEM_MIN_BIOT_TRANSIENT_STEPS) {
+        findings.push(finding('blocker', 'result.biot-transient-acceptance.required-step-count-too-small', 'Biot required transient step count is below the preview policy.'));
+      }
+      if (acceptedStepCountOk && requiredStepCountOk && transientAcceptance.acceptedStepCount < transientAcceptance.requiredStepCount) {
+        findings.push(finding('blocker', 'result.biot-transient-acceptance.accepted-step-count-too-small', 'Biot accepted step count is below the required transient step count.'));
+      }
+      if (maxResidualOk && transientAcceptance.maxResidualNormRatio > 1e-3) {
+        findings.push(finding('blocker', 'result.biot-transient-acceptance.max-residual-too-large', 'Biot transient maximum residual ratio exceeds the preview tolerance.'));
+      }
+      if (maxMassBalanceOk && transientAcceptance.maxMassBalanceErrorRatio > 1e-3) {
+        findings.push(finding('blocker', 'result.biot-transient-acceptance.max-mass-balance-too-large', 'Biot transient maximum mass-balance ratio exceeds the preview tolerance.'));
+      }
+      if (finalDissipationOk && dissipationRatioOk) {
+        pushApproximateMatchFinding(
+          findings,
+          transientAcceptance.finalPorePressureDissipationRatio,
+          envelope.porePressureDissipationRatio!,
+          'result.biot-transient-acceptance.final-dissipation-envelope-mismatch',
+          'Biot transient final dissipation ratio',
+          1e-12,
+        );
+      }
+      if (
+        transientAcceptance.dissipationCheckMode === 'drained-dissipation' &&
+        transientAcceptance.monotonicAverageFreePressureDissipationRequired !== true
+      ) {
+        findings.push(finding('blocker', 'result.biot-transient-acceptance.drained-monotonic-required', 'Drained-dissipation Biot acceptance must require monotonic average free pore-pressure dissipation.'));
+      }
+      if (
+        transientAcceptance.monotonicAverageFreePressureDissipationRequired &&
+        transientAcceptance.monotonicAverageFreePressureDissipation !== true
+      ) {
+        findings.push(finding('blocker', 'result.biot-transient-acceptance.average-free-pressure-not-monotonic', 'Required average free pore-pressure dissipation was not monotonic.'));
+      }
+      if (transientAcceptance.monotonicMaxPressureEnvelope !== true) {
+        findings.push(finding('blocker', 'result.biot-transient-acceptance.max-pressure-not-monotonic', 'Biot maximum pore-pressure envelope must be monotonic non-increasing.'));
+      }
+      if (!Array.isArray(transientAcceptance.blockerCodes)) {
+        findings.push(finding('blocker', 'result.biot-transient-acceptance.blocker-codes.invalid', 'Biot transient acceptance blocker codes must be an array.'));
+      } else if (transientAcceptance.accepted && transientAcceptance.blockerCodes.length > 0) {
+        findings.push(finding('blocker', 'result.biot-transient-acceptance.blocker-codes-not-empty', 'Accepted Biot transient metadata must not include blocker codes.'));
+      }
+    }
   }
 }
 

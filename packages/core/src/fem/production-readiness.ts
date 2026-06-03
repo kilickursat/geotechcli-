@@ -72,7 +72,7 @@ const FEATURE_REQUIREMENTS: Record<FemProductionFeature, Omit<FemProductionFeatu
   },
   consolidation: {
     status: 'kernel-verified',
-    currentCoverage: 'A deterministic 1D Terzaghi backward-Euler consolidation kernel is benchmarked against analytical average consolidation and exposed through a human-reviewed staged-settlement/consolidation preview route. A nonlinear 1D column backend solves staged vertical equilibrium with Drucker-Prager material-point return mapping. A benchmark-scale 2D Quad4 Biot u-p backward-Euler evidence kernel now assembles displacement and pore-pressure DOFs with explicit pressure/stress/flux convention metadata and an alpha-zero Terzaghi pressure-dissipation check, and a reviewed experimental seepage/groundwater route can emit a result manifest. It is still not a production sparse solver or nonlinear staged-construction backend.',
+    currentCoverage: 'A deterministic 1D Terzaghi backward-Euler consolidation kernel is benchmarked against analytical average consolidation and exposed through a human-reviewed staged-settlement/consolidation preview route. A nonlinear 1D column backend solves staged vertical equilibrium with Drucker-Prager material-point return mapping. A benchmark-scale 2D Quad4 Biot u-p backward-Euler evidence kernel now assembles displacement and pore-pressure DOFs with explicit pressure/stress/flux convention metadata, aggregate transient acceptance audits, and an alpha-zero Terzaghi pressure-dissipation check, and a reviewed experimental seepage/groundwater route can emit a result manifest. It is still not a production sparse solver or nonlinear staged-construction backend.',
     requiredForAcceptance: [
       'time-stepping consolidation backend with drainage boundary controls',
       'Cv, mv/Cc, drainage path, stage duration, and monitoring calibration schema',
@@ -86,7 +86,7 @@ const FEATURE_REQUIREMENTS: Record<FemProductionFeature, Omit<FemProductionFeatu
   },
   'seepage-pore-pressure-coupling': {
     status: 'kernel-verified',
-    currentCoverage: 'Deterministic 1D Darcy seepage and effective-stress coupling kernels are benchmarked against closed-form flow and settlement checks. Benchmark-scale Quad4 evidence kernels now solve steady seepage head/flux/effective-stress metadata and a linear-elastic Biot u-p backward-Euler fixture with displacement and pore-pressure DOFs, pressure-gradient Darcy flux checks, alpha-zero decoupling, Terzaghi pressure-dissipation evidence, and explicit excess-pore-pressure sign/unit metadata. A human-reviewed experimental seepage/groundwater route now writes Biot u-p result manifests with pressure-audit metadata; production sparse solving, nonlinear plasticity coupling, dewatering/uplift design checks, and independent cross-solver validation are still not approved.',
+    currentCoverage: 'Deterministic 1D Darcy seepage and effective-stress coupling kernels are benchmarked against closed-form flow and settlement checks. Benchmark-scale Quad4 evidence kernels now solve steady seepage head/flux/effective-stress metadata and a linear-elastic Biot u-p backward-Euler fixture with displacement and pore-pressure DOFs, pressure-gradient Darcy flux checks, aggregate transient acceptance audits, alpha-zero decoupling, Terzaghi pressure-dissipation evidence, and explicit excess-pore-pressure sign/unit metadata. A human-reviewed experimental seepage/groundwater route now writes Biot u-p result manifests with pressure-audit metadata; production sparse solving, nonlinear plasticity coupling, dewatering/uplift design checks, and independent cross-solver validation are still not approved.',
     requiredForAcceptance: [
       'steady/transient seepage solver with hydraulic boundary conditions',
       'pore-pressure coupling into effective stress/deformation calculations',
@@ -115,7 +115,7 @@ const FEATURE_REQUIREMENTS: Record<FemProductionFeature, Omit<FemProductionFeatu
   },
   'support-design': {
     status: 'kernel-verified',
-    currentCoverage: 'A deterministic Rankine support-screening kernel checks support capacity, passive toe resistance, basal heave, and staged support reaction demand for controlled excavation-stage fixtures. The excavation preview route exposes support reaction metadata for review, but this remains screening evidence only and is not a wall/strut/anchor structural design engine.',
+    currentCoverage: 'A deterministic Rankine support-screening kernel checks support capacity, passive toe resistance, basal heave, and staged support reaction demand for controlled excavation-stage fixtures. A closed-form support member check now evaluates explicit strut/brace axial, flexural, Euler buckling, slenderness, combined utilization, demand provenance, and reviewer metadata. The excavation preview route exposes support reaction metadata for review, but this remains screening/member evidence only and is not a jurisdiction-specific wall/strut/anchor structural design engine.',
     requiredForAcceptance: [
       'wall/strut/anchor structural design checks with explicit standards assumptions',
       'basal heave, kick-out, surcharge, and toe embedment verification',
@@ -144,7 +144,7 @@ const FEATURE_REQUIREMENTS: Record<FemProductionFeature, Omit<FemProductionFeatu
   },
   'independent-benchmark-validation': {
     status: 'preview-only',
-    currentCoverage: 'Current fixtures verify deterministic preview envelopes, monotonic trends, material-point closed forms, Quad4 linear patch/global-equilibrium fixtures, benchmark-scale mechanical-only Drucker-Prager plane-strain evidence cases, Quad4 steady-seepage mass-balance/effective-stress metadata, and benchmark-scale Quad4 Biot u-p coupled residual, pressure-gradient flux, alpha-zero decoupling, and Terzaghi pressure-dissipation fixtures. They do not yet prove full production benchmark equivalence against published or commercial solver references.',
+    currentCoverage: 'Current fixtures verify deterministic preview envelopes, monotonic trends, material-point closed forms, Quad4 linear patch/global-equilibrium fixtures, benchmark-scale mechanical-only Drucker-Prager plane-strain evidence cases, Quad4 steady-seepage mass-balance/effective-stress metadata, and benchmark-scale Quad4 Biot u-p coupled residual, transient acceptance, pressure-gradient flux, alpha-zero decoupling, and Terzaghi pressure-dissipation fixtures. They do not yet prove full production benchmark equivalence against published or commercial solver references.',
     requiredForAcceptance: [
       'published analytical and numerical benchmark corpus by route',
       'tolerance envelopes for displacement, pore pressure, reaction, and settlement-time curves',

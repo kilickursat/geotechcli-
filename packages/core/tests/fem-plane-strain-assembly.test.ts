@@ -328,9 +328,25 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
     expect(result.freePorePressureDofCount).toBeGreaterThan(0);
     expect(result.coupledUnknownCount).toBe(result.freeDisplacementDofCount + result.freePorePressureDofCount);
     expect(result.timeSteps).toHaveLength(3);
+    expect(result.timeSteps.every((step) => step.acceptedByPolicy)).toBe(true);
     expect(result.converged).toBe(true);
     expect(result.maxFreeResidualKn).toBeLessThanOrEqual(result.policy.forceBalanceTolerance);
     expect(result.massBalanceErrorRatio).toBeLessThanOrEqual(result.policy.porePressureMassBalanceTolerance);
+    expect(result.transientAcceptance).toMatchObject({
+      schemaVersion: 'fem-plane-strain-biot-transient-acceptance.v1',
+      accepted: true,
+      dissipationCheckMode: 'prescribed-gradient-relaxation',
+      acceptedStepCount: 3,
+      requiredStepCount: 3,
+      maxPressureOvershootKpa: 0,
+      monotonicAverageFreePressureDissipationRequired: false,
+      monotonicMaxPressureEnvelope: true,
+      blockerCodes: [],
+    });
+    expect(result.transientAcceptance.maxResidualNormRatio)
+      .toBeLessThanOrEqual(result.policy.forceBalanceTolerance);
+    expect(result.transientAcceptance.maxMassBalanceErrorRatio)
+      .toBeLessThanOrEqual(result.policy.porePressureMassBalanceTolerance);
     expect(result.minPorePressureKpa).toBeGreaterThanOrEqual(0);
     expect(result.maxPorePressureKpa).toBeCloseTo(100, 8);
     expect(result.freePorePressureResidualL1M3PerS).toBeLessThanOrEqual(
@@ -518,6 +534,16 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
     expect(result.productionReady).toBe(false);
     expect(result.converged).toBe(true);
     expect(result.maxBiotCouplingKpa).toBe(0);
+    expect(result.transientAcceptance.accepted).toBe(true);
+    expect(result.transientAcceptance.dissipationCheckMode).toBe('drained-dissipation');
+    expect(result.transientAcceptance.acceptedStepCount).toBe(80);
+    expect(result.transientAcceptance.monotonicAverageFreePressureDissipationRequired).toBe(true);
+    expect(result.transientAcceptance.monotonicAverageFreePressureDissipation).toBe(true);
+    expect(result.transientAcceptance.monotonicMaxPressureEnvelope).toBe(true);
+    expect(result.transientAcceptance.finalPorePressureDissipationRatio).toBeCloseTo(
+      result.pressureDiagnostics.porePressureDissipationRatio,
+      10,
+    );
     expect(result.massBalanceErrorRatio).toBeLessThanOrEqual(result.policy.porePressureMassBalanceTolerance);
     expect(result.minPorePressureKpa).toBe(0);
     expect(result.maxPorePressureKpa).toBeLessThan(initialPorePressureKpa);

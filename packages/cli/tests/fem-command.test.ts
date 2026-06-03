@@ -445,6 +445,16 @@ describe('registerFemCommand', () => {
     expect(runPayload.manifest.backend.id).toBe('builtin-biot-up-plane-strain-v0');
     expect(runPayload.manifest.analysisCase.objective).toBe('seepage_groundwater_coupling');
     expect(runPayload.manifest.envelope.porePressureMassBalanceErrorRatio).toBeLessThanOrEqual(1e-6);
+    expect(runPayload.manifest.biotTransientAcceptance).toMatchObject({
+      schemaVersion: 'fem-plane-strain-biot-transient-acceptance.v1',
+      accepted: true,
+      dissipationCheckMode: 'drained-dissipation',
+      acceptedStepCount: runPayload.manifest.envelope.timeStepCount,
+      monotonicMaxPressureEnvelope: true,
+      blockerCodes: [],
+    });
+    expect(runPayload.manifest.biotTransientAcceptance.finalPorePressureDissipationRatio)
+      .toBe(runPayload.manifest.envelope.porePressureDissipationRatio);
     expect(runPayload.warnings.join(' ')).toMatch(/Experimental deterministic FEM run/i);
     runLogSpy.mockRestore();
   });

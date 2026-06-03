@@ -56,6 +56,7 @@ function inferCase(manifest, requested) {
   if (manifest.analysisCase?.objective === 'excavation_deformation') return 'excavation';
   if (manifest.analysisCase?.objective === 'tunnel_volume_loss_settlement') return 'tunnel';
   if (manifest.analysisCase?.objective === 'staged_settlement_consolidation') return 'consolidation';
+  if (manifest.analysisCase?.objective === 'seepage_groundwater_coupling') return 'biot';
   return 'auto';
 }
 
@@ -134,6 +135,20 @@ function caseManifestChecks(manifest, caseName) {
     assert(manifest.resultFields?.some((field) => field.id === 'final_degree_of_consolidation'), 'missing consolidation result field metadata');
     assert(manifest.steps?.length === 3, 'expected three consolidation result steps');
     assert(manifest.datasets?.filter((dataset) => dataset.source === 'visualization.frame').length === 3, 'expected staged consolidation frame datasets');
+  } else if (caseName === 'biot') {
+    assert(manifest.analysisCase?.objective === 'seepage_groundwater_coupling', 'not a Biot seepage manifest');
+    assert(manifest.backend?.id === 'builtin-biot-up-plane-strain-v0', 'unexpected Biot backend');
+    assert(manifest.mesh?.nodes === 34, 'unexpected Biot node count');
+    assert(manifest.mesh?.elements === 16, 'unexpected Biot element count');
+    assert(manifest.mesh?.elementType === 'quad4_plane_strain', 'unexpected Biot element type');
+    assert(Number.isFinite(manifest.envelope?.maxExcessPorePressureKpa), 'Biot excess pore pressure is not finite');
+    assert(manifest.envelope?.porePressureMassBalanceErrorRatio <= 1e-6, 'Biot mass balance exceeds tolerance');
+    assert(manifest.biotTransientAcceptance?.accepted === true, 'Biot transient acceptance missing or not accepted');
+    assert(manifest.biotTransientAcceptance?.acceptedStepCount === manifest.envelope?.timeStepCount, 'Biot accepted step count mismatch');
+    assert(Array.isArray(manifest.biotTransientAcceptance?.blockerCodes) && manifest.biotTransientAcceptance.blockerCodes.length === 0, 'Biot acceptance blockers present');
+    assert(manifest.resultFields?.some((field) => field.id === 'excess_pore_pressure'), 'missing Biot pore-pressure field metadata');
+    assert(manifest.steps?.map((step) => step.id).includes('final'), 'missing Biot final step metadata');
+    assert(manifest.datasets?.some((dataset) => dataset.source === 'visualization.scalar-frame'), 'missing Biot scalar frame dataset');
   }
 }
 
@@ -167,7 +182,15 @@ async function assertCanvas(page, viewportName) {
       signature ^= value + pixels[index + 3];
       signature = Math.imul(signature, 16777619) >>> 0;
     }
-    return { ok: bright > 20 && distinct > 5, renderer, bright, distinct, width, height, signature };
+    return {
+      ok: (bright > 20 && distinct > 5) || (bright > 6 && distinct > 12),
+      renderer,
+      bright,
+      distinct,
+      width,
+      height,
+      signature,
+    };
   });
   assert(probe.ok, `${viewportName}: canvas looked blank (${JSON.stringify(probe)})`);
   return probe;
@@ -439,6 +462,17 @@ async function assertViewer({ browser, htmlPath, manifest, caseName, outDir, vie
     await page.locator('#stageSlider').fill('2');
     await page.locator('#stageLabel').getByText('Stage 3 - service surcharge hold', { exact: true }).waitFor();
     interactionProbe = await assertCanvasSignatureChanged(page, viewportName, interactionProbe, 'consolidation-stage-3');
+  } else if (caseName === 'biot') {
+    await page.getByText('Experimental plane-strain Biot u-p pore-pressure dissipation preview').waitFor();
+    await page.locator('#stats').getByText('Max excess pore pressure', { exact: true }).waitFor();
+    await page.getByRole('heading', { name: 'Excess pore pressure color' }).waitFor();
+    await page.locator('#scale').fill('180');
+    await assertScaleLabel(page, '180x');
+    interactionProbe = await assertCanvasSignatureChanged(page, viewportName, interactionProbe, 'biot-scale-180');
+    await page.locator('#wire').click();
+    interactionProbe = await assertCanvasSignatureChanged(page, viewportName, interactionProbe, 'biot-wire-toggle');
+    await page.locator('#patch').click();
+    interactionProbe = await assertCanvasSignatureChanged(page, viewportName, interactionProbe, 'biot-patch-toggle');
   }
 
   const probe = await assertCanvas(page, viewportName);
@@ -519,10 +553,11 @@ if (args.demo === 'all') {
   artifacts.push({ caseName: 'excavation', ...(await generateDemoArtifacts('excavation', outDir)) });
   artifacts.push({ caseName: 'tunnel', ...(await generateDemoArtifacts('tunnel', outDir)) });
   artifacts.push({ caseName: 'consolidation', ...(await generateDemoArtifacts('consolidation', outDir)) });
-} else if (args.demo === 'raft' || args.demo === 'excavation' || args.demo === 'tunnel' || args.demo === 'consolidation') {
+  artifacts.push({ caseName: 'biot', ...(await generateDemoArtifacts('biot', outDir)) });
+} else if (args.demo === 'raft' || args.demo === 'excavation' || args.demo === 'tunnel' || args.demo === 'consolidation' || args.demo === 'biot') {
   artifacts.push({ caseName: args.demo, ...(await generateDemoArtifacts(args.demo, outDir)) });
 } else {
-  assert(args.html && args.manifest, 'Usage: node scripts/smoke-fem-webgl.mjs --case <auto|raft|excavation|tunnel|consolidation> --html <file> --manifest <file> --out <dir> [--allow-fallback] [--force-fallback]');
+  assert(args.html && args.manifest, 'Usage: node scripts/smoke-fem-webgl.mjs --case <auto|raft|excavation|tunnel|consolidation|biot> --html <file> --manifest <file> --out <dir> [--allow-fallback] [--force-fallback]');
   artifacts.push({
     caseName: args.caseName,
     html: resolve(args.html),

@@ -192,6 +192,19 @@ async function draftAndRun({ name, objective, draftArgs, runArgs = [], expectedO
   assert(run.manifest?.envelope && Number.isFinite(run.manifest.envelope.maxSettlementMm), `${name}: finite envelope missing`);
   assertMetricRange(name, run.manifest.envelope, expectedEnvelope);
   assertReferenceChecks(name, expectedObjective, run.manifest.envelope, draftArgs);
+  if (expectedObjective === 'seepage_groundwater_coupling') {
+    const acceptance = run.manifest.biotTransientAcceptance;
+    assert(acceptance?.schemaVersion === 'fem-plane-strain-biot-transient-acceptance.v1', `${name}: Biot transient acceptance schema missing`);
+    assert(acceptance.accepted === true, `${name}: Biot transient acceptance was not accepted`);
+    assert(acceptance.acceptedStepCount === run.manifest.envelope.timeStepCount, `${name}: Biot accepted step count mismatch`);
+    assert(acceptance.maxMassBalanceErrorRatio <= 1e-6, `${name}: Biot transient mass-balance acceptance exceeds tolerance`);
+    assert(acceptance.monotonicMaxPressureEnvelope === true, `${name}: Biot transient max-pressure envelope is not monotonic`);
+    assert(
+      Math.abs(acceptance.finalPorePressureDissipationRatio - run.manifest.envelope.porePressureDissipationRatio) <= 1e-12,
+      `${name}: Biot final dissipation ratio does not match the envelope`,
+    );
+    assert(Array.isArray(acceptance.blockerCodes) && acceptance.blockerCodes.length === 0, `${name}: Biot transient acceptance has blocker codes`);
+  }
   const fieldIds = new Set((run.manifest.resultFields ?? []).map((field) => field.id));
   for (const fieldId of expectedFields) {
     assert(fieldIds.has(fieldId), `${name}: expected result field ${fieldId} missing`);
@@ -201,6 +214,9 @@ async function draftAndRun({ name, objective, draftArgs, runArgs = [], expectedO
   const manifest = JSON.parse(await readFile(manifestPath, 'utf-8'));
   const html = await readFile(htmlPath, 'utf-8');
   assert(manifest.schemaVersion === 'fem-result-manifest.v0', `${name}: persisted manifest schema mismatch`);
+  if (expectedObjective === 'seepage_groundwater_coupling') {
+    assert(manifest.biotTransientAcceptance?.accepted === true, `${name}: persisted Biot transient acceptance missing`);
+  }
   assert(html.includes('const MANIFEST = '), `${name}: WebGL HTML manifest missing`);
   return {
     name,

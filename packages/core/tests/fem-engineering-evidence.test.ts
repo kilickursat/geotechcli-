@@ -439,6 +439,48 @@ describe('FEM engineering evidence kernels', () => {
     ]));
   });
 
+  it('records Biot transient acceptance audits for prescribed-gradient and drained dissipation modes', () => {
+    const report = runFemEngineeringEvidenceSuite();
+    const benchmarks = new Map(report.benchmarks.map((item) => [item.id, item]));
+
+    expect(benchmarks.get('quad4-plane-strain-biot-u-p-transient-acceptance-policy')).toMatchObject({
+      feature: 'solver-convergence-and-tolerance',
+      referenceType: 'internal-balance',
+      quantity: 'transientAcceptance',
+      actual: 1,
+      expected: 1,
+      tolerance: 0,
+      status: 'accepted',
+      evidence: expect.stringContaining('prescribed-gradient relaxation'),
+    });
+    expect(benchmarks.get('quad4-plane-strain-biot-u-p-drained-dissipation-acceptance')).toMatchObject({
+      feature: 'solver-convergence-and-tolerance',
+      referenceType: 'internal-balance',
+      quantity: 'drainedDissipationAccepted',
+      actual: 1,
+      expected: 1,
+      tolerance: 0,
+      status: 'accepted',
+      evidence: expect.stringContaining('drained-dissipation transient acceptance gate'),
+    });
+  });
+
+  it('records support member yield, buckling, flexure, and reviewer-metadata evidence', () => {
+    const report = runFemEngineeringEvidenceSuite();
+    const benchmarks = new Map(report.benchmarks.map((item) => [item.id, item]));
+
+    expect(benchmarks.get('support-member-yield-buckling-interaction')).toMatchObject({
+      feature: 'support-design',
+      referenceType: 'internal-balance',
+      quantity: 'supportMemberAccepted',
+      actual: 1,
+      expected: 1,
+      tolerance: 0,
+      status: 'accepted',
+      evidence: expect.stringContaining('Euler buckling'),
+    });
+  });
+
   it('runs the full evidence suite without changing the public production gate', () => {
     const report = runFemEngineeringEvidenceSuite();
 
@@ -466,10 +508,13 @@ describe('FEM engineering evidence kernels', () => {
       'quad4-plane-strain-biot-u-p-effective-stress-coupling',
       'quad4-plane-strain-biot-u-p-free-residual',
       'quad4-plane-strain-biot-u-p-mass-residual',
+      'quad4-plane-strain-biot-u-p-transient-acceptance-policy',
       'quad4-plane-strain-biot-u-p-pressure-gradient-flux-contract',
       'quad4-plane-strain-biot-u-p-alpha-zero-decoupling',
       'quad4-plane-strain-biot-u-p-terzaghi-pressure-dissipation',
+      'quad4-plane-strain-biot-u-p-drained-dissipation-acceptance',
       'excavation-support-staged-reaction-sequence',
+      'support-member-yield-buckling-interaction',
     ]));
     expect(report.verifiedFeatures).toEqual(expect.arrayContaining([
       'global-plane-strain-assembly',

@@ -104,6 +104,24 @@ export {
   type FemSeepageTransientStep,
   type FemToleranceCheck,
 } from './engineering-evidence.js';
+export {
+  runFemSupportMemberDesignCheck,
+  validateFemSupportMemberDesignCheckInput,
+  type FemSupportDemandSource,
+  type FemSupportDesignFactors,
+  type FemSupportDesignReviewMetadata,
+  type FemSupportDesignReviewer,
+  type FemSupportDesignStatus,
+  type FemSupportDesignUnits,
+  type FemSupportMemberConvergenceMetadata,
+  type FemSupportMemberDemand,
+  type FemSupportMemberDesignCheckInput,
+  type FemSupportMemberDesignCheckResult,
+  type FemSupportMemberDesignInputValidation,
+  type FemSupportMemberKind,
+  type FemSupportMemberLimitState,
+  type FemSupportMemberProperties,
+} from './support-design.js';
 export { renderFemWebglHtml } from './webgl.js';
 export {
   buildCsrFromTriplets,
@@ -129,6 +147,7 @@ export {
   type FemPlaneStrainBiotPressureAudit,
   type FemPlaneStrainBiotPressureDiagnostics,
   type FemPlaneStrainBiotStepResult,
+  type FemPlaneStrainBiotTransientAcceptance,
   type FemPlaneStrainBoundaryCondition,
   type FemPlaneStrainDruckerPragerFailure,
   type FemPlaneStrainDruckerPragerGaussPointResult,

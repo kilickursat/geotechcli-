@@ -8,6 +8,16 @@ const releases = [
     date: '2026-06-04',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Promoted Biot transient acceptance metadata into result manifests, validation, CLI output, draft/run smoke, and WebGL smoke coverage' },
+      { type: 'feat', text: 'Added deterministic support member yield, buckling, flexure, slenderness, and combined utilization evidence with reviewer/license metadata validation' },
+      { type: 'fix', text: 'Downgraded repeated malformed provider JSON on long visual PDF ingest pages to manual review after retry instead of failing the whole async job' },
+    ],
+  },
+  {
+    version: '0.4.109',
+    date: '2026-06-04',
+    tag: '0.4.109 Release',
+    changes: [
       { type: 'feat', text: 'Added committed Gauss-point Drucker-Prager state history with strain increments and accumulated plastic-strain evidence' },
       { type: 'feat', text: 'Added non-monotonic loadHistoryFactors coverage for unload/reload FEM evidence without resetting plastic state to virgin material' },
       { type: 'fix', text: 'Updated FEM readiness summaries so path-dependent plasticity evidence is visible while full production FEM remains blocked' },

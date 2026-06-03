@@ -917,6 +917,76 @@ describe('persisted ingest jobs', () => {
     expect(completed.result?.ingestResult.pageFailures).toEqual([]);
   });
 
+  it('downgrades repeated malformed provider JSON on visual borehole pages after retry', async () => {
+    const filePath = join(configDir, 'downgrade-repeated-malformed-provider-json-source.pdf');
+    await writeBlankPdf(filePath, 2);
+
+    const job = createPersistedIngestJob({
+      documentType: 'borehole-log',
+      filePath,
+      inspection: makeInspection(2, () => 'image-only'),
+      config: makeConfig(),
+    });
+
+    const interpretBoreholeLogWithContext = vi.fn()
+      .mockResolvedValueOnce(makeBoreholeInterpretation(1, 2))
+      .mockRejectedValueOnce(new Error('Unterminated string in JSON at position 950269 (line 11319 column 1044)'))
+      .mockRejectedValueOnce(new Error('Zhipu API returned malformed JSON response: Unterminated string in JSON at position 950269.'));
+
+    const completed = await runPersistedIngestJobWorker(job.jobId, {
+      buildLLMConfig: makeConfig,
+      readDocumentPdfPageInputs: async () => [1, 2].map((pageNumber) => ({
+        base64: `repeated-malformed-json-page-${pageNumber}`,
+        mimeType: 'image/png',
+        fileBytes: 120,
+        filePath,
+        ext: 'png',
+        kind: 'image',
+        pageNumber,
+        totalPages: 2,
+        sourceKind: 'raster-image',
+        normalizedArtifact: {
+          kind: 'image',
+          source: 'full-page-raster',
+          mimeType: 'image/png',
+          fileBytes: 120,
+          textSource: 'none',
+          textQuality: null,
+          warnings: [],
+        },
+      })),
+      recoverDocumentTextHint: async ({ pdfPageNumber }) => ({
+        textHint: `Recovered OCR text for page ${pdfPageNumber ?? 0}.`,
+        source: 'vision-ocr' as const,
+        warnings: [],
+      }),
+      interpretBoreholeLogWithContext,
+    });
+
+    expect(completed.status).toBe('completed');
+    expect(interpretBoreholeLogWithContext).toHaveBeenCalledTimes(3);
+    expect(completed.checkpoints.pages[0]?.status).toBe('completed');
+    expect(completed.checkpoints.pages[1]).toEqual(expect.objectContaining({
+      attempts: 2,
+      status: 'failed',
+      downgraded: true,
+    }));
+    expect(completed.result?.ingestResult.source.successfulPages).toBe(1);
+    expect(completed.result?.ingestResult.reviewFindings).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'page_visual_ingest_downgraded',
+        severity: 'review',
+        pageNumber: 2,
+      }),
+      expect.objectContaining({
+        code: 'slow_visual_pages_present',
+        severity: 'review',
+      }),
+    ]));
+    expect(completed.result?.ingestResult.reviewRequired).toBe(true);
+    expect(completed.result?.ingestResult.canAutoProceed).toBe(false);
+  });
+
   it('retries 524 upstream timeouts with backoff and carries OCR checkpoint counts into the final summary', async () => {
     const filePath = join(configDir, 'retry-524-ocr-source.pdf');
     await writeBlankPdf(filePath, 1);

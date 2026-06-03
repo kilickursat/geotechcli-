@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.110] - 2026-06-04
+
+### FEM Biot Acceptance, Support Evidence, and Ingest Recovery
+
+- Promoted Biot transient acceptance metadata into route-backed result manifests, validation, CLI output, draft/run smoke, and WebGL smoke coverage, including drained-dissipation and prescribed-gradient relaxation checks.
+- Added a deterministic support member yield, Euler buckling, flexural yield, slenderness, and combined axial-flexure interaction check with reviewer identity, license, assumption, limitation, and demand-source validation while keeping support design outside production claims.
+- Hardened long visual PDF ingest after repeated malformed provider JSON by downgrading the affected page to manual review after retry instead of failing the entire async job.
+- Full production FEM remains blocked behind a production nonlinear coupled solver, advanced staged construction, independent published/commercial benchmarks, and jurisdiction-specific licensed approval.
+
 ## [0.4.109] - 2026-06-04
 
 ### FEM Committed Plasticity State

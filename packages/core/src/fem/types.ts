@@ -321,6 +321,22 @@ export interface FemResultPressureAudit {
   darcyFlowRateSumM3PerS: number;
 }
 
+export interface FemResultBiotTransientAcceptance {
+  schemaVersion: 'fem-plane-strain-biot-transient-acceptance.v1';
+  accepted: boolean;
+  dissipationCheckMode: 'drained-dissipation' | 'prescribed-gradient-relaxation';
+  acceptedStepCount: number;
+  requiredStepCount: number;
+  maxResidualNormRatio: number;
+  maxMassBalanceErrorRatio: number;
+  maxPressureOvershootKpa: number;
+  monotonicAverageFreePressureDissipation: boolean;
+  monotonicAverageFreePressureDissipationRequired: boolean;
+  monotonicMaxPressureEnvelope: boolean;
+  finalPorePressureDissipationRatio: number;
+  blockerCodes: string[];
+}
+
 export type FemSolverConvergenceStatus = 'converged' | 'nonconverged';
 
 export type FemSolverTerminationReason =
@@ -400,6 +416,7 @@ export interface FemResultManifest {
   };
   envelope: FemResultEnvelope;
   pressureAudit?: FemResultPressureAudit;
+  biotTransientAcceptance?: FemResultBiotTransientAcceptance;
   solverConvergence?: FemSolverConvergenceReport;
   visualization: FemVisualizationMesh;
   resultFields?: FemResultField[];

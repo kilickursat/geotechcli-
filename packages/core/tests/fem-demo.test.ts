@@ -225,8 +225,101 @@ describe('experimental FEM raft demo', () => {
     expect(manifest.envelope.maxPorePressureChangeRateKpaPerS).toBeGreaterThan(0);
     expect(manifest.pressureAudit?.freePorePressureResidualL1M3PerS)
       .toBe(manifest.envelope.freePorePressureResidualL1M3PerS);
+    expect(manifest.biotTransientAcceptance).toMatchObject({
+      schemaVersion: 'fem-plane-strain-biot-transient-acceptance.v1',
+      accepted: true,
+      dissipationCheckMode: 'drained-dissipation',
+      acceptedStepCount: manifest.envelope.timeStepCount,
+      monotonicAverageFreePressureDissipation: true,
+      monotonicAverageFreePressureDissipationRequired: true,
+      monotonicMaxPressureEnvelope: true,
+      blockerCodes: [],
+    });
+    expect(manifest.biotTransientAcceptance?.finalPorePressureDissipationRatio)
+      .toBe(manifest.envelope.porePressureDissipationRatio);
     expect(validation.status).toBe('review');
     expect(validation.blockers).toBe(0);
+  });
+
+  it('blocks missing, stale, or misplaced Biot transient acceptance metadata', () => {
+    const manifest = runBuiltinBiotUpPlaneStrainPreview();
+    const expectAcceptanceFinding = (
+      biotTransientAcceptance: NonNullable<FemResultManifest['biotTransientAcceptance']>,
+      code: string,
+    ) => {
+      const validation = validateFemResultManifest({
+        ...manifest,
+        biotTransientAcceptance,
+      });
+      expect(validation.findings.map((finding) => finding.code)).toContain(code);
+    };
+    const missingAcceptance: FemResultManifest = {
+      ...manifest,
+      biotTransientAcceptance: undefined,
+    };
+    const staleAcceptance: FemResultManifest = {
+      ...manifest,
+      biotTransientAcceptance: {
+        ...manifest.biotTransientAcceptance!,
+        finalPorePressureDissipationRatio: 0,
+      },
+    };
+    const misplacedAcceptance: FemResultManifest = {
+      ...runBuiltinElasticRaftDemo(),
+      biotTransientAcceptance: manifest.biotTransientAcceptance,
+    };
+    const baseAcceptance = manifest.biotTransientAcceptance!;
+
+    expect(validateFemResultManifest(missingAcceptance).findings.map((finding) => finding.code))
+      .toContain('result.biot-transient-acceptance.missing');
+    expect(validateFemResultManifest(staleAcceptance).findings.map((finding) => finding.code))
+      .toContain('result.biot-transient-acceptance.final-dissipation-envelope-mismatch');
+    expect(validateFemResultManifest(misplacedAcceptance).findings.map((finding) => finding.code))
+      .toContain('result.biot-transient-acceptance.unexpected');
+    expectAcceptanceFinding(
+      { ...baseAcceptance, schemaVersion: 'bad-schema' as never },
+      'result.biot-transient-acceptance.schema.unsupported',
+    );
+    expectAcceptanceFinding(
+      { ...baseAcceptance, accepted: false },
+      'result.biot-transient-acceptance.not-accepted',
+    );
+    expectAcceptanceFinding(
+      { ...baseAcceptance, dissipationCheckMode: 'bad-mode' as never },
+      'result.biot-transient-acceptance.mode.invalid',
+    );
+    expectAcceptanceFinding(
+      { ...baseAcceptance, acceptedStepCount: baseAcceptance.acceptedStepCount - 1 },
+      'result.biot-transient-acceptance.accepted-step-count-mismatch',
+    );
+    expectAcceptanceFinding(
+      { ...baseAcceptance, requiredStepCount: 1 },
+      'result.biot-transient-acceptance.required-step-count-too-small',
+    );
+    expectAcceptanceFinding(
+      { ...baseAcceptance, maxResidualNormRatio: 0.01 },
+      'result.biot-transient-acceptance.max-residual-too-large',
+    );
+    expectAcceptanceFinding(
+      { ...baseAcceptance, maxMassBalanceErrorRatio: 0.01 },
+      'result.biot-transient-acceptance.max-mass-balance-too-large',
+    );
+    expectAcceptanceFinding(
+      { ...baseAcceptance, monotonicAverageFreePressureDissipationRequired: false },
+      'result.biot-transient-acceptance.drained-monotonic-required',
+    );
+    expectAcceptanceFinding(
+      { ...baseAcceptance, monotonicAverageFreePressureDissipation: false },
+      'result.biot-transient-acceptance.average-free-pressure-not-monotonic',
+    );
+    expectAcceptanceFinding(
+      { ...baseAcceptance, monotonicMaxPressureEnvelope: false },
+      'result.biot-transient-acceptance.max-pressure-not-monotonic',
+    );
+    expectAcceptanceFinding(
+      { ...baseAcceptance, blockerCodes: ['residual-too-large'] },
+      'result.biot-transient-acceptance.blocker-codes-not-empty',
+    );
   });
 
   it('keeps new result metadata optional for older v0 manifests', () => {
@@ -971,6 +1064,19 @@ describe('experimental FEM raft demo', () => {
     expect(html).toContain('id="stageSlider"');
     expect(html).toContain('Stage 1 - preload fill');
     expect(html).toContain('staged-settlement-consolidation-demo');
+    expect(html).not.toContain('<script src=');
+    expect(html).not.toContain('<link rel=');
+  });
+
+  it('renders Biot u-p WebGL artifacts with transient acceptance metadata', () => {
+    const manifest = runBuiltinBiotUpPlaneStrainPreview();
+    const html = renderFemWebglHtml(manifest);
+
+    expect(manifest.biotTransientAcceptance?.accepted).toBe(true);
+    expect(html).toContain('seepage-biot-plane-strain-demo');
+    expect(html).toContain('Pore pressure');
+    expect(html).toContain('biotTransientAcceptance');
+    expect(html).toContain('fem-plane-strain-biot-transient-acceptance.v1');
     expect(html).not.toContain('<script src=');
     expect(html).not.toContain('<link rel=');
   });
