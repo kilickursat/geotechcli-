@@ -58,7 +58,7 @@ const ALL_PRODUCTION_FEATURES: FemProductionFeature[] = [
 const FEATURE_REQUIREMENTS: Record<FemProductionFeature, Omit<FemProductionFeatureRequirement, 'feature'>> = {
   'nonlinear-plasticity': {
     status: 'kernel-verified',
-    currentCoverage: 'A deterministic Mohr-Coulomb triaxial material-point kernel is benchmarked against closed-form yield and is used as a staged-consolidation review gate. It is not coupled to a global 2D/3D plasticity solver or plastic strain field.',
+    currentCoverage: 'Deterministic nonlinear material-point coverage now includes a Mohr-Coulomb triaxial strength cap plus a Drucker-Prager/Mohr-Coulomb-compatible principal-stress return-mapping kernel with yield residual and plastic strain state checks. It is not coupled to a global 2D/3D plasticity solver or plastic strain field.',
     requiredForAcceptance: [
       'constitutive models accepted for geotechnical use, such as Mohr-Coulomb/Hardening Soil or equivalent',
       'stress-path, yield, plastic strain, and convergence validation fixtures',
@@ -72,7 +72,7 @@ const FEATURE_REQUIREMENTS: Record<FemProductionFeature, Omit<FemProductionFeatu
   },
   consolidation: {
     status: 'kernel-verified',
-    currentCoverage: 'A deterministic 1D Terzaghi backward-Euler consolidation kernel is benchmarked against analytical average consolidation and exposed through a human-reviewed staged-settlement/consolidation preview route. It is not a full 2D/3D coupled Biot FEM backend.',
+    currentCoverage: 'A deterministic 1D Terzaghi backward-Euler consolidation kernel is benchmarked against analytical average consolidation and exposed through a human-reviewed staged-settlement/consolidation preview route. A new nonlinear 1D column backend solves staged vertical equilibrium with Drucker-Prager material-point return mapping, but it is not a full 2D/3D coupled Biot FEM backend.',
     requiredForAcceptance: [
       'time-stepping consolidation backend with drainage boundary controls',
       'Cv, mv/Cc, drainage path, stage duration, and monitoring calibration schema',
@@ -100,7 +100,7 @@ const FEATURE_REQUIREMENTS: Record<FemProductionFeature, Omit<FemProductionFeatu
   },
   'advanced-staged-construction': {
     status: 'preview-only',
-    currentCoverage: 'Excavation and staged-consolidation previews include deterministic stage visualization and load histories, but not production construction sequencing, activation/deactivation, or nonlinear path-dependence.',
+    currentCoverage: 'Excavation and staged-consolidation previews include deterministic stage visualization and load histories; staged consolidation can also run a nonlinear 1D column backend. Production construction sequencing, activation/deactivation, and 2D/3D nonlinear path-dependence remain unavailable.',
     requiredForAcceptance: [
       'construction-stage activation/deactivation model with support installation/removal',
       'stage-specific boundary, load, groundwater, and material state transitions',

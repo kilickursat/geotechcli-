@@ -254,6 +254,11 @@ export interface FemResultEnvelope {
   maxMobilizedStrengthRatio?: number;
   drainagePathM?: number;
   consolidationDurationYears?: number;
+  solverLoadSteps?: number;
+  solverIterations?: number;
+  maxSolverResidualRatio?: number;
+  maxYieldResidualRatio?: number;
+  nonlinearPlasticStrain?: number;
   tunnelDiameterM?: number;
   tunnelAxisDepthM?: number;
   volumeLossPercent?: number;
@@ -269,7 +274,7 @@ export interface FemResultManifest {
   title: string;
   generatedAt: string;
   backend: {
-    id: 'builtin-elastic3d-demo' | 'builtin-staged-excavation-demo' | 'builtin-tunnel-volume-loss-demo' | 'builtin-staged-consolidation-1d';
+    id: 'builtin-elastic3d-demo' | 'builtin-staged-excavation-demo' | 'builtin-tunnel-volume-loss-demo' | 'builtin-staged-consolidation-1d' | 'builtin-nonlinear-column-v0';
     label: string;
     deterministic: true;
     version: string;

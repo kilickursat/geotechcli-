@@ -1007,6 +1007,38 @@ describe('registerFemCommand', () => {
     }
   });
 
+  it('runs reviewed staged consolidation cases through the nonlinear-column backend when requested', async () => {
+    const { buildStagedSettlementConsolidationDemoAnalysisCase } = await import('../../core/src/fem/index.js');
+    const registerFemCommand = await loadRegisterFemCommand();
+    const program = new Command();
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-fem-nonlinear-run-'));
+    tempDirs.push(dir);
+    const casePath = join(dir, 'consolidation.analysis_case.json');
+    await writeFile(casePath, JSON.stringify(buildStagedSettlementConsolidationDemoAnalysisCase(), null, 2), 'utf-8');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    program.exitOverride();
+    registerFemCommand(program);
+
+    await program.parseAsync([
+      'fem',
+      'run',
+      casePath,
+      '--experimental',
+      '--reviewed',
+      '--backend',
+      'nonlinear-column',
+      '--no-open',
+      '--json',
+    ], { from: 'user' });
+
+    const payload = JSON.parse(collectLogText(logSpy).trim());
+    expect(payload.manifest.backend.id).toBe('builtin-nonlinear-column-v0');
+    expect(payload.manifest.envelope.solverLoadSteps).toBe(3);
+    expect(payload.manifest.envelope.maxSolverResidualRatio).toBeLessThanOrEqual(1e-3);
+    expect(payload.warnings.join(' ')).toMatch(/nonlinear-column backend/i);
+    logSpy.mockRestore();
+  });
+
   it('rejects blocked FEM analysis cases before writing run artifacts', async () => {
     const { buildRaftDemoAnalysisCase } = await import('../../core/src/fem/index.js');
     const registerFemCommand = await loadRegisterFemCommand();

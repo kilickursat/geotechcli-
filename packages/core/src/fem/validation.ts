@@ -1134,13 +1134,13 @@ function validateResultEnvelopeSemantics(
   }
 
   const expectedBackendByObjective = new Map([
-    ['foundation_settlement', 'builtin-elastic3d-demo'],
-    ['excavation_deformation', 'builtin-staged-excavation-demo'],
-    ['tunnel_volume_loss_settlement', 'builtin-tunnel-volume-loss-demo'],
-    ['staged_settlement_consolidation', 'builtin-staged-consolidation-1d'],
+    ['foundation_settlement', ['builtin-elastic3d-demo']],
+    ['excavation_deformation', ['builtin-staged-excavation-demo']],
+    ['tunnel_volume_loss_settlement', ['builtin-tunnel-volume-loss-demo']],
+    ['staged_settlement_consolidation', ['builtin-staged-consolidation-1d', 'builtin-nonlinear-column-v0']],
   ]);
-  const expectedBackend = expectedBackendByObjective.get(analysisCase.objective);
-  if (expectedBackend && manifest.backend.id !== expectedBackend) {
+  const expectedBackends = expectedBackendByObjective.get(analysisCase.objective);
+  if (expectedBackends && !expectedBackends.includes(manifest.backend.id)) {
     findings.push(finding('blocker', 'result.backend.objective-mismatch', 'Result backend must match the embedded FEM objective.'));
   }
 
@@ -1264,6 +1264,25 @@ function validateResultEnvelopeSemantics(
     const expectedDurationYears = consolidation.stages.reduce((total, stage) => total + stage.durationYears, 0);
     pushApproximateMatchFinding(findings, envelope.drainagePathM, expectedDrainagePathM, 'result.envelope.consolidation-drainage-path-mismatch', 'Consolidation drainage path', 0.001);
     pushApproximateMatchFinding(findings, envelope.consolidationDurationYears, expectedDurationYears, 'result.envelope.consolidation-duration-mismatch', 'Consolidation duration', 0.001);
+    if (manifest.backend.id === 'builtin-nonlinear-column-v0') {
+      const loadStepsOk = pushFiniteNumberFinding(findings, envelope.solverLoadSteps, 'result.envelope.solver-load-steps', 'Envelope solver load steps', { positive: true });
+      const iterationsOk = pushFiniteNumberFinding(findings, envelope.solverIterations, 'result.envelope.solver-iterations', 'Envelope solver iterations', { positive: true });
+      const solverResidualOk = pushFiniteNumberFinding(findings, envelope.maxSolverResidualRatio, 'result.envelope.max-solver-residual-ratio', 'Envelope max solver residual ratio', { nonNegative: true });
+      const yieldResidualOk = pushFiniteNumberFinding(findings, envelope.maxYieldResidualRatio, 'result.envelope.max-yield-residual-ratio', 'Envelope max yield residual ratio', { nonNegative: true });
+      pushFiniteNumberFinding(findings, envelope.nonlinearPlasticStrain, 'result.envelope.nonlinear-plastic-strain', 'Envelope nonlinear plastic strain', { nonNegative: true });
+      if (loadStepsOk && (!Number.isInteger(envelope.solverLoadSteps) || envelope.solverLoadSteps !== consolidation.stages.length)) {
+        findings.push(finding('blocker', 'result.envelope.solver-load-steps-mismatch', 'Nonlinear column solver load steps must match consolidation stages.'));
+      }
+      if (iterationsOk && !Number.isInteger(envelope.solverIterations)) {
+        findings.push(finding('blocker', 'result.envelope.solver-iterations-integer', 'Nonlinear column solver iterations must be an integer.'));
+      }
+      if (solverResidualOk && envelope.maxSolverResidualRatio! > 1e-3) {
+        findings.push(finding('blocker', 'result.envelope.solver-residual-too-large', 'Nonlinear column solver residual exceeds the force-balance tolerance.'));
+      }
+      if (yieldResidualOk && envelope.maxYieldResidualRatio! > 1e-6) {
+        findings.push(finding('blocker', 'result.envelope.yield-residual-too-large', 'Nonlinear column solver yield residual exceeds the material return-map tolerance.'));
+      }
+    }
   }
 }
 
@@ -1299,6 +1318,7 @@ export function validateFemResultManifest(manifest: FemResultManifest): FemValid
     'builtin-staged-excavation-demo',
     'builtin-tunnel-volume-loss-demo',
     'builtin-staged-consolidation-1d',
+    'builtin-nonlinear-column-v0',
   ]);
   if (!validBackendIds.has(manifest.backend.id)) {
     findings.push(finding('blocker', 'result.backend.id-invalid', `Unsupported FEM result backend: ${String(manifest.backend.id)}.`));

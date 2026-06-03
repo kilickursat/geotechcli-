@@ -15,6 +15,7 @@ import {
   runAgent,
   runBuiltinElasticExcavationDemo,
   runBuiltinElasticRaftDemo,
+  runBuiltinNonlinearConsolidationColumnSolver,
   runBuiltinStagedSettlementConsolidationDemo,
   runBuiltinTunnelVolumeLossDemo,
   validateFemAnalysisCase,
@@ -211,7 +212,27 @@ function loadFemAnalysisCase(filePath: string): { casePath: string; analysisCase
   };
 }
 
-function runDeterministicFemAnalysisCase(analysisCase: FemAnalysisCase): FemResultManifest {
+function normalizeFemRunBackend(value: unknown): 'preview' | 'nonlinear-column' {
+  if (value == null || value === '' || value === true) return 'preview';
+  if (typeof value !== 'string') throw new Error('--backend must be preview or nonlinear-column.');
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'preview' || normalized === 'default') return 'preview';
+  if (normalized === 'nonlinear-column' || normalized === 'nonlinear-column-v0' || normalized === 'column') {
+    return 'nonlinear-column';
+  }
+  throw new Error(`Unsupported FEM run backend: ${value}. Use preview or nonlinear-column.`);
+}
+
+function runDeterministicFemAnalysisCase(
+  analysisCase: FemAnalysisCase,
+  backend: 'preview' | 'nonlinear-column' = 'preview',
+): FemResultManifest {
+  if (backend === 'nonlinear-column') {
+    if (analysisCase.objective !== 'staged_settlement_consolidation') {
+      throw new Error('--backend nonlinear-column is currently available only for staged settlement/consolidation analysis cases.');
+    }
+    return runBuiltinNonlinearConsolidationColumnSolver(analysisCase);
+  }
   switch (analysisCase.objective) {
     case 'foundation_settlement':
       return runBuiltinElasticRaftDemo(analysisCase);
@@ -724,6 +745,7 @@ async function runFemDemoCommand(
 
 async function runFemAnalysisCaseCommand(caseFilePath: string, opts: Record<string, unknown>): Promise<void> {
   const flags = getGlobalFlags(opts);
+  const backend = normalizeFemRunBackend(opts.backend);
   if (!opts.experimental) {
     throw new Error('FEM runs are experimental. Re-run with --experimental to acknowledge the limitation.');
   }
@@ -739,7 +761,7 @@ async function runFemAnalysisCaseCommand(caseFilePath: string, opts: Record<stri
   const existingApprovalRecord = validateExistingFemApprovalRecord(opts.approvalRecord, analysisCase, sourceText);
   const generatedApprovalRecord = buildFemReviewerApprovalRecord(analysisCase, sourceText, caseValidation, opts);
 
-  const manifest = runDeterministicFemAnalysisCase(analysisCase);
+  const manifest = runDeterministicFemAnalysisCase(analysisCase, backend);
   const resultValidation = validateFemResultManifest(manifest);
   if (resultValidation.status === 'blocked') {
     throw new Error(`FEM result manifest failed validation: ${resultValidation.findings.map((item) => item.message).join('; ')}`);
@@ -781,6 +803,7 @@ async function runFemAnalysisCaseCommand(caseFilePath: string, opts: Record<stri
     opened,
     warnings: [
       'Experimental deterministic FEM run only; not a design calculation.',
+      ...(backend === 'nonlinear-column' ? ['Used nonlinear-column backend: 1D staged consolidation equilibrium with Drucker-Prager material-point return mapping, not a full 2D/3D production FEM solver.'] : []),
       'Run was invoked by the CLI from a reviewed analysis_case.json file with --reviewed; LLM agents can plan and validate cases but cannot execute this command as a tool.',
       ...(generatedApprovalRecord ? ['Persisted FEM reviewer approval metadata for this run.'] : []),
       ...(existingApprovalRecord ? ['Validated existing FEM approval record against the current case hash before this run.'] : []),
@@ -900,6 +923,7 @@ export function registerFemCommand(program: Command): void {
     .argument('<analysisCaseJson>', 'Path to fem-analysis-case.v0 JSON produced by geotech fem draft or manual review')
     .option('--experimental', 'Acknowledge that this FEM run is experimental and not a design calculation')
     .option('--reviewed', 'Confirm a human reviewed geometry, loads, staging, assumptions, validation findings, and limitations')
+    .option('--backend <name>', 'Deterministic backend: preview or nonlinear-column')
     .option('--approval-record <file>', 'Validate an existing fem-reviewer-approval.v1 record against the current case hash before running')
     .option('--approval-output <file>', 'Persist a fem-reviewer-approval.v1 record for this run')
     .option('--reviewer-name <name>', 'Reviewer name for persisted FEM approval metadata')
@@ -913,10 +937,11 @@ export function registerFemCommand(program: Command): void {
   Examples:
     geotech fem draft foundation-settlement --raft-length 10 --raft-width 8 --pressure 150 --case-output analysis_case.json
     geotech fem run analysis_case.json --experimental --reviewed --save-html fem-run.html --output fem-run.manifest.json --no-open
+    geotech fem run consolidation_case.json --experimental --reviewed --backend nonlinear-column --output fem-nonlinear-column.manifest.json --json
     geotech fem run analysis_case.json --experimental --reviewed --approval-output fem-approval.json --reviewer-name "Jane Engineer" --reviewer-license PE-12345 --reviewer-jurisdiction US-CA
     geotech fem run analysis_case.json --experimental --reviewed --json
 
-  This command executes only deterministic built-in preview backends from a reviewed analysis_case.json.
+  This command executes only deterministic built-in preview/nonlinear-column backends from a reviewed analysis_case.json.
   It requires --reviewed as an explicit human-review acknowledgement.
   Use --approval-output with reviewer metadata to persist identity, license, assumptions, limitations, validation summary, and case hash.
   Use --approval-record to fail closed when a prior approval record is stale or does not match the current case hash.

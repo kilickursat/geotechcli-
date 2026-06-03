@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.96] - 2026-06-03
+
+### FEM Nonlinear Column Solver Increment
+
+- Added a Drucker-Prager/Mohr-Coulomb-compatible nonlinear material-point return-mapping kernel with principal effective stress state, plastic strain state variables, and yield-residual verification.
+- Added `runBuiltinNonlinearConsolidationColumnSolver` and `geotech fem run --backend nonlinear-column` for reviewed staged consolidation cases, producing deterministic solver load-step, iteration, force-residual, yield-residual, and plastic-strain metadata.
+- Added deterministic and mocked/default GLM regression coverage for the new FEM backend while keeping production readiness blocked until global 2D/3D assembly, pore-pressure DOFs, independent benchmarks, support design, and enforced production approvals are complete.
+
 ## [0.4.95] - 2026-06-03
 
 ### FEM Staged Consolidation Preview

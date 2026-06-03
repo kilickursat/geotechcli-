@@ -8,6 +8,16 @@ const releases = [
     date: '2026-06-03',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added a Drucker-Prager/Mohr-Coulomb-compatible nonlinear material-point return-mapping kernel with principal stress, plastic strain, and yield-residual metadata' },
+      { type: 'feat', text: 'Added geotech fem run --backend nonlinear-column for reviewed staged consolidation cases with deterministic solver load-step, iteration, force-residual, yield-residual, and plastic-strain metadata' },
+      { type: 'fix', text: 'Kept FEM production readiness blocked until global 2D/3D assembly, pore-pressure DOFs, independent benchmarks, support design, and enforced production approvals are complete' },
+    ],
+  },
+  {
+    version: '0.4.95',
+    date: '2026-06-03',
+    tag: '0.4.95 Release',
+    changes: [
       { type: 'feat', text: 'Added an experimental staged settlement/consolidation FEM preview route with deterministic 1D Terzaghi time stepping, staged load history, settlement envelopes, and pore-pressure metadata' },
       { type: 'feat', text: 'Added geotech fem demo consolidation plus staged consolidation draft/run and WebGL/fallback smoke coverage while keeping full 2D/3D coupled production FEM blocked' },
       { type: 'fix', text: 'Updated GroundModel, ingest dossier, benchmark, and default hosted GLM agent paths so staged consolidation is treated as a human-reviewed preview route, not a contract-only or production solver route' },

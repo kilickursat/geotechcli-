@@ -127,7 +127,7 @@ function assertReferenceChecks(name, objective, envelope, draftArgs) {
   }
 }
 
-async function draftAndRun({ name, objective, draftArgs, expectedObjective, expectedBackend, expectedEnvelope, expectedFields = [], outDir, checkReviewGate = false }) {
+async function draftAndRun({ name, objective, draftArgs, runArgs = [], expectedObjective, expectedBackend, expectedEnvelope, expectedFields = [], outDir, checkReviewGate = false }) {
   const casePath = resolve(outDir, `${name}.analysis_case.json`);
   const htmlPath = resolve(outDir, `${name}.run.html`);
   const manifestPath = resolve(outDir, `${name}.run.manifest.json`);
@@ -164,6 +164,7 @@ async function draftAndRun({ name, objective, draftArgs, expectedObjective, expe
     casePath,
     '--experimental',
     '--reviewed',
+    ...runArgs,
     '--save-html',
     htmlPath,
     '--output',
@@ -215,6 +216,7 @@ assert(help.includes('assess_fem_production_readiness'), 'FEM agent help must ex
 assert(help.includes('does not run FEM solvers'), 'FEM agent help must keep solver execution outside the agent loop');
 const runHelp = await runCli(['fem', 'run', '--help']);
 assert(runHelp.includes('--reviewed'), 'FEM run help must expose the human-review acknowledgement flag');
+assert(runHelp.includes('--backend'), 'FEM run help must expose deterministic backend selection');
 
 const contractOnlyRoutes = [
   'shaft-deformation',
@@ -391,6 +393,39 @@ const cases = [
       plasticSettlementMm: { min: 0, max: 60 },
       finalDegreeOfConsolidation: { min: 0.2, max: 1 },
       maxExcessPorePressureKpa: { equals: 45, tolerance: 0.001 },
+      stageCount: { equals: 3, tolerance: 0.000001 },
+      totalLoadKn: { equals: 20000, tolerance: 0.001 },
+    },
+    draftArgs: [
+      '--layer-thickness', '10',
+      '--surface-area', '200',
+      '--stage-loads', '45,35,20',
+      '--stage-durations', '0.5,1,2',
+      '--drainage', 'double',
+      '--elastic-modulus', '30000',
+      '--poisson-ratio', '0.32',
+      '--unit-weight', '18.5',
+      '--constrained-modulus', '8000',
+      '--cv', '0.8',
+      '--friction-angle', '28',
+      '--cohesion', '12',
+      '--hydraulic-conductivity', '1e-9',
+    ],
+  },
+  {
+    name: 'consolidation-nonlinear-column',
+    objective: 'staged-settlement-consolidation',
+    runArgs: ['--backend', 'nonlinear-column'],
+    expectedObjective: 'staged_settlement_consolidation',
+    expectedBackend: 'builtin-nonlinear-column-v0',
+    expectedFields: ['vertical_settlement', 'final_degree_of_consolidation', 'max_excess_pore_pressure', 'max_mobilized_strength_ratio'],
+    expectedEnvelope: {
+      finalSettlementMm: { min: 20, max: 60 },
+      plasticSettlementMm: { min: 0, max: 60 },
+      finalDegreeOfConsolidation: { min: 0.2, max: 1 },
+      maxSolverResidualRatio: { min: 0, max: 0.001 },
+      maxYieldResidualRatio: { min: 0, max: 0.000001 },
+      solverLoadSteps: { equals: 3, tolerance: 0.000001 },
       stageCount: { equals: 3, tolerance: 0.000001 },
       totalLoadKn: { equals: 20000, tolerance: 0.001 },
     },

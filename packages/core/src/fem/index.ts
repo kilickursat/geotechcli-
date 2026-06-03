@@ -9,6 +9,7 @@ export {
   runBuiltinStagedSettlementConsolidationDemo,
   runBuiltinTunnelVolumeLossDemo,
 } from './demo.js';
+export { runBuiltinNonlinearConsolidationColumnSolver } from './nonlinear-column-solver.js';
 export {
   getFemCapability,
   listFemCapabilities,
@@ -54,7 +55,9 @@ export {
 export {
   DEFAULT_FEM_CONVERGENCE_POLICY,
   evaluateFemTolerance,
+  mapMohrCoulombToDruckerPragerTriaxialCompression,
   runDarcySeepage1D,
+  runDruckerPragerMaterialPoint,
   runExcavationSupportDesignCheck,
   runFemEngineeringEvidenceSuite,
   runHydroMechanicalCoupling1D,
@@ -67,6 +70,10 @@ export {
   type FemConsolidationTimeStepperResult,
   type FemConvergencePolicy,
   type FemDesignCheck,
+  type FemDruckerPragerMaterialPointInput,
+  type FemDruckerPragerMaterialPointResult,
+  type FemDruckerPragerParameterMapping,
+  type FemDruckerPragerStressStep,
   type FemEngineeringBenchmarkCase,
   type FemEngineeringEvidenceReport,
   type FemEngineeringKernelFeature,
@@ -77,6 +84,7 @@ export {
   type FemMohrCoulombMaterialPointInput,
   type FemMohrCoulombMaterialPointResult,
   type FemMohrCoulombStressStep,
+  type FemPrincipalVector,
   type FemReviewerApprovalRecord,
   type FemReviewerApprovalValidation,
   type FemSeepage1DInput,

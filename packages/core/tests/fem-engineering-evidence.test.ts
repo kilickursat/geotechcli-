@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  mapMohrCoulombToDruckerPragerTriaxialCompression,
   runDarcySeepage1D,
+  runDruckerPragerMaterialPoint,
   runExcavationSupportDesignCheck,
   runFemEngineeringEvidenceSuite,
   runHydroMechanicalCoupling1D,
@@ -29,6 +31,61 @@ describe('FEM engineering evidence kernels', () => {
     expect(result.finalStep.deviatorStressKpa).toBeCloseTo(200, 4);
     expect(result.finalStep.plasticAxialStrain).toBeGreaterThan(0);
     expect(result.converged).toBe(true);
+  });
+
+  it('maps Mohr-Coulomb friction to Drucker-Prager parameters for triaxial compression', () => {
+    const mapping = mapMohrCoulombToDruckerPragerTriaxialCompression({
+      frictionAngleDeg: 30,
+      cohesionKpa: 0,
+      dilationAngleDeg: 0,
+    });
+    const deviatoricNormFactor = Math.sqrt(2 / 3);
+    const predictedQAtSigma3Equals100 =
+      (3 * mapping.rho * 100 + mapping.compressionInterceptKpa) /
+      (deviatoricNormFactor - mapping.rho);
+
+    expect(mapping.schemaVersion).toBe('fem-drucker-prager-parameter-mapping.v1');
+    expect(mapping.signConvention).toBe('compression-positive');
+    expect(mapping.rho).toBeCloseTo(0.326598632, 9);
+    expect(mapping.rhoBar).toBe(0);
+    expect(predictedQAtSigma3Equals100).toBeCloseTo(200, 6);
+  });
+
+  it('runs Drucker-Prager elastic and plastic principal-stress return mapping with explicit state variables', () => {
+    const elastic = runDruckerPragerMaterialPoint({
+      initialPrincipalEffectiveStressKpa: [100, 100, 100],
+      principalStrainIncrements: [[0.0001, 0, 0]],
+      elasticModulusKpa: 30_000,
+      poissonRatio: 0.3,
+      frictionAngleDeg: 30,
+      cohesionKpa: 0,
+      dilationAngleDeg: 0,
+    });
+    const plastic = runDruckerPragerMaterialPoint({
+      initialPrincipalEffectiveStressKpa: [100, 100, 100],
+      principalStrainIncrements: Array.from({ length: 16 }, () => [0.001, -0.0002, -0.0002] as [number, number, number]),
+      elasticModulusKpa: 30_000,
+      poissonRatio: 0.3,
+      frictionAngleDeg: 30,
+      cohesionKpa: 0,
+      dilationAngleDeg: 0,
+    });
+
+    expect(elastic.schemaVersion).toBe('fem-drucker-prager-material-point.v1');
+    expect(elastic.finalStep.state).toBe('elastic');
+    expect(elastic.finalStep.plasticMultiplier).toBe(0);
+    expect(elastic.plasticStrainPrincipal).toEqual([0, 0, 0]);
+    expect(elastic.converged).toBe(true);
+
+    expect(plastic.finalStep.state).toBe('plastic');
+    expect(plastic.finalStep.yieldResidualRatio).toBeLessThanOrEqual(
+      plastic.policy.residualTolerance,
+    );
+    expect(plastic.finalStep.equivalentPlasticStrain).toBeGreaterThan(0);
+    expect(plastic.plasticStrainPrincipal[0]).toBeGreaterThan(0);
+    expect(plastic.finalStep.principalEffectiveStressKpa[0])
+      .toBeGreaterThan(plastic.finalStep.principalEffectiveStressKpa[1]);
+    expect(plastic.converged).toBe(true);
   });
 
   it('steps 1D Terzaghi consolidation against the analytical average-consolidation series', () => {
@@ -200,6 +257,10 @@ describe('FEM engineering evidence kernels', () => {
     expect(report.status).toBe('kernel-verified');
     expect(report.productionReady).toBe(false);
     expect(report.benchmarks.every((item) => item.status === 'accepted')).toBe(true);
+    expect(report.benchmarks.map((item) => item.id)).toEqual(expect.arrayContaining([
+      'drucker-prager-return-map-yield-residual',
+      'drucker-prager-material-state-plastic',
+    ]));
     expect(report.verifiedFeatures).toEqual(expect.arrayContaining([
       'nonlinear-plasticity',
       'consolidation',

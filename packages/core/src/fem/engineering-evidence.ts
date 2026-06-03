@@ -75,6 +75,65 @@ export interface FemMohrCoulombMaterialPointResult {
   policy: FemConvergencePolicy;
 }
 
+export type FemPrincipalVector = [number, number, number];
+
+export interface FemDruckerPragerParameterMapping {
+  schemaVersion: 'fem-drucker-prager-parameter-mapping.v1';
+  source: 'mohr-coulomb-triaxial-compression-fit';
+  signConvention: 'compression-positive';
+  frictionAngleDeg: number;
+  cohesionKpa: number;
+  dilationAngleDeg: number;
+  rho: number;
+  rhoBar: number;
+  yieldStressKpa: number;
+  compressionInterceptKpa: number;
+}
+
+export interface FemDruckerPragerMaterialPointInput {
+  initialPrincipalEffectiveStressKpa: FemPrincipalVector;
+  principalStrainIncrements: FemPrincipalVector[];
+  elasticModulusKpa: number;
+  poissonRatio: number;
+  frictionAngleDeg: number;
+  cohesionKpa: number;
+  dilationAngleDeg?: number;
+  hardeningModulusKpa?: number;
+  policy?: FemConvergencePolicy;
+}
+
+export interface FemDruckerPragerStressStep {
+  step: number;
+  principalStrain: FemPrincipalVector;
+  principalEffectiveStressKpa: FemPrincipalVector;
+  meanEffectiveStressKpa: number;
+  deviatoricStressNormKpa: number;
+  yieldValueKpa: number;
+  yieldResidualRatio: number;
+  plasticMultiplier: number;
+  equivalentPlasticStrain: number;
+  volumetricPlasticStrain: number;
+  state: 'elastic' | 'plastic';
+  iterations: number;
+  converged: boolean;
+}
+
+export interface FemDruckerPragerMaterialPointResult {
+  schemaVersion: 'fem-drucker-prager-material-point.v1';
+  signConvention: 'compression-positive';
+  model: 'drucker-prager-elastoplastic-principal-stress-return-mapping';
+  mapping: FemDruckerPragerParameterMapping;
+  elasticModuli: {
+    bulkModulusKpa: number;
+    shearModulusKpa: number;
+  };
+  converged: boolean;
+  finalStep: FemDruckerPragerStressStep;
+  stressPath: FemDruckerPragerStressStep[];
+  plasticStrainPrincipal: FemPrincipalVector;
+  policy: FemConvergencePolicy;
+}
+
 export interface FemConsolidationTimeStepperInput {
   layerThicknessM: number;
   drainage: 'single' | 'double';
@@ -313,6 +372,245 @@ function mohrCoulombTriaxialCompressionQFailure(
   const sinPhi = Math.sin(phi);
   const denominator = 1 - sinPhi;
   return ((2 * cohesionKpa * Math.cos(phi)) + (2 * confiningEffectiveStressKpa * sinPhi)) / denominator;
+}
+
+function assertPrincipalVector(value: unknown, label: string): asserts value is FemPrincipalVector {
+  if (!Array.isArray(value) || value.length !== 3 || !value.every((item) => Number.isFinite(item))) {
+    throw new Error(`${label} must be a finite principal vector [x, y, z].`);
+  }
+}
+
+function addPrincipal(a: FemPrincipalVector, b: FemPrincipalVector): FemPrincipalVector {
+  return [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+}
+
+function scalePrincipal(a: FemPrincipalVector, factor: number): FemPrincipalVector {
+  return [a[0] * factor, a[1] * factor, a[2] * factor];
+}
+
+function tracePrincipal(a: FemPrincipalVector): number {
+  return a[0] + a[1] + a[2];
+}
+
+function deviatorPrincipal(a: FemPrincipalVector): FemPrincipalVector {
+  const mean = tracePrincipal(a) / 3;
+  return [a[0] - mean, a[1] - mean, a[2] - mean];
+}
+
+function principalNorm(a: FemPrincipalVector): number {
+  return Math.hypot(a[0], a[1], a[2]);
+}
+
+function roundPrincipal(a: FemPrincipalVector, digits = 8): FemPrincipalVector {
+  return [round(a[0], digits), round(a[1], digits), round(a[2], digits)];
+}
+
+function elasticModuliFromEAndNu(
+  elasticModulusKpa: number,
+  poissonRatio: number,
+): { bulkModulusKpa: number; shearModulusKpa: number } {
+  assertFinitePositive(elasticModulusKpa, 'elasticModulusKpa');
+  if (!Number.isFinite(poissonRatio) || poissonRatio < 0 || poissonRatio >= 0.5) {
+    throw new Error('poissonRatio must be finite and between 0 and 0.5.');
+  }
+  return {
+    bulkModulusKpa: elasticModulusKpa / (3 * (1 - 2 * poissonRatio)),
+    shearModulusKpa: elasticModulusKpa / (2 * (1 + poissonRatio)),
+  };
+}
+
+function druckerPragerRhoFromAngle(angleDeg: number): number {
+  if (!Number.isFinite(angleDeg) || angleDeg < 0 || angleDeg >= 50) {
+    throw new Error('friction and dilation angles must be finite and between 0 and 50 degrees.');
+  }
+  const angle = degToRad(angleDeg);
+  const sinAngle = Math.sin(angle);
+  if (sinAngle === 0) return 0;
+  return (2 * Math.SQRT2 * sinAngle) / (Math.sqrt(3) * (3 - sinAngle));
+}
+
+export function mapMohrCoulombToDruckerPragerTriaxialCompression(input: {
+  frictionAngleDeg: number;
+  cohesionKpa: number;
+  dilationAngleDeg?: number;
+}): FemDruckerPragerParameterMapping {
+  if (!Number.isFinite(input.frictionAngleDeg) || input.frictionAngleDeg <= 0 || input.frictionAngleDeg >= 50) {
+    throw new Error('frictionAngleDeg must be finite and between 0 and 50 degrees.');
+  }
+  assertFiniteNonNegative(input.cohesionKpa, 'cohesionKpa');
+  const dilationAngleDeg = input.dilationAngleDeg ?? input.frictionAngleDeg;
+  const rho = druckerPragerRhoFromAngle(input.frictionAngleDeg);
+  const rhoBar = Math.min(rho, druckerPragerRhoFromAngle(dilationAngleDeg));
+  const phi = degToRad(input.frictionAngleDeg);
+  const sinPhi = Math.sin(phi);
+  const cohesionContributionToQ = (2 * input.cohesionKpa * Math.cos(phi)) / (1 - sinPhi);
+  const deviatoricNormFactor = Math.sqrt(2 / 3);
+  const compressionInterceptKpa = cohesionContributionToQ * (deviatoricNormFactor - rho);
+
+  return {
+    schemaVersion: 'fem-drucker-prager-parameter-mapping.v1',
+    source: 'mohr-coulomb-triaxial-compression-fit',
+    signConvention: 'compression-positive',
+    frictionAngleDeg: round(input.frictionAngleDeg, 6),
+    cohesionKpa: round(input.cohesionKpa, 6),
+    dilationAngleDeg: round(dilationAngleDeg, 6),
+    rho: round(rho, 12),
+    rhoBar: round(rhoBar, 12),
+    yieldStressKpa: round(compressionInterceptKpa / deviatoricNormFactor, 8),
+    compressionInterceptKpa: round(compressionInterceptKpa, 8),
+  };
+}
+
+function elasticStressIncrement(
+  strainIncrement: FemPrincipalVector,
+  bulkModulusKpa: number,
+  shearModulusKpa: number,
+): FemPrincipalVector {
+  const volumetricStrain = tracePrincipal(strainIncrement);
+  const deviatoricStrain = deviatorPrincipal(strainIncrement);
+  return addPrincipal(
+    scalePrincipal(deviatoricStrain, 2 * shearModulusKpa),
+    [bulkModulusKpa * volumetricStrain, bulkModulusKpa * volumetricStrain, bulkModulusKpa * volumetricStrain],
+  );
+}
+
+function druckerPragerYieldValue(
+  stress: FemPrincipalVector,
+  rho: number,
+  compressionInterceptKpa: number,
+): number {
+  return principalNorm(deviatorPrincipal(stress)) - rho * tracePrincipal(stress) - compressionInterceptKpa;
+}
+
+export function runDruckerPragerMaterialPoint(
+  input: FemDruckerPragerMaterialPointInput,
+): FemDruckerPragerMaterialPointResult {
+  assertPrincipalVector(input.initialPrincipalEffectiveStressKpa, 'initialPrincipalEffectiveStressKpa');
+  if (!Array.isArray(input.principalStrainIncrements) || input.principalStrainIncrements.length === 0) {
+    throw new Error('principalStrainIncrements must contain at least one strain increment.');
+  }
+  for (const [index, increment] of input.principalStrainIncrements.entries()) {
+    assertPrincipalVector(increment, `principalStrainIncrements.${index}`);
+  }
+  if (!Number.isFinite(input.frictionAngleDeg) || input.frictionAngleDeg <= 0 || input.frictionAngleDeg >= 50) {
+    throw new Error('frictionAngleDeg must be finite and between 0 and 50 degrees.');
+  }
+  assertFiniteNonNegative(input.cohesionKpa, 'cohesionKpa');
+  assertFiniteNonNegative(input.hardeningModulusKpa ?? 0, 'hardeningModulusKpa');
+
+  const policy = input.policy ?? DEFAULT_FEM_CONVERGENCE_POLICY;
+  const mapping = mapMohrCoulombToDruckerPragerTriaxialCompression({
+    frictionAngleDeg: input.frictionAngleDeg,
+    cohesionKpa: input.cohesionKpa,
+    dilationAngleDeg: input.dilationAngleDeg,
+  });
+  const elasticModuli = elasticModuliFromEAndNu(input.elasticModulusKpa, input.poissonRatio);
+  const hardeningModulusKpa = input.hardeningModulusKpa ?? 0;
+  const stressPath: FemDruckerPragerStressStep[] = [];
+  let principalStrain: FemPrincipalVector = [0, 0, 0];
+  let plasticStrainPrincipal: FemPrincipalVector = [0, 0, 0];
+  let stress = [...input.initialPrincipalEffectiveStressKpa] as FemPrincipalVector;
+  let equivalentPlasticStrain = 0;
+  let volumetricPlasticStrain = 0;
+
+  for (const [index, strainIncrement] of input.principalStrainIncrements.entries()) {
+    principalStrain = addPrincipal(principalStrain, strainIncrement);
+    const trialStress = addPrincipal(
+      stress,
+      elasticStressIncrement(
+        strainIncrement,
+        elasticModuli.bulkModulusKpa,
+        elasticModuli.shearModulusKpa,
+      ),
+    );
+    const currentIntercept = mapping.compressionInterceptKpa + hardeningModulusKpa * equivalentPlasticStrain;
+    const trialYield = druckerPragerYieldValue(trialStress, mapping.rho, currentIntercept);
+    const trialScale = Math.max(
+      principalNorm(deviatorPrincipal(trialStress)),
+      Math.abs(mapping.rho * tracePrincipal(trialStress)),
+      Math.abs(currentIntercept),
+      1,
+    );
+    const trialYieldResidualRatio = Math.abs(trialYield) / trialScale;
+    let plasticMultiplier = 0;
+    let iterations = 0;
+    let state: FemDruckerPragerStressStep['state'] = 'elastic';
+
+    if (trialYieldResidualRatio > policy.residualTolerance && trialYield > 0) {
+      state = 'plastic';
+      const trialDeviator = deviatorPrincipal(trialStress);
+      const trialNorm = principalNorm(trialDeviator);
+      const flowDirection = trialNorm > 0
+        ? scalePrincipal(trialDeviator, 1 / trialNorm)
+        : [0, 0, 0] as FemPrincipalVector;
+      const denominator = 2 * elasticModuli.shearModulusKpa +
+        9 * elasticModuli.bulkModulusKpa * mapping.rho * mapping.rhoBar +
+        hardeningModulusKpa;
+      plasticMultiplier = Math.max(0, trialYield / denominator);
+      equivalentPlasticStrain += plasticMultiplier;
+      const plasticIncrement = addPrincipal(
+        scalePrincipal(flowDirection, plasticMultiplier),
+        [-mapping.rhoBar * plasticMultiplier, -mapping.rhoBar * plasticMultiplier, -mapping.rhoBar * plasticMultiplier],
+      );
+      plasticStrainPrincipal = addPrincipal(plasticStrainPrincipal, plasticIncrement);
+      volumetricPlasticStrain += tracePrincipal(plasticIncrement);
+      const correctedDeviator = addPrincipal(
+        trialDeviator,
+        scalePrincipal(flowDirection, -2 * elasticModuli.shearModulusKpa * plasticMultiplier),
+      );
+      const correctedTrace = tracePrincipal(trialStress) +
+        9 * elasticModuli.bulkModulusKpa * mapping.rhoBar * plasticMultiplier;
+      stress = addPrincipal(
+        correctedDeviator,
+        [correctedTrace / 3, correctedTrace / 3, correctedTrace / 3],
+      );
+      iterations = 1;
+    } else {
+      stress = trialStress;
+    }
+
+    const updatedIntercept = mapping.compressionInterceptKpa + hardeningModulusKpa * equivalentPlasticStrain;
+    const yieldValue = druckerPragerYieldValue(stress, mapping.rho, updatedIntercept);
+    const yieldScale = Math.max(
+      principalNorm(deviatorPrincipal(stress)),
+      Math.abs(mapping.rho * tracePrincipal(stress)),
+      Math.abs(updatedIntercept),
+      1,
+    );
+    const yieldResidualRatio = Math.abs(yieldValue) / yieldScale;
+    stressPath.push({
+      step: index + 1,
+      principalStrain: roundPrincipal(principalStrain, 10),
+      principalEffectiveStressKpa: roundPrincipal(stress, 6),
+      meanEffectiveStressKpa: round(tracePrincipal(stress) / 3, 6),
+      deviatoricStressNormKpa: round(principalNorm(deviatorPrincipal(stress)), 6),
+      yieldValueKpa: round(yieldValue, 10),
+      yieldResidualRatio: round(yieldResidualRatio, 12),
+      plasticMultiplier: round(plasticMultiplier, 12),
+      equivalentPlasticStrain: round(equivalentPlasticStrain, 12),
+      volumetricPlasticStrain: round(volumetricPlasticStrain, 12),
+      state,
+      iterations,
+      converged: state === 'elastic' || yieldResidualRatio <= policy.residualTolerance,
+    });
+  }
+
+  const finalStep = stressPath[stressPath.length - 1];
+  return {
+    schemaVersion: 'fem-drucker-prager-material-point.v1',
+    signConvention: 'compression-positive',
+    model: 'drucker-prager-elastoplastic-principal-stress-return-mapping',
+    mapping,
+    elasticModuli: {
+      bulkModulusKpa: round(elasticModuli.bulkModulusKpa, 6),
+      shearModulusKpa: round(elasticModuli.shearModulusKpa, 6),
+    },
+    converged: stressPath.every((step) => step.converged),
+    finalStep,
+    stressPath,
+    plasticStrainPrincipal: roundPrincipal(plasticStrainPrincipal, 12),
+    policy,
+  };
 }
 
 export function runMohrCoulombMaterialPoint(
@@ -810,6 +1108,37 @@ export function runFemEngineeringEvidenceSuite(
     1e-6,
     'Mohr-Coulomb triaxial compression closed-form qf = 2 sigma3 sin(phi)/(1 - sin(phi)).',
     'kPa',
+  ));
+
+  const druckerPrager = runDruckerPragerMaterialPoint({
+    initialPrincipalEffectiveStressKpa: [100, 100, 100],
+    principalStrainIncrements: Array.from({ length: 16 }, () => [0.001, -0.0002, -0.0002] as FemPrincipalVector),
+    elasticModulusKpa: 30_000,
+    poissonRatio: 0.3,
+    frictionAngleDeg: 30,
+    cohesionKpa: 0,
+    dilationAngleDeg: 0,
+    policy,
+  });
+  benchmarks.push(benchmark(
+    'drucker-prager-return-map-yield-residual',
+    'nonlinear-plasticity',
+    'internal-balance',
+    'yieldResidualRatio',
+    druckerPrager.finalStep.yieldResidualRatio,
+    0,
+    policy.residualTolerance,
+    'Drucker-Prager principal-stress return mapping must project the plastic trial stress back to the smooth yield surface.',
+  ));
+  benchmarks.push(benchmark(
+    'drucker-prager-material-state-plastic',
+    'solver-convergence-and-tolerance',
+    'internal-balance',
+    'plasticStateAccepted',
+    druckerPrager.finalStep.state === 'plastic' && druckerPrager.converged ? 1 : 0,
+    1,
+    0,
+    'Nonlinear material-point integration must report a converged plastic state and accumulated plastic strain variables.',
   ));
 
   const finalTimeYears = 0.197 * 25;
