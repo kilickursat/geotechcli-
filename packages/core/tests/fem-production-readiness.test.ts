@@ -53,9 +53,10 @@ describe('FEM production readiness contract', () => {
       status: 'blocked',
       productionReadinessBlocked: true,
       coverageSummary: expect.objectContaining({
-        acceptedComparisonCount: 2,
+        acceptedComparisonCount: 3,
         acceptedPublishedComparisonCount: 2,
         acceptedCommercialComparisonCount: 0,
+        acceptedOpenSourceComparisonCount: 1,
         missingRequiredSourceTypes: ['commercial-solver'],
       }),
       blockerCodes: expect.arrayContaining([
@@ -198,7 +199,8 @@ describe('FEM production readiness contract', () => {
     expect(data.agentEvidenceSummary).toContain('quad4-plane-strain-dp-adaptive-cutback-rollback-recovery');
     expect(data.agentEvidenceSummary).toContain('quad4-plane-strain-dp-sequential-biot-pressure-replay-audit');
     expect(data.agentEvidenceSummary).toContain('external benchmark references:');
-    expect(data.agentEvidenceSummary).toContain('external benchmark comparison results: 2');
+    expect(data.agentEvidenceSummary).toContain('external benchmark comparison results: 3');
+    expect(data.agentEvidenceSummary).toContain('opengeosys-consolidation-staggered-biot-pressure-profile-t10');
     expect(data.agentEvidenceSummary).toContain('external-benchmark-commercial-solver-citation-missing');
     expect(data.agentEvidenceSummary).toContain(
       'biot-u-p-route-backed-preview-is-not-production-sparse-solver',

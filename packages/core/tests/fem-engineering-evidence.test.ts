@@ -400,6 +400,7 @@ describe('FEM engineering evidence kernels', () => {
       'terzaghi-1943-theoretical-soil-mechanics',
       'biot-1941-three-dimensional-consolidation',
       'opensees-drucker-prager-material',
+      'opengeosys-consolidation-staggered-benchmark',
       'opengeosys-hydro-mechanics-benchmarks',
       'opengeosys-richards-flow-benchmarks',
     ]));
@@ -424,7 +425,7 @@ describe('FEM engineering evidence kernels', () => {
         }),
       }),
     ]));
-    expect(report.externalBenchmarkAcceptance.comparisonResults).toHaveLength(2);
+    expect(report.externalBenchmarkAcceptance.comparisonResults).toHaveLength(3);
     expect(report.externalBenchmarkAcceptance.comparisonResults).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: 'published-terzaghi-1d-consolidation-tv-0-197',
@@ -440,13 +441,33 @@ describe('FEM engineering evidence kernels', () => {
         comparisonKind: 'series-summary',
         accepted: true,
       }),
+      expect.objectContaining({
+        id: 'opengeosys-consolidation-staggered-biot-pressure-profile-t10',
+        quantityRequirementId: 'biot-pore-pressure-dissipation',
+        referenceId: 'opengeosys-consolidation-staggered-benchmark',
+        comparisonKind: 'series-summary',
+        metricName: 'loadGeneratedExcessPorePressureProfileAtT10s',
+        accepted: true,
+        referenceSolver: expect.objectContaining({
+          name: 'OpenGeoSys',
+          solverType: 'open-source-solver',
+        }),
+      }),
     ]));
+    const ogsComparison = report.externalBenchmarkAcceptance.comparisonResults.find((result) =>
+      result.id === 'opengeosys-consolidation-staggered-biot-pressure-profile-t10');
+    expect(ogsComparison?.seriesSummary).toMatchObject({
+      pointCount: 17,
+      maxRelativeError: expect.any(Number),
+      maxAbsoluteError: expect.any(Number),
+    });
+    expect(ogsComparison?.seriesSummary?.maxRelativeError).toBeLessThanOrEqual(0.05);
     expect(report.externalBenchmarkAcceptance.coverageSummary).toMatchObject({
       schemaVersion: 'fem-external-benchmark-coverage.v1',
-      acceptedComparisonCount: 2,
+      acceptedComparisonCount: 3,
       acceptedPublishedComparisonCount: 2,
       acceptedCommercialComparisonCount: 0,
-      acceptedOpenSourceComparisonCount: 0,
+      acceptedOpenSourceComparisonCount: 1,
       fullyCoveredRequiredQuantityIds: [],
       partiallyCoveredRequiredQuantityIds: [
         'consolidation-settlement-time-curve',
@@ -486,17 +507,18 @@ describe('FEM engineering evidence kernels', () => {
     ]));
   });
 
-  it('generates deterministic published-source external benchmark hashes without clearing commercial blockers', () => {
+  it('generates deterministic external benchmark hashes without clearing commercial blockers', () => {
     const first = runFemEngineeringEvidenceSuite().externalBenchmarkAcceptance;
     const second = runFemEngineeringEvidenceSuite().externalBenchmarkAcceptance;
     const sourceTypeById = new Map(first.references.map((reference) => [reference.id, reference.sourceType]));
 
-    expect(first.comparisonResults).toHaveLength(2);
+    expect(first.comparisonResults).toHaveLength(3);
     expect(first.comparisonResults.map((result) => sourceTypeById.get(result.referenceId)))
-      .toEqual(['published-source', 'published-source']);
+      .toEqual(['published-source', 'published-source', 'open-source-solver']);
     expect(first.comparisonResults.map((result) => result.id)).toEqual([
       'published-terzaghi-1d-consolidation-tv-0-197',
       'published-biot-alpha-zero-terzaghi-pressure-dissipation-tv-0-197',
+      'opengeosys-consolidation-staggered-biot-pressure-profile-t10',
     ]);
     expect(first.comparisonResults.map((result) => result.evidenceHashSha256))
       .toEqual(second.comparisonResults.map((result) => result.evidenceHashSha256));
@@ -517,6 +539,7 @@ describe('FEM engineering evidence kernels', () => {
     expect(first.coverageSummary).toMatchObject({
       acceptedPublishedComparisonCount: 2,
       acceptedCommercialComparisonCount: 0,
+      acceptedOpenSourceComparisonCount: 1,
       missingRequiredSourceTypes: ['commercial-solver'],
     });
     expect(first.blockerCodes).toEqual(expect.arrayContaining([

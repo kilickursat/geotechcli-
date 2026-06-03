@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.120] - 2026-06-04
+
+### FEM OpenGeoSys Benchmark Evidence
+
+- Added a generated OpenGeoSys staggered hydro-mechanics consolidation benchmark reference and open-source comparison record for the load-generated Biot u-p pressure profile at `t = 10 s`.
+- Compared the benchmark-scale Quad4 Biot pressure profile against the OpenGeoSys analytical `p_D` solution with deterministic evidence/result hashes and tolerance-gated series statistics.
+- Exposed accepted external comparison IDs in FEM agent evidence summaries so the default hosted GLM prompt can see the new OpenGeoSys evidence while commercial-solver blockers remain active.
+
 ## [0.4.119] - 2026-06-04
 
 ### FEM Route-Backed Hardening Evidence

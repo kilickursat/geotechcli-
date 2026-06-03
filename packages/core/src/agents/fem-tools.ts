@@ -234,6 +234,10 @@ toolRegistry.register(
           `external benchmark gate: ${report.engineeringEvidence.externalBenchmarkAcceptance.status}`,
           `external benchmark references: ${report.engineeringEvidence.externalBenchmarkAcceptance.references.length}`,
           `external benchmark comparison results: ${report.engineeringEvidence.externalBenchmarkAcceptance.comparisonResults.length}`,
+          `external benchmark accepted comparisons: ${report.engineeringEvidence.externalBenchmarkAcceptance.comparisonResults
+            .filter((comparison) => comparison.accepted)
+            .map((comparison) => comparison.id)
+            .join(', ') || 'none'}`,
           `external benchmark blockers: ${report.engineeringEvidence.externalBenchmarkAcceptance.blockerCodes.join(', ') || 'none'}`,
           `production blockers: ${report.blockers.join(', ') || 'none'}`,
           `blocked features: ${report.blockedFeatures.map((feature) => feature.feature).join(', ')}`,

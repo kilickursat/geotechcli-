@@ -584,6 +584,21 @@ const DEFAULT_EXTERNAL_BENCHMARK_REFERENCES: FemExternalBenchmarkReference[] = [
     },
   },
   {
+    id: 'opengeosys-consolidation-staggered-benchmark',
+    sourceType: 'open-source-solver',
+    label: 'OpenGeoSys staggered hydro-mechanics consolidation benchmark',
+    citation: 'OpenGeoSys Documentation, Consolidation benchmark with the staggered scheme, hydro-mechanics benchmark with analytical pressure/displacement solution, 1000 Pa top load, t = 10 s, and dt = 0.5 s comparison.',
+    referenceSolver: {
+      name: 'OpenGeoSys',
+      version: 'stable documentation',
+      vendor: 'OpenGeoSys project',
+      analysisProcedure: 'HYDRO_MECHANICS staggered fixed-stress consolidation benchmark',
+      elementType: '2D hydro-mechanics finite elements',
+      url: 'https://www.opengeosys.org/docs/benchmarks/hydro-mechanics/consolidationbenchmark/',
+      retrievedAt: '2026-06-04',
+    },
+  },
+  {
     id: 'opengeosys-hydro-mechanics-benchmarks',
     sourceType: 'open-source-solver',
     label: 'OpenGeoSys hydro-mechanics benchmark suite reference',
@@ -1268,12 +1283,15 @@ function externalBenchmarkFinalAccepted(input: {
   ).accepted;
 }
 
-function buildDefaultPublishedExternalBenchmarkComparisonResults(input: {
+function buildDefaultExternalBenchmarkComparisonResults(input: {
   consolidation: FemConsolidationTimeStepperResult;
   biotTerzaghi: ReturnType<typeof runPlaneStrainBiotConsolidation>;
   biotTerzaghiInitialPressureKpa: number;
   biotTerzaghiHydraulicConductivityMPerS: number;
   biotTerzaghiSpecificStorage1PerM: number;
+  openGeoSysConsolidation: ReturnType<typeof runPlaneStrainBiotConsolidation>;
+  openGeoSysConsolidationDimensionlessTime: number;
+  openGeoSysConsolidationLoadKpa: number;
 }): FemExternalBenchmarkComparisonResult[] {
   const consolidationRequirement = DEFAULT_EXTERNAL_BENCHMARK_REQUIRED_QUANTITIES
     .find((requirement) => requirement.id === 'consolidation-settlement-time-curve');
@@ -1376,6 +1394,70 @@ function buildDefaultPublishedExternalBenchmarkComparisonResults(input: {
     quantity: biotRequirement.quantity,
   }) && seriesSummarySatisfiesRequirementTolerance(biotSeries, biotRequirement);
 
+  const ogsPressureByY = new Map<number, number[]>();
+  for (const node of input.openGeoSysConsolidation.nodes) {
+    const key = round(node.yM, 10);
+    const values = ogsPressureByY.get(key) ?? [];
+    values.push(node.porePressureKpa);
+    ogsPressureByY.set(key, values);
+  }
+  const ogsPoints = [...ogsPressureByY.entries()]
+    .map(([yM, pressures]) => {
+      const depthRatioFromTop = 1 - yM;
+      const actual = pressures.reduce((sum, value) => sum + value, 0) / pressures.length;
+      const expected = input.openGeoSysConsolidationLoadKpa *
+        openGeoSysConsolidationPressureRatio(depthRatioFromTop, input.openGeoSysConsolidationDimensionlessTime);
+      return {
+        x: depthRatioFromTop,
+        actual,
+        expected,
+      };
+    })
+    .sort((left, right) => right.x - left.x);
+  const ogsSeries = buildFemExternalBenchmarkSeriesSummary({
+    xQuantity: 'dimensionless depth from drained top',
+    xUnit: 'x/H',
+    yQuantity: 'load-generated excess pore pressure',
+    yUnit: 'kPa',
+    points: ogsPoints,
+    notes: [
+      'Benchmark-scale Quad4 Biot u-p load-generated pressure profile at t = 10 s compared with the OpenGeoSys staggered consolidation analytical p_D profile.',
+      'OpenGeoSys source parameters are E = 3e4 Pa, nu = 0.2, k = 1e-10 m2, viscosity = 1e-3 Pa s, sigma0 = 1000 Pa, dt = 0.5 s.',
+    ],
+  });
+  const ogsActual = ogsSeries.actual.mean ?? ogsSeries.actual.final;
+  const ogsExpected = ogsSeries.expected.mean ?? ogsSeries.expected.final;
+  const ogsEvidencePayload = {
+    schemaVersion: 'fem-external-benchmark-evidence.v1',
+    caseId: 'opengeosys-staggered-consolidation-pressure-profile-t10',
+    sourceId: 'opengeosys-consolidation-staggered-benchmark',
+    method: input.openGeoSysConsolidation.method,
+    pressureEnvelopeMode: input.openGeoSysConsolidation.numericalContract.pressureEnvelopeMode,
+    pressureOvershootPolicy: input.openGeoSysConsolidation.numericalContract.pressureOvershootPolicy,
+    timeStepCount: input.openGeoSysConsolidation.timeSteps.length,
+    finalTimeSeconds: input.openGeoSysConsolidation.timeSteps.at(-1)?.timeSeconds,
+    dimensionlessTime: input.openGeoSysConsolidationDimensionlessTime,
+    transientAcceptance: input.openGeoSysConsolidation.transientAcceptance,
+    seriesHashSha256: ogsSeries.seriesHashSha256,
+  };
+  const ogsResultPayload = {
+    actual: ogsActual,
+    expected: ogsExpected,
+    maxAbsoluteError: ogsSeries.maxAbsoluteError,
+    maxRelativeError: ogsSeries.maxRelativeError,
+    resultSeriesHashSha256: ogsSeries.seriesHashSha256,
+  };
+  const ogsAccepted = input.openGeoSysConsolidation.transientAcceptance.accepted &&
+    externalBenchmarkFinalAccepted({
+      actual: ogsActual,
+      expected: ogsExpected,
+      tolerance: biotRequirement.tolerance,
+      toleranceType: biotRequirement.toleranceType,
+      unit: biotRequirement.unit,
+      quantity: biotRequirement.quantity,
+    }) &&
+    seriesSummarySatisfiesRequirementTolerance(ogsSeries, biotRequirement);
+
   return [
     {
       id: 'published-terzaghi-1d-consolidation-tv-0-197',
@@ -1433,6 +1515,45 @@ function buildDefaultPublishedExternalBenchmarkComparisonResults(input: {
       seriesSummary: biotSeries,
       notes: [
         'Generated published-source comparison record for an alpha-zero Biot pressure-diffusion specialization; commercial solver comparison remains missing.',
+      ],
+    },
+    {
+      id: 'opengeosys-consolidation-staggered-biot-pressure-profile-t10',
+      quantityRequirementId: biotRequirement.id,
+      referenceId: 'opengeosys-consolidation-staggered-benchmark',
+      caseId: 'opengeosys-staggered-consolidation-pressure-profile-t10',
+      comparisonKind: 'series-summary',
+      metricName: 'loadGeneratedExcessPorePressureProfileAtT10s',
+      quantity: biotRequirement.quantity,
+      unit: biotRequirement.unit,
+      actual: round(ogsActual, 10),
+      expected: round(ogsExpected, 10),
+      tolerance: biotRequirement.tolerance,
+      toleranceType: biotRequirement.toleranceType,
+      accepted: ogsAccepted,
+      candidateSolver: {
+        name: 'geotechCLI FEM evidence suite',
+        version: 'strong-beta',
+        solverType: 'geotechcli-kernel',
+        analysisProcedure: 'linear-elastic Quad4 Biot u-p load-generated consolidation pressure profile',
+        elementType: 'Quad4 plane-strain u-p evidence mesh',
+        runId: 'opengeosys-staggered-consolidation-pressure-profile-t10',
+      },
+      referenceSolver: {
+        name: 'OpenGeoSys',
+        version: 'stable documentation',
+        vendor: 'OpenGeoSys project',
+        solverType: 'open-source-solver',
+        analysisProcedure: 'HYDRO_MECHANICS staggered fixed-stress consolidation benchmark',
+        elementType: '2D hydro-mechanics finite elements',
+        runId: 'HydroMechanics/StaggeredScheme/ConsolidationBenchmark/consolidation_benchmark.prj',
+      },
+      evidenceHashSha256: hashFemBenchmarkPayload(ogsEvidencePayload),
+      resultHashSha256: hashFemBenchmarkPayload(ogsResultPayload),
+      seriesSummary: ogsSeries,
+      notes: [
+        'Generated open-source solver comparison record against the OpenGeoSys staggered consolidation benchmark analytical pressure profile.',
+        'This adds open-source cross-solver evidence but does not satisfy the required commercial-solver production benchmark gate.',
       ],
     },
   ];
@@ -1787,6 +1908,22 @@ export function terzaghiAverageConsolidation(timeFactor: number, terms = 80): nu
   }
   const degree = 1 - (8 / (Math.PI * Math.PI)) * remaining;
   return Math.min(1, Math.max(0, degree));
+}
+
+function openGeoSysConsolidationPressureRatio(depthRatioFromTop: number, dimensionlessTime: number, terms = 120): number {
+  if (!Number.isFinite(depthRatioFromTop) || depthRatioFromTop < -1e-12 || depthRatioFromTop > 1 + 1e-12) {
+    throw new Error('depthRatioFromTop must be finite and within [0, 1].');
+  }
+  if (!Number.isFinite(dimensionlessTime) || dimensionlessTime < 0) {
+    throw new Error('dimensionlessTime must be finite and non-negative.');
+  }
+  const xD = Math.min(1, Math.max(0, depthRatioFromTop));
+  let pressureRatio = 0;
+  for (let n = 0; n < terms; n++) {
+    const m = 0.5 * Math.PI * (2 * n + 1);
+    pressureRatio += (2 / m) * Math.sin(m * xD) * Math.exp(-(m * m * dimensionlessTime));
+  }
+  return Math.max(0, pressureRatio);
 }
 
 function solveTridiagonal(lower: number[], diagonal: number[], upper: number[], rhs: number[]): number[] {
@@ -3023,6 +3160,62 @@ export function runFemEngineeringEvidenceSuite(
     'Mechanically loaded Biot consolidation must require explicit load-generated pressure mode and audit positive excess pore-pressure generation without weakening the default envelope guard.',
   ));
 
+  const openGeoSysConsolidationMesh = buildPlaneStrainRectangularMesh({
+    widthM: 1,
+    heightM: 1,
+    divisionsX: 1,
+    divisionsY: 16,
+    materialId: 'soil',
+  });
+  const openGeoSysConsolidationBottomNodes = openGeoSysConsolidationMesh.nodes.filter((node) => node.yM === 0);
+  const openGeoSysConsolidationTopNodes = openGeoSysConsolidationMesh.nodes.filter((node) => node.yM === 1);
+  const openGeoSysConsolidationLeftNodes = openGeoSysConsolidationMesh.nodes.filter((node) => node.xM === 0);
+  const openGeoSysConsolidationRightNodes = openGeoSysConsolidationMesh.nodes.filter((node) => node.xM === 1);
+  const openGeoSysConsolidationYoungModulusKpa = 30;
+  const openGeoSysConsolidationPoissonRatio = 0.2;
+  const openGeoSysConsolidationHydraulicConductivityMPerS = 9.81e-4;
+  const openGeoSysConsolidationLoadKpa = 1;
+  const openGeoSysConsolidationFinalTimeSeconds = 10;
+  const openGeoSysConsolidationLambdaPlus2MuKpa =
+    openGeoSysConsolidationYoungModulusKpa *
+    (1 - openGeoSysConsolidationPoissonRatio) /
+    ((1 + openGeoSysConsolidationPoissonRatio) * (1 - 2 * openGeoSysConsolidationPoissonRatio));
+  const openGeoSysConsolidationDimensionlessTime =
+    openGeoSysConsolidationLambdaPlus2MuKpa *
+    (openGeoSysConsolidationHydraulicConductivityMPerS / 9.81) *
+    openGeoSysConsolidationFinalTimeSeconds;
+  const openGeoSysConsolidation = runPlaneStrainBiotConsolidation({
+    schemaVersion: 'fem-plane-strain-biot-consolidation-model.v1',
+    nodes: openGeoSysConsolidationMesh.nodes,
+    elements: openGeoSysConsolidationMesh.elements,
+    materials: [{
+      id: 'soil',
+      elasticModulusKpa: openGeoSysConsolidationYoungModulusKpa,
+      poissonRatio: openGeoSysConsolidationPoissonRatio,
+      hydraulicConductivityXMPerS: openGeoSysConsolidationHydraulicConductivityMPerS,
+      hydraulicConductivityYMPerS: openGeoSysConsolidationHydraulicConductivityMPerS,
+      biotCoefficient: 1,
+      specificStorage1PerM: 1e-9,
+    }],
+    boundaryConditions: [
+      ...openGeoSysConsolidationBottomNodes.map((node) => ({ nodeId: node.id, dof: 'uy' as const })),
+      ...openGeoSysConsolidationLeftNodes.map((node) => ({ nodeId: node.id, dof: 'ux' as const })),
+      ...openGeoSysConsolidationRightNodes.map((node) => ({ nodeId: node.id, dof: 'ux' as const })),
+    ],
+    porePressureBoundaryConditions: openGeoSysConsolidationTopNodes.map((node) => ({
+      nodeId: node.id,
+      porePressureKpa: 0,
+    })),
+    nodalLoads: openGeoSysConsolidationTopNodes.map((node) => ({
+      nodeId: node.id,
+      fyKn: -openGeoSysConsolidationLoadKpa / openGeoSysConsolidationTopNodes.length,
+    })),
+    initialPorePressureKpa: 0,
+    pressureEnvelopeMode: 'load-generated-positive-pressure',
+    timeStepsSeconds: Array.from({ length: 20 }, (_, index) => (index + 1) * 0.5),
+    policy,
+  });
+
   const biotPatchMesh = buildPlaneStrainRectangularMesh({
     widthM: 2,
     heightM: 1,
@@ -3447,12 +3640,15 @@ export function runFemEngineeringEvidenceSuite(
   )];
   const status = benchmarks.every((item) => item.status === 'accepted') ? 'kernel-verified' : 'blocked';
   const externalBenchmarkAcceptance = buildFemExternalBenchmarkAcceptanceContract({
-    comparisonResults: buildDefaultPublishedExternalBenchmarkComparisonResults({
+    comparisonResults: buildDefaultExternalBenchmarkComparisonResults({
       consolidation,
       biotTerzaghi,
       biotTerzaghiInitialPressureKpa,
       biotTerzaghiHydraulicConductivityMPerS,
       biotTerzaghiSpecificStorage1PerM,
+      openGeoSysConsolidation,
+      openGeoSysConsolidationDimensionlessTime,
+      openGeoSysConsolidationLoadKpa,
     }),
   });
 

@@ -154,6 +154,8 @@ describe('FEM scoped agent', () => {
       .toContain('quad4-plane-strain-biot-u-p-terzaghi-pressure-dissipation');
     expect(readinessData.agentEvidenceSummary)
       .toContain('quad4-plane-strain-dp-isotropic-hardening-response');
+    expect(readinessData.agentEvidenceSummary)
+      .toContain('opengeosys-consolidation-staggered-biot-pressure-profile-t10');
 
     const followupMessages = mockedGenerateChat.mock.calls[2]?.[0] ?? [];
     const followupConfig = mockedGenerateChat.mock.calls[2]?.[1];
@@ -168,6 +170,7 @@ describe('FEM scoped agent', () => {
     expect(followupPrompt).toContain('quad4-plane-strain-biot-u-p-alpha-zero-decoupling');
     expect(followupPrompt).toContain('quad4-plane-strain-biot-u-p-terzaghi-pressure-dissipation');
     expect(followupPrompt).toContain('quad4-plane-strain-dp-isotropic-hardening-response');
+    expect(followupPrompt).toContain('opengeosys-consolidation-staggered-biot-pressure-profile-t10');
 
     const answer = session.steps.find((step) => step.type === 'answer')?.content;
     expect(answer).toContain('Production-grade FEM is blocked');

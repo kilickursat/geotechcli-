@@ -435,6 +435,8 @@ describe('AI fallback behavior', () => {
     expect(readinessData.agentEvidenceSummary)
       .toContain('quad4-plane-strain-biot-u-p-terzaghi-pressure-dissipation');
     expect(readinessData.agentEvidenceSummary)
+      .toContain('opengeosys-consolidation-staggered-biot-pressure-profile-t10');
+    expect(readinessData.agentEvidenceSummary)
       .toContain('seepage-pore-pressure-coupling');
     expect(readinessData.agentEvidenceSummary)
       .toContain('biot-u-p-route-backed-preview-is-not-production-sparse-solver');
@@ -460,6 +462,7 @@ describe('AI fallback behavior', () => {
     expect(secondPrompt).toContain('quad4-plane-strain-biot-u-p-pressure-gradient-flux-contract');
     expect(secondPrompt).toContain('quad4-plane-strain-biot-u-p-alpha-zero-decoupling');
     expect(secondPrompt).toContain('quad4-plane-strain-biot-u-p-terzaghi-pressure-dissipation');
+    expect(secondPrompt).toContain('opengeosys-consolidation-staggered-biot-pressure-profile-t10');
     expect(secondPrompt).toContain('seepage-pore-pressure-coupling');
     expect(secondPrompt)
       .toContain('biot-u-p-route-backed-preview-is-not-production-sparse-solver');
@@ -734,7 +737,8 @@ describe('AI fallback behavior', () => {
     const readinessData = readinessResult?.toolResult?.data as any;
     expect(readinessData.productionReady).toBe(false);
     expect(readinessData.agentEvidenceSummary).toContain('productionReady: no');
-    expect(readinessData.agentEvidenceSummary).toContain('external benchmark comparison results: 2');
+    expect(readinessData.agentEvidenceSummary).toContain('external benchmark comparison results: 3');
+    expect(readinessData.agentEvidenceSummary).toContain('opengeosys-consolidation-staggered-biot-pressure-profile-t10');
     expect(readinessData.blockers).toEqual(expect.arrayContaining([
       'external-benchmark-commercial-solver-citation-missing',
       'external-benchmark-comparison-results-missing',

@@ -8,6 +8,16 @@ const releases = [
     date: '2026-06-04',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added an OpenGeoSys staggered hydro-mechanics consolidation benchmark reference and open-source comparison record for Biot u-p pressure-profile evidence' },
+      { type: 'feat', text: 'Compared the benchmark-scale Quad4 Biot pressure profile against the OpenGeoSys analytical p_D solution with deterministic hashes and series tolerances' },
+      { type: 'fix', text: 'Exposed accepted external comparison IDs in FEM agent evidence summaries while keeping commercial-solver blockers active' },
+    ],
+  },
+  {
+    version: '0.4.119',
+    date: '2026-06-04',
+    tag: '0.4.119 Release',
+    changes: [
       { type: 'feat', text: 'Forwarded reviewed hardeningModulusKpa values into the route-backed plane-strain Drucker-Prager adaptive backend' },
       { type: 'feat', text: 'Added maxHardeningStressKpa result-envelope evidence and validation for hardened DP manifests' },
       { type: 'fix', text: 'Extended core and CLI tests for persisted route-backed hardening evidence while keeping FEM productionReady false' },
