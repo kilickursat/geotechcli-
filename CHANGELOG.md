@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.108] - 2026-06-03
+
+### FEM Sparse Solver and Benchmark Gates
+
+- Added audited CSR sparse linear-algebra utilities and an opt-in sparse Conjugate Gradient backend for the benchmark-scale Drucker-Prager plane-strain load-step solver, including dense-vs-sparse equivalence and oversized-mesh sparse regression coverage.
+- Added structured external benchmark acceptance metadata with published/commercial source requirements, quantity tolerances, and readiness blockers when independent references are missing.
+- Strengthened staged excavation support screening with per-stage reaction-demand checks and added a mocked default hosted GLM regression that blocks production FEM claims before readiness evidence and run attempts.
+- Full production FEM remains blocked: the sparse path is experimental evidence infrastructure, not an approved production nonlinear/plasticity, consolidation, seepage-coupled, support-design, or licensed project-acceptance solver.
+
 ## [0.4.107] - 2026-06-03
 
 ### FEM Solver Reliability and Approval Gates

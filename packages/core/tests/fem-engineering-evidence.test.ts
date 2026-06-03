@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildFemExternalBenchmarkAcceptanceContract,
   mapMohrCoulombToDruckerPragerTriaxialCompression,
   runDarcySeepage1D,
   runDruckerPragerMaterialPoint,
@@ -161,6 +162,7 @@ describe('FEM engineering evidence kernels', () => {
       frictionAngleDeg: 30,
       cohesionKpa: 45,
       surchargeKpa: 10,
+      stageDepthsM: [3, 6, 8],
       supportLevelsM: [1, 4],
       allowableSupportLoadKnPerM: 300,
       requiredPassiveSafetyFactor: 1.5,
@@ -174,6 +176,7 @@ describe('FEM engineering evidence kernels', () => {
       frictionAngleDeg: 30,
       cohesionKpa: 5,
       surchargeKpa: 20,
+      stageDepthsM: [1, 4, 8],
       supportLevelsM: [2],
       allowableSupportLoadKnPerM: 25,
       requiredPassiveSafetyFactor: 1.5,
@@ -181,14 +184,29 @@ describe('FEM engineering evidence kernels', () => {
     });
 
     expect(accepted.schemaVersion).toBe('fem-excavation-support-design-check.v1');
+    expect(accepted.designScope).toBe('screening-only-not-structural-design');
     expect(accepted.status).toBe('accepted');
     expect(accepted.checks.map((check) => check.id)).toEqual([
       'support-capacity',
       'passive-toe-resistance',
       'basal-heave',
+      'staged-support-reaction-sequence',
     ]);
+    expect(accepted.stageChecks).toHaveLength(3);
+    expect(accepted.stageChecks.every((check) => check.status === 'accepted')).toBe(true);
+    expect(accepted.stageChecks.at(-1)).toMatchObject({
+      stageDepthM: 8,
+      installedSupportLevelsM: [1, 4],
+      status: 'accepted',
+    });
+    expect(accepted.acceptanceBlockers).toEqual([]);
+    expect(accepted.productionBlockers).toContain(
+      'jurisdiction-specific-wall-strut-anchor-structural-design-not-implemented',
+    );
     expect(blocked.status).toBe('blocked');
     expect(blocked.checks.some((check) => check.status === 'blocked')).toBe(true);
+    expect(blocked.stageChecks[0]?.blockerCodes).toContain('support-level-missing');
+    expect(blocked.acceptanceBlockers).toContain('stage-1-support-reaction.support-level-missing');
   });
 
   it('validates persisted reviewer identity, license, case hash, assumptions, and approval record contract', () => {
@@ -275,6 +293,121 @@ describe('FEM engineering evidence kernels', () => {
     expect(productionDesign.blockerCodes).toContain('scope.production-design-blocked');
   });
 
+  it('records external benchmark acceptance metadata and blocks missing references', () => {
+    const report = runFemEngineeringEvidenceSuite();
+
+    expect(report.externalBenchmarkAcceptance).toMatchObject({
+      schemaVersion: 'fem-external-benchmark-acceptance-metadata.v1',
+      status: 'blocked',
+      productionReadinessBlocked: true,
+      requiredSourceTypes: ['published-source', 'commercial-solver'],
+      references: [],
+    });
+    expect(report.externalBenchmarkAcceptance.requiredQuantities).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'consolidation-settlement-time-curve',
+        feature: 'consolidation',
+        quantity: 'settlement-time curve and degree of consolidation',
+        tolerance: 0.02,
+        toleranceType: 'absolute-or-relative',
+        requiredReferenceSourceTypes: ['published-source', 'commercial-solver'],
+      }),
+      expect.objectContaining({
+        id: 'biot-pore-pressure-dissipation',
+        feature: 'coupled-biot-plane-strain',
+        quantity: 'excess pore-pressure dissipation curve',
+        tolerance: 0.05,
+        toleranceType: 'relative',
+      }),
+    ]));
+    expect(report.externalBenchmarkAcceptance.blockerCodes).toEqual(expect.arrayContaining([
+      'external-benchmark-reference-corpus-missing',
+      'external-benchmark-published-source-citation-missing',
+      'external-benchmark-reference-solver-citation-missing',
+    ]));
+    expect(report.remainingProductionBlockers).toEqual(expect.arrayContaining([
+      'published-commercial-cross-solver-benchmark-corpus-not-approved',
+      'external-benchmark-reference-corpus-missing',
+      'external-benchmark-published-source-citation-missing',
+      'external-benchmark-reference-solver-citation-missing',
+    ]));
+  });
+
+  it('records source citations and required quantity tolerances for complete external metadata', () => {
+    const contract = buildFemExternalBenchmarkAcceptanceContract({
+      references: [
+        {
+          id: 'published-benchmark-1',
+          sourceType: 'published-source',
+          label: 'Published plane-strain consolidation benchmark',
+          citation: 'Example Author (2024), plane-strain consolidation benchmark, Section 3.',
+          publishedSource: {
+            title: 'Plane-Strain Consolidation Benchmark',
+            authors: ['Example Author'],
+            year: 2024,
+            publication: 'Example Geotechnical Benchmarks',
+            section: 'Section 3',
+          },
+        },
+        {
+          id: 'commercial-solver-1',
+          sourceType: 'commercial-solver',
+          label: 'Commercial solver comparison archive',
+          citation: 'Reference solver archive SHA256 abc123 for plane-strain consolidation fixture.',
+          referenceSolver: {
+            name: 'Reference FEM Solver',
+            version: '2024.1',
+            vendor: 'Reference Vendor',
+            analysisProcedure: 'plane-strain consolidation',
+            elementType: 'quad4 u-p',
+          },
+        },
+      ],
+      requiredQuantities: [
+        {
+          id: 'settlement-time',
+          feature: 'consolidation',
+          quantity: 'settlement-time curve',
+          unit: 'mm',
+          tolerance: 0.02,
+          toleranceType: 'relative',
+          requiredReferenceSourceTypes: ['published-source', 'commercial-solver'],
+        },
+      ],
+    });
+
+    expect(contract.status).toBe('metadata-ready');
+    expect(contract.productionReadinessBlocked).toBe(false);
+    expect(contract.references).toEqual([
+      expect.objectContaining({
+        sourceType: 'published-source',
+        citation: expect.stringContaining('Example Author'),
+        publishedSource: expect.objectContaining({
+          title: 'Plane-Strain Consolidation Benchmark',
+          authors: ['Example Author'],
+          year: 2024,
+        }),
+      }),
+      expect.objectContaining({
+        sourceType: 'commercial-solver',
+        referenceSolver: expect.objectContaining({
+          name: 'Reference FEM Solver',
+          version: '2024.1',
+          analysisProcedure: 'plane-strain consolidation',
+        }),
+      }),
+    ]);
+    expect(contract.requiredQuantities).toEqual([
+      expect.objectContaining({
+        quantity: 'settlement-time curve',
+        tolerance: 0.02,
+        toleranceType: 'relative',
+        requiredReferenceSourceTypes: ['published-source', 'commercial-solver'],
+      }),
+    ]);
+    expect(contract.acceptanceStatement).toContain('does not approve production FEM design use');
+  });
+
   it('runs the full evidence suite without changing the public production gate', () => {
     const report = runFemEngineeringEvidenceSuite();
 
@@ -305,6 +438,7 @@ describe('FEM engineering evidence kernels', () => {
       'quad4-plane-strain-biot-u-p-pressure-gradient-flux-contract',
       'quad4-plane-strain-biot-u-p-alpha-zero-decoupling',
       'quad4-plane-strain-biot-u-p-terzaghi-pressure-dissipation',
+      'excavation-support-staged-reaction-sequence',
     ]));
     expect(report.verifiedFeatures).toEqual(expect.arrayContaining([
       'global-plane-strain-assembly',

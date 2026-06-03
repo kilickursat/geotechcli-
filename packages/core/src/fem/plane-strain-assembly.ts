@@ -1,4 +1,10 @@
 import { DEFAULT_FEM_CONVERGENCE_POLICY, type FemConvergencePolicy } from './engineering-evidence.js';
+import {
+  buildCsrFromTriplets,
+  solveCsrConjugateGradient,
+  type FemSparseCsrMatrix,
+  type FemSparseTriplet,
+} from './sparse-linear-algebra.js';
 
 export interface FemPlaneStrainNode {
   id: string;
@@ -95,8 +101,35 @@ export interface FemPlaneStrainDruckerPragerGaussPointResult extends FemPlaneStr
 export type FemPlaneStrainDruckerPragerTerminationReason =
   | 'converged'
   | 'max_iterations'
+  | 'linear_solver_nonconverged'
   | 'force_residual_exceeded'
   | 'yield_residual_exceeded';
+
+export type FemPlaneStrainLinearSolverKind = 'dense-gaussian' | 'sparse-csr-cg';
+
+export interface FemPlaneStrainLinearSolverAudit {
+  schemaVersion: 'fem-plane-strain-linear-solver-audit.v1';
+  solver: FemPlaneStrainLinearSolverKind;
+  matrixDofCount: number;
+  nonzeroCount: number;
+  iterations: number;
+  tolerance: number;
+  maxIterations: number;
+  initialResidualNorm: number;
+  finalResidualNorm: number;
+  residualNormRatio: number;
+  correctionNormM: number;
+  correctionNormRatio: number;
+  converged: boolean;
+  failureReason?: string;
+}
+
+export interface FemPlaneStrainDruckerPragerSolverOptions {
+  loadStepFractions?: readonly number[];
+  linearSolver?: FemPlaneStrainLinearSolverKind;
+  linearSolverTolerance?: number;
+  linearSolverMaxIterations?: number;
+}
 
 export interface FemPlaneStrainDruckerPragerResidualHistoryEntry {
   iteration: number;
@@ -128,8 +161,14 @@ export interface FemPlaneStrainDruckerPragerStepResult {
   maxYieldResidualRatio: number;
   maxEquivalentPlasticStrain: number;
   plasticGaussPointCount: number;
+  linearSolver: FemPlaneStrainLinearSolverKind;
+  linearIterations: number;
+  linearResidualNormRatio: number;
+  correctionNormRatio: number;
+  linearSolverAudits: FemPlaneStrainLinearSolverAudit[];
   converged: boolean;
   terminationReason: FemPlaneStrainDruckerPragerTerminationReason;
+  failureReason?: string;
   residualHistory: FemPlaneStrainDruckerPragerResidualHistoryEntry[];
 }
 
@@ -146,6 +185,10 @@ export interface FemPlaneStrainDruckerPragerResult {
   dofCount: number;
   freeDofCount: number;
   constrainedDofCount: number;
+  linearSolver: FemPlaneStrainLinearSolverKind;
+  nonlinearAlgorithm: 'modified-newton';
+  globalTangent: 'elastic';
+  materialIntegration: 'total-strain-drucker-prager-projection';
   loadSteps: FemPlaneStrainDruckerPragerStepResult[];
   maxFreeResidualKn: number;
   residualNormRatio: number;
@@ -369,6 +412,7 @@ const GAUSS_POINTS: Array<[number, number, number]> = [
   [-1 / Math.sqrt(3), 1 / Math.sqrt(3), 1],
 ];
 const MAX_DENSE_DOF_COUNT = 800;
+const MAX_SPARSE_EXPERIMENTAL_DOF_COUNT = 5_000;
 const MAX_BIOT_TIME_STEP_GROWTH_RATIO = 8;
 
 function assertFinite(value: number, label: string): void {
@@ -686,6 +730,10 @@ function matVec(matrix: number[][], vector: number[]): number[] {
 
 function dot(a: number[], b: number[]): number {
   return a.reduce((sum, value, index) => sum + value * b[index], 0);
+}
+
+function vectorNorm(values: readonly number[]): number {
+  return Math.sqrt(values.reduce((sum, value) => sum + value * value, 0));
 }
 
 function elementMatrices(input: {
@@ -1878,7 +1926,8 @@ export function runPlaneStrainQuad4Assembly(model: FemPlaneStrainModel): FemPlan
 interface PlaneStrainAssemblySystem {
   policy: FemConvergencePolicy;
   materialById: Map<string, FemPlaneStrainMaterial>;
-  stiffness: number[][];
+  stiffness?: number[][];
+  stiffnessTriplets: FemSparseTriplet[];
   loads: number[];
   prescribed: Map<number, number>;
   freeDofs: number[];
@@ -1892,7 +1941,10 @@ interface PlaneStrainAssemblySystem {
   }>;
 }
 
-function assemblePlaneStrainSystem(model: FemPlaneStrainModel): PlaneStrainAssemblySystem {
+function assemblePlaneStrainSystem(
+  model: FemPlaneStrainModel,
+  options: { storage?: 'dense-and-triplets' | 'triplets-only' } = {},
+): PlaneStrainAssemblySystem {
   if (model.schemaVersion !== 'fem-plane-strain-model.v1') {
     throw new Error('Only fem-plane-strain-model.v1 is supported.');
   }
@@ -1914,11 +1966,18 @@ function assemblePlaneStrainSystem(model: FemPlaneStrainModel): PlaneStrainAssem
   const nodeIndexById = new Map(model.nodes.map((node, index) => [node.id, index]));
   const materialById = new Map(model.materials.map((material) => [material.id, material]));
   const dofCount = model.nodes.length * 2;
-  if (dofCount > MAX_DENSE_DOF_COUNT) {
+  const storage = options.storage ?? 'dense-and-triplets';
+  if (storage === 'dense-and-triplets' && dofCount > MAX_DENSE_DOF_COUNT) {
     throw new Error(`Plane-strain dense assembly is capped at ${MAX_DENSE_DOF_COUNT} DOFs for benchmark-scale evidence runs.`);
   }
+  if (storage === 'triplets-only' && dofCount > MAX_SPARSE_EXPERIMENTAL_DOF_COUNT) {
+    throw new Error(`Plane-strain sparse experimental assembly is capped at ${MAX_SPARSE_EXPERIMENTAL_DOF_COUNT} DOFs until production solver benchmarks are approved.`);
+  }
 
-  const stiffness = Array.from({ length: dofCount }, () => new Array<number>(dofCount).fill(0));
+  const stiffness = storage === 'dense-and-triplets'
+    ? Array.from({ length: dofCount }, () => new Array<number>(dofCount).fill(0))
+    : undefined;
+  const stiffnessTriplets: FemSparseTriplet[] = [];
   const loads = new Array<number>(dofCount).fill(0);
 
   for (const node of model.nodes) {
@@ -1966,7 +2025,11 @@ function assemblePlaneStrainSystem(model: FemPlaneStrainModel): PlaneStrainAssem
     const globalDofs = nodeIndices.flatMap((index) => [dofIndex(index, 'ux'), dofIndex(index, 'uy')]);
     for (let localRow = 0; localRow < 8; localRow += 1) {
       for (let localCol = 0; localCol < 8; localCol += 1) {
-        stiffness[globalDofs[localRow]][globalDofs[localCol]] += elementData.stiffness[localRow][localCol];
+        const row = globalDofs[localRow];
+        const col = globalDofs[localCol];
+        const value = elementData.stiffness[localRow][localCol];
+        stiffnessTriplets.push({ row, col, value });
+        if (stiffness) stiffness[row][col] += value;
       }
     }
     elementGaussCache.push({
@@ -2007,6 +2070,7 @@ function assemblePlaneStrainSystem(model: FemPlaneStrainModel): PlaneStrainAssem
     policy,
     materialById,
     stiffness,
+    stiffnessTriplets,
     loads,
     prescribed,
     freeDofs,
@@ -2187,20 +2251,139 @@ function druckerPragerTerminationReason(
   policy: FemConvergencePolicy,
   converged: boolean,
   iterations: number,
+  linearSolverFailure?: FemPlaneStrainLinearSolverAudit,
 ): FemPlaneStrainDruckerPragerTerminationReason {
   if (converged) return 'converged';
+  if (linearSolverFailure) return 'linear_solver_nonconverged';
   if (iterations >= policy.maxIterations) return 'max_iterations';
   if (evaluation.residualNormRatio > policy.forceBalanceTolerance) return 'force_residual_exceeded';
   return 'yield_residual_exceeded';
 }
 
+function normalizeLinearSolverKind(solver?: FemPlaneStrainLinearSolverKind): FemPlaneStrainLinearSolverKind {
+  const resolved = solver ?? 'dense-gaussian';
+  if (resolved !== 'dense-gaussian' && resolved !== 'sparse-csr-cg') {
+    throw new Error('linearSolver must be dense-gaussian or sparse-csr-cg.');
+  }
+  return resolved;
+}
+
+function denseNonzeroCount(matrix: number[][]): number {
+  return matrix.reduce(
+    (count, row) => count + row.filter((value) => Math.abs(value) > 0).length,
+    0,
+  );
+}
+
+function buildReducedCsr(input: {
+  freeDofs: readonly number[];
+  triplets: readonly FemSparseTriplet[];
+}): FemSparseCsrMatrix {
+  const freeIndexByDof = new Map(input.freeDofs.map((dof, index) => [dof, index]));
+  const reducedTriplets = input.triplets.flatMap((entry) => {
+    const row = freeIndexByDof.get(entry.row);
+    const col = freeIndexByDof.get(entry.col);
+    return row != null && col != null ? [{ row, col, value: entry.value }] : [];
+  });
+  return buildCsrFromTriplets({
+    rowCount: input.freeDofs.length,
+    colCount: input.freeDofs.length,
+    triplets: reducedTriplets,
+    dropTolerance: 0,
+  });
+}
+
+function solveDenseDruckerPragerCorrection(input: {
+  reducedK: number[][];
+  rhs: readonly number[];
+  currentFreeDisplacement: readonly number[];
+  tolerance: number;
+  maxIterations: number;
+}): { correction: number[]; audit: FemPlaneStrainLinearSolverAudit } {
+  const correction = solveDenseLinearSystem(input.reducedK, [...input.rhs]);
+  const solvedRhs = matVec(input.reducedK, correction);
+  const residual = solvedRhs.map((value, index) => value - input.rhs[index]);
+  const rhsNorm = Math.max(vectorNorm(input.rhs), 1);
+  const finalResidualNorm = vectorNorm(residual);
+  const correctionNorm = vectorNorm(correction);
+  return {
+    correction,
+    audit: {
+      schemaVersion: 'fem-plane-strain-linear-solver-audit.v1',
+      solver: 'dense-gaussian',
+      matrixDofCount: input.rhs.length,
+      nonzeroCount: denseNonzeroCount(input.reducedK),
+      iterations: input.rhs.length,
+      tolerance: input.tolerance,
+      maxIterations: input.maxIterations,
+      initialResidualNorm: vectorNorm(input.rhs),
+      finalResidualNorm,
+      residualNormRatio: finalResidualNorm / rhsNorm,
+      correctionNormM: correctionNorm,
+      correctionNormRatio: correctionNorm / Math.max(vectorNorm(input.currentFreeDisplacement), 1e-12),
+      converged: true,
+    },
+  };
+}
+
+function solveSparseDruckerPragerCorrection(input: {
+  reducedK: FemSparseCsrMatrix;
+  rhs: readonly number[];
+  currentFreeDisplacement: readonly number[];
+  tolerance: number;
+  maxIterations: number;
+}): { correction: number[]; audit: FemPlaneStrainLinearSolverAudit } {
+  const solved = solveCsrConjugateGradient(input.reducedK, input.rhs, {
+    tolerance: input.tolerance,
+    maxIterations: input.maxIterations,
+    preconditioner: 'jacobi',
+  });
+  const correctionNorm = vectorNorm(solved.solution);
+  return {
+    correction: solved.solution,
+    audit: {
+      schemaVersion: 'fem-plane-strain-linear-solver-audit.v1',
+      solver: 'sparse-csr-cg',
+      matrixDofCount: input.rhs.length,
+      nonzeroCount: input.reducedK.nonzeroCount,
+      iterations: solved.iterations,
+      tolerance: solved.tolerance,
+      maxIterations: solved.maxIterations,
+      initialResidualNorm: solved.initialResidualNorm,
+      finalResidualNorm: solved.finalResidualNorm,
+      residualNormRatio: solved.residualNormRatio,
+      correctionNormM: correctionNorm,
+      correctionNormRatio: correctionNorm / Math.max(vectorNorm(input.currentFreeDisplacement), 1e-12),
+      converged: solved.converged,
+      ...(solved.failureReason ? { failureReason: solved.failureReason } : {}),
+    },
+  };
+}
+
 export function runPlaneStrainDruckerPragerLoadSteps(
   model: FemPlaneStrainModel,
-  options: { loadStepFractions?: readonly number[] } = {},
+  options: FemPlaneStrainDruckerPragerSolverOptions = {},
 ): FemPlaneStrainDruckerPragerResult {
-  const system = assemblePlaneStrainSystem(model);
+  const linearSolver = normalizeLinearSolverKind(options.linearSolver);
+  const system = assemblePlaneStrainSystem(model, {
+    storage: linearSolver === 'sparse-csr-cg' ? 'triplets-only' : 'dense-and-triplets',
+  });
   const loadStepFractions = normalizeLoadStepFractions(options.loadStepFractions);
-  const reducedK = system.freeDofs.map((row) => system.freeDofs.map((col) => system.stiffness[row][col]));
+  const linearSolverTolerance = options.linearSolverTolerance ?? Math.min(1e-10, system.policy.forceBalanceTolerance / 10);
+  if (!Number.isFinite(linearSolverTolerance) || linearSolverTolerance <= 0) {
+    throw new Error('linearSolverTolerance must be a finite positive number.');
+  }
+  const linearSolverMaxIterations = options.linearSolverMaxIterations ?? Math.max(100, system.freeDofs.length * 10);
+  assertPositiveInteger(linearSolverMaxIterations, 'linearSolverMaxIterations');
+  const reducedDenseK = linearSolver === 'dense-gaussian'
+    ? system.freeDofs.map((row) => system.freeDofs.map((col) => system.stiffness![row][col]))
+    : undefined;
+  const reducedSparseK = linearSolver === 'sparse-csr-cg' && system.freeDofs.length > 0
+    ? buildReducedCsr({
+      freeDofs: system.freeDofs,
+      triplets: system.stiffnessTriplets,
+    })
+    : undefined;
   const displacement = new Array<number>(system.dofCount).fill(0);
   let finalEvaluation: ReturnType<typeof evaluatePlaneStrainDruckerPragerState> | undefined;
   const loadSteps: FemPlaneStrainDruckerPragerStepResult[] = [];
@@ -2213,12 +2396,35 @@ export function runPlaneStrainDruckerPragerLoadSteps(
     const residualHistory: FemPlaneStrainDruckerPragerResidualHistoryEntry[] = [
       druckerPragerResidualHistoryEntry(iterations, evaluation, system.policy),
     ];
+    const linearSolverAudits: FemPlaneStrainLinearSolverAudit[] = [];
+    let linearSolverFailure: FemPlaneStrainLinearSolverAudit | undefined;
 
     while (!converged && iterations < system.policy.maxIterations) {
       iterations += 1;
       if (system.freeDofs.length === 0) break;
       const correctionRhs = system.freeDofs.map((index) => -evaluation.residual[index]);
-      const correction = solveDenseLinearSystem(reducedK, correctionRhs);
+      const currentFreeDisplacement = system.freeDofs.map((index) => displacement[index]);
+      const solved = linearSolver === 'sparse-csr-cg'
+        ? solveSparseDruckerPragerCorrection({
+          reducedK: reducedSparseK!,
+          rhs: correctionRhs,
+          currentFreeDisplacement,
+          tolerance: linearSolverTolerance,
+          maxIterations: linearSolverMaxIterations,
+        })
+        : solveDenseDruckerPragerCorrection({
+          reducedK: reducedDenseK!,
+          rhs: correctionRhs,
+          currentFreeDisplacement,
+          tolerance: linearSolverTolerance,
+          maxIterations: linearSolverMaxIterations,
+        });
+      linearSolverAudits.push(solved.audit);
+      if (!solved.audit.converged) {
+        linearSolverFailure = solved.audit;
+        break;
+      }
+      const correction = solved.correction;
       for (const [correctionIndex, dof] of system.freeDofs.entries()) {
         displacement[dof] += correction[correctionIndex];
       }
@@ -2229,7 +2435,14 @@ export function runPlaneStrainDruckerPragerLoadSteps(
     }
 
     finalEvaluation = evaluation;
-    const terminationReason = druckerPragerTerminationReason(evaluation, system.policy, converged, iterations);
+    const terminationReason = druckerPragerTerminationReason(
+      evaluation,
+      system.policy,
+      converged,
+      iterations,
+      linearSolverFailure,
+    );
+    const lastLinearAudit = linearSolverAudits.at(-1);
     loadSteps.push({
       step: stepIndex + 1,
       loadFactor: round(loadFactor, 8),
@@ -2240,8 +2453,14 @@ export function runPlaneStrainDruckerPragerLoadSteps(
       maxYieldResidualRatio: round(evaluation.maxYieldResidualRatio, 12),
       maxEquivalentPlasticStrain: round(evaluation.maxEquivalentPlasticStrain, 12),
       plasticGaussPointCount: evaluation.plasticGaussPointCount,
+      linearSolver,
+      linearIterations: linearSolverAudits.reduce((sum, audit) => sum + audit.iterations, 0),
+      linearResidualNormRatio: round(lastLinearAudit?.residualNormRatio ?? 0, 12),
+      correctionNormRatio: round(lastLinearAudit?.correctionNormRatio ?? 0, 12),
+      linearSolverAudits,
       converged,
       terminationReason,
+      ...(linearSolverFailure?.failureReason ? { failureReason: linearSolverFailure.failureReason } : {}),
       residualHistory,
     });
   }
@@ -2266,6 +2485,10 @@ export function runPlaneStrainDruckerPragerLoadSteps(
     dofCount: system.dofCount,
     freeDofCount: system.freeDofs.length,
     constrainedDofCount: system.prescribed.size,
+    linearSolver,
+    nonlinearAlgorithm: 'modified-newton',
+    globalTangent: 'elastic',
+    materialIntegration: 'total-strain-drucker-prager-projection',
     loadSteps,
     maxFreeResidualKn: round(finalEvaluation.maxFreeResidualKn, 12),
     residualNormRatio: round(finalEvaluation.residualNormRatio, 12),
@@ -2289,7 +2512,9 @@ export function runPlaneStrainDruckerPragerLoadSteps(
     limitations: [
       'Benchmark-scale modified-Newton plane-strain plasticity evidence kernel only.',
       ...(failedStep ? ['Nonconverged load-step result is reported fail-closed and must not be treated as an accepted engineering solve.'] : []),
-      'Uses elastic global tangent with Gauss-point Drucker-Prager stress projection; no production consistent tangent, sparse solver, hardening calibration, staged activation, pore-pressure DOF, or route-backed result manifest is provided.',
+      linearSolver === 'sparse-csr-cg'
+        ? 'Uses an experimental CSR Conjugate Gradient linear solve audit, elastic global tangent, and Gauss-point Drucker-Prager stress projection; no production consistent tangent, hardening calibration, staged activation, pore-pressure DOF, or route-backed result manifest is provided.'
+        : 'Uses elastic global tangent with Gauss-point Drucker-Prager stress projection; no production consistent tangent, production sparse solver, hardening calibration, staged activation, pore-pressure DOF, or route-backed result manifest is provided.',
       'Use for deterministic evidence and regression tests only until independent published/commercial benchmark comparison and licensed production approval gates are complete.',
     ],
   };

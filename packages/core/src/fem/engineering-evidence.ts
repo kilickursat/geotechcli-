@@ -245,6 +245,7 @@ export interface FemExcavationSupportDesignCheckInput {
   cohesionKpa: number;
   surchargeKpa?: number;
   waterTableDepthM?: number;
+  stageDepthsM?: number[];
   supportLevelsM: number[];
   allowableSupportLoadKnPerM: number;
   requiredPassiveSafetyFactor?: number;
@@ -260,16 +261,31 @@ export interface FemDesignCheck {
   status: 'accepted' | 'blocked';
 }
 
+export interface FemExcavationSupportStageCheck {
+  id: string;
+  stageDepthM: number;
+  installedSupportLevelsM: number[];
+  activeEarthPressureKnPerM: number;
+  supportReactionDemandKnPerM: number;
+  supportCapacitySafetyFactor: number;
+  blockerCodes: string[];
+  status: 'accepted' | 'blocked';
+}
+
 export interface FemExcavationSupportDesignCheckResult {
   schemaVersion: 'fem-excavation-support-design-check.v1';
   method: 'rankine-earth-pressure-support-screening';
+  designScope: 'screening-only-not-structural-design';
   activeEarthPressureKnPerM: number;
   passiveToeResistanceKnPerM: number;
   supportDemandKnPerM: number;
   supportCapacitySafetyFactor: number;
   passiveSafetyFactor: number;
   basalHeaveSafetyFactor: number;
+  stageChecks: FemExcavationSupportStageCheck[];
   checks: FemDesignCheck[];
+  acceptanceBlockers: string[];
+  productionBlockers: string[];
   status: 'accepted' | 'blocked';
   policy: FemConvergencePolicy;
 }
@@ -304,6 +320,61 @@ export interface FemReviewerApprovalValidation {
   warnings: string[];
 }
 
+export type FemExternalBenchmarkSourceType =
+  | 'published-source'
+  | 'commercial-solver'
+  | 'open-source-solver';
+
+export type FemExternalBenchmarkToleranceType = 'absolute' | 'relative' | 'absolute-or-relative';
+
+export interface FemExternalBenchmarkPublishedCitation {
+  title: string;
+  authors: string[];
+  year: number;
+  publication?: string;
+  doi?: string;
+  url?: string;
+  section?: string;
+}
+
+export interface FemExternalBenchmarkReferenceSolverCitation {
+  name: string;
+  version: string;
+  vendor?: string;
+  analysisProcedure?: string;
+  elementType?: string;
+}
+
+export interface FemExternalBenchmarkReference {
+  id: string;
+  sourceType: FemExternalBenchmarkSourceType;
+  label: string;
+  citation: string;
+  publishedSource?: FemExternalBenchmarkPublishedCitation;
+  referenceSolver?: FemExternalBenchmarkReferenceSolverCitation;
+}
+
+export interface FemExternalBenchmarkQuantityRequirement {
+  id: string;
+  feature: FemEngineeringKernelFeature;
+  quantity: string;
+  unit: string;
+  tolerance: number;
+  toleranceType: FemExternalBenchmarkToleranceType;
+  requiredReferenceSourceTypes: FemExternalBenchmarkSourceType[];
+}
+
+export interface FemExternalBenchmarkAcceptanceContract {
+  schemaVersion: 'fem-external-benchmark-acceptance-metadata.v1';
+  status: 'metadata-ready' | 'blocked';
+  productionReadinessBlocked: boolean;
+  requiredSourceTypes: FemExternalBenchmarkSourceType[];
+  references: FemExternalBenchmarkReference[];
+  requiredQuantities: FemExternalBenchmarkQuantityRequirement[];
+  blockerCodes: string[];
+  acceptanceStatement: string;
+}
+
 export interface FemEngineeringBenchmarkCase {
   id: string;
   feature: FemEngineeringKernelFeature;
@@ -323,10 +394,73 @@ export interface FemEngineeringEvidenceReport {
   productionReady: false;
   verifiedFeatures: FemEngineeringKernelFeature[];
   benchmarks: FemEngineeringBenchmarkCase[];
+  externalBenchmarkAcceptance: FemExternalBenchmarkAcceptanceContract;
   convergencePolicy: FemConvergencePolicy;
   remainingProductionBlockers: string[];
   releasePositioning: string;
 }
+
+const REQUIRED_EXTERNAL_BENCHMARK_SOURCE_TYPES: FemExternalBenchmarkSourceType[] = [
+  'published-source',
+  'commercial-solver',
+];
+
+const DEFAULT_EXTERNAL_BENCHMARK_REQUIRED_QUANTITIES: FemExternalBenchmarkQuantityRequirement[] = [
+  {
+    id: 'nonlinear-plane-strain-displacement-envelope',
+    feature: 'coupled-nonlinear-plane-strain',
+    quantity: 'nodal displacement envelope',
+    unit: 'mm',
+    tolerance: 0.05,
+    toleranceType: 'relative',
+    requiredReferenceSourceTypes: REQUIRED_EXTERNAL_BENCHMARK_SOURCE_TYPES,
+  },
+  {
+    id: 'global-reaction-force-balance',
+    feature: 'solver-convergence-and-tolerance',
+    quantity: 'reaction force and applied load balance',
+    unit: 'kN',
+    tolerance: 0.02,
+    toleranceType: 'relative',
+    requiredReferenceSourceTypes: REQUIRED_EXTERNAL_BENCHMARK_SOURCE_TYPES,
+  },
+  {
+    id: 'consolidation-settlement-time-curve',
+    feature: 'consolidation',
+    quantity: 'settlement-time curve and degree of consolidation',
+    unit: 'mm, ratio',
+    tolerance: 0.02,
+    toleranceType: 'absolute-or-relative',
+    requiredReferenceSourceTypes: REQUIRED_EXTERNAL_BENCHMARK_SOURCE_TYPES,
+  },
+  {
+    id: 'biot-pore-pressure-dissipation',
+    feature: 'coupled-biot-plane-strain',
+    quantity: 'excess pore-pressure dissipation curve',
+    unit: 'kPa',
+    tolerance: 0.05,
+    toleranceType: 'relative',
+    requiredReferenceSourceTypes: REQUIRED_EXTERNAL_BENCHMARK_SOURCE_TYPES,
+  },
+  {
+    id: 'seepage-head-flux-gradient',
+    feature: 'seepage-pore-pressure-coupling',
+    quantity: 'hydraulic head, flux, and gradient checks',
+    unit: 'm, m3/s, ratio',
+    tolerance: 0.03,
+    toleranceType: 'relative',
+    requiredReferenceSourceTypes: REQUIRED_EXTERNAL_BENCHMARK_SOURCE_TYPES,
+  },
+  {
+    id: 'support-reaction-and-stability-factors',
+    feature: 'support-design',
+    quantity: 'support reaction and stability safety-factor checks',
+    unit: 'kN, ratio',
+    tolerance: 0.05,
+    toleranceType: 'relative',
+    requiredReferenceSourceTypes: REQUIRED_EXTERNAL_BENCHMARK_SOURCE_TYPES,
+  },
+];
 
 function degToRad(degrees: number): number {
   return (degrees * Math.PI) / 180;
@@ -347,6 +481,174 @@ function assertFiniteNonNegative(value: number, label: string): void {
 function round(value: number, digits = 6): number {
   const scale = 10 ** digits;
   return Math.round(value * scale) / scale;
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function hasPublishedCitation(citation: FemExternalBenchmarkPublishedCitation | undefined): boolean {
+  return citation != null &&
+    isNonEmptyString(citation.title) &&
+    Array.isArray(citation.authors) &&
+    citation.authors.some((author) => isNonEmptyString(author)) &&
+    Number.isInteger(citation.year) &&
+    citation.year >= 1900 &&
+    (
+      isNonEmptyString(citation.publication) ||
+      isNonEmptyString(citation.doi) ||
+      isNonEmptyString(citation.url)
+    );
+}
+
+function hasReferenceSolverCitation(
+  citation: FemExternalBenchmarkReferenceSolverCitation | undefined,
+): boolean {
+  return citation != null &&
+    isNonEmptyString(citation.name) &&
+    isNonEmptyString(citation.version);
+}
+
+function copyExternalBenchmarkReference(
+  reference: FemExternalBenchmarkReference,
+): FemExternalBenchmarkReference {
+  return {
+    ...reference,
+    ...(reference.publishedSource
+      ? {
+          publishedSource: {
+            ...reference.publishedSource,
+            authors: [...reference.publishedSource.authors],
+          },
+        }
+      : {}),
+    ...(reference.referenceSolver
+      ? {
+          referenceSolver: { ...reference.referenceSolver },
+        }
+      : {}),
+  };
+}
+
+function copyExternalBenchmarkQuantityRequirement(
+  requirement: FemExternalBenchmarkQuantityRequirement,
+): FemExternalBenchmarkQuantityRequirement {
+  return {
+    ...requirement,
+    requiredReferenceSourceTypes: [...new Set(requirement.requiredReferenceSourceTypes)],
+  };
+}
+
+export function buildFemExternalBenchmarkAcceptanceContract(options: {
+  references?: readonly FemExternalBenchmarkReference[];
+  requiredQuantities?: readonly FemExternalBenchmarkQuantityRequirement[];
+} = {}): FemExternalBenchmarkAcceptanceContract {
+  const references = (options.references ?? []).map(copyExternalBenchmarkReference);
+  const requiredQuantities = (options.requiredQuantities ?? DEFAULT_EXTERNAL_BENCHMARK_REQUIRED_QUANTITIES)
+    .map(copyExternalBenchmarkQuantityRequirement);
+  const blockerCodes: string[] = [];
+
+  if (references.length === 0) {
+    blockerCodes.push('external-benchmark-reference-corpus-missing');
+  }
+
+  for (const [index, reference] of references.entries()) {
+    const referenceCode = isNonEmptyString(reference.id)
+      ? reference.id
+      : String(index);
+    if (!isNonEmptyString(reference.id)) {
+      blockerCodes.push(`external-benchmark.references.${index}.id-missing`);
+    }
+    if (!REQUIRED_EXTERNAL_BENCHMARK_SOURCE_TYPES.includes(reference.sourceType) &&
+      reference.sourceType !== 'open-source-solver') {
+      blockerCodes.push(`external-benchmark.references.${referenceCode}.source-type-invalid`);
+    }
+    if (!isNonEmptyString(reference.label)) {
+      blockerCodes.push(`external-benchmark.references.${referenceCode}.label-missing`);
+    }
+    if (!isNonEmptyString(reference.citation)) {
+      blockerCodes.push(`external-benchmark.references.${referenceCode}.citation-missing`);
+    }
+    if (reference.sourceType === 'published-source' && !hasPublishedCitation(reference.publishedSource)) {
+      blockerCodes.push(`external-benchmark.references.${referenceCode}.published-source-citation-missing`);
+    }
+    if (
+      (reference.sourceType === 'commercial-solver' || reference.sourceType === 'open-source-solver') &&
+      !hasReferenceSolverCitation(reference.referenceSolver)
+    ) {
+      blockerCodes.push(`external-benchmark.references.${referenceCode}.reference-solver-citation-missing`);
+    }
+  }
+
+  const hasPublishedReference = references.some((reference) =>
+    reference.sourceType === 'published-source' &&
+    isNonEmptyString(reference.citation) &&
+    hasPublishedCitation(reference.publishedSource));
+  const hasReferenceSolver = references.some((reference) =>
+    (reference.sourceType === 'commercial-solver' || reference.sourceType === 'open-source-solver') &&
+    isNonEmptyString(reference.citation) &&
+    hasReferenceSolverCitation(reference.referenceSolver));
+
+  if (!hasPublishedReference) {
+    blockerCodes.push('external-benchmark-published-source-citation-missing');
+  }
+  if (!hasReferenceSolver) {
+    blockerCodes.push('external-benchmark-reference-solver-citation-missing');
+  }
+  if (requiredQuantities.length === 0) {
+    blockerCodes.push('external-benchmark-required-quantities-missing');
+  }
+
+  for (const [index, requirement] of requiredQuantities.entries()) {
+    const quantityCode = isNonEmptyString(requirement.id)
+      ? requirement.id
+      : String(index);
+    if (!isNonEmptyString(requirement.id)) {
+      blockerCodes.push(`external-benchmark.required-quantities.${index}.id-missing`);
+    }
+    if (!isNonEmptyString(requirement.quantity)) {
+      blockerCodes.push(`external-benchmark.required-quantities.${quantityCode}.quantity-missing`);
+    }
+    if (!isNonEmptyString(requirement.unit)) {
+      blockerCodes.push(`external-benchmark.required-quantities.${quantityCode}.unit-missing`);
+    }
+    if (!Number.isFinite(requirement.tolerance) || requirement.tolerance < 0) {
+      blockerCodes.push(`external-benchmark.required-quantities.${quantityCode}.tolerance-invalid`);
+    }
+    if (
+      requirement.toleranceType !== 'absolute' &&
+      requirement.toleranceType !== 'relative' &&
+      requirement.toleranceType !== 'absolute-or-relative'
+    ) {
+      blockerCodes.push(`external-benchmark.required-quantities.${quantityCode}.tolerance-type-invalid`);
+    }
+    if (!Array.isArray(requirement.requiredReferenceSourceTypes) ||
+      requirement.requiredReferenceSourceTypes.length === 0) {
+      blockerCodes.push(`external-benchmark.required-quantities.${quantityCode}.source-types-missing`);
+    } else if (references.length > 0) {
+      const missingSourceTypes = requirement.requiredReferenceSourceTypes.filter((sourceType) =>
+        !references.some((reference) => reference.sourceType === sourceType));
+      if (missingSourceTypes.length > 0) {
+        blockerCodes.push(`external-benchmark.required-quantities.${quantityCode}.reference-source-types-missing`);
+      }
+    }
+  }
+
+  const uniqueBlockerCodes = [...new Set(blockerCodes)];
+  const productionReadinessBlocked = uniqueBlockerCodes.length > 0;
+
+  return {
+    schemaVersion: 'fem-external-benchmark-acceptance-metadata.v1',
+    status: productionReadinessBlocked ? 'blocked' : 'metadata-ready',
+    productionReadinessBlocked,
+    requiredSourceTypes: [...REQUIRED_EXTERNAL_BENCHMARK_SOURCE_TYPES],
+    references,
+    requiredQuantities,
+    blockerCodes: uniqueBlockerCodes,
+    acceptanceStatement: productionReadinessBlocked
+      ? 'External benchmark metadata is incomplete; production readiness remains blocked until published source citations, reference-solver citations, and required quantity tolerances are registered.'
+      : 'External benchmark metadata is ready for independent result comparison; this does not approve production FEM design use.',
+  };
 }
 
 export function evaluateFemTolerance(
@@ -926,14 +1228,33 @@ export function runExcavationSupportDesignCheck(
   if (!Number.isFinite(input.frictionAngleDeg) || input.frictionAngleDeg <= 0 || input.frictionAngleDeg >= 50) {
     throw new Error('frictionAngleDeg must be finite and between 0 and 50 degrees.');
   }
+  if (!Array.isArray(input.supportLevelsM)) {
+    throw new Error('supportLevelsM must be an array of finite support depths.');
+  }
+  for (const [index, level] of input.supportLevelsM.entries()) {
+    if (!Number.isFinite(level) || level < 0 || level > input.excavationDepthM) {
+      throw new Error(`supportLevelsM.${index} must be finite and between 0 and excavationDepthM.`);
+    }
+  }
+  const stageDepthsM = input.stageDepthsM ?? [input.excavationDepthM];
+  if (!Array.isArray(stageDepthsM) || stageDepthsM.length === 0) {
+    throw new Error('stageDepthsM must contain at least one staged excavation depth when provided.');
+  }
+  let previousStageDepthM = 0;
+  for (const [index, stageDepthM] of stageDepthsM.entries()) {
+    if (!Number.isFinite(stageDepthM) || stageDepthM <= previousStageDepthM || stageDepthM > input.excavationDepthM) {
+      throw new Error(`stageDepthsM.${index} must be finite, increasing, and no deeper than excavationDepthM.`);
+    }
+    previousStageDepthM = stageDepthM;
+  }
 
   const policy = input.policy ?? DEFAULT_FEM_CONVERGENCE_POLICY;
   const surchargeKpa = input.surchargeKpa ?? 0;
   const waterTableDepthM = input.waterTableDepthM ?? 999;
-  const active = calculateLateralEarthPressure({
-    wallHeight: input.excavationDepthM,
+  const activeForceForDepth = (depthM: number): number => calculateLateralEarthPressure({
+    wallHeight: depthM,
     soilLayers: [{
-      thickness: input.excavationDepthM,
+      thickness: depthM,
       unitWeight: input.unitWeightKnM3,
       cohesion: input.cohesionKpa,
       frictionAngle: input.frictionAngleDeg,
@@ -945,7 +1266,8 @@ export function runExcavationSupportDesignCheck(
     wallInclination: 0,
     waterTableDepth: waterTableDepthM,
     surcharge: surchargeKpa,
-  });
+  }).totalForce;
+  const activeTotalForce = activeForceForDepth(input.excavationDepthM);
   const embedmentM = input.wallToeDepthM - input.excavationDepthM;
   const passive = calculateLateralEarthPressure({
     wallHeight: embedmentM,
@@ -964,20 +1286,49 @@ export function runExcavationSupportDesignCheck(
     surcharge: 0,
   });
 
-  const supportCount = input.supportLevelsM.filter((level) =>
-    Number.isFinite(level) && level >= 0 && level <= input.excavationDepthM).length;
+  const supportLevelsM = [...new Set(input.supportLevelsM)].sort((a, b) => a - b);
+  const supportCount = supportLevelsM.length;
   const supportDemandKnPerM = supportCount > 0
-    ? active.totalForce / supportCount
-    : active.totalForce;
+    ? activeTotalForce / supportCount
+    : activeTotalForce;
   const supportCapacitySafetyFactor = supportCount > 0
     ? input.allowableSupportLoadKnPerM / Math.max(supportDemandKnPerM, 1e-9)
     : 0;
-  const passiveSafetyFactor = passive.totalForce / Math.max(active.totalForce, 1e-9);
+  const passiveSafetyFactor = passive.totalForce / Math.max(activeTotalForce, 1e-9);
   const basalHeaveSafetyFactor = input.cohesionKpa > 0
     ? (5.14 * input.cohesionKpa) / Math.max(input.unitWeightKnM3 * input.excavationDepthM + surchargeKpa, 1e-9)
     : 0;
   const requiredPassiveSafetyFactor = input.requiredPassiveSafetyFactor ?? 1.5;
   const requiredBasalHeaveSafetyFactor = input.requiredBasalHeaveSafetyFactor ?? 1.5;
+  const stagedSequenceCoversFinalDepth = Math.abs(stageDepthsM[stageDepthsM.length - 1] - input.excavationDepthM) <= 1e-9;
+
+  const stageChecks: FemExcavationSupportStageCheck[] = stageDepthsM.map((stageDepthM, index) => {
+    const installedSupportLevelsM = supportLevelsM.filter((level) => level <= stageDepthM);
+    const activeEarthPressureKnPerM = activeForceForDepth(stageDepthM);
+    const supportReactionDemandKnPerM = installedSupportLevelsM.length > 0
+      ? activeEarthPressureKnPerM / installedSupportLevelsM.length
+      : activeEarthPressureKnPerM;
+    const stageSupportCapacitySafetyFactor = installedSupportLevelsM.length > 0
+      ? input.allowableSupportLoadKnPerM / Math.max(supportReactionDemandKnPerM, 1e-9)
+      : 0;
+    const blockerCodes: string[] = [];
+    if (installedSupportLevelsM.length === 0) blockerCodes.push('support-level-missing');
+    if (stageSupportCapacitySafetyFactor < 1) blockerCodes.push('support-reaction-demand-exceeds-allowable');
+    if (index === stageDepthsM.length - 1 && !stagedSequenceCoversFinalDepth) {
+      blockerCodes.push('final-stage-depth-mismatch');
+    }
+
+    return {
+      id: `stage-${index + 1}-support-reaction`,
+      stageDepthM: round(stageDepthM, 4),
+      installedSupportLevelsM: installedSupportLevelsM.map((level) => round(level, 4)),
+      activeEarthPressureKnPerM: round(activeEarthPressureKnPerM, 4),
+      supportReactionDemandKnPerM: round(supportReactionDemandKnPerM, 4),
+      supportCapacitySafetyFactor: round(stageSupportCapacitySafetyFactor, 4),
+      blockerCodes,
+      status: blockerCodes.length === 0 ? 'accepted' : 'blocked',
+    };
+  });
 
   const checks: FemDesignCheck[] = [
     {
@@ -998,18 +1349,40 @@ export function runExcavationSupportDesignCheck(
       required: requiredBasalHeaveSafetyFactor,
       status: basalHeaveSafetyFactor >= requiredBasalHeaveSafetyFactor ? 'accepted' : 'blocked',
     },
+    {
+      id: 'staged-support-reaction-sequence',
+      actual: stageChecks.every((check) => check.status === 'accepted') && stagedSequenceCoversFinalDepth ? 1 : 0,
+      required: 1,
+      status: stageChecks.every((check) => check.status === 'accepted') && stagedSequenceCoversFinalDepth
+        ? 'accepted'
+        : 'blocked',
+    },
+  ];
+  const acceptanceBlockers = [
+    ...checks
+      .filter((check) => check.status === 'blocked')
+      .map((check) => `support-design.${check.id}`),
+    ...stageChecks.flatMap((check) =>
+      check.blockerCodes.map((code) => `${check.id}.${code}`)),
   ];
 
   return {
     schemaVersion: 'fem-excavation-support-design-check.v1',
     method: 'rankine-earth-pressure-support-screening',
-    activeEarthPressureKnPerM: round(active.totalForce, 4),
+    designScope: 'screening-only-not-structural-design',
+    activeEarthPressureKnPerM: round(activeTotalForce, 4),
     passiveToeResistanceKnPerM: round(passive.totalForce, 4),
     supportDemandKnPerM: round(supportDemandKnPerM, 4),
     supportCapacitySafetyFactor: round(supportCapacitySafetyFactor, 4),
     passiveSafetyFactor: round(passiveSafetyFactor, 4),
     basalHeaveSafetyFactor: round(basalHeaveSafetyFactor, 4),
+    stageChecks,
     checks,
+    acceptanceBlockers: [...new Set(acceptanceBlockers)],
+    productionBlockers: [
+      'jurisdiction-specific-wall-strut-anchor-structural-design-not-implemented',
+      'screening-support-reaction-check-is-not-a-design-code-acceptance',
+    ],
     status: checks.every((check) => check.status === 'accepted') ? 'accepted' : 'blocked',
     policy,
   };
@@ -1837,6 +2210,7 @@ export function runFemEngineeringEvidenceSuite(
     cohesionKpa: 45,
     surchargeKpa: 10,
     waterTableDepthM: 99,
+    stageDepthsM: [3, 6, 8],
     supportLevelsM: [1, 4],
     allowableSupportLoadKnPerM: 300,
     requiredPassiveSafetyFactor: 1.5,
@@ -1852,6 +2226,20 @@ export function runFemEngineeringEvidenceSuite(
     1,
     0,
     'Support screening must pass support capacity, passive toe resistance, and basal-heave checks for the controlled fixture.',
+  ));
+  benchmarks.push(benchmark(
+    'excavation-support-staged-reaction-sequence',
+    'support-design',
+    'internal-balance',
+    'stageSupportChecksAccepted',
+    support.stageChecks.every((check) => check.status === 'accepted') &&
+      support.acceptanceBlockers.length === 0 &&
+      support.productionBlockers.includes('jurisdiction-specific-wall-strut-anchor-structural-design-not-implemented')
+      ? 1
+      : 0,
+    1,
+    0,
+    'Support screening must tie support reaction demand to staged excavation depths while preserving jurisdiction-specific structural design as a production blocker.',
   ));
 
   const reviewerValidation = validateFemReviewerApprovalRecord({
@@ -1893,6 +2281,7 @@ export function runFemEngineeringEvidenceSuite(
       .map((item) => item.feature),
   )];
   const status = benchmarks.every((item) => item.status === 'accepted') ? 'kernel-verified' : 'blocked';
+  const externalBenchmarkAcceptance = buildFemExternalBenchmarkAcceptanceContract();
 
   return {
     schemaVersion: 'fem-engineering-evidence.v1',
@@ -1900,6 +2289,7 @@ export function runFemEngineeringEvidenceSuite(
     productionReady: false,
     verifiedFeatures,
     benchmarks,
+    externalBenchmarkAcceptance,
     convergencePolicy: policy,
     remainingProductionBlockers: [
       'production-sparse-fem-solver-and-2d-3d-result-route-not-integrated-with-these-kernels',
@@ -1907,6 +2297,7 @@ export function runFemEngineeringEvidenceSuite(
       'biot-u-p-route-backed-preview-is-not-production-sparse-solver',
       'support-design-is-screening-level-and-not-jurisdiction-specific-structural-design',
       'published-commercial-cross-solver-benchmark-corpus-not-approved',
+      ...externalBenchmarkAcceptance.blockerCodes,
       'production-design-approval-scope-fails-closed-until-production-acceptance',
       'reviewer-approval-record-validator-exists-but-cli-run-does-not-enforce-persistence-for-every-run',
     ],

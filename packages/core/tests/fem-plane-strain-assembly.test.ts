@@ -700,6 +700,109 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
     }
   });
 
+  it('matches dense Drucker-Prager load-step results with the opt-in sparse CG backend', () => {
+    const mesh = buildPlaneStrainRectangularMesh({
+      widthM: 2,
+      heightM: 1,
+      divisionsX: 2,
+      divisionsY: 1,
+      materialId: 'soil',
+    });
+    const topNodes = mesh.nodes.filter((node) => node.yM === 1);
+    const bottomNodes = mesh.nodes.filter((node) => node.yM === 0);
+    const model: FemPlaneStrainModel = {
+      schemaVersion: 'fem-plane-strain-model.v1',
+      nodes: mesh.nodes,
+      elements: mesh.elements,
+      materials: [{
+        id: 'soil',
+        elasticModulusKpa: 25_000,
+        poissonRatio: 0.28,
+        frictionAngleDeg: 35,
+        cohesionKpa: 10_000,
+        dilationAngleDeg: 0,
+      }],
+      boundaryConditions: bottomNodes.flatMap((node) => [
+        { nodeId: node.id, dof: 'ux' as const },
+        { nodeId: node.id, dof: 'uy' as const },
+      ]),
+      nodalLoads: topNodes.map((node) => ({ nodeId: node.id, fyKn: -5 })),
+    };
+
+    const dense = runPlaneStrainDruckerPragerLoadSteps(model, { linearSolver: 'dense-gaussian' });
+    const sparse = runPlaneStrainDruckerPragerLoadSteps(model, {
+      linearSolver: 'sparse-csr-cg',
+      linearSolverTolerance: 1e-10,
+      linearSolverMaxIterations: 80,
+    });
+
+    expect(sparse.linearSolver).toBe('sparse-csr-cg');
+    expect(sparse.nonlinearAlgorithm).toBe('modified-newton');
+    expect(sparse.globalTangent).toBe('elastic');
+    expect(sparse.materialIntegration).toBe('total-strain-drucker-prager-projection');
+    expect(sparse.converged).toBe(true);
+    expect(sparse.reactionBalanceRatio).toBeGreaterThan(0.999);
+    expect(sparse.loadSteps.every((step) => step.linearSolver === 'sparse-csr-cg')).toBe(true);
+    expect(sparse.loadSteps.every((step) => step.linearSolverAudits.every((audit) => audit.converged))).toBe(true);
+    expect(sparse.loadSteps.some((step) => step.linearIterations > 0)).toBe(true);
+    for (const denseNode of dense.nodes) {
+      const sparseNode = sparse.nodes.find((node) => node.id === denseNode.id)!;
+      expect(sparseNode.uxM).toBeCloseTo(denseNode.uxM, 8);
+      expect(sparseNode.uyM).toBeCloseTo(denseNode.uyM, 8);
+      expect(sparseNode.rxnYKn).toBeCloseTo(denseNode.rxnYKn, 5);
+    }
+  });
+
+  it('solves oversized nonlinear evidence meshes only through the experimental sparse backend', () => {
+    const mesh = buildPlaneStrainRectangularMesh({
+      widthM: 20,
+      heightM: 19,
+      divisionsX: 20,
+      divisionsY: 19,
+      materialId: 'soil',
+    });
+    const topNodes = mesh.nodes.filter((node) => node.yM === 19);
+    const bottomNodes = mesh.nodes.filter((node) => node.yM === 0);
+    const model: FemPlaneStrainModel = {
+      schemaVersion: 'fem-plane-strain-model.v1',
+      nodes: mesh.nodes,
+      elements: mesh.elements,
+      materials: [{
+        id: 'soil',
+        elasticModulusKpa: 30_000,
+        poissonRatio: 0.3,
+        frictionAngleDeg: 35,
+        cohesionKpa: 1_000_000,
+        dilationAngleDeg: 0,
+      }],
+      boundaryConditions: bottomNodes.flatMap((node) => [
+        { nodeId: node.id, dof: 'ux' as const },
+        { nodeId: node.id, dof: 'uy' as const },
+      ]),
+      nodalLoads: topNodes.map((node) => ({ nodeId: node.id, fyKn: -1 })),
+    };
+
+    expect(model.nodes.length * 2).toBeGreaterThan(800);
+    expect(() => runPlaneStrainDruckerPragerLoadSteps(model)).toThrow(/dense assembly is capped/);
+
+    const sparse = runPlaneStrainDruckerPragerLoadSteps(model, {
+      loadStepFractions: [1],
+      linearSolver: 'sparse-csr-cg',
+      linearSolverTolerance: 1e-8,
+      linearSolverMaxIterations: 2_000,
+    });
+
+    expect(sparse.dofCount).toBeGreaterThan(800);
+    expect(sparse.linearSolver).toBe('sparse-csr-cg');
+    expect(sparse.converged).toBe(true);
+    expect(sparse.loadSteps).toHaveLength(1);
+    expect(sparse.loadSteps[0].linearIterations).toBeGreaterThan(0);
+    expect(sparse.loadSteps[0].linearResidualNormRatio).toBeLessThanOrEqual(1e-8);
+    expect(sparse.residualNormRatio).toBeLessThanOrEqual(sparse.policy.forceBalanceTolerance);
+    expect(sparse.reactionBalanceRatio).toBeGreaterThan(0.999);
+    expect(sparse.limitations.join(' ')).toMatch(/experimental CSR Conjugate Gradient/i);
+  });
+
   it('projects a prescribed shear patch to Drucker-Prager yield at Gauss points', () => {
     const mesh = buildPlaneStrainRectangularMesh({
       widthM: 2,
@@ -939,5 +1042,9 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
     expect(() => runPlaneStrainDruckerPragerLoadSteps(baseModel(), {
       loadStepFractions: [0.5, 0.25, 1],
     })).toThrow(/loadStepFractions\.1/);
+
+    expect(() => runPlaneStrainDruckerPragerLoadSteps(baseModel(), {
+      linearSolver: 'bad-solver' as any,
+    })).toThrow(/linearSolver must be dense-gaussian or sparse-csr-cg/);
   });
 });

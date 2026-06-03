@@ -55,6 +55,7 @@ export {
   type FemProductionReadinessReport,
 } from './production-readiness.js';
 export {
+  buildFemExternalBenchmarkAcceptanceContract,
   DEFAULT_FEM_CONVERGENCE_POLICY,
   evaluateFemTolerance,
   mapMohrCoulombToDruckerPragerTriaxialCompression,
@@ -79,8 +80,16 @@ export {
   type FemEngineeringBenchmarkCase,
   type FemEngineeringEvidenceReport,
   type FemEngineeringKernelFeature,
+  type FemExternalBenchmarkAcceptanceContract,
+  type FemExternalBenchmarkPublishedCitation,
+  type FemExternalBenchmarkQuantityRequirement,
+  type FemExternalBenchmarkReference,
+  type FemExternalBenchmarkReferenceSolverCitation,
+  type FemExternalBenchmarkSourceType,
+  type FemExternalBenchmarkToleranceType,
   type FemExcavationSupportDesignCheckInput,
   type FemExcavationSupportDesignCheckResult,
+  type FemExcavationSupportStageCheck,
   type FemHydroMechanicalCouplingInput,
   type FemHydroMechanicalCouplingResult,
   type FemMohrCoulombMaterialPointInput,
@@ -96,6 +105,16 @@ export {
   type FemToleranceCheck,
 } from './engineering-evidence.js';
 export { renderFemWebglHtml } from './webgl.js';
+export {
+  buildCsrFromTriplets,
+  csrMatVec,
+  solveCsrConjugateGradient,
+  type FemCsrConjugateGradientOptions,
+  type FemCsrConjugateGradientResult,
+  type FemSparseCsrBuildInput,
+  type FemSparseCsrMatrix,
+  type FemSparseTriplet,
+} from './sparse-linear-algebra.js';
 export {
   buildPlaneStrainRectangularMesh,
   runPlaneStrainBiotConsolidation,
@@ -115,10 +134,13 @@ export {
   type FemPlaneStrainDruckerPragerGaussPointResult,
   type FemPlaneStrainDruckerPragerResidualHistoryEntry,
   type FemPlaneStrainDruckerPragerResult,
+  type FemPlaneStrainDruckerPragerSolverOptions,
   type FemPlaneStrainDruckerPragerStepResult,
   type FemPlaneStrainDruckerPragerTerminationReason,
   type FemPlaneStrainGaussPointResult,
   type FemPlaneStrainHydraulicHeadBoundaryCondition,
+  type FemPlaneStrainLinearSolverAudit,
+  type FemPlaneStrainLinearSolverKind,
   type FemPlaneStrainMaterial,
   type FemPlaneStrainModel,
   type FemPlaneStrainNodalFlux,

@@ -38,6 +38,8 @@ describe('FEM routing contract', () => {
     expect(capabilities.find((capability) => capability.objective === 'excavation-deformation')?.command).toBe('geotech fem draft excavation-deformation --input <json> --case-output <analysis_case.json>');
     expect(capabilities.find((capability) => capability.objective === 'excavation-deformation')?.demoCommand).toBe('geotech fem demo excavation --experimental');
     expect(capabilities.find((capability) => capability.objective === 'excavation-deformation')?.runCommandTemplate).toBe('geotech fem run <analysis_case.json> --experimental --reviewed');
+    expect(capabilities.find((capability) => capability.objective === 'excavation-deformation')?.requiredEvidence).toContain('support reaction screening check');
+    expect(capabilities.find((capability) => capability.objective === 'excavation-deformation')?.reviewGates).toContain('not-jurisdiction-specific-structural-design');
     expect(capabilities.find((capability) => capability.objective === 'tunnel-volume-loss-settlement')?.status).toBe('implemented-demo');
     expect(capabilities.find((capability) => capability.objective === 'tunnel-volume-loss-settlement')?.command).toBe('geotech fem draft tunnel-volume-loss-settlement --input <json> --case-output <analysis_case.json>');
     expect(capabilities.find((capability) => capability.objective === 'tunnel-volume-loss-settlement')?.demoCommand).toBe('geotech fem demo tunnel --experimental');
@@ -162,6 +164,8 @@ describe('FEM routing contract', () => {
     expect(draft.analysisCase?.loads[0]?.target).toBe('excavation_surcharge');
     expect(draft.validation?.status).toBe('review');
     expect(draft.reviewGates).toContain('not-design-calculation');
+    expect(draft.reviewGates).toContain('support-reaction-screening-only');
+    expect(draft.reviewGates).toContain('not-jurisdiction-specific-structural-design');
   });
 
   it('keeps malformed excavation staging inputs as blocked draft inputs instead of throwing', () => {

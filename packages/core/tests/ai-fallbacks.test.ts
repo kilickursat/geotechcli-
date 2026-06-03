@@ -484,6 +484,192 @@ describe('AI fallback behavior', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
+  it('uses mocked default hosted GLM to block production FEM claims before readiness evidence and run attempts', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        hostedBetaSuccessResponse(
+          'The nonlinear FEM solver is production-ready for design, so run the production FEM analysis now.',
+        ),
+      )
+      .mockResolvedValueOnce(
+        hostedBetaSuccessResponse([
+          'I need the deterministic readiness report first.',
+          '```tool',
+          JSON.stringify({
+            tool: 'assess_fem_production_readiness',
+            args: {
+              objective: 'staged-settlement-consolidation',
+              requestedFeatures: [
+                'nonlinear-plasticity',
+                'consolidation',
+                'seepage-pore-pressure-coupling',
+                'advanced-staged-construction',
+                'real-project-workspace-to-run-acceptance',
+                'independent-benchmark-validation',
+              ],
+            },
+          }),
+          '```',
+        ].join('\n')),
+      )
+      .mockResolvedValueOnce(
+        hostedBetaSuccessResponse([
+          'I will still try to run the FEM case.',
+          '```tool',
+          JSON.stringify({
+            tool: 'run_command',
+            args: {
+              command: 'geotech fem run analysis_case.json --experimental',
+            },
+          }),
+          '```',
+        ].join('\n')),
+      )
+      .mockResolvedValueOnce(
+        hostedBetaSuccessResponse([
+          'The run path is blocked, so I will only prepare a review-gated draft.',
+          '```tool',
+          JSON.stringify({
+            tool: 'prepare_fem_analysis_case',
+            args: {
+              objective: 'staged-settlement-consolidation',
+            },
+          }),
+          '```',
+        ].join('\n')),
+      )
+      .mockResolvedValueOnce(
+        hostedBetaSuccessResponse(
+          'Production readiness is blocked by deterministic FEM tool blockers before any draft recommendation. Prepare only a review-gated draft and do not run the solver or claim production design readiness.',
+        ),
+      );
+    global.fetch = fetchMock as typeof fetch;
+
+    const session = await runAgent(
+      'Use the default hosted GLM agent to make staged settlement consolidation FEM production-ready, then draft and run the nonlinear design solver.',
+      {
+        provider: 'hosted-beta',
+        apiKey: '',
+        timeout: 1000,
+      },
+      () => {},
+      undefined,
+      {
+        allowedTools: [
+          'assess_fem_production_readiness',
+          'prepare_fem_analysis_case',
+        ],
+        disableDeterministicPreflight: true,
+        requiredToolsBeforeFinal: [
+          'assess_fem_production_readiness',
+          'prepare_fem_analysis_case',
+        ],
+      },
+    );
+
+    const requests = fetchMock.mock.calls.map((call) => (
+      JSON.parse(String(call[1]?.body ?? '{}')) as { model?: string; messages?: Array<{ content?: unknown }> }
+    ));
+    expect(requests.map((request) => request.model)).toEqual([
+      'glm-5.1',
+      'glm-5.1',
+      'glm-5.1',
+      'glm-5.1',
+      'glm-5.1',
+    ]);
+
+    const firstBlockedIndex = session.steps.findIndex(
+      (step) => step.type === 'error' && step.content.includes('Final answer blocked until required scoped tool'),
+    );
+    const readinessCallIndex = session.steps.findIndex(
+      (step) => step.type === 'tool_call' && step.toolName === 'assess_fem_production_readiness',
+    );
+    const readinessResultIndex = session.steps.findIndex(
+      (step) => step.type === 'tool_result' && step.toolName === 'assess_fem_production_readiness',
+    );
+    const runAttemptIndex = session.steps.findIndex(
+      (step) => step.type === 'tool_call' && step.toolName === 'run_command',
+    );
+    const runBlockedIndex = session.steps.findIndex(
+      (step) => step.type === 'error' && step.toolName === 'run_command',
+    );
+    const draftCallIndex = session.steps.findIndex(
+      (step) => step.type === 'tool_call' && step.toolName === 'prepare_fem_analysis_case',
+    );
+    expect(firstBlockedIndex).toBeGreaterThanOrEqual(0);
+    expect(firstBlockedIndex).toBeLessThan(readinessCallIndex);
+    expect(readinessCallIndex).toBeLessThan(readinessResultIndex);
+    expect(readinessResultIndex).toBeLessThan(runAttemptIndex);
+    expect(runAttemptIndex).toBeLessThan(runBlockedIndex);
+    expect(runBlockedIndex).toBeLessThan(draftCallIndex);
+
+    expect(session.steps.some((step) => (
+      step.type === 'answer'
+      && /solver is production-ready for design/i.test(step.content)
+    ))).toBe(false);
+    expect(session.steps).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'error',
+        toolName: 'run_command',
+        content: expect.stringContaining('Tool blocked by this scoped agent: run_command'),
+      }),
+    ]));
+
+    const toolCalls = session.steps.filter((step) => step.type === 'tool_call');
+    expect(toolCalls.map((step) => step.toolName)).toEqual([
+      'assess_fem_production_readiness',
+      'run_command',
+      'prepare_fem_analysis_case',
+    ]);
+    const toolResults = session.steps.filter((step) => step.type === 'tool_result');
+    expect(toolResults.map((step) => step.toolName)).toEqual([
+      'assess_fem_production_readiness',
+      'prepare_fem_analysis_case',
+    ]);
+    expect(session.context).not.toHaveProperty('run_command');
+
+    const readinessData = toolResults.find(
+      (step) => step.toolName === 'assess_fem_production_readiness',
+    )?.toolResult?.data as any;
+    expect(readinessData.productionReady).toBe(false);
+    expect(readinessData.blockers).toEqual(expect.arrayContaining([
+      'biot-u-p-route-backed-preview-is-not-production-sparse-solver',
+      'production-sparse-fem-solver-and-2d-3d-result-route-not-integrated-with-these-kernels',
+      'published-commercial-cross-solver-benchmark-corpus-not-approved',
+    ]));
+    expect(readinessData.agentEvidenceSummary).toContain('productionReady: no');
+    expect(readinessData.agentEvidenceSummary)
+      .toContain('biot-u-p-route-backed-preview-is-not-production-sparse-solver');
+
+    const promptBeforeRunAttempt = (requests[2]?.messages ?? [])
+      .map((message) => typeof message.content === 'string' ? message.content : JSON.stringify(message.content))
+      .join('\n');
+    expect(promptBeforeRunAttempt).toContain('[Tool Result: assess_fem_production_readiness]');
+    expect(promptBeforeRunAttempt).toContain('productionReady: no');
+    expect(promptBeforeRunAttempt)
+      .toContain('biot-u-p-route-backed-preview-is-not-production-sparse-solver');
+
+    const promptAfterRunBlocked = (requests[3]?.messages ?? [])
+      .map((message) => typeof message.content === 'string' ? message.content : JSON.stringify(message.content))
+      .join('\n');
+    expect(promptAfterRunBlocked.indexOf('productionReady: no'))
+      .toBeLessThan(promptAfterRunBlocked.indexOf('[Tool Blocked: run_command]'));
+    expect(promptAfterRunBlocked).toContain('This scoped agent may only use');
+    expect(promptAfterRunBlocked).toContain('assess_fem_production_readiness, prepare_fem_analysis_case');
+
+    const draftResult = toolResults.find((step) => step.toolName === 'prepare_fem_analysis_case');
+    expect(draftResult?.content).toContain('draft prepared');
+    expect((draftResult?.toolResult?.data as any).canAutoProceed).toBe(false);
+    expect((draftResult?.toolResult?.data as any).analysisCase).toBeUndefined();
+
+    const answer = session.steps.find((step) => step.type === 'answer');
+    expect(answer?.content).toMatch(/Production readiness is blocked/i);
+    expect(answer?.content).toMatch(/do not run the solver/i);
+    expect(answer?.content).not.toMatch(/\bis production[- ]?(?:ready|grade)\b/i);
+    expect(answer?.content).not.toMatch(/\bready for production\b/i);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+  });
+
   it('returns a deterministic fallback answer in runSwarm when the first hosted-beta turn cannot reach the provider', async () => {
     global.fetch = vi.fn().mockResolvedValue(
       new Response(

@@ -35,8 +35,12 @@ describe('FEM production readiness contract', () => {
       'biot-u-p-route-backed-preview-is-not-production-sparse-solver',
       'seepage-route-needs-independent-benchmark-and-design-check-acceptance',
       'support-design-engine-coupled-to-staged-excavation-route',
+      'jurisdiction-specific-wall-strut-anchor-structural-design-not-implemented',
       'workspace-to-run-acceptance-validator-enforced',
       'published-benchmark-corpus-approved',
+      'external-benchmark-reference-corpus-missing',
+      'external-benchmark-published-source-citation-missing',
+      'external-benchmark-reference-solver-citation-missing',
       'production-design-approval-scope-fails-closed-until-production-acceptance',
       'reviewer-approval-record-enforced-by-cli-run',
     ]));
@@ -44,6 +48,16 @@ describe('FEM production readiness contract', () => {
       schemaVersion: 'fem-engineering-evidence.v1',
       status: 'kernel-verified',
       productionReady: false,
+    });
+    expect(report.engineeringEvidence.externalBenchmarkAcceptance).toMatchObject({
+      schemaVersion: 'fem-external-benchmark-acceptance-metadata.v1',
+      status: 'blocked',
+      productionReadinessBlocked: true,
+      blockerCodes: expect.arrayContaining([
+        'external-benchmark-reference-corpus-missing',
+        'external-benchmark-published-source-citation-missing',
+        'external-benchmark-reference-solver-citation-missing',
+      ]),
     });
     expect(report.engineeringEvidence.verifiedFeatures).toEqual(expect.arrayContaining([
       'global-plane-strain-assembly',
@@ -60,6 +74,7 @@ describe('FEM production readiness contract', () => {
       'quad4-plane-strain-biot-u-p-pressure-gradient-flux-contract',
       'quad4-plane-strain-biot-u-p-alpha-zero-decoupling',
       'quad4-plane-strain-biot-u-p-terzaghi-pressure-dissipation',
+      'excavation-support-staged-reaction-sequence',
     ]));
     expect(report.releasePositioning).toContain('not a full production-grade nonlinear geotechnical FEM solver yet');
   });
@@ -87,6 +102,9 @@ describe('FEM production readiness contract', () => {
       'Reviewed run command template: geotech fem run <analysis_case.json> --experimental --reviewed',
     ]));
     expect(report.blockedFeatures.map((feature) => feature.status)).toEqual(['kernel-verified', 'kernel-verified']);
+    expect(report.blockedFeatures.find((feature) => feature.feature === 'support-design')?.currentCoverage)
+      .toContain('staged support reaction demand');
+    expect(report.blockers).toContain('jurisdiction-specific-wall-strut-anchor-structural-design-not-implemented');
   });
 
   it('exposes a scoped FEM agent tool for production-readiness blockers', async () => {

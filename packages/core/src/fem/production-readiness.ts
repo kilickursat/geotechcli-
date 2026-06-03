@@ -115,7 +115,7 @@ const FEATURE_REQUIREMENTS: Record<FemProductionFeature, Omit<FemProductionFeatu
   },
   'support-design': {
     status: 'kernel-verified',
-    currentCoverage: 'A deterministic Rankine support-screening kernel checks support capacity, passive toe resistance, and basal heave for controlled fixtures. It is not a wall/strut/anchor structural design engine.',
+    currentCoverage: 'A deterministic Rankine support-screening kernel checks support capacity, passive toe resistance, basal heave, and staged support reaction demand for controlled excavation-stage fixtures. The excavation preview route exposes support reaction metadata for review, but this remains screening evidence only and is not a wall/strut/anchor structural design engine.',
     requiredForAcceptance: [
       'wall/strut/anchor structural design checks with explicit standards assumptions',
       'basal heave, kick-out, surcharge, and toe embedment verification',
@@ -123,6 +123,7 @@ const FEATURE_REQUIREMENTS: Record<FemProductionFeature, Omit<FemProductionFeatu
     ],
     blockedUntil: [
       'support-design-engine-coupled-to-staged-excavation-route',
+      'jurisdiction-specific-wall-strut-anchor-structural-design-not-implemented',
       'basal-heave-and-toe-checks-approved-for-project-standards',
       'support-design-benchmark-suite-approved-against-published-or-commercial-references',
     ],
@@ -202,6 +203,9 @@ export function assessFemProductionReadiness(options: {
     ...FEATURE_REQUIREMENTS[feature],
   }));
   const engineeringEvidence = runFemEngineeringEvidenceSuite();
+  const externalBenchmarkBlockers = engineeringEvidence.externalBenchmarkAcceptance.productionReadinessBlocked
+    ? engineeringEvidence.externalBenchmarkAcceptance.blockerCodes
+    : [];
 
   return {
     schemaVersion: 'fem-production-readiness.v1',
@@ -216,6 +220,7 @@ export function assessFemProductionReadiness(options: {
     blockers: [...new Set([
       ...blockedFeatures.flatMap((feature) => feature.blockedUntil),
       ...engineeringEvidence.remainingProductionBlockers,
+      ...externalBenchmarkBlockers,
     ])],
     safeUserActions: [
       'Use implemented routes only as experimental, human-reviewed previews.',
