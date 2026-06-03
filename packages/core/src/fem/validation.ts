@@ -36,6 +36,19 @@ function isNonEmptyString(value: unknown): value is string {
 const FEM_WEBGL_UINT16_INDEX_LIMIT = 65_535;
 const FEM_MAX_PREVIEW_MESH_NODES = FEM_WEBGL_UINT16_INDEX_LIMIT + 1;
 
+function expectedMeshCounts(mesh: FemAnalysisCase['mesh']): { nodes: number; elements: number } {
+  if (mesh.elementType === 'quad4_plane_strain') {
+    return {
+      nodes: (mesh.divisionsX + 1) * (mesh.divisionsY + 1),
+      elements: mesh.divisionsX * mesh.divisionsY,
+    };
+  }
+  return {
+    nodes: (mesh.divisionsX + 1) * (mesh.divisionsY + 1) * (mesh.divisionsZ + 1),
+    elements: mesh.divisionsX * mesh.divisionsY * mesh.divisionsZ,
+  };
+}
+
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
@@ -86,7 +99,7 @@ function isFemAnalysisCaseShape(value: unknown): value is FemAnalysisCase {
   return (
     isRecord(geometry) &&
     isRecord(geometry.domain) &&
-    (isRecord(geometry.raft) || isRecord(geometry.excavation) || isRecord(geometry.tunnel) || isRecord(geometry.consolidation)) &&
+    (isRecord(geometry.raft) || isRecord(geometry.excavation) || isRecord(geometry.tunnel) || isRecord(geometry.consolidation) || isRecord(geometry.biot)) &&
     isRecord(mesh) &&
     isRecord(groundwater) &&
     isRecord(value.units) &&
@@ -247,7 +260,7 @@ function validateOptionalResultMetadata(
   const validFieldLocations = new Set(['surface_nodes', 'outline_nodes', 'envelope']);
   const validFieldQuantities = new Set(['displacement', 'reaction', 'load', 'stage_count', 'pore_pressure', 'degree_of_consolidation', 'strength_ratio']);
   const validFieldComponents = new Set(['x', 'y', 'z', 'magnitude']);
-  const validDatasetSources = new Set(['visualization.disp', 'visualization.frame', 'envelope']);
+  const validDatasetSources = new Set(['visualization.disp', 'visualization.frame', 'visualization.scalar-frame', 'envelope']);
   const fieldIds = new Set<string>();
   const stepIds = new Set<string>();
   const stepIndexes = new Set<number>();
@@ -283,6 +296,17 @@ function validateOptionalResultMetadata(
     ['max_mobilized_strength_ratio', manifest.envelope.maxMobilizedStrengthRatio],
     ['drainage_path', manifest.envelope.drainagePathM],
     ['consolidation_duration', manifest.envelope.consolidationDurationYears],
+    ['time_step_count', manifest.envelope.timeStepCount],
+    ['min_pore_pressure', manifest.envelope.minPorePressureKpa],
+    ['max_pore_pressure', manifest.envelope.maxPorePressureKpa],
+    ['max_biot_coupling', manifest.envelope.maxBiotCouplingKpa],
+    ['pore_pressure_mass_balance_error_ratio', manifest.envelope.porePressureMassBalanceErrorRatio],
+    ['max_free_pore_pressure_residual', manifest.envelope.maxFreePorePressureResidualM3PerS],
+    ['free_pore_pressure_residual_l1', manifest.envelope.freePorePressureResidualL1M3PerS],
+    ['prescribed_pore_pressure_residual_l1', manifest.envelope.prescribedPorePressureResidualL1M3PerS],
+    ['coupled_unknown_count', manifest.envelope.coupledUnknownCount],
+    ['displacement_dof_count', manifest.envelope.displacementDofCount],
+    ['pore_pressure_dof_count', manifest.envelope.porePressureDofCount],
     ['tunnel_diameter', manifest.envelope.tunnelDiameterM],
     ['tunnel_axis_depth', manifest.envelope.tunnelAxisDepthM],
     ['volume_loss', manifest.envelope.volumeLossPercent],
@@ -310,8 +334,11 @@ function validateOptionalResultMetadata(
       if (fieldInfo.component != null && !validFieldComponents.has(String(fieldInfo.component))) {
         findings.push(finding('blocker', `result.fields.${index}.component.invalid`, `Unsupported result field component: ${String(fieldInfo.component)}.`));
       }
-      if (fieldInfo.location !== 'envelope' && fieldInfo.quantity !== 'displacement') {
-        findings.push(finding('blocker', `result.fields.${index}.node-quantity-invalid`, 'Surface and outline node result fields must describe displacement quantities.'));
+      if (fieldInfo.location !== 'envelope' && fieldInfo.quantity !== 'displacement' && fieldInfo.quantity !== 'pore_pressure') {
+        findings.push(finding('blocker', `result.fields.${index}.node-quantity-invalid`, 'Surface and outline node result fields must describe displacement or pore-pressure quantities.'));
+      }
+      if (fieldInfo.location === 'outline_nodes' && fieldInfo.quantity === 'pore_pressure') {
+        findings.push(finding('blocker', `result.fields.${index}.outline-pore-pressure-invalid`, 'Pore-pressure result fields must be surface-node scalar fields.'));
       }
       if (fieldInfo.location !== 'envelope' && fieldInfo.quantity === 'displacement' && fieldInfo.component == null) {
         findings.push(finding('blocker', `result.fields.${index}.component.missing`, 'Node displacement result fields must include a displacement component.'));
@@ -347,6 +374,7 @@ function validateOptionalResultMetadata(
     }
   }
 
+  let previousTimeSeconds: number | undefined;
   if (Array.isArray(steps)) {
     for (const [index, step] of steps.entries()) {
       const id = pushUniqueStringFinding(findings, stepIds, step.id, `result.steps.${index}.id`, 'Result step id');
@@ -368,6 +396,26 @@ function validateOptionalResultMetadata(
       }
       if (step.depthM != null && (!Number.isFinite(step.depthM) || step.depthM < 0)) {
         findings.push(finding('blocker', `result.steps.${index}.depth-invalid`, 'Result step depth must be finite and non-negative when present.'));
+      }
+      if (step.timeSeconds != null && (!Number.isFinite(step.timeSeconds) || step.timeSeconds < 0)) {
+        findings.push(finding('blocker', `result.steps.${index}.time-invalid`, 'Result step timeSeconds must be finite and non-negative when present.'));
+      }
+      if (step.deltaTimeSeconds != null && (!Number.isFinite(step.deltaTimeSeconds) || step.deltaTimeSeconds <= 0)) {
+        findings.push(finding('blocker', `result.steps.${index}.delta-time-invalid`, 'Result step deltaTimeSeconds must be finite and positive when present.'));
+      }
+      if (manifest.analysisCase.objective === 'seepage_groundwater_coupling') {
+        if (!isFiniteNumber(step.timeSeconds) || step.timeSeconds <= 0) {
+          findings.push(finding('blocker', `result.steps.${index}.time-required`, 'Biot consolidation result steps must carry a positive timeSeconds value.'));
+        }
+        if (!isFiniteNumber(step.deltaTimeSeconds) || step.deltaTimeSeconds <= 0) {
+          findings.push(finding('blocker', `result.steps.${index}.delta-time-required`, 'Biot consolidation result steps must carry a positive deltaTimeSeconds value.'));
+        }
+      }
+      if (isFiniteNumber(step.timeSeconds)) {
+        if (previousTimeSeconds != null && step.timeSeconds <= previousTimeSeconds) {
+          findings.push(finding('blocker', `result.steps.${index}.time-order-invalid`, 'Result step timeSeconds values must increase monotonically.'));
+        }
+        previousTimeSeconds = step.timeSeconds;
       }
       if (manifest.analysisCase.objective === 'excavation_deformation') {
         if (!step.analysisStageId) {
@@ -440,14 +488,31 @@ function validateOptionalResultMetadata(
       }
 
       const location = fieldLocations.get(dataset.fieldId);
-      if ((dataset.source === 'visualization.disp' || dataset.source === 'visualization.frame') && dataset.stepId == null) {
+      const fieldInfo = fieldInfoById.get(dataset.fieldId);
+      const isVisualizationDataset =
+        dataset.source === 'visualization.disp' ||
+        dataset.source === 'visualization.frame' ||
+        dataset.source === 'visualization.scalar-frame';
+      if (isVisualizationDataset && dataset.stepId == null) {
         findings.push(finding('blocker', `result.datasets.${index}.step-required`, 'Visualization datasets must reference a result step.'));
       }
-      if ((dataset.source === 'visualization.disp' || dataset.source === 'visualization.frame') && location === 'envelope') {
+      if (isVisualizationDataset && location === 'envelope') {
         findings.push(finding('blocker', `result.datasets.${index}.visualization-field-invalid`, 'Visualization datasets must reference surface or outline node result fields, not envelope fields.'));
       }
       if (dataset.source === 'envelope' && location !== 'envelope') {
         findings.push(finding('blocker', `result.datasets.${index}.envelope-field-invalid`, 'Envelope datasets must reference an envelope result field.'));
+      }
+      if ((dataset.source === 'visualization.disp' || dataset.source === 'visualization.frame') && dataset.stride !== 3) {
+        findings.push(finding('blocker', `result.datasets.${index}.visualization-stride-invalid`, 'Displacement visualization datasets must use stride 3.'));
+      }
+      if ((dataset.source === 'visualization.disp' || dataset.source === 'visualization.frame') && fieldInfo?.quantity !== 'displacement') {
+        findings.push(finding('blocker', `result.datasets.${index}.visualization-quantity-invalid`, 'Displacement visualization datasets must reference displacement result fields.'));
+      }
+      if (dataset.source === 'visualization.scalar-frame' && dataset.stride !== 1) {
+        findings.push(finding('blocker', `result.datasets.${index}.scalar-stride-invalid`, 'Scalar-frame visualization datasets must use stride 1.'));
+      }
+      if (dataset.source === 'visualization.scalar-frame' && fieldInfo?.quantity !== 'pore_pressure') {
+        findings.push(finding('blocker', `result.datasets.${index}.scalar-quantity-invalid`, 'Scalar-frame visualization datasets must reference pore-pressure result fields.'));
       }
       if (dataset.source === 'visualization.disp' && !arraysApproximatelyEqual(dataset.values, manifest.visualization.disp, 1e-12)) {
         findings.push(finding('blocker', `result.datasets.${index}.disp-values-mismatch`, 'Visualization displacement dataset values must match the manifest visualization displacement array.'));
@@ -458,6 +523,16 @@ function validateOptionalResultMetadata(
           findings.push(finding('blocker', `result.datasets.${index}.frame-missing`, 'Visualization frame dataset has no matching frame payload.'));
         } else if (!arraysApproximatelyEqual(dataset.values, frame.disp, 1e-12)) {
           findings.push(finding('blocker', `result.datasets.${index}.frame-values-mismatch`, 'Visualization frame dataset values must match the referenced frame displacement array.'));
+        }
+      }
+      if (dataset.source === 'visualization.scalar-frame' && dataset.stepId != null) {
+        const frame = frameByKey.get(`${dataset.fieldId}:${dataset.stepId}`);
+        if (!frame) {
+          findings.push(finding('blocker', `result.datasets.${index}.scalar-frame-missing`, 'Scalar-frame dataset has no matching frame payload.'));
+        } else if (!Array.isArray(frame.scalarValues)) {
+          findings.push(finding('blocker', `result.datasets.${index}.scalar-frame-values-missing`, 'Scalar-frame dataset must reference a frame with scalarValues.'));
+        } else if (!arraysApproximatelyEqual(dataset.values, frame.scalarValues, 1e-12)) {
+          findings.push(finding('blocker', `result.datasets.${index}.scalar-frame-values-mismatch`, 'Scalar-frame dataset values must match the referenced frame scalarValues array.'));
         }
       }
       const valueCount = dataset.values.length / dataset.stride;
@@ -556,7 +631,7 @@ export function validateFemAnalysisCase(caseFile: FemAnalysisCase): FemValidatio
     ]);
   }
 
-  const { domain, raft, excavation, tunnel, consolidation } = caseFile.geometry;
+  const { domain, raft, excavation, tunnel, consolidation, biot } = caseFile.geometry;
 
   if (caseFile.schemaVersion !== 'fem-analysis-case.v0') {
     findings.push(finding('blocker', 'schema.unsupported', 'Only fem-analysis-case.v0 is supported.'));
@@ -576,7 +651,7 @@ export function validateFemAnalysisCase(caseFile: FemAnalysisCase): FemValidatio
   if (!caseFile.experimental) {
     findings.push(finding('blocker', 'mode.experimental-required', 'FEM cases must be explicitly marked experimental.'));
   }
-  if (!['foundation_settlement', 'excavation_deformation', 'tunnel_volume_loss_settlement', 'staged_settlement_consolidation'].includes(caseFile.objective)) {
+  if (!['foundation_settlement', 'excavation_deformation', 'tunnel_volume_loss_settlement', 'staged_settlement_consolidation', 'seepage_groundwater_coupling'].includes(caseFile.objective)) {
     findings.push(finding('blocker', 'objective.unsupported', `Unsupported FEM objective: ${caseFile.objective}.`));
   }
   if (caseFile.objective === 'foundation_settlement' && caseFile.analysisType !== 'static_3d_small_strain') {
@@ -589,6 +664,9 @@ export function validateFemAnalysisCase(caseFile: FemAnalysisCase): FemValidatio
     findings.push(finding('blocker', 'analysis.unsupported', `Unsupported analysis type: ${caseFile.analysisType}.`));
   }
   if (caseFile.objective === 'staged_settlement_consolidation' && caseFile.analysisType !== 'time_dependent_1d_consolidation') {
+    findings.push(finding('blocker', 'analysis.unsupported', `Unsupported analysis type: ${caseFile.analysisType}.`));
+  }
+  if (caseFile.objective === 'seepage_groundwater_coupling' && caseFile.analysisType !== 'time_dependent_2d_biot_consolidation') {
     findings.push(finding('blocker', 'analysis.unsupported', `Unsupported analysis type: ${caseFile.analysisType}.`));
   }
   if (caseFile.geometry.domain.type !== 'box') {
@@ -814,6 +892,65 @@ export function validateFemAnalysisCase(caseFile: FemAnalysisCase): FemValidatio
       ));
     }
   }
+  if (caseFile.objective === 'seepage_groundwater_coupling') {
+    if (!biot) {
+      findings.push(finding('blocker', 'geometry.biot-missing', 'Seepage/groundwater coupling cases require plane-strain Biot geometry.'));
+    } else {
+      if (biot.type !== 'plane_strain_biot_column') {
+        findings.push(finding('blocker', 'geometry.biot.type-invalid', `Unsupported Biot geometry type: ${String(biot.type)}.`));
+      }
+      pushPositiveNumberFindings(findings, [
+        [biot.widthM, 'geometry.biot.width', 'Biot column width'],
+        [biot.heightM, 'geometry.biot.height', 'Biot column height'],
+        [biot.thicknessM, 'geometry.biot.thickness', 'Biot column thickness'],
+      ]);
+      pushFiniteNumberFinding(findings, biot.initialPorePressureKpa, 'geometry.biot.initial-pore-pressure', 'Initial pore pressure', { nonNegative: true });
+      if (!isApproxEqual(domain.lengthM, biot.widthM, 1e-9)) {
+        findings.push(finding('blocker', 'geometry.biot.domain-width-mismatch', 'Biot column width must match the box-domain length.'));
+      }
+      if (!isApproxEqual(domain.depthM, biot.heightM, 1e-9)) {
+        findings.push(finding('blocker', 'geometry.biot.domain-height-mismatch', 'Biot column height must match the box-domain depth.'));
+      }
+      if (!isApproxEqual(domain.widthM, biot.thicknessM, 1e-9)) {
+        findings.push(finding('blocker', 'geometry.biot.domain-thickness-mismatch', 'Biot column thickness must match the box-domain width.'));
+      }
+      if (!Array.isArray(biot.timeStepsSeconds) || biot.timeStepsSeconds.length === 0) {
+        findings.push(finding('blocker', 'geometry.biot.time-steps-missing', 'Biot consolidation cases require at least one positive time step.'));
+      } else {
+        let previousStepSeconds = 0;
+        for (const [index, timeSeconds] of biot.timeStepsSeconds.entries()) {
+          if (!Number.isFinite(timeSeconds) || timeSeconds <= previousStepSeconds) {
+            findings.push(finding('blocker', `geometry.biot.time-steps.${index}.invalid`, 'Biot time steps must be finite, positive, and strictly increasing.'));
+            break;
+          }
+          previousStepSeconds = timeSeconds;
+        }
+      }
+      if (!Array.isArray(biot.porePressureBoundaries) || biot.porePressureBoundaries.length === 0) {
+        findings.push(finding('blocker', 'geometry.biot.pressure-boundary-missing', 'Biot consolidation cases require at least one prescribed pore-pressure boundary.'));
+      } else {
+        const boundaryIds = new Set<string>();
+        const validPressureBoundaries = new Set(['top', 'bottom', 'left', 'right']);
+        for (const [index, boundary] of biot.porePressureBoundaries.entries()) {
+          const prefix = `geometry.biot.pressure-boundaries.${index}`;
+          if (!isRecord(boundary)) {
+            findings.push(finding('blocker', `${prefix}.shape-invalid`, 'Pore-pressure boundary must be an object.'));
+            continue;
+          }
+          pushUniqueStringFinding(findings, boundaryIds, boundary.id, `${prefix}.id`, 'Pore-pressure boundary id');
+          if (!validPressureBoundaries.has(String(boundary.boundary))) {
+            findings.push(finding('blocker', `${prefix}.boundary-invalid`, `Unsupported pore-pressure boundary: ${String(boundary.boundary)}.`));
+          }
+          pushFiniteNumberFinding(findings, boundary.porePressureKpa, `${prefix}.pore-pressure`, 'Prescribed pore pressure', { nonNegative: true });
+        }
+      }
+      findings.push(finding(
+        'review',
+        'biot.up-preview-only',
+        'Seepage/groundwater coupling uses an experimental deterministic 2D Biot u-p preview and is not production design evidence.',
+      ));
+    }
+  }
   if (caseFile.materials.length === 0) {
     findings.push(finding('blocker', 'material.missing', 'At least one material is required.'));
   } else {
@@ -855,12 +992,42 @@ export function validateFemAnalysisCase(caseFile: FemAnalysisCase): FemValidatio
           pushFiniteNumberFinding(findings, material.hydraulicConductivityMPerS, `${prefix}.hydraulic-conductivity`, 'Hydraulic conductivity', { positive: true });
         }
       }
+      if (caseFile.objective === 'seepage_groundwater_coupling') {
+        if (material.model !== 'linear_elastic') {
+          findings.push(finding('blocker', `${prefix}.biot-model-required`, 'Biot u-p preview requires a linear_elastic material with hydraulic coupling parameters.'));
+        }
+        const hasHydraulicX = material.hydraulicConductivityXMPerS != null || material.hydraulicConductivityMPerS != null;
+        if (!hasHydraulicX) {
+          findings.push(finding('blocker', `${prefix}.hydraulic-conductivity-x-missing`, 'Biot u-p preview requires hydraulic conductivity in the x direction or an isotropic hydraulic conductivity.'));
+        } else {
+          pushFiniteNumberFinding(
+            findings,
+            material.hydraulicConductivityXMPerS ?? material.hydraulicConductivityMPerS,
+            `${prefix}.hydraulic-conductivity-x`,
+            'Hydraulic conductivity X',
+            { positive: true },
+          );
+        }
+        if (material.hydraulicConductivityYMPerS != null) {
+          pushFiniteNumberFinding(findings, material.hydraulicConductivityYMPerS, `${prefix}.hydraulic-conductivity-y`, 'Hydraulic conductivity Y', { positive: true });
+        }
+        if (material.hydraulicConductivityMPerS != null) {
+          pushFiniteNumberFinding(findings, material.hydraulicConductivityMPerS, `${prefix}.hydraulic-conductivity`, 'Isotropic hydraulic conductivity', { positive: true });
+        }
+        if (!isFiniteNumber(material.biotCoefficient) || material.biotCoefficient < 0 || material.biotCoefficient > 1) {
+          findings.push(finding('blocker', `${prefix}.biot-coefficient-invalid`, 'Biot coefficient must be finite and between 0 and 1.'));
+        }
+        pushFiniteNumberFinding(findings, material.specificStorage1PerM, `${prefix}.specific-storage`, 'Specific storage', { positive: true });
+      }
       validateEvidenceRefs(findings, material.evidenceRefs, prefix);
       validateAssumptions(findings, material.assumptions, prefix);
     }
   }
   if (caseFile.objective === 'tunnel_volume_loss_settlement' && caseFile.loads.length > 0) {
     findings.push(finding('blocker', 'load.unsupported-for-objective', 'Tunnel volume-loss settlement previews use explicit volume loss and must not include pressure loads.'));
+  }
+  if (caseFile.objective === 'seepage_groundwater_coupling' && caseFile.loads.length > 0) {
+    findings.push(finding('blocker', 'load.unsupported-for-objective', 'Biot u-p seepage previews currently use prescribed pore-pressure boundaries and must not include pressure loads.'));
   }
   if (caseFile.loads.length === 0) {
     if (caseFile.objective === 'foundation_settlement') {
@@ -894,6 +1061,9 @@ export function validateFemAnalysisCase(caseFile: FemAnalysisCase): FemValidatio
       if (caseFile.objective === 'staged_settlement_consolidation' && load.target !== 'ground_surface') {
         findings.push(finding('blocker', `${prefix}.target-invalid`, 'Staged consolidation loads must target ground_surface.'));
       }
+      if (caseFile.objective === 'seepage_groundwater_coupling') {
+        findings.push(finding('blocker', `${prefix}.target-invalid`, 'Biot u-p seepage previews do not accept pressure loads.'));
+      }
       if (caseFile.objective === 'staged_settlement_consolidation' && consolidation) {
         if (caseFile.loads.length !== consolidation.stages.length) {
           findings.push(finding('blocker', 'load.stage-count-mismatch', 'Staged consolidation load count must match the consolidation stage count.'));
@@ -909,8 +1079,14 @@ export function validateFemAnalysisCase(caseFile: FemAnalysisCase): FemValidatio
   }
 
   const { divisionsX, divisionsY, divisionsZ } = caseFile.mesh;
-  if (caseFile.mesh.elementType !== 'hex8') {
+  if (caseFile.mesh.elementType !== 'hex8' && caseFile.mesh.elementType !== 'quad4_plane_strain') {
     findings.push(finding('blocker', 'mesh.element-type-invalid', `Unsupported mesh element type: ${String(caseFile.mesh.elementType)}.`));
+  }
+  if (caseFile.objective === 'seepage_groundwater_coupling' && caseFile.mesh.elementType !== 'quad4_plane_strain') {
+    findings.push(finding('blocker', 'mesh.element-type-biot-required', 'Biot u-p seepage previews require quad4_plane_strain mesh elements.'));
+  }
+  if (caseFile.objective !== 'seepage_groundwater_coupling' && caseFile.mesh.elementType !== 'hex8') {
+    findings.push(finding('blocker', 'mesh.element-type-hex8-required', 'Non-Biot FEM preview cases require hex8 mesh elements.'));
   }
   if (
     !Number.isInteger(divisionsX) ||
@@ -918,12 +1094,15 @@ export function validateFemAnalysisCase(caseFile: FemAnalysisCase): FemValidatio
     !Number.isInteger(divisionsZ)
   ) {
     findings.push(finding('blocker', 'mesh.divisions-integer', 'Mesh divisions must be finite integers.'));
-  }
-  if (divisionsX < 2 || divisionsY < 2 || divisionsZ < 1) {
-    findings.push(finding('blocker', 'mesh.too-coarse', 'Mesh divisions must be at least 2 x 2 x 1.'));
-  }
-  if (Number.isInteger(divisionsX) && Number.isInteger(divisionsY) && Number.isInteger(divisionsZ)) {
-    const nodeCount = (divisionsX + 1) * (divisionsY + 1) * (divisionsZ + 1);
+  } else {
+    if (caseFile.mesh.elementType === 'quad4_plane_strain') {
+      if (divisionsX < 1 || divisionsY < 1 || divisionsZ !== 1) {
+        findings.push(finding('blocker', 'mesh.quad4-plane-strain-invalid', 'Quad4 plane-strain meshes require divisionsX and divisionsY of at least 1 and divisionsZ exactly 1.'));
+      }
+    } else if (divisionsX < 2 || divisionsY < 2 || divisionsZ < 1) {
+      findings.push(finding('blocker', 'mesh.too-coarse', 'Mesh divisions must be at least 2 x 2 x 1.'));
+    }
+    const nodeCount = expectedMeshCounts(caseFile.mesh).nodes;
     if (!Number.isFinite(nodeCount) || nodeCount > FEM_MAX_PREVIEW_MESH_NODES) {
       findings.push(finding(
         'blocker',
@@ -1138,6 +1317,7 @@ function validateResultEnvelopeSemantics(
     ['excavation_deformation', ['builtin-staged-excavation-demo']],
     ['tunnel_volume_loss_settlement', ['builtin-tunnel-volume-loss-demo']],
     ['staged_settlement_consolidation', ['builtin-staged-consolidation-1d', 'builtin-nonlinear-column-v0']],
+    ['seepage_groundwater_coupling', ['builtin-biot-up-plane-strain-v0']],
   ]);
   const expectedBackends = expectedBackendByObjective.get(analysisCase.objective);
   if (expectedBackends && !expectedBackends.includes(manifest.backend.id)) {
@@ -1284,6 +1464,94 @@ function validateResultEnvelopeSemantics(
       }
     }
   }
+
+  if (analysisCase.objective === 'seepage_groundwater_coupling') {
+    const biot = analysisCase.geometry.biot;
+    if (!biot) return;
+    const boundaryPressureValues = biot.porePressureBoundaries.map((boundary) => boundary.porePressureKpa);
+    const expectedMaxPressureKpa = Math.max(biot.initialPorePressureKpa, ...boundaryPressureValues);
+    const minPorePressureOk = pushFiniteNumberFinding(findings, envelope.minPorePressureKpa, 'result.envelope.min-pore-pressure', 'Envelope minimum pore pressure', { nonNegative: true });
+    const maxPorePressureOk = pushFiniteNumberFinding(findings, envelope.maxPorePressureKpa, 'result.envelope.max-pore-pressure', 'Envelope maximum pore pressure', { nonNegative: true });
+    const maxExcessOk = pushFiniteNumberFinding(findings, envelope.maxExcessPorePressureKpa, 'result.envelope.max-excess-pore-pressure', 'Envelope maximum excess pore pressure', { nonNegative: true });
+    pushFiniteNumberFinding(findings, envelope.maxBiotCouplingKpa, 'result.envelope.max-biot-coupling', 'Envelope maximum Biot coupling', { nonNegative: true });
+    const massBalanceOk = pushFiniteNumberFinding(findings, envelope.porePressureMassBalanceErrorRatio, 'result.envelope.pore-pressure-mass-balance-error-ratio', 'Envelope pore-pressure mass-balance error ratio', { nonNegative: true });
+    pushFiniteNumberFinding(findings, envelope.maxFreePorePressureResidualM3PerS, 'result.envelope.max-free-pore-pressure-residual', 'Envelope maximum free pore-pressure residual', { nonNegative: true });
+    pushFiniteNumberFinding(findings, envelope.freePorePressureResidualL1M3PerS, 'result.envelope.free-pore-pressure-residual-l1', 'Envelope free pore-pressure residual L1 norm', { nonNegative: true });
+    pushFiniteNumberFinding(findings, envelope.prescribedPorePressureResidualL1M3PerS, 'result.envelope.prescribed-pore-pressure-residual-l1', 'Envelope prescribed pore-pressure residual L1 norm', { nonNegative: true });
+    const timeStepCountOk = pushFiniteNumberFinding(findings, envelope.timeStepCount, 'result.envelope.time-step-count', 'Envelope time-step count', { positive: true });
+    const coupledUnknownsOk = pushFiniteNumberFinding(findings, envelope.coupledUnknownCount, 'result.envelope.coupled-unknown-count', 'Envelope coupled unknown count', { positive: true });
+    const displacementDofsOk = pushFiniteNumberFinding(findings, envelope.displacementDofCount, 'result.envelope.displacement-dof-count', 'Envelope displacement DOF count', { positive: true });
+    const porePressureDofsOk = pushFiniteNumberFinding(findings, envelope.porePressureDofCount, 'result.envelope.pore-pressure-dof-count', 'Envelope pore-pressure DOF count', { positive: true });
+
+    if (minPorePressureOk && maxPorePressureOk && envelope.minPorePressureKpa! > envelope.maxPorePressureKpa!) {
+      findings.push(finding('blocker', 'result.envelope.pore-pressure-range-invalid', 'Envelope minimum pore pressure cannot exceed maximum pore pressure.'));
+    }
+    if (maxPorePressureOk && envelope.maxPorePressureKpa! > expectedMaxPressureKpa + 1e-6) {
+      findings.push(finding('blocker', 'result.envelope.pore-pressure-upper-bound-invalid', 'Envelope maximum pore pressure cannot exceed the initial or prescribed boundary pressure envelope.'));
+    }
+    if (maxExcessOk && maxPorePressureOk) {
+      pushApproximateMatchFinding(findings, envelope.maxExcessPorePressureKpa, envelope.maxPorePressureKpa!, 'result.envelope.max-excess-pore-pressure-mismatch', 'Maximum excess pore pressure', 1e-6);
+    }
+    if (timeStepCountOk && (!Number.isInteger(envelope.timeStepCount) || envelope.timeStepCount !== biot.timeStepsSeconds.length)) {
+      findings.push(finding('blocker', 'result.envelope.time-step-count-mismatch', 'Biot envelope time-step count must match the embedded time-step schedule.'));
+    }
+    if (coupledUnknownsOk && !Number.isInteger(envelope.coupledUnknownCount)) {
+      findings.push(finding('blocker', 'result.envelope.coupled-unknown-count-integer', 'Coupled unknown count must be an integer.'));
+    }
+    if (displacementDofsOk && !Number.isInteger(envelope.displacementDofCount)) {
+      findings.push(finding('blocker', 'result.envelope.displacement-dof-count-integer', 'Displacement DOF count must be an integer.'));
+    }
+    if (porePressureDofsOk && !Number.isInteger(envelope.porePressureDofCount)) {
+      findings.push(finding('blocker', 'result.envelope.pore-pressure-dof-count-integer', 'Pore-pressure DOF count must be an integer.'));
+    }
+    if (coupledUnknownsOk && displacementDofsOk && porePressureDofsOk && envelope.coupledUnknownCount! > envelope.displacementDofCount! + envelope.porePressureDofCount!) {
+      findings.push(finding('blocker', 'result.envelope.coupled-unknown-count-mismatch', 'Coupled unknown count cannot exceed displacement plus pore-pressure DOF counts.'));
+    }
+    if (massBalanceOk && envelope.porePressureMassBalanceErrorRatio! > 1e-3) {
+      findings.push(finding('blocker', 'result.envelope.pore-pressure-mass-balance-too-large', 'Biot pore-pressure mass-balance error ratio exceeds the preview tolerance.'));
+    }
+    pushApproximateMatchFinding(findings, envelope.totalLoadKn, 0, 'result.envelope.biot-total-load-invalid', 'Biot preview total load', 0.001);
+    pushApproximateMatchFinding(findings, envelope.reactionKn, 0, 'result.envelope.biot-reaction-invalid', 'Biot preview reaction', 0.001);
+    if (maxSettlementOk && isFiniteNumber(envelope.finalSettlementMm)) {
+      pushApproximateMatchFinding(findings, envelope.maxSettlementMm, envelope.finalSettlementMm, 'result.envelope.biot-max-settlement-mismatch', 'Biot maximum settlement', 0.001);
+    }
+
+    const pressureAudit = manifest.pressureAudit;
+    if (!pressureAudit) {
+      findings.push(finding('blocker', 'result.pressure-audit.missing', 'Biot result manifests must include a pressure audit.'));
+    } else {
+      const pressureAuditEntries: Array<[keyof NonNullable<FemResultManifest['pressureAudit']>, string, string]> = [
+        ['freePorePressureResidualL1M3PerS', 'free-pore-pressure-residual-l1', 'Free pore-pressure residual L1 norm'],
+        ['prescribedPorePressureResidualL1M3PerS', 'prescribed-pore-pressure-residual-l1', 'Prescribed pore-pressure residual L1 norm'],
+        ['netPrescribedPressureBoundaryFlowM3PerS', 'net-prescribed-pressure-boundary-flow', 'Net prescribed pressure boundary flow'],
+        ['appliedNodalFluxSumM3PerS', 'applied-nodal-flux-sum', 'Applied nodal flux sum'],
+        ['storageRateSumM3PerS', 'storage-rate-sum', 'Storage-rate sum'],
+        ['couplingRateSumM3PerS', 'coupling-rate-sum', 'Coupling-rate sum'],
+        ['darcyFlowRateSumM3PerS', 'darcy-flow-rate-sum', 'Darcy flow-rate sum'],
+      ];
+      for (const [key, code, label] of pressureAuditEntries) {
+        pushFiniteNumberFinding(findings, pressureAudit[key], `result.pressure-audit.${code}`, label);
+      }
+      pushApproximateMatchFinding(
+        findings,
+        pressureAudit.freePorePressureResidualL1M3PerS,
+        envelope.freePorePressureResidualL1M3PerS!,
+        'result.pressure-audit.free-residual-envelope-mismatch',
+        'Pressure-audit free residual',
+        1e-12,
+      );
+      pushApproximateMatchFinding(
+        findings,
+        pressureAudit.prescribedPorePressureResidualL1M3PerS,
+        envelope.prescribedPorePressureResidualL1M3PerS!,
+        'result.pressure-audit.prescribed-residual-envelope-mismatch',
+        'Pressure-audit prescribed residual',
+        1e-12,
+      );
+    }
+  } else if (manifest.pressureAudit != null) {
+    findings.push(finding('blocker', 'result.pressure-audit.unexpected', 'Pressure audit is only valid for Biot u-p seepage result manifests.'));
+  }
 }
 
 export function validateFemResultManifest(manifest: FemResultManifest): FemValidationSummary {
@@ -1319,6 +1587,7 @@ export function validateFemResultManifest(manifest: FemResultManifest): FemValid
     'builtin-tunnel-volume-loss-demo',
     'builtin-staged-consolidation-1d',
     'builtin-nonlinear-column-v0',
+    'builtin-biot-up-plane-strain-v0',
   ]);
   if (!validBackendIds.has(manifest.backend.id)) {
     findings.push(finding('blocker', 'result.backend.id-invalid', `Unsupported FEM result backend: ${String(manifest.backend.id)}.`));
@@ -1371,14 +1640,7 @@ export function validateFemResultManifest(manifest: FemResultManifest): FemValid
   pushIndexArrayFindings(findings, 'tri', visualization.tri, nodeCount, 3);
   pushIndexArrayFindings(findings, 'edge', visualization.edge, nodeCount, 2);
 
-  const expectedMeshNodes =
-    (manifest.analysisCase.mesh.divisionsX + 1) *
-    (manifest.analysisCase.mesh.divisionsY + 1) *
-    (manifest.analysisCase.mesh.divisionsZ + 1);
-  const expectedMeshElements =
-    manifest.analysisCase.mesh.divisionsX *
-    manifest.analysisCase.mesh.divisionsY *
-    manifest.analysisCase.mesh.divisionsZ;
+  const { nodes: expectedMeshNodes, elements: expectedMeshElements } = expectedMeshCounts(manifest.analysisCase.mesh);
   const meshDivisions = manifest.mesh.divisions;
   if (!Number.isInteger(manifest.mesh.nodes) || manifest.mesh.nodes !== expectedMeshNodes) {
     findings.push(finding('blocker', 'result.mesh.nodes-mismatch', 'Result mesh node count must match the embedded analysis case mesh divisions.'));
@@ -1442,6 +1704,12 @@ export function validateFemResultManifest(manifest: FemResultManifest): FemValid
       }
       if (frame.color.length / 3 !== nodeCount) {
         findings.push(finding('blocker', `result.frames.${index}.color.node-count-mismatch`, 'Frame color vectors must match base nodes.'));
+      }
+      if (frame.scalarValues != null) {
+        pushFiniteArrayFindings(findings, `frames.${index}.scalarValues`, frame.scalarValues, 1);
+        if (frame.scalarValues.length !== nodeCount) {
+          findings.push(finding('blocker', `result.frames.${index}.scalar-values.node-count-mismatch`, 'Frame scalarValues must match base nodes.'));
+        }
       }
     }
   }

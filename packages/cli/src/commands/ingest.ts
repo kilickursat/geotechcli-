@@ -1963,7 +1963,7 @@ function isWaitTimeoutError(err: unknown, jobId: string): boolean {
     && err.message.includes(`Timed out while waiting for persisted ingest job "${jobId}"`);
 }
 
-const LIVE_PROGRESS_TRANSIENT_READ_ERROR_LIMIT = 30;
+const LIVE_PROGRESS_TRANSIENT_READ_ERROR_LIMIT = 120;
 
 function isTransientPersistedIngestJobReadError(err: unknown): boolean {
   if (err instanceof SyntaxError) {
@@ -1999,7 +1999,17 @@ async function waitForPersistedIngestJobWithLiveProgress(
 
   info(`Waiting for ingest job ${jobId} to finish...`);
   let lastProgress = '';
+  let lastGoodSnapshot: NormalizedIngestJobRecord | null = null;
   let transientReadErrors = 0;
+
+  const renderProgressSnapshot = (normalized: NormalizedIngestJobRecord) => {
+    lastGoodSnapshot = normalized;
+    const progress = formatIngestJobProgress(normalized);
+    if (progress !== lastProgress) {
+      info(progress);
+      lastProgress = progress;
+    }
+  };
 
   const noteTransientReadError = (err: unknown) => {
     transientReadErrors += 1;
@@ -2019,26 +2029,22 @@ async function waitForPersistedIngestJobWithLiveProgress(
       transientReadErrors = 0;
       const normalized = normalizeIngestJobRecord(record);
       if (normalized) {
-        const progress = formatIngestJobProgress(normalized);
-        if (progress !== lastProgress) {
-          info(progress);
-        }
+        renderProgressSnapshot(normalized);
       }
       return record;
     } catch (err) {
       if (isTransientPersistedIngestJobReadError(err)) {
         noteTransientReadError(err);
-        const normalized = loadLiveProgressSnapshot(jobId);
-        if (!normalized) {
+        const freshSnapshot = loadLiveProgressSnapshot(jobId);
+        if (freshSnapshot) {
+          transientReadErrors = 0;
+          renderProgressSnapshot(freshSnapshot);
           continue;
         }
-
-        transientReadErrors = 0;
-        const progress = formatIngestJobProgress(normalized);
-        if (progress !== lastProgress) {
-          info(progress);
-          lastProgress = progress;
+        if (!lastGoodSnapshot) {
+          continue;
         }
+        renderProgressSnapshot(lastGoodSnapshot);
         continue;
       }
 
@@ -2046,18 +2052,17 @@ async function waitForPersistedIngestJobWithLiveProgress(
         throw err;
       }
 
-      const normalized = loadLiveProgressSnapshot(jobId);
-      if (!normalized) {
-        noteTransientReadError(err);
+      const freshSnapshot = loadLiveProgressSnapshot(jobId);
+      if (!freshSnapshot) {
+        if (lastGoodSnapshot) {
+          renderProgressSnapshot(lastGoodSnapshot);
+          continue;
+        }
         continue;
       }
 
       transientReadErrors = 0;
-      const progress = formatIngestJobProgress(normalized);
-      if (progress !== lastProgress) {
-        info(progress);
-        lastProgress = progress;
-      }
+      renderProgressSnapshot(freshSnapshot);
     }
   }
 }

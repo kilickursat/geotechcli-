@@ -294,7 +294,7 @@ describe('FEM engineering evidence kernels', () => {
     ]));
     expect(report.remainingProductionBlockers).toContain('published-commercial-cross-solver-benchmark-corpus-not-approved');
     expect(report.remainingProductionBlockers).toContain(
-      'biot-u-p-coupling-evidence-kernel-not-route-backed-result-manifest-or-production-sparse-solver',
+      'biot-u-p-route-backed-preview-is-not-production-sparse-solver',
     );
   });
 });

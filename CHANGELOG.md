@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.106] - 2026-06-03
+
+### FEM Biot Preview Route and Ingest Job Reads
+
+- Added a route-backed experimental `geotech fem demo biot` / `geotech fem run --backend biot-up` path for reviewed plane-strain Biot u-p seepage/groundwater cases with pore-pressure scalar frames, pressure-audit metadata, and draft/run smoke coverage.
+- Updated GroundModel, ingest dossier, benchmark, production-readiness, and mocked default GLM surfaces so seepage/groundwater coupling is shown as a human-reviewed preview route, while full production FEM remains blocked behind sparse-solver, nonlinear/plasticity, support-design, independent-benchmark, and approval gates.
+- Hardened persisted ingest job reads for large foreground jobs by extending bounded transient `job.json` retry and reusing the last valid live-progress snapshot through partial checkpoint reads.
+
 ## [0.4.105] - 2026-06-03
 
 ### FEM Biot Terzaghi Evidence

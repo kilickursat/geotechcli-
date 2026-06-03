@@ -50,7 +50,12 @@ describe('FEM routing contract', () => {
     expect(capabilities.find((capability) => capability.objective === 'pile-group-elastic-interaction')?.runCommandTemplate).toBeUndefined();
     expect(capabilities.find((capability) => capability.objective === 'slope-embankment-deformation')?.executionMode).toBe('contract-only');
     expect(capabilities.find((capability) => capability.objective === 'retaining-wall-excavation-support')?.requiredUserInputs).toContain('prop/anchor levels');
-    expect(capabilities.find((capability) => capability.objective === 'seepage-groundwater-coupling')?.reviewGates).toContain('seepage-solver-not-implemented');
+    expect(capabilities.find((capability) => capability.objective === 'seepage-groundwater-coupling')?.status).toBe('implemented-demo');
+    expect(capabilities.find((capability) => capability.objective === 'seepage-groundwater-coupling')?.executionMode).toBe('human-reviewed-preview');
+    expect(capabilities.find((capability) => capability.objective === 'seepage-groundwater-coupling')?.deterministicBackend).toBe('builtin-biot-up-plane-strain-v0');
+    expect(capabilities.find((capability) => capability.objective === 'seepage-groundwater-coupling')?.demoCommand).toBe('geotech fem demo biot --experimental');
+    expect(capabilities.find((capability) => capability.objective === 'seepage-groundwater-coupling')?.runCommandTemplate).toBe('geotech fem run <analysis_case.json> --experimental --reviewed --backend biot-up');
+    expect(capabilities.find((capability) => capability.objective === 'seepage-groundwater-coupling')?.reviewGates).toContain('not-production-sparse-solver');
     expect(capabilities.find((capability) => capability.objective === 'staged-settlement-consolidation')?.status).toBe('implemented-demo');
     expect(capabilities.find((capability) => capability.objective === 'staged-settlement-consolidation')?.executionMode).toBe('human-reviewed-preview');
     expect(capabilities.find((capability) => capability.objective === 'staged-settlement-consolidation')?.deterministicBackend).toBe('builtin-staged-consolidation-1d');
@@ -262,13 +267,6 @@ describe('FEM routing contract', () => {
     expect(pileGroup.contractReadiness?.requiredUserInputs).toContain('pile spacing');
     expect(pileGroup.contractReadiness?.reviewGates).toContain('human-review-required');
 
-    const seepage = prepareFemAnalysisCaseDraft({ objective: 'seepage-groundwater-coupling' });
-    expect(seepage.implemented).toBe(false);
-    expect(seepage.recommendedAction).toBe('contract-only');
-    expect(seepage.analysisCase).toBeUndefined();
-    expect(seepage.recommendedCommand).toBe('geotech fem draft seepage-groundwater-coupling --input <json>');
-    expect(seepage.contractReadiness?.disallowedAgentActions).toContain('render-webgl');
-
     for (const [objective, expectedInput] of [
       ['slope-embankment-deformation', 'slope height'],
       ['retaining-wall-excavation-support', 'prop/anchor levels'],
@@ -288,6 +286,57 @@ describe('FEM routing contract', () => {
         'invent-results',
       ]);
     }
+  });
+
+  it('prepares seepage/groundwater Biot drafts as human-reviewed experimental previews only', () => {
+    const missing = prepareFemAnalysisCaseDraft({ objective: 'seepage-groundwater-coupling' });
+
+    expect(missing.implemented).toBe(true);
+    expect(missing.capability.executionMode).toBe('human-reviewed-preview');
+    expect(missing.capability.agentRunAllowed).toBe(false);
+    expect(missing.recommendedAction).toBe('collect-inputs');
+    expect(missing.analysisCase).toBeUndefined();
+    expect(missing.recommendedCommand).toBe('geotech fem draft seepage-groundwater-coupling --input <json> --case-output <analysis_case.json>');
+    expect(missing.missingUserInputs).toEqual(expect.arrayContaining([
+      'Biot column width',
+      'Biot column height',
+      'Biot column thickness',
+      'initial excess pore pressure',
+      'valid Biot time steps',
+      'hydraulic conductivity',
+      'specific storage',
+    ]));
+
+    const draft = prepareFemAnalysisCaseDraft({
+      objective: 'seepage-groundwater-coupling',
+      biot: {
+        widthM: 1,
+        heightM: 1,
+        thicknessM: 1,
+        initialPorePressureKpa: 100,
+        timeStepsSeconds: [1, 2, 4, 8],
+        topPorePressureKpa: 0,
+      },
+      material: {
+        elasticModulusKpa: 30_000,
+        poissonRatio: 0.3,
+        unitWeightKnM3: 18.5,
+        hydraulicConductivityMPerS: 1e-6,
+        specificStorage1PerM: 1e-4,
+        biotCoefficient: 0.8,
+      },
+      evidenceRefs: [{ id: 'ev-biot-1', source: 'GroundModel', page: 14 }],
+    });
+
+    expect(draft.recommendedAction).toBe('run-reviewed-case');
+    expect(draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed --backend biot-up');
+    expect(draft.canAutoProceed).toBe(false);
+    expect(draft.analysisCase?.objective).toBe('seepage_groundwater_coupling');
+    expect(draft.analysisCase?.analysisType).toBe('time_dependent_2d_biot_consolidation');
+    expect(draft.analysisCase?.geometry.biot?.timeStepsSeconds).toEqual([1, 2, 4, 8]);
+    expect(draft.analysisCase?.materials[0]?.specificStorage1PerM).toBe(1e-4);
+    expect(draft.validation?.status).toBe('review');
+    expect(draft.reviewGates).toContain('not-production-sparse-solver');
   });
 
   it('prepares staged settlement/consolidation drafts as human-reviewed experimental previews only', () => {
@@ -871,9 +920,10 @@ describe('FEM routing contract', () => {
       caseOutputAvailable: false,
       draftCommand: 'geotech fem draft pile-group-elastic-interaction --input <json>',
     });
-    expect(seepage?.draft.capability.executionMode).toBe('contract-only');
-    expect(seepage?.draft.contractReadiness?.requiredUserInputs).toContain('piezometric surfaces');
-    expect(seepage?.executionBoundary.draftCommand).toBe('geotech fem draft seepage-groundwater-coupling --input <json>');
+    expect(seepage?.draft.capability.executionMode).toBe('human-reviewed-preview');
+    expect(seepage?.draft.recommendedAction).toBe('collect-inputs');
+    expect(seepage?.draft.missingUserInputs).toContain('initial excess pore pressure');
+    expect(seepage?.executionBoundary.draftCommand).toBe('geotech fem draft seepage-groundwater-coupling --input <json> --case-output <analysis_case.json>');
     expect(candidates.every((candidate) => candidate.command.startsWith('geotech fem draft '))).toBe(true);
     expect(candidates.every((candidate) => !/\bfem run\b/i.test(candidate.command))).toBe(true);
     expect(candidates.every((candidate) => ['collect-inputs', 'contract-only'].includes(candidate.draft.recommendedAction))).toBe(true);
@@ -924,9 +974,7 @@ describe('FEM routing contract', () => {
     expect((productionResult.data as any).agentEvidenceSummary).toContain(
       'quad4-plane-strain-biot-u-p-effective-stress-coupling',
     );
-    expect((productionResult.data as any).agentEvidenceSummary).toContain(
-      'biot-u-p-coupling-evidence-kernel-not-route-backed-result-manifest-or-production-sparse-solver',
-    );
+    expect((productionResult.data as any).agentEvidenceSummary).toContain('biot-u-p-route-backed-preview-is-not-production-sparse-solver');
 
     const draftResult = await toolRegistry.execute('prepare_fem_analysis_case', {
       objective: 'foundation-settlement',

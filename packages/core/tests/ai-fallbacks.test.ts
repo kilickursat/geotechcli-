@@ -406,7 +406,7 @@ describe('AI fallback behavior', () => {
         'quad4-plane-strain-biot-u-p-terzaghi-pressure-dissipation',
       ]));
     expect(readinessData.blockers).toEqual(expect.arrayContaining([
-      'biot-u-p-coupling-evidence-kernel-not-route-backed-result-manifest-or-production-sparse-solver',
+      'biot-u-p-route-backed-preview-is-not-production-sparse-solver',
       'production-sparse-fem-solver-and-2d-3d-result-route-not-integrated-with-these-kernels',
       'published-commercial-cross-solver-benchmark-corpus-not-approved',
     ]));
@@ -431,7 +431,7 @@ describe('AI fallback behavior', () => {
     expect(readinessData.agentEvidenceSummary)
       .toContain('seepage-pore-pressure-coupling');
     expect(readinessData.agentEvidenceSummary)
-      .toContain('biot-u-p-coupling-evidence-kernel-not-route-backed-result-manifest-or-production-sparse-solver');
+      .toContain('biot-u-p-route-backed-preview-is-not-production-sparse-solver');
     const secondRequest = JSON.parse(
       String(fetchMock.mock.calls[1]?.[1]?.body ?? '{}'),
     ) as { model?: string; messages?: Array<{ content?: unknown }> };
@@ -454,7 +454,7 @@ describe('AI fallback behavior', () => {
     expect(secondPrompt).toContain('quad4-plane-strain-biot-u-p-terzaghi-pressure-dissipation');
     expect(secondPrompt).toContain('seepage-pore-pressure-coupling');
     expect(secondPrompt)
-      .toContain('biot-u-p-coupling-evidence-kernel-not-route-backed-result-manifest-or-production-sparse-solver');
+      .toContain('biot-u-p-route-backed-preview-is-not-production-sparse-solver');
 
     const draftResult = session.steps.find(
       (step) => step.type === 'tool_result' && step.toolName === 'prepare_fem_analysis_case',

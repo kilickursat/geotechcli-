@@ -8,11 +8,13 @@ import {
   buildExcavationDemoAnalysisCase,
   buildLLMConfig,
   buildRaftDemoAnalysisCase,
+  buildSeepageBiotPlaneStrainDemoAnalysisCase,
   buildStagedSettlementConsolidationDemoAnalysisCase,
   buildTunnelVolumeLossDemoAnalysisCase,
   prepareFemAnalysisCaseDraft,
   renderFemWebglHtml,
   runAgent,
+  runBuiltinBiotUpPlaneStrainPreview,
   runBuiltinElasticExcavationDemo,
   runBuiltinElasticRaftDemo,
   runBuiltinNonlinearConsolidationColumnSolver,
@@ -46,8 +48,9 @@ const DEFAULT_RAFT_HTML = 'geotech-fem-raft-demo.html';
 const DEFAULT_EXCAVATION_HTML = 'geotech-fem-excavation-demo.html';
 const DEFAULT_TUNNEL_HTML = 'geotech-fem-tunnel-demo.html';
 const DEFAULT_CONSOLIDATION_HTML = 'geotech-fem-consolidation-demo.html';
+const DEFAULT_BIOT_HTML = 'geotech-fem-biot-up-demo.html';
 const DEFAULT_RUN_HTML = 'geotech-fem-run.html';
-type FemDemoKind = 'raft' | 'excavation' | 'tunnel' | 'consolidation';
+type FemDemoKind = 'raft' | 'excavation' | 'tunnel' | 'consolidation' | 'biot';
 const FEM_AGENT_TOOLS = [
   'list_fem_capabilities',
   'assess_fem_production_readiness',
@@ -212,26 +215,37 @@ function loadFemAnalysisCase(filePath: string): { casePath: string; analysisCase
   };
 }
 
-function normalizeFemRunBackend(value: unknown): 'preview' | 'nonlinear-column' {
+type FemRunBackend = 'preview' | 'nonlinear-column' | 'biot-up';
+
+function normalizeFemRunBackend(value: unknown): FemRunBackend {
   if (value == null || value === '' || value === true) return 'preview';
-  if (typeof value !== 'string') throw new Error('--backend must be preview or nonlinear-column.');
+  if (typeof value !== 'string') throw new Error('--backend must be preview, nonlinear-column, or biot-up.');
   const normalized = value.trim().toLowerCase();
   if (normalized === 'preview' || normalized === 'default') return 'preview';
   if (normalized === 'nonlinear-column' || normalized === 'nonlinear-column-v0' || normalized === 'column') {
     return 'nonlinear-column';
   }
-  throw new Error(`Unsupported FEM run backend: ${value}. Use preview or nonlinear-column.`);
+  if (normalized === 'biot-up' || normalized === 'biot' || normalized === 'biot-up-plane-strain' || normalized === 'biot-seepage-preview') {
+    return 'biot-up';
+  }
+  throw new Error(`Unsupported FEM run backend: ${value}. Use preview, nonlinear-column, or biot-up.`);
 }
 
 function runDeterministicFemAnalysisCase(
   analysisCase: FemAnalysisCase,
-  backend: 'preview' | 'nonlinear-column' = 'preview',
+  backend: FemRunBackend = 'preview',
 ): FemResultManifest {
   if (backend === 'nonlinear-column') {
     if (analysisCase.objective !== 'staged_settlement_consolidation') {
       throw new Error('--backend nonlinear-column is currently available only for staged settlement/consolidation analysis cases.');
     }
     return runBuiltinNonlinearConsolidationColumnSolver(analysisCase);
+  }
+  if (backend === 'biot-up') {
+    if (analysisCase.objective !== 'seepage_groundwater_coupling') {
+      throw new Error('--backend biot-up is currently available only for seepage/groundwater coupling analysis cases.');
+    }
+    return runBuiltinBiotUpPlaneStrainPreview(analysisCase);
   }
   switch (analysisCase.objective) {
     case 'foundation_settlement':
@@ -242,6 +256,8 @@ function runDeterministicFemAnalysisCase(
       return runBuiltinTunnelVolumeLossDemo(analysisCase);
     case 'staged_settlement_consolidation':
       return runBuiltinStagedSettlementConsolidationDemo(analysisCase);
+    case 'seepage_groundwater_coupling':
+      return runBuiltinBiotUpPlaneStrainPreview(analysisCase);
     default:
       throw new Error(`Unsupported FEM objective: ${String((analysisCase as { objective?: unknown }).objective)}.`);
   }
@@ -265,6 +281,10 @@ function mergeFemDraftInputs(
     consolidation: {
       ...(base.consolidation ?? {}),
       ...(override.consolidation ?? {}),
+    },
+    biot: {
+      ...(base.biot ?? {}),
+      ...(override.biot ?? {}),
     },
     load: {
       ...(base.load ?? {}),
@@ -394,6 +414,18 @@ function buildFemDraftInput(
     stageDurationsYears: parseNumberListOption(opts.stageDurations, '--stage-durations') ?? parsed.consolidation?.stageDurationsYears,
     drainage: typeof opts.drainage === 'string' ? opts.drainage as any : parsed.consolidation?.drainage,
   };
+  const biot = {
+    ...(parsed.biot ?? {}),
+    widthM: parseNumberOption(opts.biotWidth, '--biot-width') ?? parsed.biot?.widthM,
+    heightM: parseNumberOption(opts.biotHeight, '--biot-height') ?? parsed.biot?.heightM,
+    thicknessM: parseNumberOption(opts.biotThickness, '--biot-thickness') ?? parsed.biot?.thicknessM,
+    initialPorePressureKpa: parseNumberOption(opts.initialPorePressure, '--initial-pore-pressure') ?? parsed.biot?.initialPorePressureKpa,
+    timeStepsSeconds: parseNumberListOption(opts.timeSteps, '--time-steps') ?? parsed.biot?.timeStepsSeconds,
+    topPorePressureKpa: parseNumberOption(opts.topPorePressure, '--top-pore-pressure') ?? parsed.biot?.topPorePressureKpa,
+    bottomPorePressureKpa: parseNumberOption(opts.bottomPorePressure, '--bottom-pore-pressure') ?? parsed.biot?.bottomPorePressureKpa,
+    leftPorePressureKpa: parseNumberOption(opts.leftPorePressure, '--left-pore-pressure') ?? parsed.biot?.leftPorePressureKpa,
+    rightPorePressureKpa: parseNumberOption(opts.rightPorePressure, '--right-pore-pressure') ?? parsed.biot?.rightPorePressureKpa,
+  };
   const load = {
     ...(parsed.load ?? {}),
     pressureKpa: parseNumberOption(opts.pressure, '--pressure') ?? parsed.load?.pressureKpa,
@@ -408,6 +440,10 @@ function buildFemDraftInput(
     cohesionKpa: parseNumberOption(opts.cohesion, '--cohesion') ?? parsed.material?.cohesionKpa,
     coefficientOfConsolidationM2PerYear: parseNumberOption(opts.cv, '--cv') ?? parsed.material?.coefficientOfConsolidationM2PerYear,
     hydraulicConductivityMPerS: parseNumberOption(opts.hydraulicConductivity, '--hydraulic-conductivity') ?? parsed.material?.hydraulicConductivityMPerS,
+    hydraulicConductivityXMPerS: parseNumberOption(opts.hydraulicConductivityX, '--hydraulic-conductivity-x') ?? parsed.material?.hydraulicConductivityXMPerS,
+    hydraulicConductivityYMPerS: parseNumberOption(opts.hydraulicConductivityY, '--hydraulic-conductivity-y') ?? parsed.material?.hydraulicConductivityYMPerS,
+    biotCoefficient: parseNumberOption(opts.biotAlpha, '--biot-alpha') ?? parsed.material?.biotCoefficient,
+    specificStorage1PerM: parseNumberOption(opts.specificStorage, '--specific-storage') ?? parsed.material?.specificStorage1PerM,
   };
   const groundwater = {
     ...(parsed.groundwater ?? {}),
@@ -423,6 +459,7 @@ function buildFemDraftInput(
     geometry,
     excavation,
     consolidation,
+    biot,
     load,
     material,
     groundwater,
@@ -908,14 +945,35 @@ export function registerFemCommand(program: Command): void {
       );
     });
 
+  const biot = new Command('biot')
+    .description('Experimental 2D plane-strain Biot u-p seepage/consolidation preview')
+    .option('--experimental', 'Acknowledge that this FEM preview is experimental and not a design calculation')
+    .addHelpText('after', `
+  Examples:
+    geotech fem demo biot --experimental
+    geotech fem demo biot --experimental --save-html biot-fem.html --no-open
+    geotech fem demo biot --experimental --output biot-fem.manifest.json --json
+`)
+    .action(async (opts) => {
+      await runFemDemoCommand(
+        'biot',
+        DEFAULT_BIOT_HTML,
+        'Experimental 2D Biot u-p Seepage/Consolidation Preview',
+        runBuiltinBiotUpPlaneStrainPreview(buildSeepageBiotPlaneStrainDemoAnalysisCase()),
+        opts as Record<string, unknown>,
+      );
+    });
+
   addGlobalFlags(raft);
   addGlobalFlags(excavation);
   addGlobalFlags(tunnel);
   addGlobalFlags(consolidation);
+  addGlobalFlags(biot);
   demo.addCommand(raft);
   demo.addCommand(excavation);
   demo.addCommand(tunnel);
   demo.addCommand(consolidation);
+  demo.addCommand(biot);
   fem.addCommand(demo);
 
   const run = new Command('run')
@@ -923,7 +981,7 @@ export function registerFemCommand(program: Command): void {
     .argument('<analysisCaseJson>', 'Path to fem-analysis-case.v0 JSON produced by geotech fem draft or manual review')
     .option('--experimental', 'Acknowledge that this FEM run is experimental and not a design calculation')
     .option('--reviewed', 'Confirm a human reviewed geometry, loads, staging, assumptions, validation findings, and limitations')
-    .option('--backend <name>', 'Deterministic backend: preview or nonlinear-column')
+    .option('--backend <name>', 'Deterministic backend: preview, nonlinear-column, or biot-up')
     .option('--approval-record <file>', 'Validate an existing fem-reviewer-approval.v1 record against the current case hash before running')
     .option('--approval-output <file>', 'Persist a fem-reviewer-approval.v1 record for this run')
     .option('--reviewer-name <name>', 'Reviewer name for persisted FEM approval metadata')
@@ -938,10 +996,11 @@ export function registerFemCommand(program: Command): void {
     geotech fem draft foundation-settlement --raft-length 10 --raft-width 8 --pressure 150 --case-output analysis_case.json
     geotech fem run analysis_case.json --experimental --reviewed --save-html fem-run.html --output fem-run.manifest.json --no-open
     geotech fem run consolidation_case.json --experimental --reviewed --backend nonlinear-column --output fem-nonlinear-column.manifest.json --json
+    geotech fem run seepage_case.json --experimental --reviewed --backend biot-up --output fem-biot-up.manifest.json --json
     geotech fem run analysis_case.json --experimental --reviewed --approval-output fem-approval.json --reviewer-name "Jane Engineer" --reviewer-license PE-12345 --reviewer-jurisdiction US-CA
     geotech fem run analysis_case.json --experimental --reviewed --json
 
-  This command executes only deterministic built-in preview/nonlinear-column backends from a reviewed analysis_case.json.
+  This command executes only deterministic built-in preview/nonlinear-column/biot-up backends from a reviewed analysis_case.json.
   It requires --reviewed as an explicit human-review acknowledgement.
   Use --approval-output with reviewer metadata to persist identity, license, assumptions, limitations, validation summary, and case hash.
   Use --approval-record to fail closed when a prior approval record is stale or does not match the current case hash.
@@ -986,6 +1045,15 @@ export function registerFemCommand(program: Command): void {
     .option('--stage-loads <csv>', 'Comma-separated staged consolidation surface loads in kPa')
     .option('--stage-durations <csv>', 'Comma-separated staged consolidation durations in years')
     .option('--drainage <type>', 'Staged consolidation drainage condition: single or double')
+    .option('--biot-width <m>', 'Biot plane-strain seepage domain width in metres')
+    .option('--biot-height <m>', 'Biot plane-strain seepage domain height in metres')
+    .option('--biot-thickness <m>', 'Biot out-of-plane tributary thickness in metres')
+    .option('--initial-pore-pressure <kPa>', 'Initial excess pore pressure in kPa for the Biot u-p preview')
+    .option('--time-steps <csv>', 'Comma-separated Biot time steps in seconds')
+    .option('--top-pore-pressure <kPa>', 'Top boundary pore pressure in kPa')
+    .option('--bottom-pore-pressure <kPa>', 'Bottom boundary pore pressure in kPa')
+    .option('--left-pore-pressure <kPa>', 'Left boundary pore pressure in kPa')
+    .option('--right-pore-pressure <kPa>', 'Right boundary pore pressure in kPa')
     .option('--pressure <kPa>', 'Raft pressure or excavation surcharge pressure in kPa')
     .option('--elastic-modulus <kPa>', 'Representative elastic modulus in kPa')
     .option('--poisson-ratio <ratio>', 'Representative Poisson ratio')
@@ -995,6 +1063,10 @@ export function registerFemCommand(program: Command): void {
     .option('--cohesion <kPa>', 'Mohr-Coulomb cohesion for consolidation strength gate')
     .option('--cv <m2/year>', 'Coefficient of consolidation in square metres per year')
     .option('--hydraulic-conductivity <m/s>', 'Reviewed hydraulic conductivity used for traceability')
+    .option('--hydraulic-conductivity-x <m/s>', 'Horizontal hydraulic conductivity for Biot/seepage previews')
+    .option('--hydraulic-conductivity-y <m/s>', 'Vertical hydraulic conductivity for Biot/seepage previews')
+    .option('--biot-alpha <ratio>', 'Biot coefficient between 0 and 1')
+    .option('--specific-storage <1/m>', 'Specific storage for Biot/seepage previews')
     .option('--groundwater-condition <condition>', 'Groundwater condition: not_modelled, below_domain, specified')
     .option('--groundwater-depth <m>', 'Groundwater depth in metres when condition is specified')
     .option('--groundwater-note <text>', 'Groundwater review note')
@@ -1006,6 +1078,8 @@ export function registerFemCommand(program: Command): void {
     geotech fem draft foundation-settlement --workspace ./site-data --raft-length 10 --raft-width 8 --pressure 150 --json
     geotech fem draft tunnel-volume-loss-settlement --tunnel-diameter 6 --tunnel-depth 18 --tunnel-length 60 --volume-loss 1.2 --trough-width 0.5 --json
     geotech fem draft staged-settlement-consolidation --layer-thickness 10 --surface-area 200 --stage-loads 45,35,20 --stage-durations 0.5,1,2 --drainage double --constrained-modulus 8000 --cv 0.8 --friction-angle 28 --cohesion 12 --json
+    geotech fem draft seepage-groundwater-coupling --demo-defaults --case-output seepage_case.json --json
+    geotech fem draft seepage-groundwater-coupling --biot-width 1 --biot-height 1 --biot-thickness 1 --initial-pore-pressure 100 --top-pore-pressure 0 --time-steps 1,2,4,8 --hydraulic-conductivity 0.000001 --specific-storage 0.0001 --biot-alpha 0.8 --case-output seepage_case.json
 
   This command prepares a review-gated FEM analysis-case draft only. It does not run a solver,
   does not create WebGL results, and never auto-approves FEM output for design use.

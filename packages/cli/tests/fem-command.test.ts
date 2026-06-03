@@ -353,7 +353,6 @@ describe('registerFemCommand', () => {
     for (const [alias, objective, expectedInput] of [
       ['slope-embankment', 'slope-embankment-deformation', 'slope height'],
       ['retaining-wall', 'retaining-wall-excavation-support', 'prop/anchor levels'],
-      ['groundwater-sensitive', 'seepage-groundwater-coupling', 'piezometric surfaces'],
     ] as const) {
       const program = new Command();
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -377,6 +376,77 @@ describe('registerFemCommand', () => {
       expect(payload.draft.contractReadiness.disallowedAgentActions).toContain('render-webgl');
       logSpy.mockRestore();
     }
+  });
+
+  it('prepares and runs reviewed seepage Biot cases through the biot-up backend', async () => {
+    const registerFemCommand = await loadRegisterFemCommand();
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-fem-biot-run-'));
+    tempDirs.push(dir);
+    const casePath = join(dir, 'seepage.analysis_case.json');
+    const draftProgram = new Command();
+    const draftLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    draftProgram.exitOverride();
+    registerFemCommand(draftProgram);
+
+    await draftProgram.parseAsync([
+      'fem',
+      'draft',
+      'groundwater-sensitive',
+      '--biot-width',
+      '1',
+      '--biot-height',
+      '1',
+      '--biot-thickness',
+      '1',
+      '--initial-pore-pressure',
+      '100',
+      '--top-pore-pressure',
+      '0',
+      '--time-steps',
+      '1,2,4,8',
+      '--hydraulic-conductivity',
+      '0.000001',
+      '--specific-storage',
+      '0.0001',
+      '--biot-alpha',
+      '0.8',
+      '--case-output',
+      casePath,
+      '--json',
+    ], { from: 'user' });
+
+    const draftPayload = JSON.parse(collectLogText(draftLogSpy).trim());
+    expect(draftPayload.objective).toBe('seepage-groundwater-coupling');
+    expect(draftPayload.draft.implemented).toBe(true);
+    expect(draftPayload.draft.recommendedAction).toBe('run-reviewed-case');
+    expect(draftPayload.draft.analysisCase.objective).toBe('seepage_groundwater_coupling');
+    expect(draftPayload.casePath).toBeTruthy();
+    expect(existsSync(casePath)).toBe(true);
+    draftLogSpy.mockRestore();
+
+    const runProgram = new Command();
+    const runLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    runProgram.exitOverride();
+    registerFemCommand(runProgram);
+    await runProgram.parseAsync([
+      'fem',
+      'run',
+      casePath,
+      '--experimental',
+      '--reviewed',
+      '--backend',
+      'biot-up',
+      '--no-open',
+      '--json',
+    ], { from: 'user' });
+
+    const runPayload = JSON.parse(collectLogText(runLogSpy).trim());
+    expect(runPayload.kind).toBe('geotech-fem-run-result');
+    expect(runPayload.manifest.backend.id).toBe('builtin-biot-up-plane-strain-v0');
+    expect(runPayload.manifest.analysisCase.objective).toBe('seepage_groundwater_coupling');
+    expect(runPayload.manifest.envelope.porePressureMassBalanceErrorRatio).toBeLessThanOrEqual(1e-6);
+    expect(runPayload.warnings.join(' ')).toMatch(/Experimental deterministic FEM run/i);
+    runLogSpy.mockRestore();
   });
 
   it('prefills FEM draft inputs from workspace GroundModel readiness without auto-running', async () => {

@@ -125,6 +125,14 @@ function assertReferenceChecks(name, objective, envelope, draftArgs) {
     assert(envelope.maxMobilizedStrengthRatio >= 0 && envelope.maxMobilizedStrengthRatio <= 1, `${name}: mobilized strength ratio must stay within 0-1`);
     assert(Math.abs(envelope.consolidationDurationYears - expectedDuration) <= 0.001, `${name}: consolidation duration mismatch`);
   }
+
+  if (objective === 'seepage_groundwater_coupling') {
+    const initialPorePressure = Number(draftArgs[draftArgs.indexOf('--initial-pore-pressure') + 1]);
+    assert(Math.abs(envelope.totalLoadKn) <= 1e-9, `${name}: Biot preview must not report mechanical pressure load`);
+    assert(Math.abs(envelope.reactionKn) <= 1e-9, `${name}: Biot preview must not report mechanical reaction load`);
+    assert(envelope.maxPorePressureKpa <= initialPorePressure + 1e-6, `${name}: pore pressure exceeded initial/boundary envelope`);
+    assert(envelope.porePressureMassBalanceErrorRatio <= 1e-6, `${name}: pore-pressure mass-balance residual exceeds tolerance`);
+  }
 }
 
 async function draftAndRun({ name, objective, draftArgs, runArgs = [], expectedObjective, expectedBackend, expectedEnvelope, expectedFields = [], outDir, checkReviewGate = false }) {
@@ -223,7 +231,6 @@ const contractOnlyRoutes = [
   'pile-group-elastic-interaction',
   'slope-embankment-deformation',
   'retaining-wall-excavation-support',
-  'seepage-groundwater-coupling',
 ];
 for (const route of contractOnlyRoutes) {
   const output = await runCli(['fem', 'draft', route, '--json']);
@@ -445,6 +452,38 @@ const cases = [
       '--hydraulic-conductivity', '1e-9',
     ],
   },
+  {
+    name: 'biot-seepage',
+    objective: 'seepage-groundwater-coupling',
+    runArgs: ['--backend', 'biot-up'],
+    expectedObjective: 'seepage_groundwater_coupling',
+    expectedBackend: 'builtin-biot-up-plane-strain-v0',
+    expectedFields: ['vertical_settlement', 'excess_pore_pressure', 'pore_pressure_mass_balance_error_ratio'],
+    expectedEnvelope: {
+      maxSettlementMm: { min: 0, max: 100 },
+      minPorePressureKpa: { min: 0, max: 100 },
+      maxPorePressureKpa: { min: 0, max: 100 },
+      maxExcessPorePressureKpa: { min: 0, max: 100 },
+      porePressureMassBalanceErrorRatio: { min: 0, max: 0.000001 },
+      timeStepCount: { equals: 4, tolerance: 0.000001 },
+      totalLoadKn: { equals: 0, tolerance: 0.000001 },
+      reactionKn: { equals: 0, tolerance: 0.000001 },
+    },
+    draftArgs: [
+      '--biot-width', '1',
+      '--biot-height', '1',
+      '--biot-thickness', '1',
+      '--initial-pore-pressure', '100',
+      '--top-pore-pressure', '0',
+      '--time-steps', '1,2,4,8',
+      '--elastic-modulus', '30000',
+      '--poisson-ratio', '0.3',
+      '--unit-weight', '18.5',
+      '--hydraulic-conductivity', '0.000001',
+      '--specific-storage', '0.0001',
+      '--biot-alpha', '0.8',
+    ],
+  },
 ];
 
 const results = [];
@@ -486,12 +525,13 @@ console.log(JSON.stringify({
   ok: true,
   outDir,
   agentBoundary: 'FEM agents plan, draft, and validate only; deterministic CLI runs require human-invoked geotech fem run --experimental --reviewed.',
-  scenarioContract: 'Envelope ranges and cross-scenario trends passed for raft, excavation, and tunnel mock datasets.',
+  scenarioContract: 'Envelope ranges and cross-scenario trends passed for raft, excavation, tunnel, consolidation, and Biot seepage mock datasets.',
   contractOnlyRoutes,
   referenceChecks: [
     'raft reaction balance',
     'excavation reaction partition',
     'tunnel prescribed-volume conservation',
+    'Biot pore-pressure mass balance',
   ],
   trends: trends.map((trend) => trend.id),
   results,

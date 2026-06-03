@@ -1904,7 +1904,7 @@ export function runFemEngineeringEvidenceSuite(
     remainingProductionBlockers: [
       'production-sparse-fem-solver-and-2d-3d-result-route-not-integrated-with-these-kernels',
       'nonlinear-plane-strain-plasticity-is-benchmark-scale-without-consistent-tangent-hardening-calibration-or-cross-solver-validation',
-      'biot-u-p-coupling-evidence-kernel-not-route-backed-result-manifest-or-production-sparse-solver',
+      'biot-u-p-route-backed-preview-is-not-production-sparse-solver',
       'support-design-is-screening-level-and-not-jurisdiction-specific-structural-design',
       'published-commercial-cross-solver-benchmark-corpus-not-approved',
       'reviewer-approval-record-validator-exists-but-cli-run-does-not-enforce-persistence-for-every-run',

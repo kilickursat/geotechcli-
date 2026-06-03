@@ -2,13 +2,15 @@ export type FemObjective =
   | 'foundation_settlement'
   | 'excavation_deformation'
   | 'tunnel_volume_loss_settlement'
-  | 'staged_settlement_consolidation';
+  | 'staged_settlement_consolidation'
+  | 'seepage_groundwater_coupling';
 
 export type FemAnalysisType =
   | 'static_3d_small_strain'
   | 'static_3d_staged_elastic'
   | 'empirical_3d_settlement_surface'
-  | 'time_dependent_1d_consolidation';
+  | 'time_dependent_1d_consolidation'
+  | 'time_dependent_2d_biot_consolidation';
 
 export type FemAssumptionConfidence = 'measured' | 'inferred' | 'review';
 
@@ -51,6 +53,10 @@ export interface FemMaterial {
   cohesionKpa?: number;
   coefficientOfConsolidationM2PerYear?: number;
   hydraulicConductivityMPerS?: number;
+  hydraulicConductivityXMPerS?: number;
+  hydraulicConductivityYMPerS?: number;
+  biotCoefficient?: number;
+  specificStorage1PerM?: number;
   evidenceRefs: FemEvidenceRef[];
   assumptions: FemAssumption[];
 }
@@ -116,6 +122,22 @@ export interface FemConsolidationGeometry {
   stages: FemConsolidationStage[];
 }
 
+export interface FemBiotPressureBoundary {
+  id: string;
+  boundary: 'top' | 'bottom' | 'left' | 'right';
+  porePressureKpa: number;
+}
+
+export interface FemBiotPlaneStrainGeometry {
+  type: 'plane_strain_biot_column';
+  widthM: number;
+  heightM: number;
+  thicknessM: number;
+  initialPorePressureKpa: number;
+  timeStepsSeconds: number[];
+  porePressureBoundaries: FemBiotPressureBoundary[];
+}
+
 export interface FemPressureLoad {
   id: string;
   type: 'uniform_pressure';
@@ -132,7 +154,7 @@ export interface FemBoundaryCondition {
 }
 
 export interface FemMeshSettings {
-  elementType: 'hex8';
+  elementType: 'hex8' | 'quad4_plane_strain';
   divisionsX: number;
   divisionsY: number;
   divisionsZ: number;
@@ -161,6 +183,7 @@ export interface FemAnalysisCase {
     excavation?: FemExcavationGeometry;
     tunnel?: FemTunnelGeometry;
     consolidation?: FemConsolidationGeometry;
+    biot?: FemBiotPlaneStrainGeometry;
   };
   materials: FemMaterial[];
   loads: FemPressureLoad[];
@@ -204,6 +227,7 @@ export interface FemVisualizationFrame {
   stageLabel?: string;
   disp: number[];
   color: number[];
+  scalarValues?: number[];
 }
 
 export interface FemResultField {
@@ -222,6 +246,8 @@ export interface FemResultStep {
   index: number;
   analysisStageId?: string;
   depthM?: number;
+  timeSeconds?: number;
+  deltaTimeSeconds?: number;
 }
 
 export interface FemResultDataset {
@@ -230,7 +256,7 @@ export interface FemResultDataset {
   stepId?: string;
   values: number[];
   stride: 1 | 3;
-  source: 'visualization.disp' | 'visualization.frame' | 'envelope';
+  source: 'visualization.disp' | 'visualization.frame' | 'visualization.scalar-frame' | 'envelope';
 }
 
 export interface FemResultEnvelope {
@@ -259,6 +285,17 @@ export interface FemResultEnvelope {
   maxSolverResidualRatio?: number;
   maxYieldResidualRatio?: number;
   nonlinearPlasticStrain?: number;
+  timeStepCount?: number;
+  minPorePressureKpa?: number;
+  maxPorePressureKpa?: number;
+  maxBiotCouplingKpa?: number;
+  porePressureMassBalanceErrorRatio?: number;
+  maxFreePorePressureResidualM3PerS?: number;
+  freePorePressureResidualL1M3PerS?: number;
+  prescribedPorePressureResidualL1M3PerS?: number;
+  coupledUnknownCount?: number;
+  displacementDofCount?: number;
+  porePressureDofCount?: number;
   tunnelDiameterM?: number;
   tunnelAxisDepthM?: number;
   volumeLossPercent?: number;
@@ -268,13 +305,23 @@ export interface FemResultEnvelope {
   settlementVolumePerM?: number;
 }
 
+export interface FemResultPressureAudit {
+  freePorePressureResidualL1M3PerS: number;
+  prescribedPorePressureResidualL1M3PerS: number;
+  netPrescribedPressureBoundaryFlowM3PerS: number;
+  appliedNodalFluxSumM3PerS: number;
+  storageRateSumM3PerS: number;
+  couplingRateSumM3PerS: number;
+  darcyFlowRateSumM3PerS: number;
+}
+
 export interface FemResultManifest {
   schemaVersion: 'fem-result-manifest.v0';
   caseId: string;
   title: string;
   generatedAt: string;
   backend: {
-    id: 'builtin-elastic3d-demo' | 'builtin-staged-excavation-demo' | 'builtin-tunnel-volume-loss-demo' | 'builtin-staged-consolidation-1d' | 'builtin-nonlinear-column-v0';
+    id: 'builtin-elastic3d-demo' | 'builtin-staged-excavation-demo' | 'builtin-tunnel-volume-loss-demo' | 'builtin-staged-consolidation-1d' | 'builtin-nonlinear-column-v0' | 'builtin-biot-up-plane-strain-v0';
     label: string;
     deterministic: true;
     version: string;
@@ -284,13 +331,14 @@ export interface FemResultManifest {
   mesh: {
     nodes: number;
     elements: number;
-    elementType: 'hex8';
+    elementType: 'hex8' | 'quad4_plane_strain';
     divisions: [number, number, number];
     visualizationNodes: number;
     visualizationTriangles: number;
     visualizationEdges: number;
   };
   envelope: FemResultEnvelope;
+  pressureAudit?: FemResultPressureAudit;
   visualization: FemVisualizationMesh;
   resultFields?: FemResultField[];
   steps?: FemResultStep[];

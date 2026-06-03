@@ -410,6 +410,7 @@ describe('geotech document benchmark', () => {
         'foundation-settlement',
         'excavation-deformation',
         'tunnel-volume-loss-settlement',
+        'seepage-groundwater-coupling',
         'staged-settlement-consolidation',
       ],
       contractOnlyRoutes: [
@@ -417,7 +418,6 @@ describe('geotech document benchmark', () => {
         'pile-group-elastic-interaction',
         'slope-embankment-deformation',
         'retaining-wall-excavation-support',
-        'seepage-groundwater-coupling',
       ],
       agentRunAllowedRoutes: [],
       agentWebglAllowedRoutes: [],
@@ -439,6 +439,7 @@ describe('geotech document benchmark', () => {
         'foundation-settlement',
         'excavation-deformation',
         'tunnel-volume-loss-settlement',
+        'seepage-groundwater-coupling',
         'staged-settlement-consolidation',
       ],
       staleRunCommandRoutes: [],
@@ -512,9 +513,9 @@ describe('geotech document benchmark', () => {
     expect(retainingRoute?.executionMode).toBe('contract-only');
     expect(retainingRoute?.requiredUserInputs).toContain('prop/anchor levels');
     expect(retainingRoute?.contractReadiness?.blockedUntil).toContain('solver-or-preview-backend-implemented');
-    expect(seepageRoute?.executionMode).toBe('contract-only');
+    expect(seepageRoute?.executionMode).toBe('human-reviewed-preview');
     expect(seepageRoute?.requiredEvidence).toContain('groundwater observations');
-    expect(seepageRoute?.reviewGates).toContain('seepage-solver-not-implemented');
+    expect(seepageRoute?.reviewGates).toContain('not-production-sparse-solver');
     expect(stagedRoute?.executionMode).toBe('human-reviewed-preview');
     expect(stagedRoute?.requiredEvidence).toContain('compressibility/consolidation parameters');
     expect(stagedRoute?.reviewGates).toEqual(expect.arrayContaining([
@@ -804,6 +805,7 @@ describe('geotech document benchmark', () => {
         'foundation-settlement',
         'excavation-deformation',
         'tunnel-volume-loss-settlement',
+        'seepage-groundwater-coupling',
         'staged-settlement-consolidation',
       ],
       contractOnlyRoutes: [
@@ -811,7 +813,6 @@ describe('geotech document benchmark', () => {
         'pile-group-elastic-interaction',
         'slope-embankment-deformation',
         'retaining-wall-excavation-support',
-        'seepage-groundwater-coupling',
       ],
       agentRunAllowedRoutes: [],
       agentWebglAllowedRoutes: [],
@@ -822,6 +823,7 @@ describe('geotech document benchmark', () => {
         'foundation-settlement',
         'excavation-deformation',
         'tunnel-volume-loss-settlement',
+        'seepage-groundwater-coupling',
         'staged-settlement-consolidation',
       ],
       staleRunCommandRoutes: [],
@@ -843,7 +845,7 @@ describe('geotech document benchmark', () => {
     expect(fixture.femDraftReadiness.routes.every((route: any) => !/\bfem run\b/i.test(route.recommendedCommand ?? ''))).toBe(true);
     expect(fixture.femDraftReadiness.routes.find((route: any) => route.objective === 'shaft-deformation')?.contractReadiness.disallowedAgentActions).toContain('render-webgl');
     expect(fixture.femDraftReadiness.routes.find((route: any) => route.objective === 'pile-group-elastic-interaction')?.contractReadiness.disallowedAgentActions).toContain('invent-results');
-    expect(fixture.femDraftReadiness.routes.find((route: any) => route.objective === 'seepage-groundwater-coupling')?.reviewGates).toContain('seepage-solver-not-implemented');
+    expect(fixture.femDraftReadiness.routes.find((route: any) => route.objective === 'seepage-groundwater-coupling')?.reviewGates).toContain('not-production-sparse-solver');
     expect(fixture.femDraftReadiness.routes.find((route: any) => route.objective === 'staged-settlement-consolidation')?.requiredEvidence).toContain('compressibility/consolidation parameters');
   });
 });

@@ -756,11 +756,10 @@ function assessFemSeepageGroundwaterCouplingReadiness(
 ): GroundModelCalculationReadiness {
   return buildWorkflowReadiness({
     workflow: 'fem-seepage-groundwater-coupling',
-    label: 'Planned seepage / groundwater coupling contract draft',
+    label: 'Experimental seepage / groundwater coupling draft',
     toolName: 'prepare_fem_analysis_case',
-    commandTemplate: 'geotech fem draft seepage-groundwater-coupling --input <json>',
+    commandTemplate: 'geotech fem draft seepage-groundwater-coupling --input <json> --case-output <analysis_case.json>',
     coreMissing: [
-      'implemented seepage/groundwater coupling preview backend',
       ...missingWhen(!context.hasStrata, 'hydrostratigraphy / seepage strata model'),
       ...missingWhen(!context.hasGroundwater, 'groundwater observations or piezometric evidence'),
     ],
@@ -782,7 +781,7 @@ function assessFemSeepageGroundwaterCouplingReadiness(
       context.labIndexEvidenceIds,
       context.unitWeightEvidenceIds,
     ),
-    recommendation: 'Seepage/groundwater-coupled FEM is a planned contract-only route. Collect hydraulic boundary conditions, permeability basis, and dewatering assumptions before any future coupled preview; do not create a runnable FEM case or WebGL result yet.',
+    recommendation: 'Seepage/groundwater-coupled FEM is available as an experimental human-reviewed Biot u-p preview. Collect hydraulic boundary conditions, permeability basis, pore-pressure schedule, and dewatering assumptions before creating a runnable case; do not treat preview results as design calculations.',
   }, model, context, profile, options);
 }
 
@@ -1314,10 +1313,10 @@ function buildCalculationInputDraft(
           poissonRatio: 0.3,
         },
         groundwater: groundwaterDepth != null
-          ? { condition: 'specified', depthM: groundwaterDepth, note: 'Groundwater depth from GroundModel evidence; seepage route remains contract-only.' }
-          : { condition: 'not_modelled', note: 'Groundwater not present in GroundModel; seepage route remains contract-only.' },
+          ? { condition: 'specified', depthM: groundwaterDepth, note: 'Groundwater depth from GroundModel evidence; seepage route still requires reviewed hydraulic boundaries before execution.' }
+          : { condition: 'not_modelled', note: 'Groundwater not present in GroundModel; seepage route still requires reviewed hydraulic boundaries before execution.' },
       };
-      command = 'geotech fem draft seepage-groundwater-coupling --input <json>';
+      command = 'geotech fem draft seepage-groundwater-coupling --input <json> --case-output <analysis_case.json>';
       break;
     }
     case 'fem-staged-settlement-consolidation': {

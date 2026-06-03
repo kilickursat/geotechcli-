@@ -128,14 +128,14 @@
       "foundation-settlement",
       "excavation-deformation",
       "tunnel-volume-loss-settlement",
+      "seepage-groundwater-coupling",
       "staged-settlement-consolidation"
     ],
     "contractOnlyRoutes": [
       "shaft-deformation",
       "pile-group-elastic-interaction",
       "slope-embankment-deformation",
-      "retaining-wall-excavation-support",
-      "seepage-groundwater-coupling"
+      "retaining-wall-excavation-support"
     ],
     "agentRunAllowedRoutes": [],
     "agentWebglAllowedRoutes": [],
@@ -157,6 +157,7 @@
       "foundation-settlement",
       "excavation-deformation",
       "tunnel-volume-loss-settlement",
+      "seepage-groundwater-coupling",
       "staged-settlement-consolidation"
     ],
     "staleRunCommandRoutes": [],
@@ -709,9 +710,10 @@
       },
       {
         "objective": "seepage-groundwater-coupling",
-        "status": "planned",
-        "executionMode": "contract-only",
+        "status": "implemented-demo",
+        "executionMode": "human-reviewed-preview",
         "agentRunAllowed": false,
+        "deterministicBackend": "builtin-biot-up-plane-strain-v0",
         "executionBoundary": {
           "schemaVersion": "fem-benchmark-execution-boundary.v1",
           "agentRunAllowed": false,
@@ -720,28 +722,23 @@
           "humanReviewRequired": true,
           "caseOutputAvailable": false,
           "humanRunCommandAvailable": false,
-          "draftCommand": "geotech fem draft seepage-groundwater-coupling --input <json>",
+          "draftCommand": "geotech fem draft seepage-groundwater-coupling --input <json> --case-output <analysis_case.json>",
+          "humanRunCommandTemplate": "geotech fem run <analysis_case.json> --experimental --reviewed --backend biot-up",
           "blockedReasons": [
             "ground-model-missing-spt-n-values",
             "ground-model-partial-pages-remain",
             "ground-model-low-confidence",
             "missing-spt-n-values",
-            "planned-only",
-            "seepage-solver-not-implemented",
+            "experimental-only",
+            "biot-u-p-preview-only",
             "hydraulic-boundary-review-required",
+            "not-production-sparse-solver",
             "not-design-calculation",
-            "deterministic-analysis-case-schema-accepted",
-            "solver-or-preview-backend-implemented",
-            "result-manifest-validator-implemented",
-            "webgl-renderer-smoke-added",
-            "acceptance-fixture-approved",
             "human-review-required",
-            "analysis-case-not-reviewed",
-            "agent-run-disabled",
-            "solver-backend-not-implemented"
+            "analysis-case-not-reviewed"
           ]
         },
-        "recommendedCommand": "geotech fem draft seepage-groundwater-coupling --input <json>",
+        "recommendedCommand": "geotech fem draft seepage-groundwater-coupling --input <json> --case-output <analysis_case.json>",
         "readinessStatus": "needs_engineering_review",
         "readinessScore": 61,
         "requiredEvidence": [
@@ -752,55 +749,25 @@
           "drainage/dewatering assumptions"
         ],
         "requiredUserInputs": [
-          "upstream/downstream heads",
-          "piezometric surfaces",
-          "permeability values",
-          "drainage or pump assumptions",
-          "coupling mode and review limits"
+          "Biot column geometry",
+          "initial excess pore pressure",
+          "time-step schedule",
+          "drained pore-pressure boundary",
+          "hydraulic conductivity",
+          "specific storage",
+          "Biot coefficient"
         ],
         "reviewGates": [
-          "planned-only",
-          "seepage-solver-not-implemented",
+          "experimental-only",
+          "biot-u-p-preview-only",
           "hydraulic-boundary-review-required",
+          "not-production-sparse-solver",
           "not-design-calculation",
-          "agent-run-disabled",
-          "solver-backend-not-implemented",
           "human-review-required"
         ],
         "limitations": [
-          "No seepage solver, transient flow, piping, uplift, or coupled consolidation backend is available yet."
-        ],
-        "contractReadiness": {
-          "nonRunnableReason": "Seepage / groundwater-sensitive deformation preview is registered as a planning contract only. No deterministic backend, analysis-case writer, or WebGL result renderer is available for this route yet.",
-          "blockedUntil": [
-            "deterministic-analysis-case-schema-accepted",
-            "solver-or-preview-backend-implemented",
-            "result-manifest-validator-implemented",
-            "webgl-renderer-smoke-added",
-            "acceptance-fixture-approved"
-          ],
-          "allowedAgentActions": [
-            "list-capability",
-            "draft-input-contract",
-            "validate-user-inputs",
-            "summarize-readiness"
-          ],
-          "disallowedAgentActions": [
-            "run-solver",
-            "create-analysis-case",
-            "render-webgl",
-            "invent-results"
-          ],
-          "reviewGates": [
-            "planned-only",
-            "seepage-solver-not-implemented",
-            "hydraulic-boundary-review-required",
-            "not-design-calculation",
-            "agent-run-disabled",
-            "solver-backend-not-implemented",
-            "human-review-required"
-          ]
-        }
+          "Linear-elastic saturated plane-strain Biot u-p preview only; no unsaturated flow, uplift/piping, dewatering design, nonlinear plasticity, advanced staging, support design, or production sparse solver."
+        ]
       },
       {
         "objective": "staged-settlement-consolidation",

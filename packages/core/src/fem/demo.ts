@@ -12,6 +12,10 @@ import {
   runMohrCoulombMaterialPoint,
   runTerzaghiConsolidationTimeStepper,
 } from './engineering-evidence.js';
+import {
+  buildPlaneStrainRectangularMesh,
+  runPlaneStrainBiotConsolidation,
+} from './plane-strain-assembly.js';
 import { validateFemAnalysisCase } from './validation.js';
 
 const DEFAULT_UNITS = {
@@ -55,6 +59,25 @@ function movementColor(t: number): [number, number, number] {
     [250, 204, 21],
     [249, 115, 22],
     [239, 68, 68],
+  ];
+  const scaled = Math.min(Math.max(t, 0), 1) * (stops.length - 1);
+  const left = Math.floor(scaled);
+  const right = Math.min(left + 1, stops.length - 1);
+  const local = scaled - left;
+  return [0, 1, 2].map((index) => {
+    const value = stops[left][index] + (stops[right][index] - stops[left][index]) * local;
+    return round(value / 255, 4);
+  }) as [number, number, number];
+}
+
+function porePressureColor(t: number): [number, number, number] {
+  const stops: Array<[number, number, number]> = [
+    [247, 252, 240],
+    [186, 228, 188],
+    [123, 204, 196],
+    [67, 162, 202],
+    [8, 104, 172],
+    [8, 48, 107],
   ];
   const scaled = Math.min(Math.max(t, 0), 1) * (stops.length - 1);
   const left = Math.floor(scaled);
@@ -609,6 +632,120 @@ export function buildStagedSettlementConsolidationDemoAnalysisCase(
       'Mohr-Coulomb behavior is a material-point strength cap and plastic-settlement review gate; no 2D/3D plastic zone is solved.',
       'No 2D/3D seepage field, embankment geometry, creep, secondary compression, monitoring calibration, or support/structure interaction is modelled.',
       'Independent published/commercial solver benchmarks are still required before production design use.',
+    ],
+  };
+}
+
+export function buildSeepageBiotPlaneStrainDemoAnalysisCase(
+  now = new Date('2026-06-03T00:00:00.000Z'),
+): FemAnalysisCase {
+  const finalTimeSeconds = 19.7;
+  const assumptions: FemAssumption[] = [
+    {
+      id: 'biot-up-preview-scope',
+      parameter: 'solver scope',
+      value: 'saturated linear-elastic plane-strain Biot u-p preview',
+      basis: 'Strong-beta route-backed preview for reviewed pore-pressure dissipation and hydro-mechanical evidence only.',
+      confidence: 'review',
+      reviewRequired: true,
+    },
+    {
+      id: 'excess-pore-pressure-positive',
+      parameter: 'pore pressure convention',
+      value: 'positive excess pore pressure in kPa',
+      basis: 'The benchmark-scale Biot evidence kernel rejects unsupported negative free pore-pressure solves.',
+      confidence: 'review',
+      reviewRequired: true,
+    },
+    {
+      id: 'top-drained-boundary',
+      parameter: 'hydraulic boundary',
+      value: 'top drained to zero excess pore pressure',
+      unit: 'kPa',
+      basis: 'Representative Terzaghi-style top-drained column fixture for transient pressure-dissipation review.',
+      confidence: 'review',
+      reviewRequired: true,
+    },
+  ];
+
+  return {
+    schemaVersion: 'fem-analysis-case.v0',
+    caseId: 'seepage-biot-plane-strain-demo',
+    title: 'Experimental plane-strain Biot u-p pore-pressure dissipation preview',
+    createdBy: 'geotechcli-fem-demo',
+    createdAt: now.toISOString(),
+    experimental: true,
+    objective: 'seepage_groundwater_coupling',
+    analysisType: 'time_dependent_2d_biot_consolidation',
+    units: DEFAULT_UNITS,
+    geometry: {
+      domain: {
+        type: 'box',
+        lengthM: 1,
+        widthM: 1,
+        depthM: 1,
+      },
+      biot: {
+        type: 'plane_strain_biot_column',
+        widthM: 1,
+        heightM: 1,
+        thicknessM: 1,
+        initialPorePressureKpa: 100,
+        timeStepsSeconds: Array.from({ length: 20 }, (_, index) => round(finalTimeSeconds * ((index + 1) / 20), 6)),
+        porePressureBoundaries: [
+          { id: 'top-drained', boundary: 'top', porePressureKpa: 0 },
+        ],
+      },
+    },
+    materials: [
+      {
+        id: 'biot-clay',
+        name: 'Representative saturated clay for Biot u-p preview',
+        model: 'linear_elastic',
+        elasticModulusKpa: 30_000,
+        poissonRatio: 0.3,
+        unitWeightKnM3: 18,
+        hydraulicConductivityMPerS: 1e-6,
+        hydraulicConductivityXMPerS: 1e-6,
+        hydraulicConductivityYMPerS: 1e-6,
+        biotCoefficient: 0.8,
+        specificStorage1PerM: 1e-4,
+        evidenceRefs: [],
+        assumptions,
+      },
+    ],
+    loads: [],
+    boundaryConditions: [
+      {
+        id: 'base-fixed',
+        type: 'fixed_base',
+        description: 'Bottom boundary fixed in both plane-strain displacement directions for reviewed column preview.',
+      },
+      {
+        id: 'side-rollers',
+        type: 'side_rollers',
+        description: 'Side boundaries treated as rollers in the plane-strain preview interpretation.',
+      },
+    ],
+    mesh: {
+      elementType: 'quad4_plane_strain',
+      divisionsX: 1,
+      divisionsY: 16,
+      divisionsZ: 1,
+    },
+    groundwater: {
+      condition: 'specified',
+      depthM: 0,
+      note: 'Saturated top-drained excess-pore-pressure dissipation fixture; uplift, pumping, unsaturated flow, and piping are not design-checked.',
+      reviewRequired: true,
+    },
+    assumptions,
+    evidenceRefs: [],
+    limitations: [
+      'Experimental benchmark-scale plane-strain Biot u-p preview only; not a production nonlinear geotechnical FEM solver.',
+      'Uses dense linear-elastic Quad4 displacement/pore-pressure coupling and reviewed excess-pore-pressure boundary assumptions.',
+      'No unsaturated flow, pumping/dewatering design, uplift/piping verification, support design, nonlinear plasticity coupling, staged activation, or production sparse solver is provided.',
+      'Independent published/commercial solver benchmarks and enforced approval workflows are still required before production design use.',
     ],
   };
 }
@@ -1276,6 +1413,307 @@ function buildTunnelResultDatasets(visualization: FemVisualizationMesh): FemResu
       source: 'visualization.disp',
     },
   ];
+}
+
+function buildBiotPlaneStrainVisualizationMesh(
+  caseFile: FemAnalysisCase,
+  result: ReturnType<typeof runPlaneStrainBiotConsolidation>,
+): FemVisualizationMesh {
+  const biot = caseFile.geometry.biot;
+  if (!biot) {
+    throw new Error('Biot visualization mesh requires Biot plane-strain geometry.');
+  }
+  const nx = caseFile.mesh.divisionsX;
+  const ny = caseFile.mesh.divisionsY;
+  const maxPressure = Math.max(...result.nodes.map((node) => node.porePressureKpa), biot.initialPorePressureKpa, 1e-9);
+  const base: number[] = [];
+  const disp: number[] = [];
+  const color: number[] = [];
+  const scalarValues: number[] = [];
+  const tri: number[] = [];
+  const edge: number[] = [];
+
+  for (const node of result.nodes) {
+    base.push(round(node.xM - biot.widthM / 2, 6), 0, round(-node.yM, 6));
+    disp.push(round(node.uxM, 9), 0, round(node.uyM, 9));
+    scalarValues.push(round(node.porePressureKpa, 8));
+    color.push(...porePressureColor(node.porePressureKpa / maxPressure));
+  }
+
+  const idx = (ix: number, iy: number) => iy * (nx + 1) + ix;
+  for (let iy = 0; iy < ny; iy += 1) {
+    for (let ix = 0; ix < nx; ix += 1) {
+      const a = idx(ix, iy);
+      const b = idx(ix + 1, iy);
+      const c = idx(ix + 1, iy + 1);
+      const d = idx(ix, iy + 1);
+      tri.push(a, b, c, a, c, d);
+    }
+  }
+  for (let iy = 0; iy <= ny; iy += 1) {
+    for (let ix = 0; ix < nx; ix += 1) {
+      edge.push(idx(ix, iy), idx(ix + 1, iy));
+    }
+  }
+  for (let ix = 0; ix <= nx; ix += 1) {
+    for (let iy = 0; iy < ny; iy += 1) {
+      edge.push(idx(ix, iy), idx(ix, iy + 1));
+    }
+  }
+
+  const finalStep = result.timeSteps[result.timeSteps.length - 1];
+  const stageLabel = finalStep ? `Final Biot step at ${finalStep.timeSeconds.toFixed(3)} s` : 'Final Biot step';
+  return {
+    base,
+    disp,
+    color,
+    tri,
+    edge,
+    outlineBase: [
+      -biot.widthM / 2, 0, 0,
+      biot.widthM / 2, 0, 0,
+      biot.widthM / 2, 0, -biot.heightM,
+      -biot.widthM / 2, 0, -biot.heightM,
+    ],
+    outlineDisp: new Array(12).fill(0),
+    outlineIdx: [0, 1, 1, 2, 2, 3, 3, 0],
+    frames: [
+      {
+        field: 'excess_pore_pressure',
+        fieldLabel: 'Excess pore pressure',
+        stageIndex: 0,
+        stageLabel,
+        disp,
+        color,
+        scalarValues,
+      },
+    ],
+  };
+}
+
+function buildBiotResultFields(): FemResultField[] {
+  return [
+    {
+      id: 'vertical_settlement',
+      label: 'Vertical settlement',
+      unit: 'mm',
+      location: 'surface_nodes',
+      quantity: 'displacement',
+      component: 'z',
+      signConvention: 'Negative z displacement is downward in the viewer; values are generated from plane-strain uy.',
+    },
+    {
+      id: 'excess_pore_pressure',
+      label: 'Excess pore pressure',
+      unit: 'kPa',
+      location: 'surface_nodes',
+      quantity: 'pore_pressure',
+      signConvention: 'Positive compression excess pore pressure in the Biot u-p kernel.',
+    },
+    {
+      id: 'max_excess_pore_pressure',
+      label: 'Maximum excess pore pressure',
+      unit: 'kPa',
+      location: 'envelope',
+      quantity: 'pore_pressure',
+    },
+    {
+      id: 'pore_pressure_mass_balance_error_ratio',
+      label: 'Pore-pressure mass-balance error ratio',
+      unit: 'ratio',
+      location: 'envelope',
+      quantity: 'degree_of_consolidation',
+      signConvention: 'Residual ratio from free pore-pressure equation audit; smaller is better.',
+    },
+  ];
+}
+
+function buildBiotResultSteps(result: ReturnType<typeof runPlaneStrainBiotConsolidation>): FemResultStep[] {
+  const finalStep = result.timeSteps[result.timeSteps.length - 1];
+  return [
+    {
+      id: 'final',
+      label: finalStep ? `Final Biot step at ${finalStep.timeSeconds.toFixed(3)} s` : 'Final Biot step',
+      index: 0,
+      timeSeconds: finalStep?.timeSeconds ?? 0,
+      deltaTimeSeconds: finalStep?.deltaTimeSeconds ?? 0,
+    },
+  ];
+}
+
+function buildBiotResultDatasets(
+  visualization: FemVisualizationMesh,
+  envelope: {
+    maxExcessPorePressureKpa: number;
+    porePressureMassBalanceErrorRatio: number;
+  },
+): FemResultDataset[] {
+  const frame = visualization.frames?.[0];
+  return [
+    {
+      id: 'vertical_settlement-final',
+      fieldId: 'vertical_settlement',
+      stepId: 'final',
+      values: visualization.disp,
+      stride: 3,
+      source: 'visualization.disp',
+    },
+    {
+      id: 'excess_pore_pressure-final',
+      fieldId: 'excess_pore_pressure',
+      stepId: 'final',
+      values: frame?.scalarValues ?? [],
+      stride: 1,
+      source: 'visualization.scalar-frame',
+    },
+    {
+      id: 'max_excess_pore_pressure-final',
+      fieldId: 'max_excess_pore_pressure',
+      values: [envelope.maxExcessPorePressureKpa],
+      stride: 1,
+      source: 'envelope',
+    },
+    {
+      id: 'pore_pressure_mass_balance_error_ratio-final',
+      fieldId: 'pore_pressure_mass_balance_error_ratio',
+      values: [envelope.porePressureMassBalanceErrorRatio],
+      stride: 1,
+      source: 'envelope',
+    },
+  ];
+}
+
+export function runBuiltinBiotUpPlaneStrainPreview(
+  caseFile = buildSeepageBiotPlaneStrainDemoAnalysisCase(),
+): FemResultManifest {
+  const validation = validateFemAnalysisCase(caseFile);
+  const biot = caseFile.geometry.biot;
+  const material = caseFile.materials[0];
+  if (!biot || !material) {
+    throw new Error('Biot u-p preview requires Biot geometry and one coupled material.');
+  }
+  if (validation.status === 'blocked') {
+    throw new Error(`FEM case is blocked: ${validation.findings.map((item) => item.message).join('; ')}`);
+  }
+
+  const mesh = buildPlaneStrainRectangularMesh({
+    widthM: biot.widthM,
+    heightM: biot.heightM,
+    divisionsX: caseFile.mesh.divisionsX,
+    divisionsY: caseFile.mesh.divisionsY,
+    materialId: material.id,
+  });
+  const eps = 1e-9;
+  const boundaryConditions = mesh.nodes.flatMap((node) => {
+    const conditions: Array<{ nodeId: string; dof: 'ux' | 'uy'; valueM?: number }> = [];
+    if (Math.abs(node.yM) <= eps) {
+      conditions.push({ nodeId: node.id, dof: 'ux', valueM: 0 }, { nodeId: node.id, dof: 'uy', valueM: 0 });
+    } else if (Math.abs(node.xM) <= eps || Math.abs(node.xM - biot.widthM) <= eps) {
+      conditions.push({ nodeId: node.id, dof: 'ux', valueM: 0 });
+    }
+    return conditions;
+  });
+  const porePressureBoundaryConditions = biot.porePressureBoundaries.flatMap((boundary) => (
+    mesh.nodes
+      .filter((node) => {
+        if (boundary.boundary === 'top') return Math.abs(node.yM - biot.heightM) <= eps;
+        if (boundary.boundary === 'bottom') return Math.abs(node.yM) <= eps;
+        if (boundary.boundary === 'left') return Math.abs(node.xM) <= eps;
+        return Math.abs(node.xM - biot.widthM) <= eps;
+      })
+      .map((node) => ({ nodeId: node.id, porePressureKpa: boundary.porePressureKpa }))
+  ));
+
+  const result = runPlaneStrainBiotConsolidation({
+    schemaVersion: 'fem-plane-strain-biot-consolidation-model.v1',
+    nodes: mesh.nodes,
+    elements: mesh.elements,
+    materials: [
+      {
+        id: material.id,
+        elasticModulusKpa: material.elasticModulusKpa,
+        poissonRatio: material.poissonRatio,
+        unitWeightKnM3: material.unitWeightKnM3,
+        hydraulicConductivityXMPerS: material.hydraulicConductivityXMPerS ?? material.hydraulicConductivityMPerS,
+        hydraulicConductivityYMPerS: material.hydraulicConductivityYMPerS ?? material.hydraulicConductivityMPerS,
+        biotCoefficient: material.biotCoefficient,
+        specificStorage1PerM: material.specificStorage1PerM,
+      },
+    ],
+    boundaryConditions,
+    porePressureBoundaryConditions,
+    timeStepsSeconds: biot.timeStepsSeconds,
+    initialPorePressureKpa: biot.initialPorePressureKpa,
+    defaultThicknessM: biot.thicknessM,
+  });
+  const visualization = buildBiotPlaneStrainVisualizationMesh(caseFile, result);
+  const finalStep = result.timeSteps[result.timeSteps.length - 1];
+  const maxSettlementMm = round(Math.max(...result.nodes.map((node) => Math.max(0, -node.uyM))) * 1000, 6);
+  const envelope = {
+    maxSettlementMm,
+    minSettlementMm: 0,
+    totalLoadKn: 0,
+    reactionKn: 0,
+    reactionBalanceRatio: 1,
+    finalSettlementMm: maxSettlementMm,
+    maxExcessPorePressureKpa: round(result.maxPorePressureKpa, 8),
+    timeStepCount: result.timeSteps.length,
+    minPorePressureKpa: round(result.minPorePressureKpa, 8),
+    maxPorePressureKpa: round(result.maxPorePressureKpa, 8),
+    maxBiotCouplingKpa: round(result.maxBiotCouplingKpa, 8),
+    porePressureMassBalanceErrorRatio: finalStep?.massBalanceErrorRatio ?? result.massBalanceErrorRatio,
+    maxFreePorePressureResidualM3PerS: result.maxFreePorePressureResidualM3PerS,
+    freePorePressureResidualL1M3PerS: result.freePorePressureResidualL1M3PerS,
+    prescribedPorePressureResidualL1M3PerS: result.pressureAudit.prescribedPorePressureResidualL1M3PerS,
+    coupledUnknownCount: result.coupledUnknownCount,
+    displacementDofCount: result.displacementDofCount,
+    porePressureDofCount: result.porePressureDofCount,
+  };
+
+  return {
+    schemaVersion: 'fem-result-manifest.v0',
+    caseId: caseFile.caseId,
+    title: caseFile.title,
+    generatedAt: new Date().toISOString(),
+    backend: {
+      id: 'builtin-biot-up-plane-strain-v0',
+      label: 'Built-in experimental Biot u-p plane-strain seepage preview',
+      deterministic: true,
+      version: '0.1.0',
+    },
+    analysisCase: caseFile,
+    validation,
+    mesh: {
+      nodes: mesh.nodes.length,
+      elements: mesh.elements.length,
+      elementType: caseFile.mesh.elementType,
+      divisions: [caseFile.mesh.divisionsX, caseFile.mesh.divisionsY, caseFile.mesh.divisionsZ],
+      visualizationNodes: visualization.base.length / 3,
+      visualizationTriangles: visualization.tri.length / 3,
+      visualizationEdges: visualization.edge.length / 2,
+    },
+    envelope,
+    pressureAudit: result.pressureAudit,
+    visualization,
+    resultFields: buildBiotResultFields(),
+    steps: buildBiotResultSteps(result),
+    datasets: buildBiotResultDatasets(visualization, envelope),
+    assumptions: [
+      ...caseFile.assumptions,
+      {
+        id: 'biot-numerical-contract',
+        parameter: 'Biot numerical contract',
+        value: result.numericalContract.pressureKind,
+        basis: `${result.numericalContract.darcyFluxRelation}; ${result.numericalContract.storageConvention}.`,
+        confidence: 'measured',
+        reviewRequired: true,
+      },
+    ],
+    limitations: [
+      ...caseFile.limitations,
+      ...result.limitations,
+    ],
+  };
 }
 
 export function runBuiltinElasticRaftDemo(caseFile = buildRaftDemoAnalysisCase()): FemResultManifest {

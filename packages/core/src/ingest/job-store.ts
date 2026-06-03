@@ -121,7 +121,7 @@ const JOB_SCHEMA_VERSION = 1;
 const PAGE_PREPROCESSING_CONCURRENCY = 2;
 const STALE_HEARTBEAT_FLOOR_MS = 10 * 60 * 1000;
 const ATOMIC_WRITE_RETRY_DELAYS_MS = [10, 25, 50, 100, 200, 400];
-const TRANSIENT_JSON_READ_RETRY_DELAYS_MS = [10, 25, 50, 100, 200, 400];
+const TRANSIENT_JSON_READ_RETRY_DELAYS_MS = [10, 25, 50, 100, 200, 400, 800, 1200];
 
 function nowIso(now?: () => Date): string {
   return (now ?? (() => new Date()))().toISOString();

@@ -276,8 +276,8 @@ describe('GroundModel calculation readiness', () => {
       verification.calculationReadiness.workflows.map((workflow) => [workflow.workflow, workflow]),
     );
 
-    expect(verification.calculationReadiness.summary.ready).toBe(9);
-    expect(verification.calculationReadiness.summary.blocked).toBe(5);
+    expect(verification.calculationReadiness.summary.ready).toBe(10);
+    expect(verification.calculationReadiness.summary.blocked).toBe(4);
     expect(workflows['bearing-capacity']?.status).toBe('ready');
     expect(workflows['bearing-capacity']?.toolName).toBe('calculate_bearing_capacity');
     expect(workflows['settlement']?.toolName).toBe('calculate_schmertmann_settlement');
@@ -298,8 +298,8 @@ describe('GroundModel calculation readiness', () => {
     expect(workflows['fem-slope-embankment-deformation']?.missing).toContain('implemented slope/embankment deformation preview backend');
     expect(workflows['fem-retaining-wall-excavation-support']?.status).toBe('blocked');
     expect(workflows['fem-retaining-wall-excavation-support']?.missing).toContain('implemented retaining-wall/excavation-support preview backend');
-    expect(workflows['fem-seepage-groundwater-coupling']?.status).toBe('blocked');
-    expect(workflows['fem-seepage-groundwater-coupling']?.missing).toContain('implemented seepage/groundwater coupling preview backend');
+    expect(workflows['fem-seepage-groundwater-coupling']?.status).toBe('ready');
+    expect(workflows['fem-seepage-groundwater-coupling']?.commandTemplate).toBe('geotech fem draft seepage-groundwater-coupling --input <json> --case-output <analysis_case.json>');
     expect(workflows['fem-staged-settlement-consolidation']?.status).toBe('ready');
     expect(workflows['fem-staged-settlement-consolidation']?.commandTemplate).toBe('geotech fem draft staged-settlement-consolidation --input <json> --case-output <analysis_case.json>');
     expect(workflows['fem-staged-settlement-consolidation']?.recommendation).toMatch(/experimental 1D staged consolidation draft/i);
@@ -443,7 +443,7 @@ describe('GroundModel calculation readiness', () => {
     });
     expect(workflows['fem-retaining-wall-excavation-support']?.inputDraft?.readyToRun).toBe(false);
     expect(workflows['fem-retaining-wall-excavation-support']?.recommendation).toMatch(/planned contract-only route/i);
-    expect(workflows['fem-seepage-groundwater-coupling']?.inputDraft?.command).toBe('geotech fem draft seepage-groundwater-coupling --input <json>');
+    expect(workflows['fem-seepage-groundwater-coupling']?.inputDraft?.command).toBe('geotech fem draft seepage-groundwater-coupling --input <json> --case-output <analysis_case.json>');
     expect(workflows['fem-seepage-groundwater-coupling']?.inputDraft?.missingUserInputs).toEqual([
       'upstream/downstream heads',
       'piezometric surfaces',
@@ -456,7 +456,7 @@ describe('GroundModel calculation readiness', () => {
       useDemoDefaults: false,
     });
     expect(workflows['fem-seepage-groundwater-coupling']?.inputDraft?.readyToRun).toBe(false);
-    expect(workflows['fem-seepage-groundwater-coupling']?.recommendation).toMatch(/planned contract-only route/i);
+    expect(workflows['fem-seepage-groundwater-coupling']?.recommendation).toMatch(/experimental human-reviewed Biot u-p preview/i);
     expect(workflows['fem-staged-settlement-consolidation']?.inputDraft?.command).toBe('geotech fem draft staged-settlement-consolidation --input <json> --case-output <analysis_case.json>');
     expect(workflows['fem-staged-settlement-consolidation']?.inputDraft?.missingUserInputs).toEqual([
       'consolidation layer thickness',
@@ -643,7 +643,8 @@ describe('GroundModel calculation readiness', () => {
     expect(workflows['fem-pile-group-elastic-interaction']?.missing).toContain('implemented pile-group FEM preview backend');
     expect(workflows['fem-slope-embankment-deformation']?.missing).toContain('implemented slope/embankment deformation preview backend');
     expect(workflows['fem-retaining-wall-excavation-support']?.missing).toContain('implemented retaining-wall/excavation-support preview backend');
-    expect(workflows['fem-seepage-groundwater-coupling']?.missing).toContain('implemented seepage/groundwater coupling preview backend');
+    expect(workflows['fem-seepage-groundwater-coupling']?.missing).toContain('hydrostratigraphy / seepage strata model');
+    expect(workflows['fem-seepage-groundwater-coupling']?.missing).toContain('groundwater observations or piezometric evidence');
     expect(workflows['fem-staged-settlement-consolidation']?.missing).toContain('settlement/consolidation strata model');
     expect(workflows['fem-staged-settlement-consolidation']?.missing).toContain('compressibility, consolidation, lab index, or SPT correlation evidence');
   });

@@ -1010,7 +1010,7 @@ describe('ingest dossier HTML', () => {
     expect(dossier.femDraftCandidates?.find((candidate) => candidate.workflow === 'fem-pile-group-elastic-interaction')?.draft.capability.executionMode).toBe('contract-only');
     expect(dossier.femDraftCandidates?.find((candidate) => candidate.workflow === 'fem-slope-embankment-deformation')?.draft.capability.executionMode).toBe('contract-only');
     expect(dossier.femDraftCandidates?.find((candidate) => candidate.workflow === 'fem-retaining-wall-excavation-support')?.draft.capability.executionMode).toBe('contract-only');
-    expect(dossier.femDraftCandidates?.find((candidate) => candidate.workflow === 'fem-seepage-groundwater-coupling')?.draft.capability.executionMode).toBe('contract-only');
+    expect(dossier.femDraftCandidates?.find((candidate) => candidate.workflow === 'fem-seepage-groundwater-coupling')?.draft.capability.executionMode).toBe('human-reviewed-preview');
     expect(dossier.femDraftCandidates?.find((candidate) => candidate.workflow === 'fem-staged-settlement-consolidation')?.draft.capability.executionMode).toBe('human-reviewed-preview');
     const femRoutingTable = dossier.tables.find((table) => table.title === 'FEM draft routing');
     expect(femRoutingTable?.columns).toEqual([
@@ -1042,7 +1042,7 @@ describe('ingest dossier HTML', () => {
     expect(html).toContain('Pile group elastic interaction preview');
     expect(html).toContain('Slope / embankment deformation preview');
     expect(html).toContain('Retaining wall / excavation support preview');
-    expect(html).toContain('Seepage / groundwater-sensitive deformation preview');
+    expect(html).toContain('Biot u-p seepage / pore-pressure coupling preview');
     expect(html).toContain('Staged settlement / consolidation preview');
     expect(html).toContain('geotech fem draft foundation-settlement');
     expect(html).toContain('Validated strip log');

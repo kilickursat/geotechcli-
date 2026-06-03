@@ -72,7 +72,7 @@ const FEATURE_REQUIREMENTS: Record<FemProductionFeature, Omit<FemProductionFeatu
   },
   consolidation: {
     status: 'kernel-verified',
-    currentCoverage: 'A deterministic 1D Terzaghi backward-Euler consolidation kernel is benchmarked against analytical average consolidation and exposed through a human-reviewed staged-settlement/consolidation preview route. A nonlinear 1D column backend solves staged vertical equilibrium with Drucker-Prager material-point return mapping. A benchmark-scale 2D Quad4 Biot u-p backward-Euler evidence kernel now assembles displacement and pore-pressure DOFs with explicit pressure/stress/flux convention metadata and an alpha-zero Terzaghi pressure-dissipation check, but it is not a route-backed production sparse solver or nonlinear staged-construction backend.',
+    currentCoverage: 'A deterministic 1D Terzaghi backward-Euler consolidation kernel is benchmarked against analytical average consolidation and exposed through a human-reviewed staged-settlement/consolidation preview route. A nonlinear 1D column backend solves staged vertical equilibrium with Drucker-Prager material-point return mapping. A benchmark-scale 2D Quad4 Biot u-p backward-Euler evidence kernel now assembles displacement and pore-pressure DOFs with explicit pressure/stress/flux convention metadata and an alpha-zero Terzaghi pressure-dissipation check, and a reviewed experimental seepage/groundwater route can emit a result manifest. It is still not a production sparse solver or nonlinear staged-construction backend.',
     requiredForAcceptance: [
       'time-stepping consolidation backend with drainage boundary controls',
       'Cv, mv/Cc, drainage path, stage duration, and monitoring calibration schema',
@@ -86,15 +86,15 @@ const FEATURE_REQUIREMENTS: Record<FemProductionFeature, Omit<FemProductionFeatu
   },
   'seepage-pore-pressure-coupling': {
     status: 'kernel-verified',
-    currentCoverage: 'Deterministic 1D Darcy seepage and effective-stress coupling kernels are benchmarked against closed-form flow and settlement checks. Benchmark-scale Quad4 evidence kernels now solve steady seepage head/flux/effective-stress metadata and a linear-elastic Biot u-p backward-Euler fixture with displacement and pore-pressure DOFs, pressure-gradient Darcy flux checks, alpha-zero decoupling, Terzaghi pressure-dissipation evidence, and explicit excess-pore-pressure sign/unit metadata. Current preview result manifests still record groundwater as assumptions only; no seepage/u-p route-backed result manifest, production sparse solver, nonlinear plasticity coupling, or independent cross-solver validation is approved.',
+    currentCoverage: 'Deterministic 1D Darcy seepage and effective-stress coupling kernels are benchmarked against closed-form flow and settlement checks. Benchmark-scale Quad4 evidence kernels now solve steady seepage head/flux/effective-stress metadata and a linear-elastic Biot u-p backward-Euler fixture with displacement and pore-pressure DOFs, pressure-gradient Darcy flux checks, alpha-zero decoupling, Terzaghi pressure-dissipation evidence, and explicit excess-pore-pressure sign/unit metadata. A human-reviewed experimental seepage/groundwater route now writes Biot u-p result manifests with pressure-audit metadata; production sparse solving, nonlinear plasticity coupling, dewatering/uplift design checks, and independent cross-solver validation are still not approved.',
     requiredForAcceptance: [
       'steady/transient seepage solver with hydraulic boundary conditions',
       'pore-pressure coupling into effective stress/deformation calculations',
       'uplift, gradient, and dewatering acceptance checks',
     ],
     blockedUntil: [
-      'biot-u-p-coupling-evidence-kernel-not-route-backed-result-manifest-or-production-sparse-solver',
-      'seepage-kernel-coupled-to-fem-route-and-result-manifest',
+      'biot-u-p-route-backed-preview-is-not-production-sparse-solver',
+      'seepage-route-needs-independent-benchmark-and-design-check-acceptance',
       'hydro-mechanical-coupling-accepted-for-2d-3d-fem',
       'pore-pressure-benchmark-suite-approved-against-published-or-commercial-references',
     ],
@@ -224,7 +224,7 @@ export function assessFemProductionReadiness(options: {
         ...(route.demoCommand ? [`Built-in demo command: ${route.demoCommand}`] : []),
         ...(route.runCommandTemplate ? [`Reviewed run command template: ${route.runCommandTemplate}`] : []),
       ]),
-      'Keep full nonlinear/plasticity, consolidation, seepage, support design, and production acceptance requests in blocked planning state until the kernels are coupled to solver routes and independently benchmarked.',
+      'Keep full nonlinear/plasticity, consolidation, seepage, support design, and production acceptance requests in blocked planning state until preview routes are independently benchmarked and approved for design use.',
     ],
     releasePositioning:
       'geotechCLI strong-beta must describe FEM as deterministic experimental previews plus verified engineering evidence kernels and contract-only planning for advanced routes; it is not a full production-grade nonlinear geotechnical FEM solver yet.',

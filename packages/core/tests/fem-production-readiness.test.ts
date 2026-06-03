@@ -32,8 +32,8 @@ describe('FEM production readiness contract', () => {
       '2d-3d-coupled-consolidation-fem-backend-implemented',
       'drainage-boundary-validation-approved-against-project-conditions',
       'settlement-time-benchmark-suite-approved-against-published-or-commercial-references',
-      'biot-u-p-coupling-evidence-kernel-not-route-backed-result-manifest-or-production-sparse-solver',
-      'seepage-kernel-coupled-to-fem-route-and-result-manifest',
+      'biot-u-p-route-backed-preview-is-not-production-sparse-solver',
+      'seepage-route-needs-independent-benchmark-and-design-check-acceptance',
       'support-design-engine-coupled-to-staged-excavation-route',
       'workspace-to-run-acceptance-validator-enforced',
       'published-benchmark-corpus-approved',
@@ -113,7 +113,7 @@ describe('FEM production readiness contract', () => {
     expect(data.agentEvidenceSummary).toContain('quad4-plane-strain-biot-u-p-alpha-zero-decoupling');
     expect(data.agentEvidenceSummary).toContain('quad4-plane-strain-biot-u-p-terzaghi-pressure-dissipation');
     expect(data.agentEvidenceSummary).toContain(
-      'biot-u-p-coupling-evidence-kernel-not-route-backed-result-manifest-or-production-sparse-solver',
+      'biot-u-p-route-backed-preview-is-not-production-sparse-solver',
     );
   });
 });

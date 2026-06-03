@@ -1,6 +1,6 @@
 {
   "schemaVersion": "fem-ground-model-planned-routes-acceptance.v1",
-  "description": "Acceptance expectations for GroundModel-derived FEM routes that must remain contract-only until deterministic backends, validators, renderer smokes, and benchmark cases exist.",
+  "description": "Acceptance expectations for GroundModel-derived FEM routes that still remain contract-only until deterministic backends, validators, renderer smokes, and benchmark cases exist.",
   "blockedUntil": [
     "deterministic-analysis-case-schema-accepted",
     "solver-or-preview-backend-implemented",
@@ -104,26 +104,6 @@
         "wall-design-not-implemented",
         "basal-heave-not-verified",
         "seepage-not-solved",
-        "solver-backend-not-implemented",
-        "agent-run-disabled",
-        "human-review-required"
-      ]
-    },
-    {
-      "workflow": "fem-seepage-groundwater-coupling",
-      "objective": "seepage-groundwater-coupling",
-      "draftCommand": "geotech fem draft seepage-groundwater-coupling --input <json>",
-      "missingUserInputs": [
-        "upstream/downstream heads",
-        "piezometric surfaces",
-        "permeability values",
-        "drainage or pump assumptions",
-        "coupling mode and review limits"
-      ],
-      "requiredReviewGates": [
-        "planned-only",
-        "seepage-solver-not-implemented",
-        "hydraulic-boundary-review-required",
         "solver-backend-not-implemented",
         "agent-run-disabled",
         "human-review-required"

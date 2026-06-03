@@ -1561,7 +1561,7 @@ export function runPlaneStrainBiotConsolidation(
     policy,
     limitations: [
       'Benchmark-scale saturated linear-elastic Quad4 Biot u-p evidence kernel only.',
-      'Uses dense backward-Euler displacement/pore-pressure coupling with a coupled DOF cap; it is not a production sparse solver or route-backed result manifest.',
+      'Uses dense backward-Euler displacement/pore-pressure coupling with a coupled DOF cap; route-backed previews may wrap it in a manifest, but it is not a production sparse solver.',
       'Pore pressure is treated as excess pressure in kPa for deterministic evidence; groundwater elevation routing, unsaturated flow, uplift/piping design, nonlinear plasticity coupling, staged activation, and cross-solver validation are not provided.',
     ],
   };

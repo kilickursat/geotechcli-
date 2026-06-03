@@ -2,8 +2,10 @@ export * from './types.js';
 export {
   buildExcavationDemoAnalysisCase,
   buildRaftDemoAnalysisCase,
+  buildSeepageBiotPlaneStrainDemoAnalysisCase,
   buildStagedSettlementConsolidationDemoAnalysisCase,
   buildTunnelVolumeLossDemoAnalysisCase,
+  runBuiltinBiotUpPlaneStrainPreview,
   runBuiltinElasticExcavationDemo,
   runBuiltinElasticRaftDemo,
   runBuiltinStagedSettlementConsolidationDemo,

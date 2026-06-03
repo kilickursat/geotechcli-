@@ -138,7 +138,7 @@ describe('FEM scoped agent', () => {
         'quad4-plane-strain-biot-u-p-terzaghi-pressure-dissipation',
       ]));
     expect(readinessData.blockers).toEqual(expect.arrayContaining([
-      'biot-u-p-coupling-evidence-kernel-not-route-backed-result-manifest-or-production-sparse-solver',
+      'biot-u-p-route-backed-preview-is-not-production-sparse-solver',
     ]));
     expect(readinessData.agentEvidenceSummary)
       .toContain('quad4-plane-strain-biot-u-p-effective-stress-coupling');

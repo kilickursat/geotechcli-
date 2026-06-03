@@ -1,6 +1,7 @@
 import {
   buildExcavationDemoAnalysisCase,
   buildRaftDemoAnalysisCase,
+  buildSeepageBiotPlaneStrainDemoAnalysisCase,
   buildStagedSettlementConsolidationDemoAnalysisCase,
   buildTunnelVolumeLossDemoAnalysisCase,
 } from './demo.js';
@@ -73,6 +74,17 @@ export interface PrepareFemAnalysisCaseDraftInput {
     consolidationLayerThicknessM?: number;
     consolidationSurfaceAreaM2?: number;
   };
+  biot?: {
+    widthM?: number;
+    heightM?: number;
+    thicknessM?: number;
+    initialPorePressureKpa?: number;
+    timeStepsSeconds?: number[];
+    topPorePressureKpa?: number;
+    bottomPorePressureKpa?: number;
+    leftPorePressureKpa?: number;
+    rightPorePressureKpa?: number;
+  };
   excavation?: {
     stageDepthsM?: number[];
     supportLevelsM?: number[];
@@ -95,6 +107,10 @@ export interface PrepareFemAnalysisCaseDraftInput {
     cohesionKpa?: number;
     coefficientOfConsolidationM2PerYear?: number;
     hydraulicConductivityMPerS?: number;
+    hydraulicConductivityXMPerS?: number;
+    hydraulicConductivityYMPerS?: number;
+    biotCoefficient?: number;
+    specificStorage1PerM?: number;
   };
   groundwater?: {
     condition?: 'not_modelled' | 'below_domain' | 'specified';
@@ -261,20 +277,22 @@ const CAPABILITIES: FemCapability[] = [
   },
   {
     objective: 'seepage-groundwater-coupling',
-    label: 'Seepage / groundwater-sensitive deformation preview',
-    status: 'planned',
-    executionMode: 'contract-only',
+    label: 'Biot u-p seepage / pore-pressure coupling preview',
+    status: 'implemented-demo',
+    executionMode: 'human-reviewed-preview',
     agentRunAllowed: false,
-    analysisType: 'hydro_mechanical_coupling_screening',
-    deterministicBackend: null,
-    description: 'Planned seepage and groundwater-sensitive deformation contract for dewatering, uplift, and pore-pressure review.',
+    analysisType: 'time_dependent_2d_biot_consolidation',
+    deterministicBackend: 'builtin-biot-up-plane-strain-v0',
+    description: 'Experimental deterministic plane-strain Biot u-p preview for reviewed excess pore-pressure dissipation and hydro-mechanical coupling evidence.',
     requiredEvidence: ['groundwater observations', 'permeability or hydrogeology basis', 'stratigraphy', 'hydraulic boundary conditions', 'drainage/dewatering assumptions'],
-    requiredUserInputs: ['upstream/downstream heads', 'piezometric surfaces', 'permeability values', 'drainage or pump assumptions', 'coupling mode and review limits'],
-    visualizationFields: ['pore pressure field', 'hydraulic gradient zones', 'seepage boundary map', 'dewatering influence envelope'],
-    reviewGates: ['planned-only', 'seepage-solver-not-implemented', 'hydraulic-boundary-review-required', 'not-design-calculation'],
-    limitations: ['No seepage solver, transient flow, piping, uplift, or coupled consolidation backend is available yet.'],
-    command: 'geotech fem draft seepage-groundwater-coupling --input <json>',
-    draftCommandTemplate: 'geotech fem draft seepage-groundwater-coupling --input <json>',
+    requiredUserInputs: ['Biot column geometry', 'initial excess pore pressure', 'time-step schedule', 'drained pore-pressure boundary', 'hydraulic conductivity', 'specific storage', 'Biot coefficient'],
+    visualizationFields: ['excess pore pressure scalar field', 'coupled displacement field', 'pressure residual audit', 'time-step metadata'],
+    reviewGates: ['experimental-only', 'biot-u-p-preview-only', 'hydraulic-boundary-review-required', 'not-production-sparse-solver', 'not-design-calculation'],
+    limitations: ['Linear-elastic saturated plane-strain Biot u-p preview only; no unsaturated flow, uplift/piping, dewatering design, nonlinear plasticity, advanced staging, support design, or production sparse solver.'],
+    command: 'geotech fem draft seepage-groundwater-coupling --input <json> --case-output <analysis_case.json>',
+    demoCommand: 'geotech fem demo biot --experimental',
+    draftCommandTemplate: 'geotech fem draft seepage-groundwater-coupling --input <json> --case-output <analysis_case.json>',
+    runCommandTemplate: 'geotech fem run <analysis_case.json> --experimental --reviewed --backend biot-up',
   },
   {
     objective: 'staged-settlement-consolidation',
@@ -301,8 +319,22 @@ function finitePositive(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0;
 }
 
+function finiteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
 function requirePositive(value: unknown, label: string, missing: string[]): number | undefined {
   if (finitePositive(value)) return value;
+  missing.push(label);
+  return undefined;
+}
+
+function finiteNonNegative(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+function requireNonNegative(value: unknown, label: string, missing: string[]): number | undefined {
+  if (finiteNonNegative(value)) return value;
   missing.push(label);
   return undefined;
 }
@@ -453,7 +485,8 @@ export function prepareFemAnalysisCaseDraft(input: PrepareFemAnalysisCaseDraftIn
     capability.objective !== 'foundation-settlement' &&
     capability.objective !== 'excavation-deformation' &&
     capability.objective !== 'tunnel-volume-loss-settlement' &&
-    capability.objective !== 'staged-settlement-consolidation'
+    capability.objective !== 'staged-settlement-consolidation' &&
+    capability.objective !== 'seepage-groundwater-coupling'
   ) {
     return {
       schemaVersion: 'fem-analysis-case-draft.v1',
@@ -468,6 +501,127 @@ export function prepareFemAnalysisCaseDraft(input: PrepareFemAnalysisCaseDraftIn
       evidenceRefs: input.evidenceRefs ?? [],
       recommendedCommand: draftCommandFor(capability),
       contractReadiness: contractReadinessFor(capability),
+    };
+  }
+
+  if (capability.objective === 'seepage-groundwater-coupling') {
+    const missing: string[] = [];
+    const useDemoDefaults = input.useDemoDefaults === true;
+    const widthM = input.biot?.widthM ?? input.geometry?.domainLengthM ?? (useDemoDefaults ? 1 : undefined);
+    const heightM = input.biot?.heightM ?? input.geometry?.domainDepthM ?? (useDemoDefaults ? 1 : undefined);
+    const thicknessM = input.biot?.thicknessM ?? input.geometry?.domainWidthM ?? (useDemoDefaults ? 1 : undefined);
+    const initialPorePressureKpa = input.biot?.initialPorePressureKpa ?? (useDemoDefaults ? 100 : undefined);
+    const timeStepsSeconds = input.biot?.timeStepsSeconds ?? (useDemoDefaults ? Array.from({ length: 20 }, (_, index) => Math.round(19.7 * ((index + 1) / 20) * 1_000_000) / 1_000_000) : undefined);
+    const topPorePressureKpa = input.biot?.topPorePressureKpa ?? (useDemoDefaults ? 0 : undefined);
+    const checkedWidthM = requirePositive(widthM, 'Biot column width', missing);
+    const checkedHeightM = requirePositive(heightM, 'Biot column height', missing);
+    const checkedThicknessM = requirePositive(thicknessM, 'Biot column thickness', missing);
+    const checkedInitialPorePressureKpa = requireNonNegative(initialPorePressureKpa, 'initial excess pore pressure', missing);
+    const checkedTopPorePressureKpa = requireNonNegative(topPorePressureKpa, 'top drained pore pressure', missing);
+    if (!timeStepsSeconds) missing.push('valid Biot time steps');
+    const checkedTimeStepsSeconds = parseOptionalFiniteArray(timeStepsSeconds, 'valid Biot time steps', missing, { positive: true });
+    const hydraulicConductivityMPerS = input.material?.hydraulicConductivityMPerS ?? (useDemoDefaults ? 1e-6 : undefined);
+    const specificStorage1PerM = input.material?.specificStorage1PerM ?? (useDemoDefaults ? 1e-4 : undefined);
+    const biotCoefficient = input.material?.biotCoefficient ?? (useDemoDefaults ? 0.8 : undefined);
+    const checkedHydraulicConductivityMPerS = requirePositive(hydraulicConductivityMPerS, 'hydraulic conductivity', missing);
+    const checkedSpecificStorage1PerM = requirePositive(specificStorage1PerM, 'specific storage', missing);
+    if (!finiteNumber(biotCoefficient) || biotCoefficient < 0 || biotCoefficient > 1) {
+      missing.push('Biot coefficient between 0 and 1');
+    }
+
+    if (
+      !checkedWidthM ||
+      !checkedHeightM ||
+      !checkedThicknessM ||
+      checkedInitialPorePressureKpa == null ||
+      checkedTopPorePressureKpa == null ||
+      !checkedTimeStepsSeconds ||
+      !checkedHydraulicConductivityMPerS ||
+      !checkedSpecificStorage1PerM ||
+      !finiteNumber(biotCoefficient) ||
+      biotCoefficient < 0 ||
+      biotCoefficient > 1
+    ) {
+      return {
+        schemaVersion: 'fem-analysis-case-draft.v1',
+        objective: capability.objective,
+        capability,
+        implemented: true,
+        canAutoProceed: false,
+        recommendedAction: 'collect-inputs',
+        missingUserInputs: [...new Set(missing)],
+        assumptions: [],
+        reviewGates: ['missing-user-inputs', ...capability.reviewGates],
+        evidenceRefs: input.evidenceRefs ?? [],
+        recommendedCommand: draftCommandFor(capability),
+      };
+    }
+
+    const analysisCase = buildSeepageBiotPlaneStrainDemoAnalysisCase();
+    analysisCase.caseId = 'seepage-groundwater-coupling-draft';
+    analysisCase.title = 'Experimental plane-strain Biot u-p seepage draft';
+    analysisCase.createdBy = 'geotechcli-fem-routing';
+    analysisCase.evidenceRefs = input.evidenceRefs ?? [];
+    analysisCase.geometry.domain.lengthM = checkedWidthM;
+    analysisCase.geometry.domain.widthM = checkedThicknessM;
+    analysisCase.geometry.domain.depthM = checkedHeightM;
+    if (analysisCase.geometry.biot) {
+      analysisCase.geometry.biot.widthM = checkedWidthM;
+      analysisCase.geometry.biot.heightM = checkedHeightM;
+      analysisCase.geometry.biot.thicknessM = checkedThicknessM;
+      analysisCase.geometry.biot.initialPorePressureKpa = checkedInitialPorePressureKpa;
+      analysisCase.geometry.biot.timeStepsSeconds = checkedTimeStepsSeconds;
+      analysisCase.geometry.biot.porePressureBoundaries = [
+        { id: 'top-drained', boundary: 'top', porePressureKpa: checkedTopPorePressureKpa },
+        ...(finiteNonNegative(input.biot?.bottomPorePressureKpa) ? [{ id: 'bottom-pressure', boundary: 'bottom' as const, porePressureKpa: input.biot.bottomPorePressureKpa }] : []),
+        ...(finiteNonNegative(input.biot?.leftPorePressureKpa) ? [{ id: 'left-pressure', boundary: 'left' as const, porePressureKpa: input.biot.leftPorePressureKpa }] : []),
+        ...(finiteNonNegative(input.biot?.rightPorePressureKpa) ? [{ id: 'right-pressure', boundary: 'right' as const, porePressureKpa: input.biot.rightPorePressureKpa }] : []),
+      ];
+    }
+    const material = analysisCase.materials[0];
+    material.evidenceRefs = input.evidenceRefs ?? [];
+    if (finitePositive(input.material?.elasticModulusKpa)) material.elasticModulusKpa = input.material.elasticModulusKpa;
+    if (typeof input.material?.poissonRatio === 'number') material.poissonRatio = input.material.poissonRatio;
+    if (finitePositive(input.material?.unitWeightKnM3)) material.unitWeightKnM3 = input.material.unitWeightKnM3;
+    material.hydraulicConductivityMPerS = checkedHydraulicConductivityMPerS;
+    material.hydraulicConductivityXMPerS = input.material?.hydraulicConductivityXMPerS ?? checkedHydraulicConductivityMPerS;
+    material.hydraulicConductivityYMPerS = input.material?.hydraulicConductivityYMPerS ?? checkedHydraulicConductivityMPerS;
+    material.specificStorage1PerM = checkedSpecificStorage1PerM;
+    material.biotCoefficient = biotCoefficient;
+    if (input.groundwater?.condition) {
+      analysisCase.groundwater.condition = input.groundwater.condition;
+    }
+    if (typeof input.groundwater?.depthM === 'number') {
+      analysisCase.groundwater.depthM = input.groundwater.depthM;
+    }
+    if (input.groundwater?.note) {
+      analysisCase.groundwater.note = input.groundwater.note;
+    }
+
+    const validation = validateFemAnalysisCase(analysisCase);
+    const reviewGates = [
+      ...capability.reviewGates,
+      ...validation.findings
+        .filter((finding) => finding.severity !== 'info')
+        .map((finding) => finding.code),
+    ];
+
+    return {
+      schemaVersion: 'fem-analysis-case-draft.v1',
+      objective: capability.objective,
+      capability,
+      implemented: true,
+      canAutoProceed: false,
+      recommendedAction: actionForValidation(validation),
+      missingUserInputs: validation.status === 'blocked' ? validation.findings
+        .filter((finding) => finding.severity === 'blocker')
+        .map((finding) => finding.code) : [],
+      assumptions: analysisCase.assumptions,
+      reviewGates: [...new Set(reviewGates)],
+      evidenceRefs: analysisCase.evidenceRefs,
+      analysisCase,
+      validation,
+      recommendedCommand: commandForValidation(capability, validation),
     };
   }
 
