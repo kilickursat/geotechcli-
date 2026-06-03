@@ -4,6 +4,7 @@ import type {
   CompletionResponse,
   LLMConfig,
 } from '../types.js';
+import { readProviderJsonResponse } from './response-json.js';
 
 interface AnthropicResponse {
   id: string;
@@ -129,14 +130,15 @@ export class AnthropicAdapter implements ProviderAdapter {
       signal: AbortSignal.timeout(config.timeout ?? 60_000),
     });
 
+    const { data, rawText } = await readProviderJsonResponse<AnthropicResponse>(res, 'Anthropic');
+
     if (!res.ok) {
-      const errText = await res.text().catch(() => 'Unknown error');
+      const errText = rawText.trim() || 'Unknown error';
       throw new Error(
         `Anthropic API error (${res.status}): ${errText}`,
       );
     }
 
-    const data = (await res.json()) as AnthropicResponse;
     const latencyMs = Date.now() - start;
 
     const text =

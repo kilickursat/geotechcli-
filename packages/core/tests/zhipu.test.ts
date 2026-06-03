@@ -115,4 +115,28 @@ describe('ZhipuAdapter', () => {
       ),
     ).rejects.toThrow(/Z\.ai API key is required/i);
   });
+
+  it('wraps malformed provider JSON without exposing a raw SyntaxError', async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      new Response(
+        '{"choices":[{"message":{"content":"partial',
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    ) as typeof fetch;
+
+    const adapter = new ZhipuAdapter();
+    await expect(
+      adapter.complete(
+        {
+          messages: [{ role: 'user', content: 'Reply with JSON' }],
+          model: 'glm-5.1',
+        },
+        {
+          provider: 'zhipu',
+          apiKey: 'zhipu-test-key',
+          timeout: 1000,
+        },
+      ),
+    ).rejects.toThrow(/Zhipu API returned malformed JSON response/i);
+  });
 });

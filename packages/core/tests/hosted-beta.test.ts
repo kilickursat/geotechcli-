@@ -214,4 +214,28 @@ describe('HostedBetaAdapter', () => {
       ),
     ).rejects.toThrow('Hosted beta request timed out after 120s');
   });
+
+  it('labels malformed hosted proxy JSON as retryable provider response failure', async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      new Response(
+        '{"choices":[{"message":{"content":"truncated',
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    ) as typeof fetch;
+
+    const adapter = new HostedBetaAdapter('https://beta.geotechcli.com/api/proxy');
+
+    await expect(
+      adapter.complete(
+        {
+          messages: [{ role: 'user', content: 'Hello' }],
+        },
+        {
+          provider: 'hosted-beta',
+          apiKey: '',
+          timeout: 1000,
+        },
+      ),
+    ).rejects.toThrow(/Hosted beta API returned malformed JSON response/i);
+  });
 });

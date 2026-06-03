@@ -865,6 +865,58 @@ describe('persisted ingest jobs', () => {
     expect(completed.result?.ingestResult.canAutoProceed).toBe(false);
   }, 15000);
 
+  it('retries malformed provider JSON once during borehole async page ingest', async () => {
+    const filePath = join(configDir, 'retry-malformed-provider-json-source.pdf');
+    await writeBlankPdf(filePath, 1);
+
+    const job = createPersistedIngestJob({
+      documentType: 'borehole-log',
+      filePath,
+      inspection: makeInspection(1, () => 'image-only'),
+      config: makeConfig(),
+    });
+
+    const interpretBoreholeLogWithContext = vi.fn()
+      .mockRejectedValueOnce(new Error('Zhipu API returned malformed JSON response: Unterminated string in JSON at position 950269.'))
+      .mockResolvedValue(makeBoreholeInterpretation(1, 1));
+
+    const completed = await runPersistedIngestJobWorker(job.jobId, {
+      buildLLMConfig: makeConfig,
+      readDocumentPdfPageInputs: async () => [{
+        base64: 'retry-malformed-json-page',
+        mimeType: 'image/png',
+        fileBytes: 120,
+        filePath,
+        ext: 'png',
+        kind: 'image',
+        pageNumber: 1,
+        totalPages: 1,
+        sourceKind: 'raster-image',
+        normalizedArtifact: {
+          kind: 'image',
+          source: 'full-page-raster',
+          mimeType: 'image/png',
+          fileBytes: 120,
+          textSource: 'none',
+          textQuality: null,
+          warnings: [],
+        },
+      }],
+      recoverDocumentTextHint: async () => ({
+        textHint: 'Recovered OCR text with Layer 1 from 0 to 5 m.',
+        source: 'vision-ocr' as const,
+        warnings: [],
+      }),
+      interpretBoreholeLogWithContext,
+    });
+
+    expect(completed.status).toBe('completed');
+    expect(interpretBoreholeLogWithContext).toHaveBeenCalledTimes(2);
+    expect(completed.checkpoints.pages[0]?.attempts).toBe(2);
+    expect(completed.checkpoints.pages[0]?.status).toBe('completed');
+    expect(completed.result?.ingestResult.pageFailures).toEqual([]);
+  });
+
   it('retries 524 upstream timeouts with backoff and carries OCR checkpoint counts into the final summary', async () => {
     const filePath = join(configDir, 'retry-524-ocr-source.pdf');
     await writeBlankPdf(filePath, 1);

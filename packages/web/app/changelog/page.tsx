@@ -8,6 +8,16 @@ const releases = [
     date: '2026-06-03',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'fix', text: 'Hardened hosted-beta, Z.ai, OpenAI-compatible, Anthropic, and Hugging Face adapters so truncated provider JSON is reported as a provider response failure instead of a raw parser error' },
+      { type: 'fix', text: 'Made async PDF ingest retry malformed provider JSON once at the page level before recording a resumable page failure' },
+      { type: 'fix', text: 'Added regression coverage for malformed hosted/GLM responses and the reported Unterminated string in JSON failure mode' },
+    ],
+  },
+  {
+    version: '0.4.96',
+    date: '2026-06-03',
+    tag: '0.4.96 Release',
+    changes: [
       { type: 'feat', text: 'Added a Drucker-Prager/Mohr-Coulomb-compatible nonlinear material-point return-mapping kernel with principal stress, plastic strain, and yield-residual metadata' },
       { type: 'feat', text: 'Added geotech fem run --backend nonlinear-column for reviewed staged consolidation cases with deterministic solver load-step, iteration, force-residual, yield-residual, and plastic-strain metadata' },
       { type: 'fix', text: 'Kept FEM production readiness blocked until global 2D/3D assembly, pore-pressure DOFs, independent benchmarks, support design, and enforced production approvals are complete' },

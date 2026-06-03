@@ -11,6 +11,7 @@ import {
   GEOTECHCLI_VERSION,
 } from '../../meta/index.js';
 import { sanitizeUpstreamError } from '../util.js';
+import { readProviderJsonResponse } from './response-json.js';
 
 interface HostedBetaResponse {
   model?: string;
@@ -192,14 +193,8 @@ export class HostedBetaAdapter implements ProviderAdapter {
       throw err;
     }
 
-    let data: HostedBetaResponse = {};
-    let fallbackError = 'Hosted beta AI request failed.';
-
-    try {
-      data = (await res.json()) as HostedBetaResponse;
-    } catch {
-      fallbackError = await res.text().catch(() => fallbackError);
-    }
+    const { data, rawText } = await readProviderJsonResponse<HostedBetaResponse>(res, 'Hosted beta');
+    const fallbackError = rawText.trim() || 'Hosted beta AI request failed.';
 
     if (!res.ok) {
       throw new Error(formatHostedBetaError(res.status, data, fallbackError));

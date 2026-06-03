@@ -6,6 +6,7 @@ import type {
   LLMProvider,
 } from '../types.js';
 import { resolveProviderCapabilities } from '../capabilities.js';
+import { readProviderJsonResponse } from './response-json.js';
 
 interface OpenAIChatResponse {
   id: string;
@@ -141,14 +142,15 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
       signal: AbortSignal.timeout(config.timeout ?? 60_000),
     });
 
+    const { data, rawText } = await readProviderJsonResponse<OpenAIChatResponse>(res, this.name);
+
     if (!res.ok) {
-      const errText = await res.text().catch(() => 'Unknown error');
+      const errText = rawText.trim() || 'Unknown error';
       throw new Error(
         `${this.name} API error (${res.status}): ${errText}`,
       );
     }
 
-    const data = (await res.json()) as OpenAIChatResponse;
     const latencyMs = Date.now() - start;
 
     const choice = data.choices?.[0];

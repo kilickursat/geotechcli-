@@ -56,6 +56,10 @@ function isRecoverableVisionRetryResponse(error: unknown): boolean {
     message.includes('upstream request timed out') ||
     message.includes('upstream timeout') ||
     message.includes('timed out') ||
+    message.includes('malformed json response') ||
+    message.includes('not valid json') ||
+    message.includes('unterminated string in json') ||
+    message.includes('unexpected end of json') ||
     message.includes('provider is busy') ||
     message.includes('temporarily unavailable')
   );

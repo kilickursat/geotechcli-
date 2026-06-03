@@ -5,6 +5,7 @@ import type {
   LLMConfig,
 } from '../types.js';
 import { resolveProviderCapabilities } from '../capabilities.js';
+import { readProviderJsonResponse } from './response-json.js';
 
 interface HFChatResponse {
   id: string;
@@ -157,8 +158,10 @@ export class HuggingFaceAdapter implements ProviderAdapter {
       signal: AbortSignal.timeout(config.timeout ?? 90_000),
     });
 
+    const { data, rawText } = await readProviderJsonResponse<HFChatResponse>(res, 'Hugging Face');
+
     if (!res.ok) {
-      const errText = await res.text().catch(() => 'Unknown error');
+      const errText = rawText.trim() || 'Unknown error';
 
       // Friendly error messages for common HF issues
       if (res.status === 401 || res.status === 403) {
@@ -190,7 +193,6 @@ export class HuggingFaceAdapter implements ProviderAdapter {
       throw new Error(`Hugging Face API error (${res.status}): ${errText}`);
     }
 
-    const data = (await res.json()) as HFChatResponse;
     const latencyMs = Date.now() - start;
 
     const choice = data.choices?.[0];

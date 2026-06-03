@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.97] - 2026-06-03
+
+### Ingest Provider Response Hardening
+
+- Hardened hosted-beta, Z.ai, OpenAI-compatible, Anthropic, and Hugging Face provider adapters so truncated or malformed HTTP JSON responses are labeled as provider response failures instead of surfacing bare `JSON.parse` errors.
+- Made async borehole/geotechnical ingest retry malformed provider JSON once at the page level, then record the page failure in the resumable job if the retry also fails instead of collapsing a long PDF ingest run.
+- Added regression coverage for malformed hosted/GLM provider responses and async borehole job retry behavior matching the reported `Unterminated string in JSON` failure mode.
+
 ## [0.4.96] - 2026-06-03
 
 ### FEM Nonlinear Column Solver Increment

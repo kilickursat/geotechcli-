@@ -9,6 +9,7 @@ import {
   DEFAULT_LLM_VISION_MODEL,
 } from '../../meta/index.js';
 import { sanitizeUpstreamError } from '../util.js';
+import { readProviderJsonResponse } from './response-json.js';
 
 interface ZhipuChatResponse {
   id: string;
@@ -117,13 +118,14 @@ export class ZhipuAdapter implements ProviderAdapter {
       signal: AbortSignal.timeout(config.timeout ?? 60_000),
     });
 
+    const { data, rawText } = await readProviderJsonResponse<ZhipuChatResponse>(res, 'Zhipu');
+
     if (!res.ok) {
-      const errText = await res.text().catch(() => 'Unknown error');
+      const errText = rawText.trim() || 'Unknown error';
       const safeErr = sanitizeUpstreamError(errText);
       throw new Error(`Zhipu API error (${res.status}): ${safeErr}`);
     }
 
-    const data = (await res.json()) as ZhipuChatResponse;
     const latencyMs = Date.now() - start;
 
     const choice = data.choices?.[0];
