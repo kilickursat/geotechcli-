@@ -8,6 +8,16 @@ const releases = [
     date: '2026-06-04',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'fix', text: 'Made persisted fem-reviewer-approval.v1 metadata mandatory for every reviewed experimental geotech fem run' },
+      { type: 'fix', text: 'Updated FEM route, GroundModel workspace acceptance, docs, and agent command templates to include approval persistence metadata' },
+      { type: 'fix', text: 'Extended CLI and draft-run smoke coverage across raft, excavation, tunnel, consolidation, nonlinear-column, and Biot u-p scenarios' },
+    ],
+  },
+  {
+    version: '0.4.121',
+    date: '2026-06-04',
+    tag: '0.4.121 Release',
+    changes: [
       { type: 'feat', text: 'Added check_fem_support_member_design as a deterministic agent-callable FEM support-member limit-state tool' },
       { type: 'feat', text: 'Required explicit support demand provenance plus reviewer identity, license, jurisdiction, assumptions, and limitations before support capacities are computed' },
       { type: 'fix', text: 'Added default hosted GLM and swarm regressions so agents use deterministic support checks without claiming FEM production approval' },

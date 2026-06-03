@@ -543,7 +543,7 @@ describe('FEM GroundModel planned-route acceptance fixtures', () => {
         humanReviewRequired: true,
         caseOutputAvailable: true,
         draftCommand: 'geotech fem draft foundation-settlement --input <json> --case-output <analysis_case.json>',
-        humanRunCommand: 'geotech fem run <analysis_case.json> --experimental --reviewed',
+        humanRunCommand: 'geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>',
         blockedReasons: [],
       },
     };
@@ -557,11 +557,11 @@ describe('FEM GroundModel planned-route acceptance fixtures', () => {
       objective: 'foundation-settlement',
       workflow: 'fem-foundation-settlement',
       caseOutputAvailable: true,
-      humanRunCommand: 'geotech fem run <analysis_case.json> --experimental --reviewed',
+      humanRunCommand: 'geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>',
       approvalRecordSchema: 'fem-reviewer-approval.v1',
       approvalRecordRequiredForProductionAcceptance: true,
       strictApprovalRunCommand:
-        'geotech fem run <analysis_case.json> --experimental --reviewed --require-approval-record --approval-record <fem-approval.json>',
+        'geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>',
       blockerCodes: [],
     });
     expect(acceptance.evidenceIds).toEqual(expect.arrayContaining(['ev-es-1', 'ev-gamma-1', 'ev-gw-1']));

@@ -42,6 +42,21 @@ function collectLogText(logSpy: ReturnType<typeof vi.spyOn>): string {
   return logSpy.mock.calls.map((call) => call.map((item) => String(item)).join(' ')).join('\n');
 }
 
+function femApprovalArgs(approvalPath: string): string[] {
+  return [
+    '--approval-output',
+    approvalPath,
+    '--reviewer-name',
+    'Jane Engineer',
+    '--reviewer-license',
+    'PE-98765',
+    '--reviewer-jurisdiction',
+    'US-CA',
+    '--approval-assumptions',
+    'geometry loads staging and limitations reviewed',
+  ];
+}
+
 function makeFemWorkspaceManifest() {
   return {
     schemaVersion: 'workspace-manifest.v1',
@@ -434,6 +449,7 @@ describe('registerFemCommand', () => {
       casePath,
       '--experimental',
       '--reviewed',
+      ...femApprovalArgs(join(dir, 'seepage-approval.json')),
       '--backend',
       'biot-up',
       '--no-open',
@@ -627,7 +643,7 @@ describe('registerFemCommand', () => {
     const payload = JSON.parse(collectLogText(logSpy).trim());
     const caseFile = JSON.parse(await readFile(casePath, 'utf-8'));
     expect(payload.draft.recommendedAction).toBe('run-reviewed-case');
-    expect(payload.draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed');
+    expect(payload.draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>');
     expect(payload.draft.analysisCase.geometry.raft.lengthM).toBe(11);
     expect(payload.draft.analysisCase.materials[0].elasticModulusKpa).toBe(25_000);
     expect(payload.draft.analysisCase.groundwater.depthM).toBe(2.1);
@@ -636,11 +652,12 @@ describe('registerFemCommand', () => {
       status: 'accepted',
       objective: 'foundation-settlement',
       caseOutputAvailable: true,
-      humanRunCommand: `geotech fem run "${casePath}" --experimental --reviewed`,
+      humanRunCommand:
+        `geotech fem run "${casePath}" --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>`,
       approvalRecordSchema: 'fem-reviewer-approval.v1',
       approvalRecordRequiredForProductionAcceptance: true,
       strictApprovalRunCommand:
-        `geotech fem run "${casePath}" --experimental --reviewed --require-approval-record --approval-record <fem-approval.json>`,
+        `geotech fem run "${casePath}" --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>`,
       blockerCodes: [],
       evidenceIds: ['ev-es-1', 'ev-gw-1'],
     });
@@ -726,7 +743,7 @@ describe('registerFemCommand', () => {
     const caseFile = JSON.parse(await readFile(casePath, 'utf-8'));
     expect(payload.workspace.bridge.objective).toBe('tunnel-volume-loss-settlement');
     expect(payload.draft.recommendedAction).toBe('run-reviewed-case');
-    expect(payload.draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed');
+    expect(payload.draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>');
     expect(payload.draft.analysisCase.geometry.tunnel.diameterM).toBe(6);
     expect(payload.draft.analysisCase.materials[0].elasticModulusKpa).toBe(25_000);
     expect(payload.draft.analysisCase.groundwater.depthM).toBe(2.1);
@@ -772,7 +789,7 @@ describe('registerFemCommand', () => {
     const caseFile = JSON.parse(await readFile(casePath, 'utf-8'));
 
     expect(payload.draft.recommendedAction).toBe('run-reviewed-case');
-    expect(payload.draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed');
+    expect(payload.draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>');
     expect(payload.draft.canAutoProceed).toBe(false);
     expect(payload.draft.analysisCase.geometry.raft.lengthM).toBe(10);
     expect(payload.draft.analysisCase.loads[0].pressureKpa).toBe(160);
@@ -824,7 +841,7 @@ describe('registerFemCommand', () => {
     const payload = JSON.parse(collectLogText(logSpy).trim());
     expect(payload.objective).toBe('excavation-deformation');
     expect(payload.draft.recommendedAction).toBe('run-reviewed-case');
-    expect(payload.draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed');
+    expect(payload.draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>');
     expect(payload.draft.canAutoProceed).toBe(false);
     expect(payload.draft.analysisCase.objective).toBe('excavation_deformation');
     expect(payload.draft.analysisCase.geometry.excavation.finalDepthM).toBe(9);
@@ -860,7 +877,7 @@ describe('registerFemCommand', () => {
     const payload = JSON.parse(collectLogText(logSpy).trim());
     expect(payload.objective).toBe('tunnel-volume-loss-settlement');
     expect(payload.draft.recommendedAction).toBe('run-reviewed-case');
-    expect(payload.draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed');
+    expect(payload.draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>');
     expect(payload.draft.canAutoProceed).toBe(false);
     expect(payload.draft.analysisCase.objective).toBe('tunnel_volume_loss_settlement');
     expect(payload.draft.analysisCase.geometry.tunnel.diameterM).toBe(6.5);
@@ -918,7 +935,7 @@ describe('registerFemCommand', () => {
 
     expect(payload.objective).toBe('staged-settlement-consolidation');
     expect(payload.draft.recommendedAction).toBe('run-reviewed-case');
-    expect(payload.draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed');
+    expect(payload.draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>');
     expect(payload.draft.canAutoProceed).toBe(false);
     expect(payload.draft.analysisCase.objective).toBe('staged_settlement_consolidation');
     expect(payload.draft.analysisCase.geometry.consolidation.stages).toHaveLength(3);
@@ -992,6 +1009,7 @@ describe('registerFemCommand', () => {
       casePath,
       '--experimental',
       '--reviewed',
+      ...femApprovalArgs(join(dir, 'raft-approval.json')),
       '--save-html',
       htmlPath,
       '--output',
@@ -1015,7 +1033,7 @@ describe('registerFemCommand', () => {
     expect(html).toContain('raft-settlement-demo');
   });
 
-  it('enforces a persisted FEM approval record when strict approval is required', async () => {
+  it('enforces a persisted FEM approval record for every reviewed FEM run', async () => {
     const { buildRaftDemoAnalysisCase } = await import('../../core/src/fem/index.js');
     const registerFemCommand = await loadRegisterFemCommand();
     const dir = await mkdtemp(join(tmpdir(), 'geotech-fem-strict-approval-'));
@@ -1034,7 +1052,6 @@ describe('registerFemCommand', () => {
         casePath,
         '--experimental',
         '--reviewed',
-        '--require-approval-record',
         '--no-open',
         '--json',
       ], { from: 'user' }),
@@ -1050,7 +1067,6 @@ describe('registerFemCommand', () => {
       casePath,
       '--experimental',
       '--reviewed',
-      '--require-approval-record',
       '--approval-output',
       approvalPath,
       '--reviewer-name',
@@ -1232,6 +1248,7 @@ describe('registerFemCommand', () => {
         casePath,
         '--experimental',
         '--reviewed',
+        ...femApprovalArgs(join(dir, `${name}-approval.json`)),
         '--no-open',
         '--json',
       ], { from: 'user' });
@@ -1262,6 +1279,7 @@ describe('registerFemCommand', () => {
       casePath,
       '--experimental',
       '--reviewed',
+      ...femApprovalArgs(join(dir, 'nonlinear-column-approval.json')),
       '--backend',
       'nonlinear-column',
       '--no-open',
@@ -1303,6 +1321,7 @@ describe('registerFemCommand', () => {
       casePath,
       '--experimental',
       '--reviewed',
+      ...femApprovalArgs(join(dir, 'dp-adaptive-approval.json')),
       '--backend',
       'plane-strain-dp-adaptive',
       '--output',

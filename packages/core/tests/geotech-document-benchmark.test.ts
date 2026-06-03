@@ -473,7 +473,7 @@ describe('geotech document benchmark', () => {
       caseOutputAvailable: false,
       humanRunCommandAvailable: false,
       draftCommand: 'geotech fem draft foundation-settlement --input <json> --case-output <analysis_case.json>',
-      humanRunCommandTemplate: 'geotech fem run <analysis_case.json> --experimental --reviewed',
+      humanRunCommandTemplate: 'geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>',
     });
     expect(foundationRoute?.executionBoundary.blockedReasons).toEqual(expect.arrayContaining([
       'human-review-required',
@@ -523,7 +523,7 @@ describe('geotech document benchmark', () => {
       'time-rate-review-required',
       'not-design-calculation',
     ]));
-    expect(stagedRoute?.executionBoundary.humanRunCommandTemplate).toBe('geotech fem run <analysis_case.json> --experimental --reviewed');
+    expect(stagedRoute?.executionBoundary.humanRunCommandTemplate).toBe('geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>');
     expect(stagedRoute?.contractReadiness).toBeUndefined();
     expect(benchmark.evidenceContract).toMatchObject({
       schemaVersion: 2,

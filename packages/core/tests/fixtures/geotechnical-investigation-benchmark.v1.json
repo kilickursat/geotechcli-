@@ -182,7 +182,7 @@
           "caseOutputAvailable": false,
           "humanRunCommandAvailable": false,
           "draftCommand": "geotech fem draft foundation-settlement --input <json> --case-output <analysis_case.json>",
-          "humanRunCommandTemplate": "geotech fem run <analysis_case.json> --experimental --reviewed",
+          "humanRunCommandTemplate": "geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>",
           "blockedReasons": [
             "ground-model-missing-spt-n-values",
             "ground-model-partial-pages-remain",
@@ -197,7 +197,7 @@
           ]
         },
         "recommendedCommand": "geotech fem draft foundation-settlement --input <json> --case-output <analysis_case.json>",
-        "runCommandTemplate": "geotech fem run <analysis_case.json> --experimental --reviewed",
+        "runCommandTemplate": "geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>",
         "readinessStatus": "needs_engineering_review",
         "readinessScore": 61,
         "requiredEvidence": [
@@ -236,7 +236,7 @@
           "caseOutputAvailable": false,
           "humanRunCommandAvailable": false,
           "draftCommand": "geotech fem draft excavation-deformation --input <json> --case-output <analysis_case.json>",
-          "humanRunCommandTemplate": "geotech fem run <analysis_case.json> --experimental --reviewed",
+          "humanRunCommandTemplate": "geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>",
           "blockedReasons": [
             "ground-model-missing-spt-n-values",
             "ground-model-partial-pages-remain",
@@ -252,7 +252,7 @@
           ]
         },
         "recommendedCommand": "geotech fem draft excavation-deformation --input <json> --case-output <analysis_case.json>",
-        "runCommandTemplate": "geotech fem run <analysis_case.json> --experimental --reviewed",
+        "runCommandTemplate": "geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>",
         "readinessStatus": "needs_engineering_review",
         "readinessScore": 61,
         "requiredEvidence": [
@@ -381,7 +381,7 @@
           "caseOutputAvailable": false,
           "humanRunCommandAvailable": false,
           "draftCommand": "geotech fem draft tunnel-volume-loss-settlement --input <json> --case-output <analysis_case.json>",
-          "humanRunCommandTemplate": "geotech fem run <analysis_case.json> --experimental --reviewed",
+          "humanRunCommandTemplate": "geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>",
           "blockedReasons": [
             "ground-model-missing-spt-n-values",
             "ground-model-partial-pages-remain",
@@ -396,7 +396,7 @@
           ]
         },
         "recommendedCommand": "geotech fem draft tunnel-volume-loss-settlement --input <json> --case-output <analysis_case.json>",
-        "runCommandTemplate": "geotech fem run <analysis_case.json> --experimental --reviewed",
+        "runCommandTemplate": "geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>",
         "readinessStatus": "needs_engineering_review",
         "readinessScore": 61,
         "requiredEvidence": [
@@ -723,7 +723,7 @@
           "caseOutputAvailable": false,
           "humanRunCommandAvailable": false,
           "draftCommand": "geotech fem draft seepage-groundwater-coupling --input <json> --case-output <analysis_case.json>",
-          "humanRunCommandTemplate": "geotech fem run <analysis_case.json> --experimental --reviewed --backend biot-up",
+          "humanRunCommandTemplate": "geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction> --backend biot-up",
           "blockedReasons": [
             "ground-model-missing-spt-n-values",
             "ground-model-partial-pages-remain",
@@ -784,7 +784,7 @@
           "caseOutputAvailable": false,
           "humanRunCommandAvailable": false,
           "draftCommand": "geotech fem draft staged-settlement-consolidation --input <json> --case-output <analysis_case.json>",
-          "humanRunCommandTemplate": "geotech fem run <analysis_case.json> --experimental --reviewed",
+          "humanRunCommandTemplate": "geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>",
           "blockedReasons": [
             "ground-model-missing-spt-n-values",
             "ground-model-partial-pages-remain",
@@ -800,7 +800,7 @@
           ]
         },
         "recommendedCommand": "geotech fem draft staged-settlement-consolidation --input <json> --case-output <analysis_case.json>",
-        "runCommandTemplate": "geotech fem run <analysis_case.json> --experimental --reviewed",
+        "runCommandTemplate": "geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>",
         "readinessStatus": "needs_engineering_review",
         "readinessScore": 61,
         "requiredEvidence": [

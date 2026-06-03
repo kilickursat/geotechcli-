@@ -3668,7 +3668,6 @@ export function runFemEngineeringEvidenceSuite(
       'published-commercial-cross-solver-benchmark-corpus-not-approved',
       ...externalBenchmarkAcceptance.blockerCodes,
       'production-design-approval-scope-fails-closed-until-production-acceptance',
-      'reviewer-approval-record-validator-exists-but-cli-run-does-not-enforce-persistence-for-every-run',
     ],
     releasePositioning:
       'These kernels provide deterministic engineering evidence for strong-beta gating. They do not make geotechCLI a production nonlinear FEM solver until solver integration, external benchmarks, and enforced approval workflows are complete.',

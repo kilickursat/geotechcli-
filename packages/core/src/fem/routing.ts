@@ -150,6 +150,9 @@ export interface FemContractReadiness {
   disallowedAgentActions: Array<'run-solver' | 'create-analysis-case' | 'render-webgl' | 'invent-results'>;
 }
 
+const FEM_REVIEWED_RUN_APPROVAL_TEMPLATE =
+  '--approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>';
+
 const CAPABILITIES: FemCapability[] = [
   {
     objective: 'foundation-settlement',
@@ -168,7 +171,7 @@ const CAPABILITIES: FemCapability[] = [
     command: 'geotech fem draft foundation-settlement --input <json> --case-output <analysis_case.json>',
     demoCommand: 'geotech fem demo raft --experimental',
     draftCommandTemplate: 'geotech fem draft foundation-settlement --input <json> --case-output <analysis_case.json>',
-    runCommandTemplate: 'geotech fem run <analysis_case.json> --experimental --reviewed',
+    runCommandTemplate: `geotech fem run <analysis_case.json> --experimental --reviewed ${FEM_REVIEWED_RUN_APPROVAL_TEMPLATE}`,
   },
   {
     objective: 'excavation-deformation',
@@ -187,7 +190,7 @@ const CAPABILITIES: FemCapability[] = [
     command: 'geotech fem draft excavation-deformation --input <json> --case-output <analysis_case.json>',
     demoCommand: 'geotech fem demo excavation --experimental',
     draftCommandTemplate: 'geotech fem draft excavation-deformation --input <json> --case-output <analysis_case.json>',
-    runCommandTemplate: 'geotech fem run <analysis_case.json> --experimental --reviewed',
+    runCommandTemplate: `geotech fem run <analysis_case.json> --experimental --reviewed ${FEM_REVIEWED_RUN_APPROVAL_TEMPLATE}`,
   },
   {
     objective: 'shaft-deformation',
@@ -223,7 +226,7 @@ const CAPABILITIES: FemCapability[] = [
     command: 'geotech fem draft tunnel-volume-loss-settlement --input <json> --case-output <analysis_case.json>',
     demoCommand: 'geotech fem demo tunnel --experimental',
     draftCommandTemplate: 'geotech fem draft tunnel-volume-loss-settlement --input <json> --case-output <analysis_case.json>',
-    runCommandTemplate: 'geotech fem run <analysis_case.json> --experimental --reviewed',
+    runCommandTemplate: `geotech fem run <analysis_case.json> --experimental --reviewed ${FEM_REVIEWED_RUN_APPROVAL_TEMPLATE}`,
   },
   {
     objective: 'pile-group-elastic-interaction',
@@ -293,7 +296,7 @@ const CAPABILITIES: FemCapability[] = [
     command: 'geotech fem draft seepage-groundwater-coupling --input <json> --case-output <analysis_case.json>',
     demoCommand: 'geotech fem demo biot --experimental',
     draftCommandTemplate: 'geotech fem draft seepage-groundwater-coupling --input <json> --case-output <analysis_case.json>',
-    runCommandTemplate: 'geotech fem run <analysis_case.json> --experimental --reviewed --backend biot-up',
+    runCommandTemplate: `geotech fem run <analysis_case.json> --experimental --reviewed ${FEM_REVIEWED_RUN_APPROVAL_TEMPLATE} --backend biot-up`,
   },
   {
     objective: 'staged-settlement-consolidation',
@@ -312,7 +315,7 @@ const CAPABILITIES: FemCapability[] = [
     command: 'geotech fem draft staged-settlement-consolidation --input <json> --case-output <analysis_case.json>',
     demoCommand: 'geotech fem demo consolidation --experimental',
     draftCommandTemplate: 'geotech fem draft staged-settlement-consolidation --input <json> --case-output <analysis_case.json>',
-    runCommandTemplate: 'geotech fem run <analysis_case.json> --experimental --reviewed',
+    runCommandTemplate: `geotech fem run <analysis_case.json> --experimental --reviewed ${FEM_REVIEWED_RUN_APPROVAL_TEMPLATE}`,
   },
 ];
 

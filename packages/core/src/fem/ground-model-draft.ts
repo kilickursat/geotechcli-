@@ -409,7 +409,7 @@ function buildExecutionBoundary(
     approvalRecordSchema: 'fem-reviewer-approval.v1',
     approvalRecordRequiredForProductionAcceptance: true,
     ...(humanRunCommand
-      ? { strictApprovalRunCommand: `${humanRunCommand} --require-approval-record --approval-record <fem-approval.json>` }
+      ? { strictApprovalRunCommand: humanRunCommand }
       : {}),
     blockedReasons: [...new Set(blockedReasons)],
   };
@@ -631,8 +631,7 @@ export function validateFemWorkspaceToRunAcceptance(
       ? { strictApprovalRunCommand: boundary.strictApprovalRunCommand }
       : boundary.humanRunCommand
         ? {
-            strictApprovalRunCommand:
-              `${boundary.humanRunCommand} --require-approval-record --approval-record <fem-approval.json>`,
+            strictApprovalRunCommand: boundary.humanRunCommand,
           }
         : {}),
     blockerCodes: [...new Set(blockers)],

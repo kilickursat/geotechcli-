@@ -139,6 +139,7 @@ async function draftAndRun({ name, objective, draftArgs, runArgs = [], expectedO
   const casePath = resolve(outDir, `${name}.analysis_case.json`);
   const htmlPath = resolve(outDir, `${name}.run.html`);
   const manifestPath = resolve(outDir, `${name}.run.manifest.json`);
+  const approvalPath = resolve(outDir, `${name}.run.approval.json`);
 
   const draftOutput = await runCli([
     'fem',
@@ -172,6 +173,16 @@ async function draftAndRun({ name, objective, draftArgs, runArgs = [], expectedO
     casePath,
     '--experimental',
     '--reviewed',
+    '--approval-output',
+    approvalPath,
+    '--reviewer-name',
+    'Smoke Reviewer',
+    '--reviewer-license',
+    'PE-SMOKE',
+    '--reviewer-jurisdiction',
+    'US',
+    '--approval-assumptions',
+    `${name} smoke geometry loads staging and limitations reviewed`,
     ...runArgs,
     '--save-html',
     htmlPath,
@@ -186,6 +197,10 @@ async function draftAndRun({ name, objective, draftArgs, runArgs = [], expectedO
   assert(run.reviewed === true, `${name}: run envelope must record reviewed=true`);
   assert(run.casePath === casePath, `${name}: run case path mismatch`);
   assert(run.objective === expectedObjective, `${name}: run objective mismatch`);
+  assert(run.approvalRecord?.schemaVersion === 'fem-reviewer-approval.v1', `${name}: approval record schema missing`);
+  assert(run.approvalRecord?.reviewer?.licenseId === 'PE-SMOKE', `${name}: approval reviewer license mismatch`);
+  assert(run.approvalPath === approvalPath, `${name}: approval path mismatch`);
+  assert(existsSync(approvalPath), `${name}: approval record file missing`);
   assert(run.manifest?.backend?.id === expectedBackend, `${name}: backend mismatch`);
   assert(run.manifest?.analysisCase?.objective === expectedObjective, `${name}: manifest objective mismatch`);
   assert(run.manifest?.validation?.status === 'review', `${name}: run should remain review-gated`);
@@ -223,6 +238,7 @@ async function draftAndRun({ name, objective, draftArgs, runArgs = [], expectedO
     casePath,
     htmlPath,
     manifestPath,
+    approvalPath,
     backend: run.manifest.backend.id,
     objective: run.objective,
     maxSettlementMm: run.manifest.envelope.maxSettlementMm,
@@ -240,6 +256,8 @@ assert(help.includes('assess_fem_production_readiness'), 'FEM agent help must ex
 assert(help.includes('does not run FEM solvers'), 'FEM agent help must keep solver execution outside the agent loop');
 const runHelp = await runCli(['fem', 'run', '--help']);
 assert(runHelp.includes('--reviewed'), 'FEM run help must expose the human-review acknowledgement flag');
+assert(runHelp.includes('--approval-output'), 'FEM run help must expose approval persistence');
+assert(runHelp.includes('--reviewer-license'), 'FEM run help must expose reviewer license metadata');
 assert(runHelp.includes('--backend'), 'FEM run help must expose deterministic backend selection');
 
 const contractOnlyRoutes = [
@@ -540,7 +558,7 @@ for (const trend of trends) {
 console.log(JSON.stringify({
   ok: true,
   outDir,
-  agentBoundary: 'FEM agents plan, draft, and validate only; deterministic CLI runs require human-invoked geotech fem run --experimental --reviewed.',
+  agentBoundary: 'FEM agents plan, draft, and validate only; deterministic CLI runs require human-invoked geotech fem run --experimental --reviewed with persisted fem-reviewer-approval.v1 metadata.',
   scenarioContract: 'Envelope ranges and cross-scenario trends passed for raft, excavation, tunnel, consolidation, and Biot seepage mock datasets.',
   contractOnlyRoutes,
   referenceChecks: [

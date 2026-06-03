@@ -549,7 +549,7 @@ function buildFemWorkspaceExecutionBoundary(
     approvalRecordSchema: 'fem-reviewer-approval.v1',
     approvalRecordRequiredForProductionAcceptance: true,
     ...(humanRunCommand
-      ? { strictApprovalRunCommand: `${humanRunCommand} --require-approval-record --approval-record <fem-approval.json>` }
+      ? { strictApprovalRunCommand: humanRunCommand }
       : {}),
     blockedReasons: [...new Set(blockedReasons)],
   };
@@ -747,7 +747,7 @@ function buildFemAgentTask(task: string, objective?: string, workspaceSummary?: 
     'For production-grade, nonlinear/plasticity, consolidation, seepage, pore-pressure, support design, advanced staging, or real workspace-to-run requests, use the FEM production-readiness assessment before answering.',
     'A prepared analysisCase in the agent trace is not a saved file; unless a real caseOutput path is present, use `<analysis_case.json>` as the placeholder.',
     'When recommending commands, quote only command templates returned by FEM tools; do not invent route-specific demo or draft commands.',
-    'If deterministic execution is appropriate, recommend a human-reviewed `geotech fem run <analysis_case.json> --experimental --reviewed` or matching demo command instead of claiming you ran it.',
+    'If deterministic execution is appropriate, recommend a human-reviewed `geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>` or matching demo command instead of claiming you ran it.',
   ].filter(Boolean).join('\n');
 }
 
@@ -953,7 +953,7 @@ async function runFemAnalysisCaseCommand(caseFilePath: string, opts: Record<stri
   }
   const existingApprovalRecord = validateExistingFemApprovalRecord(opts.approvalRecord, analysisCase, sourceText);
   const generatedApprovalRecord = buildFemReviewerApprovalRecord(analysisCase, sourceText, caseValidation, opts);
-  if (opts.requireApprovalRecord && !existingApprovalRecord && !generatedApprovalRecord) {
+  if (!existingApprovalRecord && !generatedApprovalRecord) {
     throw new Error(
       'FEM run requires a persisted reviewer approval record. Provide --approval-record <file>, or provide --approval-output with --reviewer-name, --reviewer-license, and --reviewer-jurisdiction.',
     );
@@ -1003,7 +1003,7 @@ async function runFemAnalysisCaseCommand(caseFilePath: string, opts: Record<stri
       'Experimental deterministic FEM run only; not a design calculation.',
       ...(backend === 'nonlinear-column' ? ['Used nonlinear-column backend: 1D staged consolidation equilibrium with Drucker-Prager material-point return mapping, not a full 2D/3D production FEM solver.'] : []),
       ...(backend === 'plane-strain-dp-adaptive' ? [`Used plane-strain-dp-adaptive backend mapped to ${PLANE_STRAIN_DP_ADAPTIVE_BACKEND_ID}: nonlinear plane-strain Drucker-Prager adaptive load stepping is reviewed experimental preview evidence only and not production-ready.`] : []),
-      'Run was invoked by the CLI from a reviewed analysis_case.json file with --reviewed; LLM agents can plan and validate cases but cannot execute this command as a tool.',
+      'Run was invoked by the CLI from a reviewed analysis_case.json file with persisted approval metadata; LLM agents can plan and validate cases but cannot execute this command as a tool.',
       ...(generatedApprovalRecord ? ['Persisted FEM reviewer approval metadata for this run.'] : []),
       ...(existingApprovalRecord ? ['Validated existing FEM approval record against the current case hash before this run.'] : []),
       ...buildWarnings(manifest),
@@ -1144,7 +1144,7 @@ export function registerFemCommand(program: Command): void {
     .option('--experimental', 'Acknowledge that this FEM run is experimental and not a design calculation')
     .option('--reviewed', 'Confirm a human reviewed geometry, loads, staging, assumptions, validation findings, and limitations')
     .option('--backend <name>', 'Deterministic backend: preview, nonlinear-column, biot-up, or plane-strain-dp-adaptive')
-    .option('--require-approval-record', 'Fail closed unless this run validates or persists a fem-reviewer-approval.v1 record')
+    .option('--require-approval-record', 'Deprecated compatibility flag; FEM run now always validates or persists a fem-reviewer-approval.v1 record')
     .option('--approval-record <file>', 'Validate an existing fem-reviewer-approval.v1 record against the current case hash before running')
     .option('--approval-output <file>', 'Persist a fem-reviewer-approval.v1 record for this run')
     .option('--reviewer-name <name>', 'Reviewer name for persisted FEM approval metadata')
@@ -1157,18 +1157,18 @@ export function registerFemCommand(program: Command): void {
     .addHelpText('after', `
   Examples:
     geotech fem draft foundation-settlement --raft-length 10 --raft-width 8 --pressure 150 --case-output analysis_case.json
-    geotech fem run analysis_case.json --experimental --reviewed --save-html fem-run.html --output fem-run.manifest.json --no-open
-    geotech fem run consolidation_case.json --experimental --reviewed --backend nonlinear-column --output fem-nonlinear-column.manifest.json --json
-    geotech fem run seepage_case.json --experimental --reviewed --backend biot-up --output fem-biot-up.manifest.json --json
-    geotech fem run plane_strain_case.json --experimental --reviewed --backend plane-strain-dp-adaptive --output fem-plane-strain-dp-adaptive.manifest.json --json
-    geotech fem run analysis_case.json --experimental --reviewed --require-approval-record --approval-output fem-approval.json --reviewer-name "Jane Engineer" --reviewer-license PE-12345 --reviewer-jurisdiction US-CA
-    geotech fem run analysis_case.json --experimental --reviewed --json
+    geotech fem run analysis_case.json --experimental --reviewed --approval-output fem-approval.json --reviewer-name "Jane Engineer" --reviewer-license PE-12345 --reviewer-jurisdiction US-CA --save-html fem-run.html --output fem-run.manifest.json --no-open
+    geotech fem run consolidation_case.json --experimental --reviewed --approval-output fem-approval.json --reviewer-name "Jane Engineer" --reviewer-license PE-12345 --reviewer-jurisdiction US-CA --backend nonlinear-column --output fem-nonlinear-column.manifest.json --json
+    geotech fem run seepage_case.json --experimental --reviewed --approval-output fem-approval.json --reviewer-name "Jane Engineer" --reviewer-license PE-12345 --reviewer-jurisdiction US-CA --backend biot-up --output fem-biot-up.manifest.json --json
+    geotech fem run plane_strain_case.json --experimental --reviewed --approval-output fem-approval.json --reviewer-name "Jane Engineer" --reviewer-license PE-12345 --reviewer-jurisdiction US-CA --backend plane-strain-dp-adaptive --output fem-plane-strain-dp-adaptive.manifest.json --json
+    geotech fem run analysis_case.json --experimental --reviewed --approval-output fem-approval.json --reviewer-name "Jane Engineer" --reviewer-license PE-12345 --reviewer-jurisdiction US-CA
+    geotech fem run analysis_case.json --experimental --reviewed --approval-record fem-approval.json --json
 
   This command executes only deterministic built-in preview/nonlinear-column/biot-up/plane-strain-dp-adaptive backends from a reviewed analysis_case.json.
-  It requires --reviewed as an explicit human-review acknowledgement.
+  It requires --reviewed as an explicit human-review acknowledgement and requires a persisted approval record for every run.
   Use --approval-output with reviewer metadata to persist identity, license, assumptions, limitations, validation summary, experimental-preview scope, and case hash.
   Use --approval-record to fail closed when a prior approval record is stale or does not match the current case hash.
-  Use --require-approval-record when the run must fail unless a matching approval record is supplied or persisted in the same command.
+  --require-approval-record is retained for compatibility but approval-record enforcement is always active.
   production-design approval scope fails closed in strong beta until production acceptance gates are implemented.
   It is not exposed as an agent tool; LLMs can plan, draft, and validate FEM cases, but users approve runs.
 `)
@@ -1361,7 +1361,7 @@ export function registerFemCommand(program: Command): void {
           disableDeterministicPreflight: true,
           requiredToolsBeforeFinal,
           systemPromptSuffix:
-            'FEM scoped-agent rule: use only FEM routing, production-readiness, drafting, and validation tools. Never claim to run a solver or produce FEM numerical results unless they came from a deterministic geotechCLI FEM manifest. For production-grade, nonlinear/plasticity, consolidation, seepage, pore-pressure, support design, advanced staging, real workspace-to-run, or benchmark-validation requests, call assess_fem_production_readiness and report its blockers. When recommending commands, quote only command templates returned by FEM tools; do not invent route-specific demo, draft, or run commands. A prepared analysisCase in tool results is not a saved local file; do not invent case file names or paths, and use `<analysis_case.json>` unless a real caseOutput path exists. Workspace evidence may prefill material, groundwater, and evidenceRefs only; geometry, load, staging, mesh intent, and design approval require explicit user confirmation. Recommend `geotech fem run <analysis_case.json> --experimental --reviewed` after human review, or the exact demo command from FEM tool output for built-in examples, when execution or visualization is needed.',
+            'FEM scoped-agent rule: use only FEM routing, production-readiness, drafting, and validation tools. Never claim to run a solver or produce FEM numerical results unless they came from a deterministic geotechCLI FEM manifest. For production-grade, nonlinear/plasticity, consolidation, seepage, pore-pressure, support design, advanced staging, real workspace-to-run, or benchmark-validation requests, call assess_fem_production_readiness and report its blockers. When recommending commands, quote only command templates returned by FEM tools; do not invent route-specific demo, draft, or run commands. A prepared analysisCase in tool results is not a saved local file; do not invent case file names or paths, and use `<analysis_case.json>` unless a real caseOutput path exists. Workspace evidence may prefill material, groundwater, and evidenceRefs only; geometry, load, staging, mesh intent, and design approval require explicit user confirmation. Recommend the returned `geotech fem run <analysis_case.json> --experimental --reviewed ...` template only when it includes persisted approval metadata or an approval-record placeholder, or the exact demo command from FEM tool output for built-in examples, when execution or visualization is needed.',
         },
       );
       const answer = session.steps.find((step) => step.type === 'answer')?.content ?? '';

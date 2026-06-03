@@ -200,13 +200,13 @@ describe('staged settlement consolidation production-candidate deterministic sli
     ]));
     expect(route.limitations.join(' ')).toMatch(/No 2D\/3D coupled Biot FEM/i);
     expect(route.draftCommandTemplate).toBe('geotech fem draft staged-settlement-consolidation --input <json> --case-output <analysis_case.json>');
-    expect(route.runCommandTemplate).toBe('geotech fem run <analysis_case.json> --experimental --reviewed');
+    expect(route.runCommandTemplate).toBe('geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>');
 
     expect(draft).toMatchObject({
       implemented: true,
       canAutoProceed: false,
       recommendedAction: 'run-reviewed-case',
-      recommendedCommand: 'geotech fem run <analysis_case.json> --experimental --reviewed',
+      recommendedCommand: 'geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>',
     });
     expect(draft.analysisCase?.objective).toBe('staged_settlement_consolidation');
     expect(draft.analysisCase?.geometry.consolidation?.drainage).toBe('double');
@@ -275,7 +275,7 @@ describe('staged settlement consolidation production-candidate deterministic sli
       'stage-activation-backend-implemented',
       'published-benchmark-corpus-approved',
     ]));
-    expect(readiness.safeUserActions.join(' ')).toContain('geotech fem run <analysis_case.json> --experimental --reviewed');
+    expect(readiness.safeUserActions.join(' ')).toContain('geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>');
     expect(readiness.releasePositioning).toContain('not a full production-grade nonlinear geotechnical FEM solver yet');
   });
 });

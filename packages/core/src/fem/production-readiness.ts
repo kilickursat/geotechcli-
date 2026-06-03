@@ -134,7 +134,7 @@ const FEATURE_REQUIREMENTS: Record<FemProductionFeature, Omit<FemProductionFeatu
     requiredForAcceptance: [
       'evidence-bound workspace candidate with no missing user inputs',
       'reviewed analysis case with validation blockers equal to zero',
-      'human-reviewed run command using --experimental --reviewed until a production solver exists',
+      'human-reviewed run command using --experimental --reviewed with persisted fem-reviewer-approval.v1 metadata until a production solver exists',
     ],
     blockedUntil: [
       'workspace-to-run-acceptance-validator-enforced',
@@ -158,7 +158,7 @@ const FEATURE_REQUIREMENTS: Record<FemProductionFeature, Omit<FemProductionFeatu
   },
   'licensed-engineer-review-workflow': {
     status: 'kernel-verified',
-    currentCoverage: 'A reviewer approval-record contract validates identity, license, jurisdiction, case hash, validation summary, assumptions, limitations, experimental-preview scope, and approval text. Production-design approval scope fails closed in strong beta. CLI preview runs still accept --reviewed without enforcing persisted approval metadata on every run.',
+    currentCoverage: 'A reviewer approval-record contract validates identity, license, jurisdiction, case hash, validation summary, assumptions, limitations, experimental-preview scope, and approval text. Production-design approval scope fails closed in strong beta. CLI preview runs now require either a matching --approval-record or --approval-output with reviewer identity/license/jurisdiction metadata for every reviewed run.',
     requiredForAcceptance: [
       'reviewer identity and approval metadata captured for production runs',
       'assumption, limitation, and change-control audit trail',
@@ -166,7 +166,6 @@ const FEATURE_REQUIREMENTS: Record<FemProductionFeature, Omit<FemProductionFeatu
     ],
     blockedUntil: [
       'production-design-approval-scope-fails-closed-until-production-acceptance',
-      'reviewer-approval-record-enforced-by-cli-run',
       'assumption-change-control-audit-approved',
       'jurisdiction-signoff-workflow-approved',
     ],

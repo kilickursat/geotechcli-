@@ -37,7 +37,7 @@ describe('FEM routing contract', () => {
     expect(capabilities.find((capability) => capability.objective === 'foundation-settlement')?.agentRunAllowed).toBe(false);
     expect(capabilities.find((capability) => capability.objective === 'excavation-deformation')?.command).toBe('geotech fem draft excavation-deformation --input <json> --case-output <analysis_case.json>');
     expect(capabilities.find((capability) => capability.objective === 'excavation-deformation')?.demoCommand).toBe('geotech fem demo excavation --experimental');
-    expect(capabilities.find((capability) => capability.objective === 'excavation-deformation')?.runCommandTemplate).toBe('geotech fem run <analysis_case.json> --experimental --reviewed');
+    expect(capabilities.find((capability) => capability.objective === 'excavation-deformation')?.runCommandTemplate).toBe('geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>');
     expect(capabilities.find((capability) => capability.objective === 'excavation-deformation')?.requiredEvidence).toContain('support reaction screening check');
     expect(capabilities.find((capability) => capability.objective === 'excavation-deformation')?.reviewGates).toContain('not-jurisdiction-specific-structural-design');
     expect(capabilities.find((capability) => capability.objective === 'tunnel-volume-loss-settlement')?.status).toBe('implemented-demo');
@@ -56,7 +56,7 @@ describe('FEM routing contract', () => {
     expect(capabilities.find((capability) => capability.objective === 'seepage-groundwater-coupling')?.executionMode).toBe('human-reviewed-preview');
     expect(capabilities.find((capability) => capability.objective === 'seepage-groundwater-coupling')?.deterministicBackend).toBe('builtin-biot-up-plane-strain-v0');
     expect(capabilities.find((capability) => capability.objective === 'seepage-groundwater-coupling')?.demoCommand).toBe('geotech fem demo biot --experimental');
-    expect(capabilities.find((capability) => capability.objective === 'seepage-groundwater-coupling')?.runCommandTemplate).toBe('geotech fem run <analysis_case.json> --experimental --reviewed --backend biot-up');
+    expect(capabilities.find((capability) => capability.objective === 'seepage-groundwater-coupling')?.runCommandTemplate).toBe('geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction> --backend biot-up');
     expect(capabilities.find((capability) => capability.objective === 'seepage-groundwater-coupling')?.reviewGates).toContain('not-production-sparse-solver');
     expect(capabilities.find((capability) => capability.objective === 'staged-settlement-consolidation')?.status).toBe('implemented-demo');
     expect(capabilities.find((capability) => capability.objective === 'staged-settlement-consolidation')?.executionMode).toBe('human-reviewed-preview');
@@ -95,7 +95,7 @@ describe('FEM routing contract', () => {
     });
 
     expect(draft.recommendedAction).toBe('run-reviewed-case');
-    expect(draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed');
+    expect(draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>');
     expect(draft.canAutoProceed).toBe(false);
     expect(draft.analysisCase?.geometry.raft.lengthM).toBe(10);
     expect(draft.analysisCase?.loads[0]?.pressureKpa).toBe(180);
@@ -160,7 +160,7 @@ describe('FEM routing contract', () => {
 
     expect(draft.implemented).toBe(true);
     expect(draft.recommendedAction).toBe('run-reviewed-case');
-    expect(draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed');
+    expect(draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>');
     expect(draft.canAutoProceed).toBe(false);
     expect(draft.analysisCase?.objective).toBe('excavation_deformation');
     expect(draft.analysisCase?.geometry.excavation?.finalDepthM).toBe(9);
@@ -236,7 +236,7 @@ describe('FEM routing contract', () => {
     expect(draft.validation?.status).toBe('review');
     expect(draft.reviewGates).toContain('not-fem-solver');
     expect(draft.reviewGates).toContain('tunnel.empirical-preview');
-    expect(draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed');
+    expect(draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>');
   });
 
   it('keeps non-implemented FEM objectives as contract-only routes', () => {
@@ -339,7 +339,7 @@ describe('FEM routing contract', () => {
     });
 
     expect(draft.recommendedAction).toBe('run-reviewed-case');
-    expect(draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed --backend biot-up');
+    expect(draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction> --backend biot-up');
     expect(draft.canAutoProceed).toBe(false);
     expect(draft.analysisCase?.objective).toBe('seepage_groundwater_coupling');
     expect(draft.analysisCase?.analysisType).toBe('time_dependent_2d_biot_consolidation');
@@ -392,7 +392,7 @@ describe('FEM routing contract', () => {
 
     expect(draft.implemented).toBe(true);
     expect(draft.recommendedAction).toBe('run-reviewed-case');
-    expect(draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed');
+    expect(draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>');
     expect(draft.canAutoProceed).toBe(false);
     expect(draft.analysisCase?.objective).toBe('staged_settlement_consolidation');
     expect(draft.analysisCase?.analysisType).toBe('time_dependent_1d_consolidation');
@@ -751,7 +751,7 @@ describe('FEM routing contract', () => {
       humanReviewRequired: true,
       caseOutputAvailable: true,
       draftCommand: 'geotech fem draft foundation-settlement --input <json> --case-output <analysis_case.json>',
-      humanRunCommand: 'geotech fem run <analysis_case.json> --experimental --reviewed',
+      humanRunCommand: 'geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>',
       blockedReasons: [],
     });
   });

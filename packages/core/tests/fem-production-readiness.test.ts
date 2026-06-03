@@ -41,7 +41,6 @@ describe('FEM production readiness contract', () => {
       'external-benchmark-commercial-solver-citation-missing',
       'external-benchmark-comparison-results-missing',
       'production-design-approval-scope-fails-closed-until-production-acceptance',
-      'reviewer-approval-record-enforced-by-cli-run',
     ]));
     expect(report.engineeringEvidence).toMatchObject({
       schemaVersion: 'fem-engineering-evidence.v1',
@@ -103,12 +102,12 @@ describe('FEM production readiness contract', () => {
         executionMode: 'human-reviewed-preview',
         draftCommandTemplate: 'geotech fem draft excavation-deformation --input <json> --case-output <analysis_case.json>',
         demoCommand: 'geotech fem demo excavation --experimental',
-        runCommandTemplate: 'geotech fem run <analysis_case.json> --experimental --reviewed',
+        runCommandTemplate: 'geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>',
       }),
     ]);
     expect(report.safeUserActions).toEqual(expect.arrayContaining([
       'Built-in demo command: geotech fem demo excavation --experimental',
-      'Reviewed run command template: geotech fem run <analysis_case.json> --experimental --reviewed',
+      'Reviewed run command template: geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>',
     ]));
     expect(report.blockedFeatures.map((feature) => feature.status)).toEqual(['kernel-verified', 'kernel-verified']);
     expect(report.blockedFeatures.find((feature) => feature.feature === 'support-design')?.currentCoverage)

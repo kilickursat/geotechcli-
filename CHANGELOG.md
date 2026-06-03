@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.122] - 2026-06-04
+
+### FEM Reviewed Run Approval Enforcement
+
+- Made persisted `fem-reviewer-approval.v1` metadata mandatory for every reviewed experimental `geotech fem run`, using either a matching `--approval-record` or `--approval-output` with reviewer identity, license, and jurisdiction.
+- Updated FEM route, GroundModel workspace acceptance, README, web docs, and agent command templates so reviewed run recommendations always include approval persistence metadata.
+- Extended CLI and draft-run smoke coverage to validate persisted approval records across raft, excavation, tunnel, consolidation, nonlinear-column, and Biot u-p mock scenarios while full production FEM remains blocked.
+
 ## [0.4.121] - 2026-06-04
 
 ### FEM Agent Support-Check Tooling
