@@ -18,6 +18,9 @@ export interface FemPlaneStrainMaterial {
   elasticModulusKpa: number;
   poissonRatio: number;
   unitWeightKnM3?: number;
+  hydraulicConductivityXMPerS?: number;
+  hydraulicConductivityYMPerS?: number;
+  biotCoefficient?: number;
   frictionAngleDeg?: number;
   cohesionKpa?: number;
   dilationAngleDeg?: number;
@@ -121,6 +124,74 @@ export interface FemPlaneStrainDruckerPragerResult {
   maxYieldResidualRatio: number;
   maxEquivalentPlasticStrain: number;
   plasticGaussPointCount: number;
+  converged: boolean;
+  policy: FemConvergencePolicy;
+  limitations: string[];
+}
+
+export interface FemPlaneStrainHydraulicHeadBoundaryCondition {
+  nodeId: string;
+  headM: number;
+}
+
+export interface FemPlaneStrainNodalFlux {
+  nodeId: string;
+  flowM3PerSPerM?: number;
+}
+
+export interface FemPlaneStrainSeepageModel {
+  schemaVersion: 'fem-plane-strain-seepage-model.v1';
+  nodes: FemPlaneStrainNode[];
+  elements: FemPlaneStrainQuad4Element[];
+  materials: FemPlaneStrainMaterial[];
+  headBoundaryConditions: FemPlaneStrainHydraulicHeadBoundaryCondition[];
+  nodalFluxes?: FemPlaneStrainNodalFlux[];
+  defaultThicknessM?: number;
+  gammaWaterKpaPerM?: number;
+  policy?: FemConvergencePolicy;
+}
+
+export interface FemPlaneStrainSeepageNodeResult extends FemPlaneStrainNode {
+  headM: number;
+  porePressureKpa: number;
+  hydraulicResidualM3PerS: number;
+}
+
+export interface FemPlaneStrainSeepageGaussPointResult {
+  elementId: string;
+  gaussPoint: number;
+  xi: number;
+  eta: number;
+  detJ: number;
+  headM: number;
+  elevationM: number;
+  porePressureKpa: number;
+  hydraulicGradient: [number, number];
+  darcyFluxMPerS: [number, number];
+  biotCoefficient: number;
+  effectiveStressReductionKpa: number;
+}
+
+export interface FemPlaneStrainSeepageResult {
+  schemaVersion: 'fem-plane-strain-seepage-result.v1';
+  method: 'quad4-plane-strain-steady-darcy-seepage';
+  nodes: FemPlaneStrainSeepageNodeResult[];
+  elements: Array<{
+    id: string;
+    areaM2: number;
+    thicknessM: number;
+    gaussPoints: FemPlaneStrainSeepageGaussPointResult[];
+  }>;
+  headDofCount: number;
+  freeHeadDofCount: number;
+  constrainedHeadDofCount: number;
+  maxFreeMassResidualM3PerS: number;
+  totalPositiveBoundaryFluxM3PerS: number;
+  totalNegativeBoundaryFluxM3PerS: number;
+  netNodalFluxM3PerS: number;
+  massBalanceErrorRatio: number;
+  maxPorePressureKpa: number;
+  maxEffectiveStressReductionKpa: number;
   converged: boolean;
   policy: FemConvergencePolicy;
   limitations: string[];
@@ -367,6 +438,15 @@ function shapeDerivativesNatural(xi: number, eta: number): Array<[number, number
   ];
 }
 
+function shapeFunctions(xi: number, eta: number): [number, number, number, number] {
+  return [
+    ((1 - xi) * (1 - eta)) / 4,
+    ((1 + xi) * (1 - eta)) / 4,
+    ((1 + xi) * (1 + eta)) / 4,
+    ((1 - xi) * (1 + eta)) / 4,
+  ];
+}
+
 function solveDenseLinearSystem(matrix: number[][], rhs: number[]): number[] {
   const n = rhs.length;
   const a = matrix.map((row, index) => [...row, rhs[index]]);
@@ -466,6 +546,111 @@ function elementMatrices(input: {
   return { stiffness: k, areaM2, gauss };
 }
 
+function validateHydraulicMaterial(material: FemPlaneStrainMaterial): {
+  kxMPerS: number;
+  kyMPerS: number;
+  biotCoefficient: number;
+} {
+  const kxMPerS = material.hydraulicConductivityXMPerS;
+  if (kxMPerS == null) {
+    throw new Error(`material ${material.id} hydraulicConductivityXMPerS is required for plane-strain seepage.`);
+  }
+  assertFinitePositive(kxMPerS, `material ${material.id} hydraulicConductivityXMPerS`);
+  const kyMPerS = material.hydraulicConductivityYMPerS ?? kxMPerS;
+  assertFinitePositive(kyMPerS, `material ${material.id} hydraulicConductivityYMPerS`);
+  const biotCoefficient = material.biotCoefficient ?? 1;
+  if (!Number.isFinite(biotCoefficient) || biotCoefficient < 0 || biotCoefficient > 1) {
+    throw new Error(`material ${material.id} biotCoefficient must be finite and between 0 and 1.`);
+  }
+  return { kxMPerS, kyMPerS, biotCoefficient };
+}
+
+function hydraulicElementMatrices(input: {
+  nodes: FemPlaneStrainNode[];
+  material: FemPlaneStrainMaterial;
+  thicknessM: number;
+}): {
+  conductivity: number[][];
+  areaM2: number;
+  gauss: Array<{
+    xi: number;
+    eta: number;
+    detJ: number;
+    shape: [number, number, number, number];
+    dNdx: number[];
+    dNdy: number[];
+    kxMPerS: number;
+    kyMPerS: number;
+    biotCoefficient: number;
+  }>;
+} {
+  const { nodes, material, thicknessM } = input;
+  const { kxMPerS, kyMPerS, biotCoefficient } = validateHydraulicMaterial(material);
+  const conductivity = Array.from({ length: 4 }, () => new Array<number>(4).fill(0));
+  const gauss: Array<{
+    xi: number;
+    eta: number;
+    detJ: number;
+    shape: [number, number, number, number];
+    dNdx: number[];
+    dNdy: number[];
+    kxMPerS: number;
+    kyMPerS: number;
+    biotCoefficient: number;
+  }> = [];
+  let areaM2 = 0;
+
+  for (const [xi, eta, weight] of GAUSS_POINTS) {
+    const derivatives = shapeDerivativesNatural(xi, eta);
+    let j11 = 0;
+    let j12 = 0;
+    let j21 = 0;
+    let j22 = 0;
+    for (let i = 0; i < 4; i += 1) {
+      j11 += derivatives[i][0] * nodes[i].xM;
+      j12 += derivatives[i][0] * nodes[i].yM;
+      j21 += derivatives[i][1] * nodes[i].xM;
+      j22 += derivatives[i][1] * nodes[i].yM;
+    }
+    const detJ = j11 * j22 - j12 * j21;
+    if (!Number.isFinite(detJ) || detJ <= 0) {
+      throw new Error('Plane-strain seepage quad4 element has non-positive Jacobian; check node order and geometry.');
+    }
+    const invJ = [
+      [j22 / detJ, -j12 / detJ],
+      [-j21 / detJ, j11 / detJ],
+    ];
+    const dNdx: number[] = [];
+    const dNdy: number[] = [];
+    for (let i = 0; i < 4; i += 1) {
+      dNdx.push(invJ[0][0] * derivatives[i][0] + invJ[0][1] * derivatives[i][1]);
+      dNdy.push(invJ[1][0] * derivatives[i][0] + invJ[1][1] * derivatives[i][1]);
+    }
+    for (let row = 0; row < 4; row += 1) {
+      for (let col = 0; col < 4; col += 1) {
+        conductivity[row][col] += (
+          dNdx[row] * kxMPerS * dNdx[col] +
+          dNdy[row] * kyMPerS * dNdy[col]
+        ) * detJ * weight * thicknessM;
+      }
+    }
+    areaM2 += detJ * weight;
+    gauss.push({
+      xi,
+      eta,
+      detJ,
+      shape: shapeFunctions(xi, eta),
+      dNdx,
+      dNdy,
+      kxMPerS,
+      kyMPerS,
+      biotCoefficient,
+    });
+  }
+
+  return { conductivity, areaM2, gauss };
+}
+
 export function buildPlaneStrainRectangularMesh(input: {
   widthM: number;
   heightM: number;
@@ -506,6 +691,217 @@ export function buildPlaneStrainRectangularMesh(input: {
     }
   }
   return { nodes, elements };
+}
+
+export function runPlaneStrainSteadySeepage(model: FemPlaneStrainSeepageModel): FemPlaneStrainSeepageResult {
+  if (model.schemaVersion !== 'fem-plane-strain-seepage-model.v1') {
+    throw new Error('Only fem-plane-strain-seepage-model.v1 is supported.');
+  }
+  assertArray(model.nodes, 'nodes');
+  assertArray(model.elements, 'elements');
+  assertArray(model.materials, 'materials');
+  assertArray(model.headBoundaryConditions, 'headBoundaryConditions');
+  if (model.nodes.length < 4) throw new Error('Plane-strain seepage model requires at least four nodes.');
+  if (model.elements.length < 1) throw new Error('Plane-strain seepage model requires at least one element.');
+  if (model.materials.length < 1) throw new Error('Plane-strain seepage model requires at least one material.');
+  if (model.defaultThicknessM != null) assertFinitePositive(model.defaultThicknessM, 'defaultThicknessM');
+  if (model.nodalFluxes != null) assertArray(model.nodalFluxes, 'nodalFluxes');
+  const gammaWaterKpaPerM = model.gammaWaterKpaPerM ?? 9.81;
+  assertFinitePositive(gammaWaterKpaPerM, 'gammaWaterKpaPerM');
+  assertUniqueIds(model.nodes, 'node');
+  assertUniqueIds(model.materials, 'material');
+  assertUniqueIds(model.elements, 'element');
+
+  const policy = model.policy ?? DEFAULT_FEM_CONVERGENCE_POLICY;
+  validateConvergencePolicy(policy);
+  const nodeIndexById = new Map(model.nodes.map((node, index) => [node.id, index]));
+  const materialById = new Map(model.materials.map((material) => [material.id, material]));
+  const headDofCount = model.nodes.length;
+  if (headDofCount > MAX_DENSE_DOF_COUNT) {
+    throw new Error(`Plane-strain seepage dense assembly is capped at ${MAX_DENSE_DOF_COUNT} head DOFs for benchmark-scale evidence runs.`);
+  }
+  for (const node of model.nodes) {
+    assertFinite(node.xM, `node ${node.id} xM`);
+    assertFinite(node.yM, `node ${node.id} yM`);
+  }
+  for (const material of model.materials) {
+    validateHydraulicMaterial(material);
+  }
+
+  const conductivity = Array.from({ length: headDofCount }, () => new Array<number>(headDofCount).fill(0));
+  const loads = new Array<number>(headDofCount).fill(0);
+  for (const flux of model.nodalFluxes ?? []) {
+    const nodeIndex = nodeIndexById.get(flux.nodeId);
+    if (nodeIndex == null) throw new Error(`Unknown nodal seepage flux node: ${flux.nodeId}.`);
+    const flowM3PerSPerM = flux.flowM3PerSPerM ?? 0;
+    assertFinite(flowM3PerSPerM, `nodal seepage flux ${flux.nodeId}.flowM3PerSPerM`);
+    loads[nodeIndex] += flowM3PerSPerM;
+  }
+
+  const elementGaussCache: Array<{
+    element: FemPlaneStrainQuad4Element;
+    globalNodes: number[];
+    areaM2: number;
+    thicknessM: number;
+    gauss: ReturnType<typeof hydraulicElementMatrices>['gauss'];
+  }> = [];
+
+  for (const element of model.elements) {
+    if (!Array.isArray(element.nodeIds) || element.nodeIds.length !== 4) {
+      throw new Error(`Plane-strain seepage element ${element.id} must reference exactly four nodes.`);
+    }
+    if (new Set(element.nodeIds).size !== 4) {
+      throw new Error(`Plane-strain seepage element ${element.id} has duplicate node references.`);
+    }
+    assertNonEmptyId(element.materialId, `element ${element.id} material`);
+    const nodeIndices = element.nodeIds.map((id) => {
+      const index = nodeIndexById.get(id);
+      if (index == null) throw new Error(`Unknown seepage element node: ${id}.`);
+      return index;
+    });
+    const material = materialById.get(element.materialId);
+    if (!material) throw new Error(`Unknown seepage element material: ${element.materialId}.`);
+    const thicknessM = element.thicknessM ?? model.defaultThicknessM ?? 1;
+    assertFinitePositive(thicknessM, `element ${element.id} thicknessM`);
+    const nodes = nodeIndices.map((index) => model.nodes[index]);
+    const elementData = hydraulicElementMatrices({ nodes, material, thicknessM });
+    for (let localRow = 0; localRow < 4; localRow += 1) {
+      for (let localCol = 0; localCol < 4; localCol += 1) {
+        conductivity[nodeIndices[localRow]][nodeIndices[localCol]] += elementData.conductivity[localRow][localCol];
+      }
+    }
+    elementGaussCache.push({
+      element,
+      globalNodes: nodeIndices,
+      areaM2: elementData.areaM2,
+      thicknessM,
+      gauss: elementData.gauss,
+    });
+  }
+
+  const prescribed = new Map<number, number>();
+  for (const bc of model.headBoundaryConditions) {
+    const nodeIndex = nodeIndexById.get(bc.nodeId);
+    if (nodeIndex == null) throw new Error(`Unknown hydraulic head boundary node: ${bc.nodeId}.`);
+    assertFinite(bc.headM, `head boundary ${bc.nodeId}.headM`);
+    const existing = prescribed.get(nodeIndex);
+    if (existing != null && Math.abs(existing - bc.headM) > 1e-12) {
+      throw new Error(`Conflicting hydraulic head boundary condition for ${bc.nodeId}.`);
+    }
+    prescribed.set(nodeIndex, bc.headM);
+  }
+  if (prescribed.size < 2) {
+    throw new Error('Plane-strain seepage model requires at least two hydraulic head boundary conditions.');
+  }
+
+  const freeDofs = Array.from({ length: headDofCount }, (_, index) => index).filter((index) => !prescribed.has(index));
+  const heads = new Array<number>(headDofCount).fill(0);
+  for (const [index, value] of prescribed) heads[index] = value;
+  if (freeDofs.length > 0) {
+    const reducedK = freeDofs.map((row) => freeDofs.map((col) => conductivity[row][col]));
+    const reducedF = freeDofs.map((row) => loads[row] - [...prescribed.entries()]
+      .reduce((sum, [col, value]) => sum + conductivity[row][col] * value, 0));
+    const solved = solveDenseLinearSystem(reducedK, reducedF);
+    for (const [index, dof] of freeDofs.entries()) heads[dof] = solved[index];
+  }
+
+  const internal = matVec(conductivity, heads);
+  const residual = internal.map((value, index) => value - loads[index]);
+  const maxFreeMassResidualM3PerS = freeDofs.length > 0
+    ? Math.max(...freeDofs.map((index) => Math.abs(residual[index])))
+    : 0;
+  const boundaryResiduals = Array.from(prescribed.keys()).map((index) => residual[index]);
+  const totalPositiveBoundaryFluxM3PerS = boundaryResiduals
+    .filter((value) => value > 0)
+    .reduce((sum, value) => sum + value, 0);
+  const totalNegativeBoundaryFluxM3PerS = -boundaryResiduals
+    .filter((value) => value < 0)
+    .reduce((sum, value) => sum + value, 0);
+  const boundaryFluxSum = boundaryResiduals.reduce((sum, value) => sum + value, 0);
+  const netNodalFluxM3PerS = loads.reduce((sum, value) => sum + value, 0);
+  const massScale = Math.max(
+    totalPositiveBoundaryFluxM3PerS,
+    totalNegativeBoundaryFluxM3PerS,
+    Math.abs(netNodalFluxM3PerS),
+    1e-12,
+  );
+  const massBalanceErrorRatio = Math.abs(boundaryFluxSum + netNodalFluxM3PerS) / massScale;
+  let maxPorePressureKpa = 0;
+  let maxEffectiveStressReductionKpa = 0;
+
+  const elementOutputs = elementGaussCache.map((entry) => {
+    const gaussPoints: FemPlaneStrainSeepageGaussPointResult[] = entry.gauss.map((point, index) => {
+      const localHeads = entry.globalNodes.map((nodeIndex) => heads[nodeIndex]);
+      const localNodes = entry.globalNodes.map((nodeIndex) => model.nodes[nodeIndex]);
+      const headM = point.shape.reduce((sum, shape, node) => sum + shape * localHeads[node], 0);
+      const elevationM = point.shape.reduce((sum, shape, node) => sum + shape * localNodes[node].yM, 0);
+      const gradientX = point.dNdx.reduce((sum, dNdx, node) => sum + dNdx * localHeads[node], 0);
+      const gradientY = point.dNdy.reduce((sum, dNdy, node) => sum + dNdy * localHeads[node], 0);
+      const porePressureKpa = Math.max(0, (headM - elevationM) * gammaWaterKpaPerM);
+      const effectiveStressReductionKpa = point.biotCoefficient * porePressureKpa;
+      maxPorePressureKpa = Math.max(maxPorePressureKpa, porePressureKpa);
+      maxEffectiveStressReductionKpa = Math.max(maxEffectiveStressReductionKpa, effectiveStressReductionKpa);
+      return {
+        elementId: entry.element.id,
+        gaussPoint: index + 1,
+        xi: round(point.xi, 10),
+        eta: round(point.eta, 10),
+        detJ: round(point.detJ, 10),
+        headM: round(headM, 10),
+        elevationM: round(elevationM, 10),
+        porePressureKpa: round(porePressureKpa, 8),
+        hydraulicGradient: [round(gradientX, 12), round(gradientY, 12)],
+        darcyFluxMPerS: [
+          Number((-point.kxMPerS * gradientX).toExponential(12)),
+          Number((-point.kyMPerS * gradientY).toExponential(12)),
+        ],
+        biotCoefficient: round(point.biotCoefficient, 8),
+        effectiveStressReductionKpa: round(effectiveStressReductionKpa, 8),
+      };
+    });
+    return {
+      id: entry.element.id,
+      areaM2: round(entry.areaM2, 10),
+      thicknessM: round(entry.thicknessM, 10),
+      gaussPoints,
+    };
+  });
+
+  const nodes = model.nodes.map((node, index) => {
+    const porePressureKpa = Math.max(0, (heads[index] - node.yM) * gammaWaterKpaPerM);
+    maxPorePressureKpa = Math.max(maxPorePressureKpa, porePressureKpa);
+    return {
+      ...node,
+      headM: round(heads[index], 10),
+      porePressureKpa: round(porePressureKpa, 8),
+      hydraulicResidualM3PerS: Number(residual[index].toExponential(12)),
+    };
+  });
+
+  return {
+    schemaVersion: 'fem-plane-strain-seepage-result.v1',
+    method: 'quad4-plane-strain-steady-darcy-seepage',
+    nodes,
+    elements: elementOutputs,
+    headDofCount,
+    freeHeadDofCount: freeDofs.length,
+    constrainedHeadDofCount: prescribed.size,
+    maxFreeMassResidualM3PerS: Number(maxFreeMassResidualM3PerS.toExponential(12)),
+    totalPositiveBoundaryFluxM3PerS: Number(totalPositiveBoundaryFluxM3PerS.toExponential(12)),
+    totalNegativeBoundaryFluxM3PerS: Number(totalNegativeBoundaryFluxM3PerS.toExponential(12)),
+    netNodalFluxM3PerS: Number(netNodalFluxM3PerS.toExponential(12)),
+    massBalanceErrorRatio: round(massBalanceErrorRatio, 12),
+    maxPorePressureKpa: round(maxPorePressureKpa, 8),
+    maxEffectiveStressReductionKpa: round(maxEffectiveStressReductionKpa, 8),
+    converged: maxFreeMassResidualM3PerS <= policy.porePressureMassBalanceTolerance &&
+      massBalanceErrorRatio <= policy.porePressureMassBalanceTolerance,
+    policy,
+    limitations: [
+      'Benchmark-scale steady saturated Darcy seepage evidence kernel only.',
+      'Solves hydraulic head on the Quad4 mesh and reports pore-pressure/effective-stress reduction metadata, but it does not add pore-pressure DOFs to the mechanical stiffness matrix.',
+      'No transient 2D/3D Biot consolidation, unsaturated flow, uplift/piping design acceptance, production sparse solver, or route-backed result manifest is provided.',
+    ],
+  };
 }
 
 export function runPlaneStrainQuad4Assembly(model: FemPlaneStrainModel): FemPlaneStrainAssemblyResult {

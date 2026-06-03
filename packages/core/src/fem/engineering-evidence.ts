@@ -3,6 +3,7 @@ import {
   buildPlaneStrainRectangularMesh,
   runPlaneStrainDruckerPragerLoadSteps,
   runPlaneStrainQuad4Assembly,
+  runPlaneStrainSteadySeepage,
 } from './plane-strain-assembly.js';
 
 export type FemEngineeringKernelFeature =
@@ -1475,6 +1476,71 @@ export function runFemEngineeringEvidenceSuite(
     'Steady 1D flow must conserve inflow and outflow within the pore-pressure mass-balance policy.',
   ));
 
+  const seepage2dMesh = buildPlaneStrainRectangularMesh({
+    widthM: 20,
+    heightM: 5,
+    divisionsX: 2,
+    divisionsY: 1,
+    materialId: 'soil',
+  });
+  const seepage2d = runPlaneStrainSteadySeepage({
+    schemaVersion: 'fem-plane-strain-seepage-model.v1',
+    nodes: seepage2dMesh.nodes,
+    elements: seepage2dMesh.elements,
+    materials: [{
+      id: 'soil',
+      elasticModulusKpa: 30_000,
+      poissonRatio: 0.3,
+      hydraulicConductivityXMPerS: 1e-5,
+      hydraulicConductivityYMPerS: 5e-6,
+      biotCoefficient: 0.8,
+    }],
+    headBoundaryConditions: [
+      ...seepage2dMesh.nodes
+        .filter((node) => node.xM === 0)
+        .map((node) => ({ nodeId: node.id, headM: 10 })),
+      ...seepage2dMesh.nodes
+        .filter((node) => node.xM === 20)
+        .map((node) => ({ nodeId: node.id, headM: 6 })),
+    ],
+    policy,
+  });
+  const seepage2dExpectedFlow = 1e-5 * ((10 - 6) / 20) * 5;
+  const seepage2dFirstGauss = seepage2d.elements[0].gaussPoints[0];
+  benchmarks.push(benchmark(
+    'quad4-plane-strain-seepage-linear-head-flow',
+    'seepage-pore-pressure-coupling',
+    'closed-form',
+    'darcyFluxX',
+    seepage2dFirstGauss.darcyFluxMPerS[0],
+    2e-6,
+    1e-12,
+    'Quad4 plane-strain steady seepage must reproduce constant Darcy flux for a linear hydraulic-head patch.',
+    'm/s',
+  ));
+  benchmarks.push(benchmark(
+    'quad4-plane-strain-seepage-boundary-mass-balance',
+    'solver-convergence-and-tolerance',
+    'internal-balance',
+    'positiveBoundaryFlux',
+    seepage2d.totalPositiveBoundaryFluxM3PerS,
+    seepage2dExpectedFlow,
+    1e-12,
+    'Quad4 plane-strain seepage boundary flux must match closed-form Darcy flow and preserve mass balance.',
+    'm3/s',
+  ));
+  benchmarks.push(benchmark(
+    'quad4-plane-strain-seepage-effective-stress-reduction',
+    'seepage-pore-pressure-coupling',
+    'closed-form',
+    'effectiveStressReduction',
+    seepage2dFirstGauss.effectiveStressReductionKpa,
+    seepage2dFirstGauss.porePressureKpa * 0.8,
+    1e-8,
+    'Pore-pressure field must be converted to effective-stress reduction metadata using the Biot coefficient.',
+    'kPa',
+  ));
+
   const coupling = runHydroMechanicalCoupling1D({
     totalVerticalStressKpa: 200,
     porePressureBeforeKpa: 80,
@@ -1569,8 +1635,8 @@ export function runFemEngineeringEvidenceSuite(
     convergencePolicy: policy,
     remainingProductionBlockers: [
       'production-sparse-fem-solver-and-2d-3d-result-route-not-integrated-with-these-kernels',
-      'nonlinear-plasticity-not-coupled-to-global-newton-iterations',
-      'seepage-kernel-and-2d-3d-consolidation-not-coupled-to-global-fem-result-fields',
+      'nonlinear-plane-strain-plasticity-is-benchmark-scale-without-consistent-tangent-hardening-calibration-or-cross-solver-validation',
+      'seepage-pore-pressure-field-not-assembled-as-biots-u-p-mechanical-coupling-or-route-backed-result-manifest',
       'support-design-is-screening-level-and-not-jurisdiction-specific-structural-design',
       'published-commercial-cross-solver-benchmark-corpus-not-approved',
       'reviewer-approval-record-validator-exists-but-cli-run-does-not-enforce-persistence-for-every-run',

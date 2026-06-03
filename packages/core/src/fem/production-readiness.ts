@@ -86,7 +86,7 @@ const FEATURE_REQUIREMENTS: Record<FemProductionFeature, Omit<FemProductionFeatu
   },
   'seepage-pore-pressure-coupling': {
     status: 'kernel-verified',
-    currentCoverage: 'Deterministic 1D Darcy seepage and effective-stress coupling kernels are benchmarked against closed-form flow and settlement checks. Current preview result manifests still record groundwater as assumptions only.',
+    currentCoverage: 'Deterministic 1D Darcy seepage and effective-stress coupling kernels are benchmarked against closed-form flow and settlement checks. A benchmark-scale Quad4 plane-strain steady seepage evidence kernel now solves hydraulic head, boundary mass balance, Gauss-point pore pressure, Darcy flux, and Biot effective-stress-reduction metadata. Current preview result manifests still record groundwater as assumptions only and no mechanical stiffness matrix includes pore-pressure DOFs.',
     requiredForAcceptance: [
       'steady/transient seepage solver with hydraulic boundary conditions',
       'pore-pressure coupling into effective stress/deformation calculations',
@@ -142,7 +142,7 @@ const FEATURE_REQUIREMENTS: Record<FemProductionFeature, Omit<FemProductionFeatu
   },
   'independent-benchmark-validation': {
     status: 'preview-only',
-    currentCoverage: 'Current fixtures verify deterministic preview envelopes, monotonic trends, material-point closed forms, Quad4 linear patch/global-equilibrium fixtures, and benchmark-scale mechanical-only Drucker-Prager plane-strain evidence cases. They do not yet prove full production benchmark equivalence against published or commercial solver references.',
+    currentCoverage: 'Current fixtures verify deterministic preview envelopes, monotonic trends, material-point closed forms, Quad4 linear patch/global-equilibrium fixtures, benchmark-scale mechanical-only Drucker-Prager plane-strain evidence cases, and Quad4 steady-seepage mass-balance/effective-stress metadata. They do not yet prove full production benchmark equivalence against published or commercial solver references.',
     requiredForAcceptance: [
       'published analytical and numerical benchmark corpus by route',
       'tolerance envelopes for displacement, pore pressure, reaction, and settlement-time curves',

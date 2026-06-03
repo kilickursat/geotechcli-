@@ -5,7 +5,9 @@ import {
   assessFemProductionReadiness,
   runPlaneStrainDruckerPragerLoadSteps,
   runPlaneStrainQuad4Assembly,
+  runPlaneStrainSteadySeepage,
   type FemPlaneStrainModel,
+  type FemPlaneStrainSeepageModel,
 } from '../src/fem/index.js';
 
 function baseModel(overrides: Partial<FemPlaneStrainModel> = {}): FemPlaneStrainModel {
@@ -67,6 +69,128 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
       divisionsX: 1,
       divisionsY: Number.POSITIVE_INFINITY,
     })).toThrow(/divisionsY must be a finite positive integer/);
+  });
+
+  it('solves steady Quad4 seepage with a linear head patch and Darcy mass balance', () => {
+    const mesh = buildPlaneStrainRectangularMesh({
+      widthM: 20,
+      heightM: 5,
+      divisionsX: 2,
+      divisionsY: 1,
+      materialId: 'soil',
+    });
+    const leftNodes = mesh.nodes.filter((node) => node.xM === 0);
+    const rightNodes = mesh.nodes.filter((node) => node.xM === 20);
+    const model: FemPlaneStrainSeepageModel = {
+      schemaVersion: 'fem-plane-strain-seepage-model.v1',
+      nodes: mesh.nodes,
+      elements: mesh.elements,
+      materials: [{
+        id: 'soil',
+        elasticModulusKpa: 30_000,
+        poissonRatio: 0.3,
+        hydraulicConductivityXMPerS: 1e-5,
+        hydraulicConductivityYMPerS: 5e-6,
+        biotCoefficient: 0.8,
+      }],
+      headBoundaryConditions: [
+        ...leftNodes.map((node) => ({ nodeId: node.id, headM: 10 })),
+        ...rightNodes.map((node) => ({ nodeId: node.id, headM: 6 })),
+      ],
+    };
+
+    const result = runPlaneStrainSteadySeepage(model);
+    const expectedFlow = 1e-5 * ((10 - 6) / 20) * 5;
+    const midBottom = result.nodes.find((node) => node.id === 'n-1-0')!;
+    const maxGaussEffectiveStressReduction = Math.max(
+      ...result.elements.flatMap((element) =>
+        element.gaussPoints.map((point) => point.effectiveStressReductionKpa)),
+    );
+
+    expect(result.schemaVersion).toBe('fem-plane-strain-seepage-result.v1');
+    expect(result.method).toBe('quad4-plane-strain-steady-darcy-seepage');
+    expect(result.converged).toBe(true);
+    expect(result.freeHeadDofCount).toBe(2);
+    expect(result.constrainedHeadDofCount).toBe(4);
+    expect(result.maxFreeMassResidualM3PerS).toBeLessThanOrEqual(result.policy.porePressureMassBalanceTolerance);
+    expect(result.massBalanceErrorRatio).toBeLessThanOrEqual(result.policy.porePressureMassBalanceTolerance);
+    expect(result.totalPositiveBoundaryFluxM3PerS).toBeCloseTo(expectedFlow, 12);
+    expect(result.totalNegativeBoundaryFluxM3PerS).toBeCloseTo(expectedFlow, 12);
+    expect(midBottom.headM).toBeCloseTo(8, 10);
+    expect(midBottom.porePressureKpa).toBeCloseTo(78.48, 8);
+    expect(result.maxPorePressureKpa).toBeCloseTo(98.1, 8);
+    expect(result.maxEffectiveStressReductionKpa).toBeCloseTo(maxGaussEffectiveStressReduction, 8);
+
+    for (const element of result.elements) {
+      for (const point of element.gaussPoints) {
+        expect(point.hydraulicGradient[0]).toBeCloseTo(-0.2, 12);
+        expect(point.hydraulicGradient[1]).toBeCloseTo(0, 12);
+        expect(point.darcyFluxMPerS[0]).toBeCloseTo(2e-6, 12);
+        expect(point.darcyFluxMPerS[1]).toBeCloseTo(0, 12);
+        expect(point.effectiveStressReductionKpa).toBeCloseTo(point.porePressureKpa * 0.8, 8);
+      }
+    }
+  });
+
+  it('balances prescribed head seepage with an interior nodal source', () => {
+    const mesh = buildPlaneStrainRectangularMesh({
+      widthM: 10,
+      heightM: 4,
+      divisionsX: 2,
+      divisionsY: 1,
+      materialId: 'soil',
+    });
+    const boundaryNodes = mesh.nodes.filter((node) => node.xM === 0 || node.xM === 10);
+    const result = runPlaneStrainSteadySeepage({
+      schemaVersion: 'fem-plane-strain-seepage-model.v1',
+      nodes: mesh.nodes,
+      elements: mesh.elements,
+      materials: [{
+        id: 'soil',
+        elasticModulusKpa: 25_000,
+        poissonRatio: 0.28,
+        hydraulicConductivityXMPerS: 1e-5,
+      }],
+      headBoundaryConditions: boundaryNodes.map((node) => ({ nodeId: node.id, headM: 5 })),
+      nodalFluxes: [{ nodeId: 'n-1-0', flowM3PerSPerM: 2e-6 }],
+    });
+
+    expect(result.converged).toBe(true);
+    expect(result.netNodalFluxM3PerS).toBeCloseTo(2e-6, 12);
+    expect(result.massBalanceErrorRatio).toBeLessThanOrEqual(result.policy.porePressureMassBalanceTolerance);
+    expect(result.totalNegativeBoundaryFluxM3PerS).toBeGreaterThan(0);
+    expect(result.nodes.find((node) => node.id === 'n-1-0')?.headM).toBeGreaterThan(5);
+  });
+
+  it('rejects unsafe seepage inputs before solving', () => {
+    const mesh = buildPlaneStrainRectangularMesh({
+      widthM: 1,
+      heightM: 1,
+      divisionsX: 1,
+      divisionsY: 1,
+      materialId: 'soil',
+    });
+
+    expect(() => runPlaneStrainSteadySeepage({
+      schemaVersion: 'fem-plane-strain-seepage-model.v1',
+      nodes: mesh.nodes,
+      elements: mesh.elements,
+      materials: [{ id: 'soil', elasticModulusKpa: 30_000, poissonRatio: 0.3 }],
+      headBoundaryConditions: [{ nodeId: 'n-0-0', headM: 1 }],
+    })).toThrow(/hydraulicConductivityXMPerS is required/);
+
+    expect(() => runPlaneStrainSteadySeepage({
+      schemaVersion: 'fem-plane-strain-seepage-model.v1',
+      nodes: mesh.nodes,
+      elements: mesh.elements,
+      materials: [{
+        id: 'soil',
+        elasticModulusKpa: 30_000,
+        poissonRatio: 0.3,
+        hydraulicConductivityXMPerS: 1e-5,
+      }],
+      headBoundaryConditions: [{ nodeId: 'n-0-0', headM: 1 }],
+    })).toThrow(/at least two hydraulic head boundary conditions/);
   });
 
   it('reproduces a prescribed affine displacement patch at every Gauss point', () => {

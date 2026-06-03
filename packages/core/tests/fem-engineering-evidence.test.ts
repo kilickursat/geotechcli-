@@ -270,6 +270,9 @@ describe('FEM engineering evidence kernels', () => {
       'quad4-plane-strain-dp-global-newton-residual',
       'quad4-plane-strain-dp-stage-state-carryover',
       'quad4-plane-strain-dp-collapse-detection',
+      'quad4-plane-strain-seepage-linear-head-flow',
+      'quad4-plane-strain-seepage-boundary-mass-balance',
+      'quad4-plane-strain-seepage-effective-stress-reduction',
     ]));
     expect(report.verifiedFeatures).toEqual(expect.arrayContaining([
       'global-plane-strain-assembly',

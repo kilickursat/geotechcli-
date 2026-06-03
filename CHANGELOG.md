@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.100] - 2026-06-03
+
+### FEM Quad4 Seepage Evidence
+
+- Added a benchmark-scale Quad4 plane-strain steady Darcy seepage evidence kernel that solves hydraulic head on the mesh, reports boundary mass-balance residuals, Darcy flux, Gauss-point pore pressure, and Biot effective-stress-reduction metadata.
+- Extended FEM engineering evidence with 2D linear-head flow, boundary mass-balance, and effective-stress-reduction benchmarks, and exposed the new seepage kernel/types through the core FEM exports.
+- Updated production-readiness and mocked default hosted GLM tests so agents can see the stronger seepage/pore-pressure evidence while full production FEM remains blocked until route-backed result manifests, Biot u-p mechanical coupling, sparse production solvers, external benchmarks, support design, and enforced approvals are complete.
+
 ## [0.4.99] - 2026-06-03
 
 ### FEM Nonlinear Plane-Strain Evidence
