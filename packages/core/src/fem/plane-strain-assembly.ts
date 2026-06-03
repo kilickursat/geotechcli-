@@ -106,6 +106,8 @@ export interface FemPlaneStrainDruckerPragerGaussPointResult extends FemPlaneStr
   equivalentPlasticStrainIncrement: number;
   plasticStrainPrincipal: [number, number, number];
   volumetricPlasticStrain: number;
+  compressionInterceptKpa: number;
+  hardeningStressKpa: number;
   yieldValueKpa: number;
   yieldResidualRatio: number;
   plasticMultiplier: number;
@@ -856,6 +858,8 @@ function integrateDruckerPragerStress(input: {
         equivalentPlasticStrainIncrement: 0,
         plasticStrainPrincipal: nextState.plasticStrainPrincipal,
         volumetricPlasticStrain: nextState.volumetricPlasticStrain,
+        compressionInterceptKpa: intercept,
+        hardeningStressKpa: intercept - params.compressionInterceptKpa,
         yieldValueKpa: yieldValue,
         yieldResidualRatio: Math.max(0, yieldValue) / yieldScale,
         plasticMultiplier: 0,
@@ -915,6 +919,8 @@ function integrateDruckerPragerStress(input: {
       equivalentPlasticStrainIncrement: plasticMultiplier,
       plasticStrainPrincipal,
       volumetricPlasticStrain,
+      compressionInterceptKpa: updatedIntercept,
+      hardeningStressKpa: updatedIntercept - params.compressionInterceptKpa,
       yieldValueKpa: correctedYieldValue,
       yieldResidualRatio: Math.abs(correctedYieldValue) / correctedScale,
       plasticMultiplier,
@@ -2674,6 +2680,8 @@ function evaluatePlaneStrainDruckerPragerState(input: {
           round(projected.plasticStrainPrincipal[2], 12),
         ] as [number, number, number],
         volumetricPlasticStrain: round(projected.volumetricPlasticStrain, 12),
+        compressionInterceptKpa: round(projected.compressionInterceptKpa, 8),
+        hardeningStressKpa: round(projected.hardeningStressKpa, 8),
         yieldValueKpa: round(projected.yieldValueKpa, 10),
         yieldResidualRatio: round(projected.yieldResidualRatio, 12),
         plasticMultiplier: round(projected.plasticMultiplier, 12),

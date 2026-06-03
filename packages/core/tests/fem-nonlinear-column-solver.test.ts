@@ -15,6 +15,7 @@ function buildColumnCase(overrides: {
   elasticModulusKpa?: number;
   frictionAngleDeg?: number;
   cohesionKpa?: number;
+  hardeningModulusKpa?: number;
   cv?: number;
 } = {}): FemAnalysisCase {
   const caseFile = buildStagedSettlementConsolidationDemoAnalysisCase();
@@ -42,6 +43,7 @@ function buildColumnCase(overrides: {
         constrainedModulusKpa: overrides.constrainedModulusKpa ?? caseFile.materials[0].constrainedModulusKpa,
         frictionAngleDeg: overrides.frictionAngleDeg ?? caseFile.materials[0].frictionAngleDeg,
         cohesionKpa: overrides.cohesionKpa ?? caseFile.materials[0].cohesionKpa,
+        hardeningModulusKpa: overrides.hardeningModulusKpa ?? caseFile.materials[0].hardeningModulusKpa,
         coefficientOfConsolidationM2PerYear: overrides.cv ?? caseFile.materials[0].coefficientOfConsolidationM2PerYear,
       },
     ],
@@ -127,6 +129,35 @@ describe('FEM nonlinear consolidation column solver', () => {
     expect(staged.envelope.nonlinearPlasticStrain).toBeGreaterThan(0);
     expect(staged.envelope.plasticSettlementMm).toBeGreaterThan(0);
     expect(staged.envelope.maxMobilizedStrengthRatio).toBeCloseTo(1, 6);
+  });
+
+  it('uses reviewed isotropic hardening in nonlinear column equilibrium', () => {
+    const perfectPlastic = runBuiltinNonlinearConsolidationColumnSolver(buildColumnCase({
+      stageLoadsKpa: [50, 75, 100],
+      stageDurationsYears: [1, 1, 1],
+      constrainedModulusKpa: 8_000,
+      elasticModulusKpa: 20_000,
+      frictionAngleDeg: 16,
+      cohesionKpa: 0,
+    }));
+    const hardening = runBuiltinNonlinearConsolidationColumnSolver(buildColumnCase({
+      stageLoadsKpa: [50, 75, 100],
+      stageDurationsYears: [1, 1, 1],
+      constrainedModulusKpa: 8_000,
+      elasticModulusKpa: 20_000,
+      frictionAngleDeg: 16,
+      cohesionKpa: 0,
+      hardeningModulusKpa: 5_000,
+    }));
+
+    expect(hardening.solverConvergence?.status).toBe('converged');
+    expect(hardening.envelope.nonlinearPlasticStrain).toBeGreaterThan(0);
+    expect(hardening.envelope.nonlinearPlasticStrain)
+      .toBeLessThan(perfectPlastic.envelope.nonlinearPlasticStrain!);
+    expect(hardening.envelope.plasticSettlementMm)
+      .toBeLessThan(perfectPlastic.envelope.plasticSettlementMm!);
+    expect(hardening.envelope.finalSettlementMm)
+      .toBeLessThan(perfectPlastic.envelope.finalSettlementMm!);
   });
 
   it('fails closed with residual history when the nonlinear load solve does not converge', () => {

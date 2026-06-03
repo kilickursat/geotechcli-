@@ -401,6 +401,7 @@ describe('AI fallback behavior', () => {
         'quad4-plane-strain-biot-u-p-effective-stress-coupling',
         'quad4-plane-strain-biot-u-p-free-residual',
         'quad4-plane-strain-biot-u-p-mass-residual',
+        'quad4-plane-strain-dp-isotropic-hardening-response',
         'quad4-plane-strain-biot-u-p-load-generated-pressure-acceptance',
         'quad4-plane-strain-biot-u-p-pressure-gradient-flux-contract',
         'quad4-plane-strain-biot-u-p-alpha-zero-decoupling',
@@ -423,6 +424,8 @@ describe('AI fallback behavior', () => {
       .toContain('quad4-plane-strain-biot-u-p-free-residual');
     expect(readinessData.agentEvidenceSummary)
       .toContain('quad4-plane-strain-biot-u-p-mass-residual');
+    expect(readinessData.agentEvidenceSummary)
+      .toContain('quad4-plane-strain-dp-isotropic-hardening-response');
     expect(readinessData.agentEvidenceSummary)
       .toContain('quad4-plane-strain-biot-u-p-load-generated-pressure-acceptance');
     expect(readinessData.agentEvidenceSummary)
@@ -452,6 +455,7 @@ describe('AI fallback behavior', () => {
     expect(secondPrompt).toContain('quad4-plane-strain-biot-u-p-effective-stress-coupling');
     expect(secondPrompt).toContain('quad4-plane-strain-biot-u-p-free-residual');
     expect(secondPrompt).toContain('quad4-plane-strain-biot-u-p-mass-residual');
+    expect(secondPrompt).toContain('quad4-plane-strain-dp-isotropic-hardening-response');
     expect(secondPrompt).toContain('quad4-plane-strain-biot-u-p-load-generated-pressure-acceptance');
     expect(secondPrompt).toContain('quad4-plane-strain-biot-u-p-pressure-gradient-flux-contract');
     expect(secondPrompt).toContain('quad4-plane-strain-biot-u-p-alpha-zero-decoupling');

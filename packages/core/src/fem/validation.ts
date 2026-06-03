@@ -1033,6 +1033,9 @@ export function validateFemAnalysisCase(caseFile: FemAnalysisCase): FemValidatio
       if (!Number.isFinite(material.unitWeightKnM3) || material.unitWeightKnM3 <= 0) {
         findings.push(finding('blocker', `${prefix}.unit-weight-invalid`, 'Unit weight must be positive.'));
       }
+      if (material.hardeningModulusKpa != null) {
+        pushFiniteNumberFinding(findings, material.hardeningModulusKpa, `${prefix}.hardening-modulus`, 'Hardening modulus', { nonNegative: true });
+      }
       if (caseFile.objective === 'staged_settlement_consolidation') {
         if (material.model !== 'mohr_coulomb') {
           findings.push(finding('blocker', `${prefix}.consolidation-model-required`, 'Staged consolidation preview requires a mohr_coulomb material with consolidation parameters.'));

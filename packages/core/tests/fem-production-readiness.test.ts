@@ -79,6 +79,7 @@ describe('FEM production readiness contract', () => {
       'quad4-plane-strain-biot-u-p-load-generated-pressure-acceptance',
       'quad4-plane-strain-biot-u-p-alpha-zero-decoupling',
       'quad4-plane-strain-biot-u-p-terzaghi-pressure-dissipation',
+      'quad4-plane-strain-dp-isotropic-hardening-response',
       'quad4-plane-strain-dp-adaptive-cutback-rollback-recovery',
       'quad4-plane-strain-dp-sequential-biot-pressure-replay-audit',
       'excavation-support-staged-reaction-sequence',
@@ -140,6 +141,8 @@ describe('FEM production readiness contract', () => {
       ]),
     });
     expect(nonlinear?.currentCoverage).toContain('not a production sparse solver route');
+    expect(nonlinear?.currentCoverage).toContain('isotropic hardening');
+    expect(nonlinear?.currentCoverage).toContain('calibrated hardening soil/MCC model');
     expect(stagedConstruction).toMatchObject({
       status: 'preview-only',
       currentCoverage: expect.stringContaining('committed material-state carryover through load histories'),
@@ -154,6 +157,7 @@ describe('FEM production readiness contract', () => {
     expect(report.engineeringEvidence.benchmarks.map((item) => item.id)).toEqual(expect.arrayContaining([
       'quad4-plane-strain-dp-affine-plastic-patch',
       'quad4-plane-strain-dp-stage-state-carryover',
+      'quad4-plane-strain-dp-isotropic-hardening-response',
       'quad4-plane-strain-dp-adaptive-cutback-rollback-recovery',
     ]));
     expect(report.blockers).toEqual(expect.arrayContaining([
@@ -190,6 +194,7 @@ describe('FEM production readiness contract', () => {
     expect(data.agentEvidenceSummary).toContain('quad4-plane-strain-biot-u-p-load-generated-pressure-acceptance');
     expect(data.agentEvidenceSummary).toContain('quad4-plane-strain-biot-u-p-alpha-zero-decoupling');
     expect(data.agentEvidenceSummary).toContain('quad4-plane-strain-biot-u-p-terzaghi-pressure-dissipation');
+    expect(data.agentEvidenceSummary).toContain('quad4-plane-strain-dp-isotropic-hardening-response');
     expect(data.agentEvidenceSummary).toContain('quad4-plane-strain-dp-adaptive-cutback-rollback-recovery');
     expect(data.agentEvidenceSummary).toContain('quad4-plane-strain-dp-sequential-biot-pressure-replay-audit');
     expect(data.agentEvidenceSummary).toContain('external benchmark references:');

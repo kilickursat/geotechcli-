@@ -125,6 +125,7 @@ function buildMaterialPoint(
     frictionAngleDeg: material.frictionAngleDeg ?? 30,
     cohesionKpa: material.cohesionKpa ?? 0,
     dilationAngleDeg: 0,
+    hardeningModulusKpa: material.hardeningModulusKpa,
     policy,
   });
 }

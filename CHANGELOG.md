@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.118] - 2026-06-04
+
+### Ingest Wait Resilience and FEM Hardening Evidence
+
+- Hardened persisted ingest job waiting so transient partial `job.json` reads during checkpoint-heavy large-PDF runs are retried below the CLI live-progress wrapper instead of surfacing a raw `Unterminated string in JSON` parser error.
+- Added bounded persisted-read failure guidance that keeps foreground and `geotech ingest wait` jobs resumable with `geotech ingest wait <jobId>` / `geotech ingest resume <jobId>` instructions if job state remains unreadable.
+- Added isotropic hardening metadata to the benchmark-scale Drucker-Prager material point, nonlinear column, and plane-strain evidence paths, including draft preservation, validation, engineering-evidence benchmarks, and default hosted GLM readiness prompts while keeping full production FEM blocked.
+
 ## [0.4.117] - 2026-06-04
 
 ### Ingest Progress Sidecar and Biot Load-Generated Pressure Evidence

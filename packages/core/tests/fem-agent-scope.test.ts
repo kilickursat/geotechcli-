@@ -137,6 +137,7 @@ describe('FEM scoped agent', () => {
         'quad4-plane-strain-biot-u-p-pressure-gradient-flux-contract',
         'quad4-plane-strain-biot-u-p-alpha-zero-decoupling',
         'quad4-plane-strain-biot-u-p-terzaghi-pressure-dissipation',
+        'quad4-plane-strain-dp-isotropic-hardening-response',
       ]));
     expect(readinessData.blockers).toEqual(expect.arrayContaining([
       'biot-u-p-route-backed-preview-is-not-production-sparse-solver',
@@ -151,6 +152,8 @@ describe('FEM scoped agent', () => {
       .toContain('quad4-plane-strain-biot-u-p-alpha-zero-decoupling');
     expect(readinessData.agentEvidenceSummary)
       .toContain('quad4-plane-strain-biot-u-p-terzaghi-pressure-dissipation');
+    expect(readinessData.agentEvidenceSummary)
+      .toContain('quad4-plane-strain-dp-isotropic-hardening-response');
 
     const followupMessages = mockedGenerateChat.mock.calls[2]?.[0] ?? [];
     const followupConfig = mockedGenerateChat.mock.calls[2]?.[1];
@@ -164,6 +167,7 @@ describe('FEM scoped agent', () => {
     expect(followupPrompt).toContain('quad4-plane-strain-biot-u-p-pressure-gradient-flux-contract');
     expect(followupPrompt).toContain('quad4-plane-strain-biot-u-p-alpha-zero-decoupling');
     expect(followupPrompt).toContain('quad4-plane-strain-biot-u-p-terzaghi-pressure-dissipation');
+    expect(followupPrompt).toContain('quad4-plane-strain-dp-isotropic-hardening-response');
 
     const answer = session.steps.find((step) => step.type === 'answer')?.content;
     expect(answer).toContain('Production-grade FEM is blocked');

@@ -54,6 +54,7 @@ export interface FemMaterial {
   constrainedModulusKpa?: number;
   frictionAngleDeg?: number;
   cohesionKpa?: number;
+  hardeningModulusKpa?: number;
   coefficientOfConsolidationM2PerYear?: number;
   hydraulicConductivityMPerS?: number;
   hydraulicConductivityXMPerS?: number;

@@ -1466,6 +1466,33 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
       .toBeCloseTo(unloadReload.maxEquivalentPlasticStrain, 12);
   });
 
+  it('carries isotropic hardening through plane-strain Drucker-Prager Gauss-point state', () => {
+    const { model, topNodeIds } = druckerPragerSettlementPatch();
+    const perfectPlastic = runPlaneStrainDruckerPragerLoadSteps(model, {
+      loadStepFractions: [0.25, 0.5, 0.75, 1],
+    });
+    const hardening = runPlaneStrainDruckerPragerLoadSteps({
+      ...model,
+      materials: model.materials.map((material) => ({
+        ...material,
+        hardeningModulusKpa: 5_000,
+      })),
+    }, {
+      loadStepFractions: [0.25, 0.5, 0.75, 1],
+    });
+    const hardeningGaussPoints = hardening.elements.flatMap((element) => element.gaussPoints);
+
+    expect(perfectPlastic.converged).toBe(true);
+    expect(hardening.converged).toBe(true);
+    expect(hardening.maxYieldResidualRatio).toBeLessThanOrEqual(hardening.policy.residualTolerance);
+    expect(Math.max(...hardeningGaussPoints.map((point) => point.hardeningStressKpa))).toBeGreaterThan(0);
+    expect(hardeningGaussPoints.some((point) =>
+      point.compressionInterceptKpa > point.compressionInterceptKpa - point.hardeningStressKpa)).toBe(true);
+    expect(hardening.maxEquivalentPlasticStrain).toBeLessThan(perfectPlastic.maxEquivalentPlasticStrain);
+    expect(maxTopSettlementMagnitude(hardening, topNodeIds))
+      .toBeLessThan(maxTopSettlementMagnitude(perfectPlastic, topNodeIds));
+  });
+
   it('fails closed when nonlinear plane-strain load steps exceed the iteration budget', () => {
     const mesh = buildPlaneStrainRectangularMesh({
       widthM: 2,

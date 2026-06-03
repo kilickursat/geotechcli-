@@ -105,6 +105,7 @@ export interface PrepareFemAnalysisCaseDraftInput {
     constrainedModulusKpa?: number;
     frictionAngleDeg?: number;
     cohesionKpa?: number;
+    hardeningModulusKpa?: number;
     coefficientOfConsolidationM2PerYear?: number;
     hydraulicConductivityMPerS?: number;
     hydraulicConductivityXMPerS?: number;
@@ -716,6 +717,13 @@ export function prepareFemAnalysisCaseDraft(input: PrepareFemAnalysisCaseDraftIn
     if (typeof input.material?.cohesionKpa === 'number' && Number.isFinite(input.material.cohesionKpa) && input.material.cohesionKpa >= 0) {
       material.cohesionKpa = input.material.cohesionKpa;
     }
+    if (
+      typeof input.material?.hardeningModulusKpa === 'number' &&
+      Number.isFinite(input.material.hardeningModulusKpa) &&
+      input.material.hardeningModulusKpa >= 0
+    ) {
+      material.hardeningModulusKpa = input.material.hardeningModulusKpa;
+    }
     if (finitePositive(input.material?.coefficientOfConsolidationM2PerYear)) {
       material.coefficientOfConsolidationM2PerYear = input.material.coefficientOfConsolidationM2PerYear;
     }
@@ -940,6 +948,17 @@ export function prepareFemAnalysisCaseDraft(input: PrepareFemAnalysisCaseDraftIn
     if (finitePositive(input.material?.elasticModulusKpa)) analysisCase.materials[0].elasticModulusKpa = input.material.elasticModulusKpa;
     if (typeof input.material?.poissonRatio === 'number') analysisCase.materials[0].poissonRatio = input.material.poissonRatio;
     if (finitePositive(input.material?.unitWeightKnM3)) analysisCase.materials[0].unitWeightKnM3 = input.material.unitWeightKnM3;
+    if (typeof input.material?.frictionAngleDeg === 'number') analysisCase.materials[0].frictionAngleDeg = input.material.frictionAngleDeg;
+    if (typeof input.material?.cohesionKpa === 'number' && Number.isFinite(input.material.cohesionKpa) && input.material.cohesionKpa >= 0) {
+      analysisCase.materials[0].cohesionKpa = input.material.cohesionKpa;
+    }
+    if (
+      typeof input.material?.hardeningModulusKpa === 'number' &&
+      Number.isFinite(input.material.hardeningModulusKpa) &&
+      input.material.hardeningModulusKpa >= 0
+    ) {
+      analysisCase.materials[0].hardeningModulusKpa = input.material.hardeningModulusKpa;
+    }
     if (input.groundwater?.condition) {
       analysisCase.groundwater.condition = input.groundwater.condition;
     }

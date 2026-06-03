@@ -127,6 +127,7 @@ const PAGE_PREPROCESSING_CONCURRENCY = 2;
 const STALE_HEARTBEAT_FLOOR_MS = 10 * 60 * 1000;
 const ATOMIC_WRITE_RETRY_DELAYS_MS = [10, 25, 50, 100, 200, 400];
 const TRANSIENT_JSON_READ_RETRY_DELAYS_MS = [10, 25, 50, 100, 200, 400, 800, 1200];
+const WAIT_TRANSIENT_JSON_READ_ERROR_LIMIT = 60;
 
 function nowIso(now?: () => Date): string {
   return (now ?? (() => new Date()))().toISOString();
@@ -231,6 +232,19 @@ function readJobJsonWithTransientRetry(jobId: string, filePath: string, fileLabe
   }
 
   throw new Error(`Persisted ingest job "${jobId}" could not be read after retrying transient reads.`);
+}
+
+function isTransientPersistedIngestJobReadError(error: unknown): boolean {
+  if (error instanceof SyntaxError) {
+    return true;
+  }
+
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return /(?:unterminated string in json|unexpected end of json|unexpected token .* in json|(?:job|progress)\.json is not valid json|partial checkpoint write)/i
+    .test(error.message);
 }
 
 function buildPersistedIngestJobProgressSnapshot(record: PersistedIngestJobRecord): PersistedIngestJobProgressSnapshot {
@@ -1336,9 +1350,36 @@ export async function waitForPersistedIngestJob(
   const pollMs = Math.max(250, options?.pollMs ?? 1000);
   const timeoutMs = Math.max(0, options?.timeoutMs ?? 0);
   const start = Date.now();
+  let transientReadErrors = 0;
 
   while (true) {
-    const record = loadPersistedIngestJob(jobId);
+    let record: PersistedIngestJobRecord | null;
+    try {
+      record = loadPersistedIngestJob(jobId);
+    } catch (error) {
+      if (!isTransientPersistedIngestJobReadError(error)) {
+        throw error;
+      }
+
+      transientReadErrors += 1;
+      if (transientReadErrors > WAIT_TRANSIENT_JSON_READ_ERROR_LIMIT) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(
+          `Persisted ingest job "${jobId}" could not be read consistently while waiting. `
+          + `The background worker may still be running; retry "geotech ingest wait ${jobId}" or run "geotech ingest resume ${jobId}". `
+          + `Last read error: ${message}`,
+        );
+      }
+
+      if (timeoutMs > 0 && Date.now() - start > timeoutMs) {
+        throw new Error(`Timed out while waiting for persisted ingest job "${jobId}".`);
+      }
+
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, pollMs));
+      continue;
+    }
+    transientReadErrors = 0;
+
     if (!record) {
       throw new Error(`No persisted ingest job named "${jobId}" was found.`);
     }

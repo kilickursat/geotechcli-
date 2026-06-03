@@ -111,6 +111,16 @@ describe('FEM engineering evidence kernels', () => {
       cohesionKpa: 0,
       dilationAngleDeg: 0,
     });
+    const hardening = runDruckerPragerMaterialPoint({
+      initialPrincipalEffectiveStressKpa: [100, 100, 100],
+      principalStrainIncrements: Array.from({ length: 16 }, () => [0.001, -0.0002, -0.0002] as [number, number, number]),
+      elasticModulusKpa: 30_000,
+      poissonRatio: 0.3,
+      frictionAngleDeg: 30,
+      cohesionKpa: 0,
+      dilationAngleDeg: 0,
+      hardeningModulusKpa: 5_000,
+    });
 
     expect(elastic.schemaVersion).toBe('fem-drucker-prager-material-point.v1');
     expect(elastic.finalStep.state).toBe('elastic');
@@ -127,6 +137,16 @@ describe('FEM engineering evidence kernels', () => {
     expect(plastic.finalStep.principalEffectiveStressKpa[0])
       .toBeGreaterThan(plastic.finalStep.principalEffectiveStressKpa[1]);
     expect(plastic.converged).toBe(true);
+
+    expect(hardening.finalStep.state).toBe('plastic');
+    expect(hardening.finalStep.hardeningStressKpa).toBeGreaterThan(0);
+    expect(hardening.finalStep.compressionInterceptKpa)
+      .toBeGreaterThan(hardening.mapping.compressionInterceptKpa);
+    expect(hardening.finalStep.equivalentPlasticStrain)
+      .toBeLessThan(plastic.finalStep.equivalentPlasticStrain);
+    expect(hardening.finalStep.deviatoricStressNormKpa)
+      .toBeGreaterThan(plastic.finalStep.deviatoricStressNormKpa);
+    expect(hardening.converged).toBe(true);
   });
 
   it('steps 1D Terzaghi consolidation against the analytical average-consolidation series', () => {
@@ -883,6 +903,16 @@ describe('FEM engineering evidence kernels', () => {
       status: 'accepted',
       evidence: expect.stringContaining('monotonic plastic-strain evidence'),
     });
+    expect(benchmarks.get('quad4-plane-strain-dp-isotropic-hardening-response')).toMatchObject({
+      feature: 'coupled-nonlinear-plane-strain',
+      referenceType: 'internal-balance',
+      quantity: 'hardeningResponseAccepted',
+      actual: 1,
+      expected: 1,
+      tolerance: 0,
+      status: 'accepted',
+      evidence: expect.stringContaining('isotropic hardening state'),
+    });
     expect(benchmarks.get('quad4-plane-strain-dp-adaptive-cutback-rollback-recovery')).toMatchObject({
       feature: 'solver-convergence-and-tolerance',
       referenceType: 'internal-balance',
@@ -982,6 +1012,7 @@ describe('FEM engineering evidence kernels', () => {
       'quad4-plane-strain-dp-affine-plastic-patch',
       'quad4-plane-strain-dp-global-newton-residual',
       'quad4-plane-strain-dp-stage-state-carryover',
+      'quad4-plane-strain-dp-isotropic-hardening-response',
       'quad4-plane-strain-dp-collapse-detection',
       'quad4-plane-strain-dp-adaptive-cutback-rollback-recovery',
       'quad4-plane-strain-seepage-linear-head-flow',

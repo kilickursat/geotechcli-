@@ -369,6 +369,74 @@ describe('persisted ingest jobs', () => {
     );
   });
 
+  it('keeps waiting through transient partial job JSON reads', async () => {
+    const filePath = join(configDir, 'transient-job-json-source.pdf');
+    await writeBlankPdf(filePath, 1);
+
+    const job = createPersistedIngestJob({
+      documentType: 'borehole-log',
+      filePath,
+      inspection: makeInspection(1),
+      config: makeConfig(),
+    });
+    const completed = {
+      ...job,
+      status: 'completed' as const,
+      updatedAt: '2026-06-03T05:50:00.000Z',
+      completedAt: '2026-06-03T05:50:00.000Z',
+      result: {
+        ingestResult: {
+          kind: 'geotech-ingest-result',
+          documentType: 'borehole-log',
+          source: {
+            filePath,
+            fileName: basename(filePath),
+            inputKind: 'pdf' as const,
+            totalPages: 1,
+            successfulPages: 1,
+            failedPages: 0,
+          },
+          boreholes: [makeBoreholeInterpretation(1, 1)],
+          pageAudits: [],
+          pageFailures: [],
+          warnings: [],
+          reviewFindings: [],
+          reviewRequired: false,
+          canAutoProceed: true,
+          confidence: 85,
+        },
+      },
+      checkpoints: {
+        pages: job.checkpoints.pages.map((page) => ({
+          ...page,
+          status: 'completed' as const,
+          attempts: 1,
+          updatedAt: '2026-06-03T05:50:00.000Z',
+          completedAt: '2026-06-03T05:50:00.000Z',
+        })),
+      },
+    };
+
+    writeFileSync(
+      persistedJobJsonPath(configDir, job.jobId),
+      '{"kind":"geotech-ingest-job-record","schemaVersion":1,"jobId":"',
+      'utf-8',
+    );
+
+    const repairTimer = setTimeout(() => {
+      savePersistedIngestJob(completed);
+    }, 0);
+
+    try {
+      const waited = await waitForPersistedIngestJob(job.jobId, { pollMs: 250, timeoutMs: 8000 });
+
+      expect(waited.status).toBe('completed');
+      expect(waited.result?.ingestResult.source.successfulPages).toBe(1);
+    } finally {
+      clearTimeout(repairTimer);
+    }
+  });
+
   it('builds hosted-beta segments from effective page cost and detects long geotech PDFs', () => {
     const inspection = makeInspection(31, () => 'image-only');
 

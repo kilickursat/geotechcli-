@@ -122,6 +122,8 @@ export interface FemDruckerPragerStressStep {
   principalEffectiveStressKpa: FemPrincipalVector;
   meanEffectiveStressKpa: number;
   deviatoricStressNormKpa: number;
+  compressionInterceptKpa: number;
+  hardeningStressKpa: number;
   yieldValueKpa: number;
   yieldResidualRatio: number;
   plasticMultiplier: number;
@@ -1681,6 +1683,8 @@ export function runDruckerPragerMaterialPoint(
       principalEffectiveStressKpa: roundPrincipal(stress, 6),
       meanEffectiveStressKpa: round(tracePrincipal(stress) / 3, 6),
       deviatoricStressNormKpa: round(principalNorm(deviatorPrincipal(stress)), 6),
+      compressionInterceptKpa: round(updatedIntercept, 8),
+      hardeningStressKpa: round(updatedIntercept - mapping.compressionInterceptKpa, 8),
       yieldValueKpa: round(yieldValue, 10),
       yieldResidualRatio: round(yieldResidualRatio, 12),
       plasticMultiplier: round(plasticMultiplier, 12),
@@ -2539,6 +2543,34 @@ export function runFemEngineeringEvidenceSuite(
   const plasticStrainMonotonic = dpLoaded.loadSteps.every((step, index, steps) =>
     index === 0 || step.maxEquivalentPlasticStrain >= steps[index - 1].maxEquivalentPlasticStrain,
   );
+  const dpLoadedHardening = runPlaneStrainDruckerPragerLoadSteps({
+    schemaVersion: 'fem-plane-strain-model.v1',
+    nodes: dpElasticMesh.nodes,
+    elements: dpElasticMesh.elements,
+    materials: [{
+      id: 'soil',
+      elasticModulusKpa: 25_000,
+      poissonRatio: 0.28,
+      frictionAngleDeg: 32,
+      cohesionKpa: 5,
+      dilationAngleDeg: 0,
+      hardeningModulusKpa: 5_000,
+    }],
+    boundaryConditions: dpElasticBottomNodes.flatMap((node) => [
+      { nodeId: node.id, dof: 'ux' as const },
+      { nodeId: node.id, dof: 'uy' as const },
+    ]),
+    nodalLoads: dpElasticTopNodes.map((node) => ({ nodeId: node.id, fyKn: -30 })),
+    policy,
+  }, {
+    loadStepFractions: [0.25, 0.5, 0.75, 1],
+  });
+  const maxHardeningStressKpa = Math.max(
+    ...dpLoadedHardening.elements.flatMap((element) =>
+      element.gaussPoints.map((point) => point.hardeningStressKpa)),
+  );
+  const perfectPlasticSettlementM = Math.max(...dpLoaded.nodes.map((node) => Math.max(0, -node.uyM)));
+  const hardeningSettlementM = Math.max(...dpLoadedHardening.nodes.map((node) => Math.max(0, -node.uyM)));
   const dpUnloadReload = runPlaneStrainDruckerPragerLoadSteps({
     schemaVersion: 'fem-plane-strain-model.v1',
     nodes: dpElasticMesh.nodes,
@@ -2585,6 +2617,21 @@ export function runFemEngineeringEvidenceSuite(
     1,
     0,
     'Staged nonlinear plane-strain load steps must retain monotonic plastic-strain evidence and committed plastic-state carryover through unload/reload histories.',
+  ));
+  benchmarks.push(benchmark(
+    'quad4-plane-strain-dp-isotropic-hardening-response',
+    'coupled-nonlinear-plane-strain',
+    'internal-balance',
+    'hardeningResponseAccepted',
+    dpLoadedHardening.converged &&
+      maxHardeningStressKpa > 0 &&
+      dpLoadedHardening.maxEquivalentPlasticStrain < dpLoaded.maxEquivalentPlasticStrain &&
+      hardeningSettlementM < perfectPlasticSettlementM
+      ? 1
+      : 0,
+    1,
+    0,
+    'Plane-strain Drucker-Prager evidence must carry isotropic hardening state at Gauss points and show lower plastic strain/settlement than the perfect-plastic fixture.',
   ));
 
   const dpCollapse = runPlaneStrainDruckerPragerLoadSteps({

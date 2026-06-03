@@ -8,6 +8,16 @@ const releases = [
     date: '2026-06-04',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'fix', text: 'Hardened persisted ingest job waiting so transient partial job.json reads during checkpoint-heavy large-PDF runs are retried below the CLI live-progress wrapper' },
+      { type: 'fix', text: 'Added bounded persisted-read failure guidance with geotech ingest wait/resume instructions instead of surfacing raw JSON parser errors' },
+      { type: 'feat', text: 'Added isotropic hardening metadata to Drucker-Prager material-point, nonlinear-column, and plane-strain FEM evidence paths while full production FEM remains blocked' },
+    ],
+  },
+  {
+    version: '0.4.117',
+    date: '2026-06-04',
+    tag: '0.4.117 Release',
+    changes: [
       { type: 'fix', text: 'Added compact persisted ingest progress snapshots so large-PDF foreground polling can survive transient full job.json reads during checkpoint-heavy runs' },
       { type: 'feat', text: 'Added an explicit load-generated-positive-pressure Biot envelope mode for mechanically loaded consolidation evidence while preserving the default pressure-envelope guard' },
       { type: 'feat', text: 'Registered the load-generated Biot pressure acceptance benchmark in FEM evidence and default hosted GLM readiness prompts while full production FEM remains blocked' },

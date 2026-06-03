@@ -151,6 +151,9 @@ describe('FEM routing contract', () => {
         elasticModulusKpa: 36_000,
         poissonRatio: 0.31,
         unitWeightKnM3: 18.8,
+        frictionAngleDeg: 31,
+        cohesionKpa: 8,
+        hardeningModulusKpa: 4_500,
       },
       evidenceRefs: [{ id: 'ev-ex-1', source: 'GroundModel', page: 18 }],
     });
@@ -162,6 +165,9 @@ describe('FEM routing contract', () => {
     expect(draft.analysisCase?.objective).toBe('excavation_deformation');
     expect(draft.analysisCase?.geometry.excavation?.finalDepthM).toBe(9);
     expect(draft.analysisCase?.loads[0]?.target).toBe('excavation_surcharge');
+    expect(draft.analysisCase?.materials[0]?.frictionAngleDeg).toBe(31);
+    expect(draft.analysisCase?.materials[0]?.cohesionKpa).toBe(8);
+    expect(draft.analysisCase?.materials[0]?.hardeningModulusKpa).toBe(4_500);
     expect(draft.validation?.status).toBe('review');
     expect(draft.reviewGates).toContain('not-design-calculation');
     expect(draft.reviewGates).toContain('support-reaction-screening-only');
@@ -377,6 +383,7 @@ describe('FEM routing contract', () => {
         constrainedModulusKpa: 8_000,
         frictionAngleDeg: 28,
         cohesionKpa: 12,
+        hardeningModulusKpa: 4_500,
         coefficientOfConsolidationM2PerYear: 0.8,
         hydraulicConductivityMPerS: 1e-9,
       },
@@ -391,6 +398,7 @@ describe('FEM routing contract', () => {
     expect(draft.analysisCase?.analysisType).toBe('time_dependent_1d_consolidation');
     expect(draft.analysisCase?.geometry.consolidation?.stages).toHaveLength(3);
     expect(draft.analysisCase?.materials[0]?.model).toBe('mohr_coulomb');
+    expect(draft.analysisCase?.materials[0]?.hardeningModulusKpa).toBe(4_500);
     expect(draft.analysisCase?.loads.map((load) => load.target)).toEqual([
       'ground_surface',
       'ground_surface',
