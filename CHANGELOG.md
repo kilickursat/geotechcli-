@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.117] - 2026-06-04
+
+### Ingest Progress Sidecar and Biot Load-Generated Pressure Evidence
+
+- Added compact persisted ingest `progress.json` snapshots so foreground large-PDF polling can render progress from a small atomic sidecar when the full `job.json` is temporarily unreadable during checkpoint-heavy runs.
+- Added an explicit `load-generated-positive-pressure` Biot pressure-envelope mode for mechanically loaded consolidation evidence, preserving the default initial/prescribed pressure-envelope rejection while auditing generated positive excess pore pressure.
+- Registered the new load-generated Biot pressure acceptance benchmark in FEM engineering evidence and default hosted GLM readiness prompts while keeping full production FEM blocked behind monolithic hydro-plastic coupling, sparse production solvers, commercial benchmarks, support design, and approval gates.
+
 ## [0.4.116] - 2026-06-04
 
 ### FEM Evidence Audits and BYOK Local Provider Fixes

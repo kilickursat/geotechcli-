@@ -10,6 +10,7 @@ import {
   computeWeightedPdfPageCost,
   createPersistedIngestJob,
   loadPersistedIngestJob,
+  loadPersistedIngestJobProgressSnapshot,
   resolvePersistedIngestJobExtractionConcurrency,
   resumePersistedIngestJob,
   runPersistedIngestJobWorker,
@@ -201,6 +202,15 @@ function persistedJobJsonPath(configDir: string, jobId: string): string {
   return join(configDir, 'ingest-jobs', jobDir, 'job.json');
 }
 
+function persistedJobProgressPath(configDir: string, jobId: string): string {
+  const jobDir = jobId
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 48);
+  return join(configDir, 'ingest-jobs', jobDir, 'progress.json');
+}
+
 function rewriteFileFromChild(filePath: string, contents: string, delayMs: number): ReturnType<typeof spawn> {
   const script = [
     "const { writeFileSync } = require('node:fs');",
@@ -286,6 +296,55 @@ describe('persisted ingest jobs', () => {
     } finally {
       await waitForChildExit(repair);
     }
+  });
+
+  it('writes a compact progress snapshot that survives transient full job JSON corruption', async () => {
+    const filePath = join(configDir, 'compact-progress-source.pdf');
+    await writeBlankPdf(filePath, 2);
+
+    const job = createPersistedIngestJob({
+      documentType: 'borehole-log',
+      filePath,
+      inspection: makeInspection(2),
+      config: makeConfig(),
+    });
+    const largeDiagnostic = 'raw-model-json-fragment'.repeat(5000);
+    const updated = {
+      ...job,
+      status: 'running' as const,
+      checkpoints: {
+        pages: job.checkpoints.pages.map((page, index) => index === 0
+          ? {
+              ...page,
+              status: 'completed' as const,
+              attempts: 1,
+              result: {
+                ...makeBoreholeInterpretation(1, 2),
+                rawLLMText: largeDiagnostic,
+                rawVisionText: largeDiagnostic,
+              } as unknown,
+            }
+          : page),
+      },
+    };
+    savePersistedIngestJob(updated);
+
+    const progressJson = readFileSync(persistedJobProgressPath(configDir, job.jobId), 'utf-8');
+    expect(progressJson).toContain('"progressSnapshot": true');
+    expect(progressJson).not.toContain('raw-model-json-fragment');
+
+    writeFileSync(
+      persistedJobJsonPath(configDir, job.jobId),
+      readFileSync(persistedJobJsonPath(configDir, job.jobId), 'utf-8').slice(0, 128),
+      'utf-8',
+    );
+
+    const progress = loadPersistedIngestJobProgressSnapshot(job.jobId);
+    expect(progress?.jobId).toBe(job.jobId);
+    expect(progress?.status).toBe('running');
+    expect(progress?.checkpoints.pages[0]?.status).toBe('completed');
+    expect(progress?.checkpoints.pages[0]?.result).toBeUndefined();
+    expect(() => loadPersistedIngestJob(job.jobId)).toThrow(/job\.json is not valid JSON after retrying transient reads/i);
   });
 
   it('reports permanent corrupt job JSON with resumable ingest context', async () => {

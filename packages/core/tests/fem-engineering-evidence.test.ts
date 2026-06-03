@@ -901,7 +901,7 @@ describe('FEM engineering evidence kernels', () => {
     ]));
   });
 
-  it('records Biot transient acceptance audits for prescribed-gradient and drained dissipation modes', () => {
+  it('records Biot transient acceptance audits for prescribed-gradient, load-generated, and drained modes', () => {
     const report = runFemEngineeringEvidenceSuite();
     const benchmarks = new Map(report.benchmarks.map((item) => [item.id, item]));
 
@@ -924,6 +924,16 @@ describe('FEM engineering evidence kernels', () => {
       tolerance: 0,
       status: 'accepted',
       evidence: expect.stringContaining('drained-dissipation transient acceptance gate'),
+    });
+    expect(benchmarks.get('quad4-plane-strain-biot-u-p-load-generated-pressure-acceptance')).toMatchObject({
+      feature: 'coupled-biot-plane-strain',
+      referenceType: 'internal-balance',
+      quantity: 'loadGeneratedPressureAccepted',
+      actual: 1,
+      expected: 1,
+      tolerance: 0,
+      status: 'accepted',
+      evidence: expect.stringContaining('load-generated pressure mode'),
     });
     expect(benchmarks.get('quad4-plane-strain-dp-sequential-biot-pressure-replay-audit')).toMatchObject({
       feature: 'seepage-pore-pressure-coupling',
@@ -982,6 +992,7 @@ describe('FEM engineering evidence kernels', () => {
       'quad4-plane-strain-biot-u-p-free-residual',
       'quad4-plane-strain-biot-u-p-mass-residual',
       'quad4-plane-strain-biot-u-p-transient-acceptance-policy',
+      'quad4-plane-strain-biot-u-p-load-generated-pressure-acceptance',
       'quad4-plane-strain-biot-u-p-pressure-gradient-flux-contract',
       'quad4-plane-strain-biot-u-p-alpha-zero-decoupling',
       'quad4-plane-strain-biot-u-p-terzaghi-pressure-dissipation',

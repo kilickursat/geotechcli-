@@ -379,6 +379,78 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
     expect(result.limitations.join(' ')).toMatch(/nonlinear plasticity coupling/i);
   });
 
+  it('supports audited load-generated positive Biot pore pressure without weakening the default envelope guard', () => {
+    const mesh = buildPlaneStrainRectangularMesh({
+      widthM: 1,
+      heightM: 1,
+      divisionsX: 1,
+      divisionsY: 8,
+      materialId: 'soil',
+    });
+    const bottomNodes = mesh.nodes.filter((node) => node.yM === 0);
+    const topNodes = mesh.nodes.filter((node) => node.yM === 1);
+    const leftNodes = mesh.nodes.filter((node) => node.xM === 0);
+    const model: FemPlaneStrainBiotConsolidationModel = {
+      schemaVersion: 'fem-plane-strain-biot-consolidation-model.v1',
+      nodes: mesh.nodes,
+      elements: mesh.elements,
+      materials: [{
+        id: 'soil',
+        elasticModulusKpa: 30,
+        poissonRatio: 0.2,
+        hydraulicConductivityXMPerS: 9.81e-7,
+        hydraulicConductivityYMPerS: 9.81e-7,
+        biotCoefficient: 1,
+        specificStorage1PerM: 1e-9,
+      }],
+      boundaryConditions: [
+        ...bottomNodes.flatMap((node) => [
+          { nodeId: node.id, dof: 'ux' as const },
+          { nodeId: node.id, dof: 'uy' as const },
+        ]),
+        ...leftNodes.map((node) => ({ nodeId: node.id, dof: 'ux' as const })),
+      ],
+      porePressureBoundaryConditions: topNodes.map((node) => ({ nodeId: node.id, porePressureKpa: 0 })),
+      nodalLoads: topNodes.map((node) => ({ nodeId: node.id, fyKn: -0.5 })),
+      initialPorePressureKpa: 0,
+      timeStepsSeconds: [0.5, 1, 2, 4, 8, 10],
+    };
+
+    expect(() => runPlaneStrainBiotConsolidation(model))
+      .toThrow(/pore pressure exceeded the initial\/prescribed pressure envelope/i);
+
+    const result = runPlaneStrainBiotConsolidation({
+      ...model,
+      pressureEnvelopeMode: 'load-generated-positive-pressure',
+    });
+    const topSettlementM = Math.max(
+      ...topNodes.map((node) => -(result.nodes.find((item) => item.id === node.id)?.uyM ?? 0)),
+    );
+
+    expect(result.converged).toBe(true);
+    expect(result.numericalContract.pressureEnvelopeMode).toBe('load-generated-positive-pressure');
+    expect(result.numericalContract.pressureOvershootPolicy)
+      .toBe('allow-load-generated-positive-excess-pressure-with-audit');
+    expect(result.transientAcceptance).toMatchObject({
+      accepted: true,
+      dissipationCheckMode: 'load-generated-consolidation',
+      pressureEnvelopeMode: 'load-generated-positive-pressure',
+      acceptedStepCount: 6,
+      blockerCodes: [],
+    });
+    expect(result.maxPorePressureKpa).toBeGreaterThan(0);
+    expect(result.transientAcceptance.maxPressureOvershootKpa).toBeGreaterThan(0);
+    expect(result.timeSteps.some((step) => step.pressureDiagnostics.pressureOvershootKpa > 0)).toBe(true);
+    expect(result.timeSteps.every((step) => step.linearSolveAudit.converged)).toBe(true);
+    expect(result.massBalanceErrorRatio).toBeLessThanOrEqual(result.policy.porePressureMassBalanceTolerance);
+    expect(topSettlementM).toBeGreaterThan(0);
+    expect(() => runPlaneStrainBiotConsolidation({
+      ...model,
+      pressureEnvelopeMode: 'load-generated-positive-pressure',
+      nodalFluxes: [{ nodeId: topNodes[0]!.id, flowM3PerS: 1e-6 }],
+    })).toThrow(/does not allow nodalFluxes/i);
+  });
+
   it('reports Biot pressure-gradient flux, sign, and storage contract metadata', () => {
     const mesh = buildPlaneStrainRectangularMesh({
       widthM: 2,

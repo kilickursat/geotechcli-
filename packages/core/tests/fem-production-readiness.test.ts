@@ -76,6 +76,7 @@ describe('FEM production readiness contract', () => {
     expect(report.engineeringEvidence.benchmarks.map((item) => item.id)).toEqual(expect.arrayContaining([
       'quad4-plane-strain-biot-u-p-effective-stress-coupling',
       'quad4-plane-strain-biot-u-p-pressure-gradient-flux-contract',
+      'quad4-plane-strain-biot-u-p-load-generated-pressure-acceptance',
       'quad4-plane-strain-biot-u-p-alpha-zero-decoupling',
       'quad4-plane-strain-biot-u-p-terzaghi-pressure-dissipation',
       'quad4-plane-strain-dp-adaptive-cutback-rollback-recovery',
@@ -186,6 +187,7 @@ describe('FEM production readiness contract', () => {
     expect(data.agentEvidenceSummary).toContain('coupled-nonlinear-plane-strain');
     expect(data.agentEvidenceSummary).toContain('quad4-plane-strain-biot-u-p-effective-stress-coupling');
     expect(data.agentEvidenceSummary).toContain('quad4-plane-strain-biot-u-p-pressure-gradient-flux-contract');
+    expect(data.agentEvidenceSummary).toContain('quad4-plane-strain-biot-u-p-load-generated-pressure-acceptance');
     expect(data.agentEvidenceSummary).toContain('quad4-plane-strain-biot-u-p-alpha-zero-decoupling');
     expect(data.agentEvidenceSummary).toContain('quad4-plane-strain-biot-u-p-terzaghi-pressure-dissipation');
     expect(data.agentEvidenceSummary).toContain('quad4-plane-strain-dp-adaptive-cutback-rollback-recovery');

@@ -207,6 +207,7 @@ export {
   isPersistedIngestJobProcessAlive,
   isPersistedIngestJobTerminalStatus,
   loadPersistedIngestJob,
+  loadPersistedIngestJobProgressSnapshot,
   loadPersistedIngestJobResult,
   resolvePersistedIngestJobExtractionConcurrency,
   resumePersistedIngestJob,
@@ -221,6 +222,7 @@ export {
   type PersistedIngestJobDocumentType,
   type PersistedIngestJobPageCheckpoint,
   type PersistedIngestJobPageStatus,
+  type PersistedIngestJobProgressSnapshot,
   type PersistedIngestJobResultRecord,
   type PersistedIngestJobStatus,
 } from './job-store.js';

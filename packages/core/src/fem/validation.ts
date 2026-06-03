@@ -2043,9 +2043,20 @@ function validateResultEnvelopeSemantics(
       }
       if (
         transientAcceptance.dissipationCheckMode !== 'drained-dissipation' &&
-        transientAcceptance.dissipationCheckMode !== 'prescribed-gradient-relaxation'
+        transientAcceptance.dissipationCheckMode !== 'prescribed-gradient-relaxation' &&
+        transientAcceptance.dissipationCheckMode !== 'load-generated-consolidation'
       ) {
         findings.push(finding('blocker', 'result.biot-transient-acceptance.mode.invalid', 'Biot transient acceptance mode is invalid.'));
+      }
+      const pressureEnvelopeMode = transientAcceptance.pressureEnvelopeMode ??
+        (transientAcceptance.dissipationCheckMode === 'load-generated-consolidation'
+          ? 'load-generated-positive-pressure'
+          : 'initial-prescribed-bound');
+      if (
+        pressureEnvelopeMode !== 'initial-prescribed-bound' &&
+        pressureEnvelopeMode !== 'load-generated-positive-pressure'
+      ) {
+        findings.push(finding('blocker', 'result.biot-transient-acceptance.pressure-envelope-mode.invalid', 'Biot transient pressure envelope mode is invalid.'));
       }
       const acceptedStepCountOk = pushFiniteNumberFinding(
         findings,
@@ -2126,7 +2137,10 @@ function validateResultEnvelopeSemantics(
       ) {
         findings.push(finding('blocker', 'result.biot-transient-acceptance.average-free-pressure-not-monotonic', 'Required average free pore-pressure dissipation was not monotonic.'));
       }
-      if (transientAcceptance.monotonicMaxPressureEnvelope !== true) {
+      if (
+        pressureEnvelopeMode === 'initial-prescribed-bound' &&
+        transientAcceptance.monotonicMaxPressureEnvelope !== true
+      ) {
         findings.push(finding('blocker', 'result.biot-transient-acceptance.max-pressure-not-monotonic', 'Biot maximum pore-pressure envelope must be monotonic non-increasing.'));
       }
       if (!Array.isArray(transientAcceptance.blockerCodes)) {

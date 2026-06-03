@@ -8,6 +8,16 @@ const releases = [
     date: '2026-06-04',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'fix', text: 'Added compact persisted ingest progress snapshots so large-PDF foreground polling can survive transient full job.json reads during checkpoint-heavy runs' },
+      { type: 'feat', text: 'Added an explicit load-generated-positive-pressure Biot envelope mode for mechanically loaded consolidation evidence while preserving the default pressure-envelope guard' },
+      { type: 'feat', text: 'Registered the load-generated Biot pressure acceptance benchmark in FEM evidence and default hosted GLM readiness prompts while full production FEM remains blocked' },
+    ],
+  },
+  {
+    version: '0.4.116',
+    date: '2026-06-04',
+    tag: '0.4.116 Release',
+    changes: [
       { type: 'feat', text: 'Added per-step dense direct linear-solve residual audits to the plane-strain Biot u-p consolidation evidence kernel and transient acceptance metadata' },
       { type: 'fix', text: 'Hardened FEM reviewer approval validation for malformed validation summaries, duplicate assumptions or limitations, duplicate finding codes, and production-scope overclaims' },
       { type: 'fix', text: 'Fixed OpenAI-compatible BYOK support for localhost and private self-hosted endpoints while keeping remote endpoints fail-closed without an API key' },

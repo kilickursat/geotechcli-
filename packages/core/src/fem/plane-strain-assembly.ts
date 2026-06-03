@@ -365,6 +365,10 @@ export interface FemPlaneStrainPorePressureNodalFlux {
   flowM3PerS?: number;
 }
 
+export type FemPlaneStrainBiotPressureEnvelopeMode =
+  | 'initial-prescribed-bound'
+  | 'load-generated-positive-pressure';
+
 export interface FemPlaneStrainBiotConsolidationModel {
   schemaVersion: 'fem-plane-strain-biot-consolidation-model.v1';
   nodes: FemPlaneStrainNode[];
@@ -376,6 +380,7 @@ export interface FemPlaneStrainBiotConsolidationModel {
   nodalLoads?: FemPlaneStrainNodalLoad[];
   nodalFluxes?: FemPlaneStrainPorePressureNodalFlux[];
   initialPorePressureKpa?: number;
+  pressureEnvelopeMode?: FemPlaneStrainBiotPressureEnvelopeMode;
   defaultThicknessM?: number;
   gammaWaterKpaPerM?: number;
   policy?: FemConvergencePolicy;
@@ -419,7 +424,8 @@ export interface FemPlaneStrainBiotStepResult {
 export interface FemPlaneStrainBiotTransientAcceptance {
   schemaVersion: 'fem-plane-strain-biot-transient-acceptance.v1';
   accepted: boolean;
-  dissipationCheckMode: 'drained-dissipation' | 'prescribed-gradient-relaxation';
+  dissipationCheckMode: 'drained-dissipation' | 'prescribed-gradient-relaxation' | 'load-generated-consolidation';
+  pressureEnvelopeMode: FemPlaneStrainBiotPressureEnvelopeMode;
   acceptedStepCount: number;
   requiredStepCount: number;
   maxLinearSolveResidualNormRatio: number;
@@ -452,6 +458,10 @@ export interface FemPlaneStrainBiotNumericalContract {
   totalStressRelation: 'sigma_total_xx_yy = sigma_effective_xx_yy - alpha_B * p; shear unchanged';
   darcyFluxRelation: 'q = -k/gamma_water * grad(p)';
   storageConvention: 'specificStorage1PerM is head-based; pressure storage uses Ss / gamma_water';
+  pressureEnvelopeMode: FemPlaneStrainBiotPressureEnvelopeMode;
+  pressureOvershootPolicy:
+    | 'reject-above-initial-prescribed-envelope'
+    | 'allow-load-generated-positive-excess-pressure-with-audit';
   transientStepPolicy: 'fixed backward-Euler grid requires minAcceptedSteps and bounded step-growth ratio';
   maxTimeStepGrowthRatio: number;
   gammaWaterKpaPerM: number;
@@ -1465,6 +1475,13 @@ export function runPlaneStrainBiotConsolidation(
   assertFinitePositive(gammaWaterKpaPerM, 'gammaWaterKpaPerM');
   const initialPorePressureKpa = model.initialPorePressureKpa ?? 0;
   assertFiniteNonNegative(initialPorePressureKpa, 'initialPorePressureKpa');
+  const pressureEnvelopeMode = model.pressureEnvelopeMode ?? 'initial-prescribed-bound';
+  if (
+    pressureEnvelopeMode !== 'initial-prescribed-bound' &&
+    pressureEnvelopeMode !== 'load-generated-positive-pressure'
+  ) {
+    throw new Error(`Unsupported Biot pressureEnvelopeMode "${String(model.pressureEnvelopeMode)}".`);
+  }
   assertUniqueIds(model.nodes, 'node');
   assertUniqueIds(model.materials, 'material');
   assertUniqueIds(model.elements, 'element');
@@ -1523,6 +1540,15 @@ export function runPlaneStrainBiotConsolidation(
       throw new Error(`nodal flux ${flux.nodeId}.flowM3PerS must be non-negative; extraction-driven suction is unsupported by this saturated excess-pressure Biot evidence kernel.`);
     }
     fluxes[nodeIndex] += flowM3PerS;
+  }
+  if (pressureEnvelopeMode === 'load-generated-positive-pressure') {
+    const hasMechanicalLoad = loads.some((value) => Math.abs(value) > 1e-12);
+    if (!hasMechanicalLoad) {
+      throw new Error('Biot pressureEnvelopeMode load-generated-positive-pressure requires nonzero mechanical nodalLoads.');
+    }
+    if (fluxes.some((value) => Math.abs(value) > 1e-15)) {
+      throw new Error('Biot pressureEnvelopeMode load-generated-positive-pressure does not allow nodalFluxes; use prescribed-gradient-relaxation for flux-driven cases.');
+    }
   }
 
   const elementGaussCache: Array<{
@@ -1643,6 +1669,12 @@ export function runPlaneStrainBiotConsolidation(
   }
   if (prescribedPressures.size === 0) {
     throw new Error('Plane-strain Biot consolidation model requires at least one pore-pressure boundary condition.');
+  }
+  if (
+    pressureEnvelopeMode === 'load-generated-positive-pressure' &&
+    !Array.from(prescribedPressures.values()).some((value) => value <= 1e-9)
+  ) {
+    throw new Error('Biot pressureEnvelopeMode load-generated-positive-pressure requires at least one drained zero-pressure boundary.');
   }
 
   const freeDisplacementDofs = Array.from({ length: displacementDofCount }, (_, index) => index)
@@ -1846,7 +1878,7 @@ export function runPlaneStrainBiotConsolidation(
     const minPorePressureKpa = Math.min(...porePressure);
     const maxPorePressureKpa = Math.max(...porePressure);
     const pressureOvershootKpa = Math.max(0, maxPorePressureKpa - pressureUpperBoundKpa);
-    if (pressureOvershootKpa > 1e-6) {
+    if (pressureEnvelopeMode === 'initial-prescribed-bound' && pressureOvershootKpa > 1e-6) {
       throw new Error(`Plane-strain Biot step ${stepIndex + 1} pore pressure exceeded the initial/prescribed pressure envelope by ${pressureOvershootKpa} kPa.`);
     }
     const averagePorePressureKpa = porePressure.reduce((sum, value) => sum + value, 0) / porePressure.length;
@@ -1938,11 +1970,14 @@ export function runPlaneStrainBiotConsolidation(
   }
   const acceptedStepCount = timeSteps.filter((step) => step.acceptedByPolicy).length;
   const monotonicAverageFreePressureDissipationRequired =
+    pressureEnvelopeMode !== 'load-generated-positive-pressure' &&
     Array.from(prescribedPressures.values()).every((value) => value <= pressureMonotonicToleranceKpa) &&
     fluxes.every((value) => Math.abs(value) <= 1e-15);
-  const dissipationCheckMode = monotonicAverageFreePressureDissipationRequired
-    ? 'drained-dissipation'
-    : 'prescribed-gradient-relaxation';
+  const dissipationCheckMode = pressureEnvelopeMode === 'load-generated-positive-pressure'
+    ? 'load-generated-consolidation'
+    : monotonicAverageFreePressureDissipationRequired
+      ? 'drained-dissipation'
+      : 'prescribed-gradient-relaxation';
   const transientBlockerCodes = [
     ...(acceptedStepCount < policy.minAcceptedSteps
       ? ['accepted-step-count-less-than-policy']
@@ -1956,13 +1991,13 @@ export function runPlaneStrainBiotConsolidation(
     ...(maxMassBalanceErrorRatio > policy.porePressureMassBalanceTolerance
       ? ['pore-pressure-mass-balance-tolerance-exceeded']
       : []),
-    ...(maxPressureOvershootKpa > 1e-6
+    ...(pressureEnvelopeMode === 'initial-prescribed-bound' && maxPressureOvershootKpa > 1e-6
       ? ['pressure-overshoot-nonzero']
       : []),
     ...(monotonicAverageFreePressureDissipationRequired && !monotonicAverageFreePressureDissipation
       ? ['average-free-pore-pressure-dissipation-not-monotonic']
       : []),
-    ...(!monotonicMaxPressureEnvelope
+    ...(pressureEnvelopeMode === 'initial-prescribed-bound' && !monotonicMaxPressureEnvelope
       ? ['max-pore-pressure-envelope-not-monotonic']
       : []),
   ];
@@ -1970,6 +2005,7 @@ export function runPlaneStrainBiotConsolidation(
     schemaVersion: 'fem-plane-strain-biot-transient-acceptance.v1',
     accepted: transientBlockerCodes.length === 0,
     dissipationCheckMode,
+    pressureEnvelopeMode,
     acceptedStepCount,
     requiredStepCount: policy.minAcceptedSteps,
     maxLinearSolveResidualNormRatio: Number(maxLinearSolveResidualNormRatio.toExponential(12)),
@@ -2053,6 +2089,10 @@ export function runPlaneStrainBiotConsolidation(
       totalStressRelation: 'sigma_total_xx_yy = sigma_effective_xx_yy - alpha_B * p; shear unchanged',
       darcyFluxRelation: 'q = -k/gamma_water * grad(p)',
       storageConvention: 'specificStorage1PerM is head-based; pressure storage uses Ss / gamma_water',
+      pressureEnvelopeMode,
+      pressureOvershootPolicy: pressureEnvelopeMode === 'load-generated-positive-pressure'
+        ? 'allow-load-generated-positive-excess-pressure-with-audit'
+        : 'reject-above-initial-prescribed-envelope',
       transientStepPolicy: 'fixed backward-Euler grid requires minAcceptedSteps and bounded step-growth ratio',
       maxTimeStepGrowthRatio: MAX_BIOT_TIME_STEP_GROWTH_RATIO,
       gammaWaterKpaPerM: round(gammaWaterKpaPerM, 8),

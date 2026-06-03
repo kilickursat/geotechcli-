@@ -16,6 +16,7 @@ const coreMocks = vi.hoisted(() => ({
   loadLatestPersistedBoreholeIngestReview: vi.fn(),
   loadLatestPersistedBoreholeIngestReviewApproval: vi.fn(),
   loadPersistedIngestJob: vi.fn(),
+  loadPersistedIngestJobProgressSnapshot: vi.fn(),
   loadPersistedIngestJobResult: vi.fn(),
   loadPersistedBoreholeIngestReview: vi.fn(),
   loadPersistedBoreholeIngestReviewApproval: vi.fn(),
@@ -83,6 +84,7 @@ vi.mock('@geotechcli/core', () => ({
   loadLatestPersistedBoreholeIngestReview: coreMocks.loadLatestPersistedBoreholeIngestReview,
   loadLatestPersistedBoreholeIngestReviewApproval: coreMocks.loadLatestPersistedBoreholeIngestReviewApproval,
   loadPersistedIngestJob: coreMocks.loadPersistedIngestJob,
+  loadPersistedIngestJobProgressSnapshot: coreMocks.loadPersistedIngestJobProgressSnapshot,
   loadPersistedIngestJobResult: coreMocks.loadPersistedIngestJobResult,
   loadPersistedBoreholeIngestReview: coreMocks.loadPersistedBoreholeIngestReview,
   loadPersistedBoreholeIngestReviewApproval: coreMocks.loadPersistedBoreholeIngestReviewApproval,
@@ -262,6 +264,7 @@ describe('registerIngestCommand', () => {
     coreMocks.resolvePersistedIngestJobExtractionConcurrency.mockReturnValue(2);
     coreMocks.shouldSegmentHostedBetaLongPdf.mockReturnValue(false);
     coreMocks.shouldUseAsyncIngestJob.mockReturnValue(false);
+    coreMocks.loadPersistedIngestJobProgressSnapshot.mockReturnValue(null);
     coreMocks.slicePdfInspectionToRange.mockImplementation((_inspection, range, options) => ({
       totalPages: range.endPage - range.startPage + 1,
       pages: Array.from({ length: range.endPage - range.startPage + 1 }, (_, index) => ({
@@ -819,6 +822,112 @@ describe('registerIngestCommand', () => {
     expect(uiMocks.error).not.toHaveBeenCalled();
     expect(uiMocks.info).toHaveBeenCalledWith(`Waiting for ingest job ${startedJob.jobId} to finish...`);
     expect(uiMocks.info).toHaveBeenCalledWith(expect.stringContaining('Ingest progress: 2/6 pages resolved'));
+    expect(uiMocks.heading).toHaveBeenCalledWith('Geotechnical Ingest Result');
+  });
+
+  it('uses compact progress snapshots when foreground ingest job JSON is transiently unreadable', async () => {
+    const registerIngestCommand = await loadRegisterIngestCommand();
+    const program = new Command();
+    const inspection = {
+      totalPages: 108,
+      pages: Array.from({ length: 108 }, (_, index) => ({
+        pageNumber: index + 1,
+        classification: index % 2 === 0 ? 'image-only' : 'digital-text',
+      })),
+    };
+    const startedJob = makePersistedIngestJobRecord({
+      source: {
+        filePath: 'boreholelog.pdf',
+        fileName: 'boreholelog.pdf',
+        inputKind: 'pdf',
+        totalPages: 108,
+        weightedPageCost: 162,
+      },
+    });
+    const progressSnapshot = makePersistedIngestJobRecord({
+      source: {
+        filePath: 'boreholelog.pdf',
+        fileName: 'boreholelog.pdf',
+        inputKind: 'pdf',
+        totalPages: 108,
+        weightedPageCost: 162,
+      },
+      checkpoints: {
+        pages: Array.from({ length: 108 }, (_, index) => ({
+          pageNumber: index + 1,
+          status: index < 54 ? 'completed' : 'pending',
+          classification: index % 2 === 0 ? 'image-only' : 'digital-text',
+          sourceKind: index % 2 === 0 ? 'raster-image' : 'pdf-page',
+          weight: index % 2 === 0 ? 2 : 1,
+          attempts: index < 54 ? 1 : 0,
+          updatedAt: '2026-06-03T05:46:00.000Z',
+        })),
+      },
+    });
+    const completedJob = makePersistedIngestJobRecord({
+      status: 'completed',
+      completedAt: '2026-06-03T05:50:00.000Z',
+      source: {
+        filePath: 'boreholelog.pdf',
+        fileName: 'boreholelog.pdf',
+        inputKind: 'pdf',
+        totalPages: 108,
+        weightedPageCost: 162,
+      },
+      result: {
+        ingestResult: makeBoreholeIngestResult({
+          source: {
+            filePath: 'boreholelog.pdf',
+            fileName: 'boreholelog.pdf',
+            inputKind: 'pdf',
+            totalPages: 108,
+            successfulPages: 108,
+            failedPages: 0,
+          },
+        }),
+      },
+      checkpoints: {
+        pages: Array.from({ length: 108 }, (_, index) => ({
+          pageNumber: index + 1,
+          status: 'completed',
+          classification: index % 2 === 0 ? 'image-only' : 'digital-text',
+          sourceKind: index % 2 === 0 ? 'raster-image' : 'pdf-page',
+          weight: index % 2 === 0 ? 2 : 1,
+          attempts: 1,
+          updatedAt: '2026-06-03T05:50:00.000Z',
+        })),
+      },
+    });
+
+    visionMocks.readVisionInput.mockReturnValue({
+      base64: 'pdf-base64',
+      mimeType: 'application/pdf',
+      fileBytes: 4096,
+      filePath: 'boreholelog.pdf',
+      ext: 'pdf',
+      kind: 'pdf',
+    });
+    coreMocks.inspectPdfDocument.mockReturnValue(inspection);
+    coreMocks.computeWeightedPdfPageCost.mockReturnValue(162);
+    coreMocks.shouldUseAsyncIngestJob.mockReturnValue(true);
+    coreMocks.createAndStartPersistedIngestJob.mockReturnValue(startedJob);
+    coreMocks.loadPersistedIngestJobProgressSnapshot.mockReturnValue(progressSnapshot);
+    coreMocks.loadPersistedIngestJob.mockImplementation(() => {
+      throw new Error('Unterminated string in JSON at position 950269 (line 11319 column 1044)');
+    });
+    coreMocks.waitForPersistedIngestJob
+      .mockRejectedValueOnce(new Error('Unterminated string in JSON at position 950269 (line 11319 column 1044)'))
+      .mockResolvedValueOnce(completedJob);
+
+    registerIngestCommand(program);
+
+    await program.parseAsync(['ingest', 'boreholelog.pdf', '--type', 'borehole-log'], { from: 'user' });
+
+    expect(coreMocks.waitForPersistedIngestJob).toHaveBeenCalledTimes(2);
+    expect(coreMocks.loadPersistedIngestJobProgressSnapshot).toHaveBeenCalledWith(startedJob.jobId);
+    expect(coreMocks.loadPersistedIngestJob).not.toHaveBeenCalled();
+    expect(uiMocks.error).not.toHaveBeenCalled();
+    expect(uiMocks.info).toHaveBeenCalledWith(expect.stringContaining('Ingest progress: 54/108 pages resolved'));
     expect(uiMocks.heading).toHaveBeenCalledWith('Geotechnical Ingest Result');
   });
 

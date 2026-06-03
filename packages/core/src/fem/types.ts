@@ -336,7 +336,8 @@ export interface FemResultPressureAudit {
 export interface FemResultBiotTransientAcceptance {
   schemaVersion: 'fem-plane-strain-biot-transient-acceptance.v1';
   accepted: boolean;
-  dissipationCheckMode: 'drained-dissipation' | 'prescribed-gradient-relaxation';
+  dissipationCheckMode: 'drained-dissipation' | 'prescribed-gradient-relaxation' | 'load-generated-consolidation';
+  pressureEnvelopeMode?: 'initial-prescribed-bound' | 'load-generated-positive-pressure';
   acceptedStepCount: number;
   requiredStepCount: number;
   maxLinearSolveResidualNormRatio: number;

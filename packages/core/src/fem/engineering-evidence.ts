@@ -2918,6 +2918,64 @@ export function runFemEngineeringEvidenceSuite(
     'Biot u-p evidence kernel must report an aggregate transient acceptance audit for residual, mass-balance, pressure-envelope, and prescribed-gradient relaxation checks.',
   ));
 
+  const biotLoadGeneratedMesh = buildPlaneStrainRectangularMesh({
+    widthM: 1,
+    heightM: 1,
+    divisionsX: 1,
+    divisionsY: 8,
+    materialId: 'soil',
+  });
+  const biotLoadGeneratedBottomNodes = biotLoadGeneratedMesh.nodes.filter((node) => node.yM === 0);
+  const biotLoadGeneratedTopNodes = biotLoadGeneratedMesh.nodes.filter((node) => node.yM === 1);
+  const biotLoadGeneratedLeftNodes = biotLoadGeneratedMesh.nodes.filter((node) => node.xM === 0);
+  const biotLoadGenerated = runPlaneStrainBiotConsolidation({
+    schemaVersion: 'fem-plane-strain-biot-consolidation-model.v1',
+    nodes: biotLoadGeneratedMesh.nodes,
+    elements: biotLoadGeneratedMesh.elements,
+    materials: [{
+      id: 'soil',
+      elasticModulusKpa: 30,
+      poissonRatio: 0.2,
+      hydraulicConductivityXMPerS: 9.81e-7,
+      hydraulicConductivityYMPerS: 9.81e-7,
+      biotCoefficient: 1,
+      specificStorage1PerM: 1e-9,
+    }],
+    boundaryConditions: [
+      ...biotLoadGeneratedBottomNodes.flatMap((node) => [
+        { nodeId: node.id, dof: 'ux' as const },
+        { nodeId: node.id, dof: 'uy' as const },
+      ]),
+      ...biotLoadGeneratedLeftNodes.map((node) => ({ nodeId: node.id, dof: 'ux' as const })),
+    ],
+    porePressureBoundaryConditions: biotLoadGeneratedTopNodes.map((node) => ({
+      nodeId: node.id,
+      porePressureKpa: 0,
+    })),
+    nodalLoads: biotLoadGeneratedTopNodes.map((node) => ({ nodeId: node.id, fyKn: -0.5 })),
+    initialPorePressureKpa: 0,
+    pressureEnvelopeMode: 'load-generated-positive-pressure',
+    timeStepsSeconds: [0.5, 1, 2, 4, 8, 10],
+    policy,
+  });
+  benchmarks.push(benchmark(
+    'quad4-plane-strain-biot-u-p-load-generated-pressure-acceptance',
+    'coupled-biot-plane-strain',
+    'internal-balance',
+    'loadGeneratedPressureAccepted',
+    biotLoadGenerated.transientAcceptance.accepted &&
+      biotLoadGenerated.transientAcceptance.dissipationCheckMode === 'load-generated-consolidation' &&
+      biotLoadGenerated.transientAcceptance.pressureEnvelopeMode === 'load-generated-positive-pressure' &&
+      biotLoadGenerated.transientAcceptance.maxPressureOvershootKpa > 0 &&
+      biotLoadGenerated.maxPorePressureKpa > 0 &&
+      biotLoadGenerated.massBalanceErrorRatio <= policy.porePressureMassBalanceTolerance
+      ? 1
+      : 0,
+    1,
+    0,
+    'Mechanically loaded Biot consolidation must require explicit load-generated pressure mode and audit positive excess pore-pressure generation without weakening the default envelope guard.',
+  ));
+
   const biotPatchMesh = buildPlaneStrainRectangularMesh({
     widthM: 2,
     heightM: 1,

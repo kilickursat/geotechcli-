@@ -23,6 +23,7 @@ import {
   loadLatestPersistedBoreholeIngestReview,
   loadProject,
   loadPersistedIngestJob,
+  loadPersistedIngestJobProgressSnapshot,
   loadPersistedIngestJobResult,
   loadPersistedBoreholeIngestReviewApproval,
   loadPersistedBoreholeIngestReview,
@@ -1974,13 +1975,15 @@ function isTransientPersistedIngestJobReadError(err: unknown): boolean {
     return false;
   }
 
-  return /(?:unterminated string in json|unexpected end of json|unexpected token .* in json|job\.json is not valid json|partial checkpoint write)/i
+  return /(?:unterminated string in json|unexpected end of json|unexpected token .* in json|(?:job|progress)\.json is not valid json|partial checkpoint write)/i
     .test(err.message);
 }
 
 function loadLiveProgressSnapshot(jobId: string): NormalizedIngestJobRecord | null {
   try {
-    return normalizeIngestJobRecord(loadPersistedIngestJob(jobId));
+    return normalizeIngestJobRecord(
+      loadPersistedIngestJobProgressSnapshot(jobId) ?? loadPersistedIngestJob(jobId),
+    );
   } catch (err) {
     if (isTransientPersistedIngestJobReadError(err)) {
       return null;

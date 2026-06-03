@@ -133,6 +133,7 @@ describe('FEM scoped agent', () => {
       .toEqual(expect.arrayContaining([
         'quad4-plane-strain-biot-u-p-dof-coupling',
         'quad4-plane-strain-biot-u-p-mass-residual',
+        'quad4-plane-strain-biot-u-p-load-generated-pressure-acceptance',
         'quad4-plane-strain-biot-u-p-pressure-gradient-flux-contract',
         'quad4-plane-strain-biot-u-p-alpha-zero-decoupling',
         'quad4-plane-strain-biot-u-p-terzaghi-pressure-dissipation',
@@ -144,6 +145,8 @@ describe('FEM scoped agent', () => {
       .toContain('quad4-plane-strain-biot-u-p-effective-stress-coupling');
     expect(readinessData.agentEvidenceSummary)
       .toContain('quad4-plane-strain-biot-u-p-pressure-gradient-flux-contract');
+    expect(readinessData.agentEvidenceSummary)
+      .toContain('quad4-plane-strain-biot-u-p-load-generated-pressure-acceptance');
     expect(readinessData.agentEvidenceSummary)
       .toContain('quad4-plane-strain-biot-u-p-alpha-zero-decoupling');
     expect(readinessData.agentEvidenceSummary)
@@ -157,6 +160,7 @@ describe('FEM scoped agent', () => {
     expect(followupPrompt).toContain('productionReady: no');
     expect(followupPrompt).toContain('quad4-plane-strain-biot-u-p-dof-coupling');
     expect(followupPrompt).toContain('quad4-plane-strain-biot-u-p-mass-residual');
+    expect(followupPrompt).toContain('quad4-plane-strain-biot-u-p-load-generated-pressure-acceptance');
     expect(followupPrompt).toContain('quad4-plane-strain-biot-u-p-pressure-gradient-flux-contract');
     expect(followupPrompt).toContain('quad4-plane-strain-biot-u-p-alpha-zero-decoupling');
     expect(followupPrompt).toContain('quad4-plane-strain-biot-u-p-terzaghi-pressure-dissipation');

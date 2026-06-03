@@ -101,6 +101,11 @@ export interface PersistedIngestJobRecord {
   result?: PersistedIngestJobResultRecord;
 }
 
+export type PersistedIngestJobProgressSnapshot = Omit<PersistedIngestJobRecord, 'inspection' | 'result'> & {
+  progressSnapshot: true;
+  inspection: null;
+};
+
 export interface CreatePersistedIngestJobOptions {
   documentType: PersistedIngestJobDocumentType;
   filePath: string;
@@ -167,6 +172,10 @@ function getJobRecordPath(jobId: string): string {
   return join(getJobDir(jobId), 'job.json');
 }
 
+function getJobProgressPath(jobId: string): string {
+  return join(getJobDir(jobId), 'progress.json');
+}
+
 function sleepSync(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
@@ -200,7 +209,7 @@ function atomicWriteJson(filePath: string, value: unknown): void {
   }
 }
 
-function readJobJsonWithTransientRetry(jobId: string, filePath: string): unknown {
+function readJobJsonWithTransientRetry(jobId: string, filePath: string, fileLabel = 'job.json'): unknown {
   for (let attempt = 0; attempt <= TRANSIENT_JSON_READ_RETRY_DELAYS_MS.length; attempt += 1) {
     try {
       return JSON.parse(readFileSync(filePath, 'utf-8')) as unknown;
@@ -209,7 +218,7 @@ function readJobJsonWithTransientRetry(jobId: string, filePath: string): unknown
       if (!retryable || attempt === TRANSIENT_JSON_READ_RETRY_DELAYS_MS.length) {
         if (error instanceof SyntaxError) {
           throw new Error(
-            `Persisted ingest job "${jobId}" could not be read because its job.json is not valid JSON after retrying transient reads. `
+            `Persisted ingest job "${jobId}" could not be read because its ${fileLabel} is not valid JSON after retrying transient reads. `
             + `This can happen if an older geotechCLI version exposed a partial checkpoint write. `
             + `If the worker is still running, retry the command; otherwise run "geotech ingest resume ${jobId}". `
             + `Parse error: ${error.message}`,
@@ -222,6 +231,47 @@ function readJobJsonWithTransientRetry(jobId: string, filePath: string): unknown
   }
 
   throw new Error(`Persisted ingest job "${jobId}" could not be read after retrying transient reads.`);
+}
+
+function buildPersistedIngestJobProgressSnapshot(record: PersistedIngestJobRecord): PersistedIngestJobProgressSnapshot {
+  return {
+    kind: 'geotech-ingest-job-record',
+    schemaVersion: JOB_SCHEMA_VERSION,
+    progressSnapshot: true,
+    jobId: record.jobId,
+    documentType: record.documentType,
+    status: record.status,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    startedAt: record.startedAt,
+    completedAt: record.completedAt,
+    canceledAt: record.canceledAt,
+    source: { ...record.source },
+    config: { ...record.config },
+    processing: { ...record.processing },
+    request: { ...record.request },
+    segmentation: record.segmentation,
+    inspection: null,
+    execution: { ...record.execution },
+    checkpoints: {
+      pages: record.checkpoints.pages.map((page) => ({
+        pageNumber: page.pageNumber,
+        classification: page.classification,
+        sourceKind: page.sourceKind,
+        weight: page.weight,
+        status: page.status,
+        attempts: page.attempts,
+        updatedAt: page.updatedAt,
+        completedAt: page.completedAt,
+        error: page.error,
+        downgraded: page.downgraded,
+      })),
+    },
+  };
+}
+
+function writePersistedIngestJobProgressSnapshot(record: PersistedIngestJobRecord): void {
+  atomicWriteJson(getJobProgressPath(record.jobId), buildPersistedIngestJobProgressSnapshot(record));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -943,6 +993,7 @@ export function createPersistedIngestJob(
   };
 
   atomicWriteJson(getJobRecordPath(jobId), record);
+  writePersistedIngestJobProgressSnapshot(record);
   return record;
 }
 
@@ -991,8 +1042,19 @@ export function loadPersistedIngestJob(jobId: string): PersistedIngestJobRecord 
   return normalizePersistedIngestJobRecord(raw);
 }
 
+export function loadPersistedIngestJobProgressSnapshot(jobId: string): PersistedIngestJobRecord | null {
+  const filePath = getJobProgressPath(jobId);
+  if (!existsSync(filePath)) {
+    return null;
+  }
+
+  const raw = readJobJsonWithTransientRetry(jobId, filePath, 'progress.json');
+  return normalizePersistedIngestJobRecord(raw);
+}
+
 export function savePersistedIngestJob(record: PersistedIngestJobRecord): PersistedIngestJobRecord {
   atomicWriteJson(getJobRecordPath(record.jobId), record);
+  writePersistedIngestJobProgressSnapshot(record);
   return record;
 }
 
