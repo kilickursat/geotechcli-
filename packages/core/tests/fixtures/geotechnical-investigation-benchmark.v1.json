@@ -127,15 +127,15 @@
     "implementedPreviewRoutes": [
       "foundation-settlement",
       "excavation-deformation",
-      "tunnel-volume-loss-settlement"
+      "tunnel-volume-loss-settlement",
+      "staged-settlement-consolidation"
     ],
     "contractOnlyRoutes": [
       "shaft-deformation",
       "pile-group-elastic-interaction",
       "slope-embankment-deformation",
       "retaining-wall-excavation-support",
-      "seepage-groundwater-coupling",
-      "staged-settlement-consolidation"
+      "seepage-groundwater-coupling"
     ],
     "agentRunAllowedRoutes": [],
     "agentWebglAllowedRoutes": [],
@@ -156,7 +156,8 @@
     "runCommandRoutes": [
       "foundation-settlement",
       "excavation-deformation",
-      "tunnel-volume-loss-settlement"
+      "tunnel-volume-loss-settlement",
+      "staged-settlement-consolidation"
     ],
     "staleRunCommandRoutes": [],
     "gates": [
@@ -803,9 +804,10 @@
       },
       {
         "objective": "staged-settlement-consolidation",
-        "status": "planned",
-        "executionMode": "contract-only",
+        "status": "implemented-demo",
+        "executionMode": "human-reviewed-preview",
         "agentRunAllowed": false,
+        "deterministicBackend": "builtin-staged-consolidation-1d",
         "executionBoundary": {
           "schemaVersion": "fem-benchmark-execution-boundary.v1",
           "agentRunAllowed": false,
@@ -814,28 +816,24 @@
           "humanReviewRequired": true,
           "caseOutputAvailable": false,
           "humanRunCommandAvailable": false,
-          "draftCommand": "geotech fem draft staged-settlement-consolidation --input <json>",
+          "draftCommand": "geotech fem draft staged-settlement-consolidation --input <json> --case-output <analysis_case.json>",
+          "humanRunCommandTemplate": "geotech fem run <analysis_case.json> --experimental --reviewed",
           "blockedReasons": [
             "ground-model-missing-spt-n-values",
             "ground-model-partial-pages-remain",
             "ground-model-low-confidence",
             "missing-spt-n-values",
-            "planned-only",
-            "consolidation-backend-not-implemented",
+            "experimental-only",
+            "1d-consolidation-only",
+            "mohr-coulomb-material-point-only",
             "time-rate-review-required",
             "not-design-calculation",
-            "deterministic-analysis-case-schema-accepted",
-            "solver-or-preview-backend-implemented",
-            "result-manifest-validator-implemented",
-            "webgl-renderer-smoke-added",
-            "acceptance-fixture-approved",
             "human-review-required",
-            "analysis-case-not-reviewed",
-            "agent-run-disabled",
-            "solver-backend-not-implemented"
+            "analysis-case-not-reviewed"
           ]
         },
-        "recommendedCommand": "geotech fem draft staged-settlement-consolidation --input <json>",
+        "recommendedCommand": "geotech fem draft staged-settlement-consolidation --input <json> --case-output <analysis_case.json>",
+        "runCommandTemplate": "geotech fem run <analysis_case.json> --experimental --reviewed",
         "readinessStatus": "needs_engineering_review",
         "readinessScore": 61,
         "requiredEvidence": [
@@ -853,48 +851,15 @@
           "target settlement or monitoring triggers"
         ],
         "reviewGates": [
-          "planned-only",
-          "consolidation-backend-not-implemented",
+          "experimental-only",
+          "1d-consolidation-only",
+          "mohr-coulomb-material-point-only",
           "time-rate-review-required",
-          "not-design-calculation",
-          "agent-run-disabled",
-          "solver-backend-not-implemented",
-          "human-review-required"
+          "not-design-calculation"
         ],
         "limitations": [
-          "No time-dependent FEM/consolidation backend, creep model, or monitoring calibration solver is available yet."
-        ],
-        "contractReadiness": {
-          "nonRunnableReason": "Staged settlement / consolidation preview is registered as a planning contract only. No deterministic backend, analysis-case writer, or WebGL result renderer is available for this route yet.",
-          "blockedUntil": [
-            "deterministic-analysis-case-schema-accepted",
-            "solver-or-preview-backend-implemented",
-            "result-manifest-validator-implemented",
-            "webgl-renderer-smoke-added",
-            "acceptance-fixture-approved"
-          ],
-          "allowedAgentActions": [
-            "list-capability",
-            "draft-input-contract",
-            "validate-user-inputs",
-            "summarize-readiness"
-          ],
-          "disallowedAgentActions": [
-            "run-solver",
-            "create-analysis-case",
-            "render-webgl",
-            "invent-results"
-          ],
-          "reviewGates": [
-            "planned-only",
-            "consolidation-backend-not-implemented",
-            "time-rate-review-required",
-            "not-design-calculation",
-            "agent-run-disabled",
-            "solver-backend-not-implemented",
-            "human-review-required"
-          ]
-        }
+          "No 2D/3D coupled Biot FEM, seepage field, embankment geometry, creep, secondary compression, or monitoring calibration solver is available yet."
+        ]
       }
     ]
   },

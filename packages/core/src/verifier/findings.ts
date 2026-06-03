@@ -794,11 +794,10 @@ function assessFemStagedSettlementConsolidationReadiness(
 ): GroundModelCalculationReadiness {
   return buildWorkflowReadiness({
     workflow: 'fem-staged-settlement-consolidation',
-    label: 'Planned staged settlement / consolidation contract draft',
+    label: 'Experimental staged settlement / consolidation draft',
     toolName: 'prepare_fem_analysis_case',
-    commandTemplate: 'geotech fem draft staged-settlement-consolidation --input <json>',
+    commandTemplate: 'geotech fem draft staged-settlement-consolidation --input <json> --case-output <analysis_case.json>',
     coreMissing: [
-      'implemented staged settlement/consolidation preview backend',
       ...missingWhen(!context.hasStrata, 'settlement/consolidation strata model'),
       ...missingWhen(!context.hasSettlementBasis, 'compressibility, consolidation, lab index, or SPT correlation evidence'),
     ],
@@ -822,7 +821,9 @@ function assessFemStagedSettlementConsolidationReadiness(
       context.unitWeightEvidenceIds,
       context.groundwaterEvidenceIds,
     ),
-    recommendation: 'Staged settlement/consolidation FEM is a planned contract-only route. Use deterministic settlement/consolidation tools first, collect load stages and drainage assumptions, and do not create a runnable FEM case or WebGL result yet.',
+    recommendation: context.hasStrata && context.hasSettlementBasis
+      ? 'Prepare an experimental 1D staged consolidation draft only after the user declares layer thickness, tributary area, stage loads, durations, and drainage assumptions. Do not treat it as a production 2D/3D coupled FEM solver.'
+      : 'Add settlement/consolidation strata coverage plus compressibility, lab index, or SPT evidence before preparing a staged consolidation FEM draft.',
   }, model, context, profile, options);
 }
 
@@ -1321,25 +1322,34 @@ function buildCalculationInputDraft(
     }
     case 'fem-staged-settlement-consolidation': {
       missingUserInputs.push(
+        'consolidation layer thickness',
         'load or fill stages',
         'stage durations',
-        'foundation footprint',
+        'foundation footprint / tributary surface area',
         'drainage path assumptions',
         'target settlement or monitoring triggers',
       );
+      const elasticModulus = findNumericParameter(model, /elastic|modulus|\bes\b/i) ?? estimateElasticModulusFromSpt(model);
+      const cv = findNumericParameter(model, /\bcv\b|coefficient(?:\s+of)?\s+consolidation|consolidation coefficient/i);
+      const cohesion = findNumericParameter(model, /cohesion|\bc\b/i);
+      const frictionAngle = findNumericParameter(model, /friction|phi|angle/i);
       draftInput = {
         objective: 'staged-settlement-consolidation',
         useDemoDefaults: false,
         material: {
-          elasticModulusKpa: findNumericParameter(model, /elastic|modulus|\bes\b/i) ?? estimateElasticModulusFromSpt(model),
+          elasticModulusKpa: elasticModulus,
+          constrainedModulusKpa: elasticModulus,
+          coefficientOfConsolidationM2PerYear: cv,
+          frictionAngleDeg: frictionAngle,
+          cohesionKpa: cohesion,
           unitWeightKnM3: unitWeight,
           poissonRatio: 0.3,
         },
         groundwater: groundwaterDepth != null
-          ? { condition: 'specified', depthM: groundwaterDepth, note: 'Groundwater depth from GroundModel evidence; staged settlement route remains contract-only.' }
-          : { condition: 'not_modelled', note: 'Groundwater not present in GroundModel; staged settlement route remains contract-only.' },
+          ? { condition: 'specified', depthM: groundwaterDepth, note: 'Groundwater depth from GroundModel evidence; staged consolidation drainage still requires review.' }
+          : { condition: 'not_modelled', note: 'Groundwater not present in GroundModel; staged consolidation drainage still requires review.' },
       };
-      command = 'geotech fem draft staged-settlement-consolidation --input <json>';
+      command = 'geotech fem draft staged-settlement-consolidation --input <json> --case-output <analysis_case.json>';
       break;
     }
     case 'pile-capacity':

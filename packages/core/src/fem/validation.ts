@@ -86,7 +86,7 @@ function isFemAnalysisCaseShape(value: unknown): value is FemAnalysisCase {
   return (
     isRecord(geometry) &&
     isRecord(geometry.domain) &&
-    (isRecord(geometry.raft) || isRecord(geometry.excavation) || isRecord(geometry.tunnel)) &&
+    (isRecord(geometry.raft) || isRecord(geometry.excavation) || isRecord(geometry.tunnel) || isRecord(geometry.consolidation)) &&
     isRecord(mesh) &&
     isRecord(groundwater) &&
     isRecord(value.units) &&
@@ -245,7 +245,7 @@ function validateOptionalResultMetadata(
   }
 
   const validFieldLocations = new Set(['surface_nodes', 'outline_nodes', 'envelope']);
-  const validFieldQuantities = new Set(['displacement', 'reaction', 'load', 'stage_count']);
+  const validFieldQuantities = new Set(['displacement', 'reaction', 'load', 'stage_count', 'pore_pressure', 'degree_of_consolidation', 'strength_ratio']);
   const validFieldComponents = new Set(['x', 'y', 'z', 'magnitude']);
   const validDatasetSources = new Set(['visualization.disp', 'visualization.frame', 'envelope']);
   const fieldIds = new Set<string>();
@@ -276,6 +276,13 @@ function validateOptionalResultMetadata(
     ['support_reaction', manifest.envelope.supportReactionKn],
     ['boundary_reaction', manifest.envelope.boundaryReactionKn],
     ['stage_count', manifest.envelope.stageCount],
+    ['final_settlement', manifest.envelope.finalSettlementMm],
+    ['plastic_settlement', manifest.envelope.plasticSettlementMm],
+    ['final_degree_of_consolidation', manifest.envelope.finalDegreeOfConsolidation],
+    ['max_excess_pore_pressure', manifest.envelope.maxExcessPorePressureKpa],
+    ['max_mobilized_strength_ratio', manifest.envelope.maxMobilizedStrengthRatio],
+    ['drainage_path', manifest.envelope.drainagePathM],
+    ['consolidation_duration', manifest.envelope.consolidationDurationYears],
     ['tunnel_diameter', manifest.envelope.tunnelDiameterM],
     ['tunnel_axis_depth', manifest.envelope.tunnelAxisDepthM],
     ['volume_loss', manifest.envelope.volumeLossPercent],
@@ -320,6 +327,12 @@ function validateOptionalResultMetadata(
       }
       if (fieldInfo.quantity === 'stage_count' && fieldInfo.unit !== 'count') {
         findings.push(finding('blocker', `result.fields.${index}.unit.stage-count-invalid`, 'Stage count result fields must use count units.'));
+      }
+      if (fieldInfo.quantity === 'pore_pressure' && fieldInfo.unit !== 'kPa') {
+        findings.push(finding('blocker', `result.fields.${index}.unit.pore-pressure-invalid`, 'Pore-pressure result fields must use kPa units.'));
+      }
+      if ((fieldInfo.quantity === 'degree_of_consolidation' || fieldInfo.quantity === 'strength_ratio') && fieldInfo.unit !== 'ratio') {
+        findings.push(finding('blocker', `result.fields.${index}.unit.ratio-invalid`, 'Degree-of-consolidation and strength-ratio result fields must use ratio units.'));
       }
       if (fieldInfo.signConvention != null && !isNonEmptyString(fieldInfo.signConvention)) {
         findings.push(finding('blocker', `result.fields.${index}.sign-convention.invalid`, 'Result field sign convention must be a non-empty string when present.'));
@@ -543,7 +556,7 @@ export function validateFemAnalysisCase(caseFile: FemAnalysisCase): FemValidatio
     ]);
   }
 
-  const { domain, raft, excavation, tunnel } = caseFile.geometry;
+  const { domain, raft, excavation, tunnel, consolidation } = caseFile.geometry;
 
   if (caseFile.schemaVersion !== 'fem-analysis-case.v0') {
     findings.push(finding('blocker', 'schema.unsupported', 'Only fem-analysis-case.v0 is supported.'));
@@ -563,7 +576,7 @@ export function validateFemAnalysisCase(caseFile: FemAnalysisCase): FemValidatio
   if (!caseFile.experimental) {
     findings.push(finding('blocker', 'mode.experimental-required', 'FEM cases must be explicitly marked experimental.'));
   }
-  if (!['foundation_settlement', 'excavation_deformation', 'tunnel_volume_loss_settlement'].includes(caseFile.objective)) {
+  if (!['foundation_settlement', 'excavation_deformation', 'tunnel_volume_loss_settlement', 'staged_settlement_consolidation'].includes(caseFile.objective)) {
     findings.push(finding('blocker', 'objective.unsupported', `Unsupported FEM objective: ${caseFile.objective}.`));
   }
   if (caseFile.objective === 'foundation_settlement' && caseFile.analysisType !== 'static_3d_small_strain') {
@@ -573,6 +586,9 @@ export function validateFemAnalysisCase(caseFile: FemAnalysisCase): FemValidatio
     findings.push(finding('blocker', 'analysis.unsupported', `Unsupported analysis type: ${caseFile.analysisType}.`));
   }
   if (caseFile.objective === 'tunnel_volume_loss_settlement' && caseFile.analysisType !== 'empirical_3d_settlement_surface') {
+    findings.push(finding('blocker', 'analysis.unsupported', `Unsupported analysis type: ${caseFile.analysisType}.`));
+  }
+  if (caseFile.objective === 'staged_settlement_consolidation' && caseFile.analysisType !== 'time_dependent_1d_consolidation') {
     findings.push(finding('blocker', 'analysis.unsupported', `Unsupported analysis type: ${caseFile.analysisType}.`));
   }
   if (caseFile.geometry.domain.type !== 'box') {
@@ -762,6 +778,42 @@ export function validateFemAnalysisCase(caseFile: FemAnalysisCase): FemValidatio
       ));
     }
   }
+  if (caseFile.objective === 'staged_settlement_consolidation') {
+    if (!consolidation) {
+      findings.push(finding('blocker', 'geometry.consolidation-missing', 'Staged settlement/consolidation cases require soil-column consolidation geometry.'));
+    } else {
+      if (consolidation.type !== 'soil_column') {
+        findings.push(finding('blocker', 'geometry.consolidation.type-invalid', `Unsupported consolidation geometry type: ${String(consolidation.type)}.`));
+      }
+      pushPositiveNumberFindings(findings, [
+        [consolidation.layerThicknessM, 'geometry.consolidation.layer-thickness', 'Consolidation layer thickness'],
+        [consolidation.surfaceAreaM2, 'geometry.consolidation.surface-area', 'Consolidation tributary surface area'],
+      ]);
+      if (consolidation.drainage !== 'single' && consolidation.drainage !== 'double') {
+        findings.push(finding('blocker', 'geometry.consolidation.drainage-invalid', `Unsupported consolidation drainage condition: ${String(consolidation.drainage)}.`));
+      }
+      if (domain.depthM < consolidation.layerThicknessM) {
+        findings.push(finding('review', 'geometry.consolidation-depth-review', 'Domain depth is shallower than the consolidation layer thickness; 1D column extent requires review.'));
+      }
+      if (consolidation.stages.length === 0) {
+        findings.push(finding('blocker', 'consolidation.stages.missing', 'Staged consolidation cases require at least one load-duration stage.'));
+      }
+      const stageIds = new Set<string>();
+      for (const [index, stage] of consolidation.stages.entries()) {
+        pushUniqueStringFinding(findings, stageIds, stage.id, `consolidation.stages.${index}.id`, 'Consolidation stage id');
+        if (!isNonEmptyString(stage.label)) {
+          findings.push(finding('blocker', `consolidation.stages.${index}.label.missing`, 'Consolidation stage label must be a non-empty string.'));
+        }
+        pushFiniteNumberFinding(findings, stage.loadKpa, `consolidation.stages.${index}.load`, 'Consolidation stage load', { positive: true });
+        pushFiniteNumberFinding(findings, stage.durationYears, `consolidation.stages.${index}.duration`, 'Consolidation stage duration', { positive: true });
+      }
+      findings.push(finding(
+        'review',
+        'consolidation.1d-preview',
+        'Staged consolidation preview uses a 1D Terzaghi column and Mohr-Coulomb material-point review gate; it is not a full 2D/3D coupled FEM consolidation solver.',
+      ));
+    }
+  }
   if (caseFile.materials.length === 0) {
     findings.push(finding('blocker', 'material.missing', 'At least one material is required.'));
   } else {
@@ -776,7 +828,7 @@ export function validateFemAnalysisCase(caseFile: FemAnalysisCase): FemValidatio
       if (!isNonEmptyString(material.name)) {
         findings.push(finding('blocker', `${prefix}.name.missing`, 'Material name must be a non-empty string.'));
       }
-      if (material.model !== 'linear_elastic') {
+      if (material.model !== 'linear_elastic' && material.model !== 'mohr_coulomb') {
         findings.push(finding('blocker', `${prefix}.unsupported`, `Unsupported material model: ${String(material.model)}.`));
       }
       if (!Number.isFinite(material.elasticModulusKpa) || material.elasticModulusKpa <= 0) {
@@ -787,6 +839,21 @@ export function validateFemAnalysisCase(caseFile: FemAnalysisCase): FemValidatio
       }
       if (!Number.isFinite(material.unitWeightKnM3) || material.unitWeightKnM3 <= 0) {
         findings.push(finding('blocker', `${prefix}.unit-weight-invalid`, 'Unit weight must be positive.'));
+      }
+      if (caseFile.objective === 'staged_settlement_consolidation') {
+        if (material.model !== 'mohr_coulomb') {
+          findings.push(finding('blocker', `${prefix}.consolidation-model-required`, 'Staged consolidation preview requires a mohr_coulomb material with consolidation parameters.'));
+        }
+        pushFiniteNumberFinding(findings, material.constrainedModulusKpa, `${prefix}.constrained-modulus`, 'Constrained modulus', { positive: true });
+        pushFiniteNumberFinding(findings, material.coefficientOfConsolidationM2PerYear, `${prefix}.cv`, 'Coefficient of consolidation', { positive: true });
+        const frictionAngleDeg = material.frictionAngleDeg;
+        if (!Number.isFinite(frictionAngleDeg) || frictionAngleDeg == null || frictionAngleDeg <= 0 || frictionAngleDeg >= 50) {
+          findings.push(finding('blocker', `${prefix}.friction-angle-invalid`, 'Mohr-Coulomb friction angle must be finite and between 0 and 50 degrees.'));
+        }
+        pushFiniteNumberFinding(findings, material.cohesionKpa, `${prefix}.cohesion`, 'Mohr-Coulomb cohesion', { nonNegative: true });
+        if (material.hydraulicConductivityMPerS != null) {
+          pushFiniteNumberFinding(findings, material.hydraulicConductivityMPerS, `${prefix}.hydraulic-conductivity`, 'Hydraulic conductivity', { positive: true });
+        }
       }
       validateEvidenceRefs(findings, material.evidenceRefs, prefix);
       validateAssumptions(findings, material.assumptions, prefix);
@@ -800,6 +867,8 @@ export function validateFemAnalysisCase(caseFile: FemAnalysisCase): FemValidatio
       findings.push(finding('blocker', 'load.missing', 'A raft pressure load is required.'));
     } else if (caseFile.objective === 'excavation_deformation') {
       findings.push(finding('blocker', 'load.missing', 'An excavation surcharge/load assumption is required.'));
+    } else if (caseFile.objective === 'staged_settlement_consolidation') {
+      findings.push(finding('blocker', 'load.missing', 'Staged consolidation previews require ground-surface pressure loads matching the staged load history.'));
     }
   } else {
     const loadIds = new Set<string>();
@@ -821,6 +890,18 @@ export function validateFemAnalysisCase(caseFile: FemAnalysisCase): FemValidatio
       }
       if (caseFile.objective === 'excavation_deformation' && load.target !== 'excavation_surcharge') {
         findings.push(finding('blocker', `${prefix}.target-invalid`, 'Excavation-deformation load must target excavation_surcharge.'));
+      }
+      if (caseFile.objective === 'staged_settlement_consolidation' && load.target !== 'ground_surface') {
+        findings.push(finding('blocker', `${prefix}.target-invalid`, 'Staged consolidation loads must target ground_surface.'));
+      }
+      if (caseFile.objective === 'staged_settlement_consolidation' && consolidation) {
+        if (caseFile.loads.length !== consolidation.stages.length) {
+          findings.push(finding('blocker', 'load.stage-count-mismatch', 'Staged consolidation load count must match the consolidation stage count.'));
+        }
+        const stage = consolidation.stages[index];
+        if (stage && isFiniteNumber(load.pressureKpa) && !isApproxEqual(load.pressureKpa, stage.loadKpa, 1e-6)) {
+          findings.push(finding('blocker', `${prefix}.stage-load-mismatch`, 'Staged consolidation load pressure must match the corresponding consolidation stage load.'));
+        }
       }
       validateEvidenceRefs(findings, load.evidenceRefs, prefix);
       validateAssumptions(findings, load.assumptions, prefix);
@@ -1056,6 +1137,7 @@ function validateResultEnvelopeSemantics(
     ['foundation_settlement', 'builtin-elastic3d-demo'],
     ['excavation_deformation', 'builtin-staged-excavation-demo'],
     ['tunnel_volume_loss_settlement', 'builtin-tunnel-volume-loss-demo'],
+    ['staged_settlement_consolidation', 'builtin-staged-consolidation-1d'],
   ]);
   const expectedBackend = expectedBackendByObjective.get(analysisCase.objective);
   if (expectedBackend && manifest.backend.id !== expectedBackend) {
@@ -1148,6 +1230,40 @@ function validateResultEnvelopeSemantics(
     if (maxSettlementOk && maxSurfaceOk) {
       pushApproximateMatchFinding(findings, envelope.maxSettlementMm, maxSurfaceSettlementMm, 'result.envelope.tunnel-max-settlement-mismatch', 'Tunnel max settlement', 0.001);
     }
+    return;
+  }
+
+  if (analysisCase.objective === 'staged_settlement_consolidation') {
+    const consolidation = analysisCase.geometry.consolidation;
+    if (!consolidation) return;
+    const expectedLoadKn = consolidation.stages.reduce(
+      (total, stage) => total + stage.loadKpa * consolidation.surfaceAreaM2,
+      0,
+    );
+    const expectedLoadTolerance = Math.max(0.01, Math.abs(expectedLoadKn) * 0.0001);
+    const finalSettlementOk = pushFiniteNumberFinding(findings, envelope.finalSettlementMm, 'result.envelope.final-settlement', 'Envelope final settlement', { nonNegative: true });
+    pushFiniteNumberFinding(findings, envelope.plasticSettlementMm, 'result.envelope.plastic-settlement', 'Envelope plastic settlement', { nonNegative: true });
+    const degreeOk = pushFiniteNumberFinding(findings, envelope.finalDegreeOfConsolidation, 'result.envelope.final-degree-of-consolidation', 'Envelope final degree of consolidation', { nonNegative: true });
+    pushFiniteNumberFinding(findings, envelope.maxExcessPorePressureKpa, 'result.envelope.max-excess-pore-pressure', 'Envelope max excess pore pressure', { nonNegative: true });
+    pushFiniteNumberFinding(findings, envelope.maxMobilizedStrengthRatio, 'result.envelope.max-mobilized-strength-ratio', 'Envelope max mobilized strength ratio', { nonNegative: true });
+    pushFiniteNumberFinding(findings, envelope.drainagePathM, 'result.envelope.drainage-path', 'Envelope drainage path', { positive: true });
+    pushFiniteNumberFinding(findings, envelope.consolidationDurationYears, 'result.envelope.consolidation-duration', 'Envelope consolidation duration', { positive: true });
+    const stageCountOk = pushFiniteNumberFinding(findings, envelope.stageCount, 'result.envelope.stage-count', 'Envelope stage count', { positive: true });
+    if (stageCountOk && (!Number.isInteger(envelope.stageCount) || envelope.stageCount !== consolidation.stages.length)) {
+      findings.push(finding('blocker', 'result.envelope.consolidation-stage-count-mismatch', 'Consolidation envelope stage count must match the embedded load stages.'));
+    }
+    if (degreeOk && envelope.finalDegreeOfConsolidation! > 1) {
+      findings.push(finding('blocker', 'result.envelope.consolidation-degree-invalid', 'Final degree of consolidation must not exceed 1.0.'));
+    }
+    pushApproximateMatchFinding(findings, envelope.totalLoadKn, expectedLoadKn, 'result.envelope.consolidation-total-load-mismatch', 'Consolidation total load', expectedLoadTolerance);
+    pushApproximateMatchFinding(findings, envelope.reactionKn, expectedLoadKn, 'result.envelope.consolidation-reaction-mismatch', 'Consolidation reaction', expectedLoadTolerance);
+    if (maxSettlementOk && finalSettlementOk) {
+      pushApproximateMatchFinding(findings, envelope.maxSettlementMm, envelope.finalSettlementMm!, 'result.envelope.consolidation-max-settlement-mismatch', 'Consolidation max settlement', 0.001);
+    }
+    const expectedDrainagePathM = consolidation.drainage === 'double' ? consolidation.layerThicknessM / 2 : consolidation.layerThicknessM;
+    const expectedDurationYears = consolidation.stages.reduce((total, stage) => total + stage.durationYears, 0);
+    pushApproximateMatchFinding(findings, envelope.drainagePathM, expectedDrainagePathM, 'result.envelope.consolidation-drainage-path-mismatch', 'Consolidation drainage path', 0.001);
+    pushApproximateMatchFinding(findings, envelope.consolidationDurationYears, expectedDurationYears, 'result.envelope.consolidation-duration-mismatch', 'Consolidation duration', 0.001);
   }
 }
 
@@ -1182,6 +1298,7 @@ export function validateFemResultManifest(manifest: FemResultManifest): FemValid
     'builtin-elastic3d-demo',
     'builtin-staged-excavation-demo',
     'builtin-tunnel-volume-loss-demo',
+    'builtin-staged-consolidation-1d',
   ]);
   if (!validBackendIds.has(manifest.backend.id)) {
     findings.push(finding('blocker', 'result.backend.id-invalid', `Unsupported FEM result backend: ${String(manifest.backend.id)}.`));

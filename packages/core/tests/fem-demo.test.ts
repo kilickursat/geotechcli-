@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   buildExcavationDemoAnalysisCase,
   buildRaftDemoAnalysisCase,
+  buildStagedSettlementConsolidationDemoAnalysisCase,
   buildTunnelVolumeLossDemoAnalysisCase,
   renderFemWebglHtml,
   runBuiltinElasticExcavationDemo,
   runBuiltinElasticRaftDemo,
+  runBuiltinStagedSettlementConsolidationDemo,
   runBuiltinTunnelVolumeLossDemo,
   validateFemAnalysisCase,
   validateFemResultManifest,
@@ -53,6 +55,22 @@ describe('experimental FEM raft demo', () => {
     expect(validation.status).toBe('review');
     expect(validation.blockers).toBe(0);
     expect(validation.findings.map((finding) => finding.code)).toContain('tunnel.empirical-preview');
+  });
+
+  it('builds a review-gated deterministic staged consolidation analysis case', () => {
+    const analysisCase = buildStagedSettlementConsolidationDemoAnalysisCase();
+    const validation = validateFemAnalysisCase(analysisCase);
+
+    expect(analysisCase.schemaVersion).toBe('fem-analysis-case.v0');
+    expect(analysisCase.experimental).toBe(true);
+    expect(analysisCase.objective).toBe('staged_settlement_consolidation');
+    expect(analysisCase.analysisType).toBe('time_dependent_1d_consolidation');
+    expect(analysisCase.geometry.consolidation?.stages).toHaveLength(3);
+    expect(analysisCase.geometry.consolidation?.drainage).toBe('double');
+    expect(analysisCase.materials[0].model).toBe('mohr_coulomb');
+    expect(validation.status).toBe('review');
+    expect(validation.blockers).toBe(0);
+    expect(validation.findings.map((finding) => finding.code)).toContain('consolidation.1d-preview');
   });
 
   it('returns a finite result envelope and self-contained visualization mesh', () => {
@@ -134,6 +152,32 @@ describe('experimental FEM raft demo', () => {
       stride: 3,
       source: 'visualization.disp',
     });
+    expect(validation.status).toBe('review');
+    expect(validation.blockers).toBe(0);
+  });
+
+  it('returns a finite staged consolidation settlement-time manifest', () => {
+    const manifest = runBuiltinStagedSettlementConsolidationDemo();
+    const validation = validateFemResultManifest(manifest);
+
+    expect(manifest.schemaVersion).toBe('fem-result-manifest.v0');
+    expect(manifest.analysisCase.objective).toBe('staged_settlement_consolidation');
+    expect(manifest.backend.id).toBe('builtin-staged-consolidation-1d');
+    expect(manifest.envelope.finalSettlementMm).toBeGreaterThan(0);
+    expect(manifest.envelope.plasticSettlementMm).toBeGreaterThanOrEqual(0);
+    expect(manifest.envelope.finalDegreeOfConsolidation).toBeGreaterThan(0);
+    expect(manifest.envelope.finalDegreeOfConsolidation).toBeLessThanOrEqual(1);
+    expect(manifest.envelope.maxExcessPorePressureKpa).toBe(45);
+    expect(manifest.envelope.maxMobilizedStrengthRatio).toBeLessThanOrEqual(1);
+    expect(manifest.envelope.stageCount).toBe(3);
+    expect(manifest.visualization.frames?.map((frame) => frame.stageLabel)).toEqual([
+      'Stage 1 - preload fill',
+      'Stage 2 - embankment raise',
+      'Stage 3 - service surcharge hold',
+    ]);
+    expect(manifest.resultFields?.map((field) => field.id)).toContain('final_degree_of_consolidation');
+    expect(manifest.steps?.map((step) => step.id)).toEqual(['stage-1', 'stage-2', 'stage-3']);
+    expect(manifest.datasets?.filter((dataset) => dataset.source === 'visualization.frame')).toHaveLength(3);
     expect(validation.status).toBe('review');
     expect(validation.blockers).toBe(0);
   });
@@ -866,6 +910,20 @@ describe('experimental FEM raft demo', () => {
     expect(html).toContain('Trough width i');
     expect(html).not.toContain('id="fieldSelect"');
     expect(html).not.toContain('id="stageSlider"');
+    expect(html).not.toContain('<script src=');
+    expect(html).not.toContain('<link rel=');
+  });
+
+  it('renders staged consolidation WebGL artifacts with stage controls', () => {
+    const manifest = runBuiltinStagedSettlementConsolidationDemo();
+    const html = renderFemWebglHtml(manifest);
+
+    expect(html).toContain('Experimental deterministic FEM preview');
+    expect(html).toContain('Experimental 1D staged settlement consolidation preview');
+    expect(html).toContain('Final consolidation');
+    expect(html).toContain('id="stageSlider"');
+    expect(html).toContain('Stage 1 - preload fill');
+    expect(html).toContain('staged-settlement-consolidation-demo');
     expect(html).not.toContain('<script src=');
     expect(html).not.toContain('<link rel=');
   });

@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.95] - 2026-06-03
+
+### FEM Staged Consolidation Preview
+
+- Added an experimental staged settlement/consolidation FEM preview route with a deterministic 1D Terzaghi time-stepper, staged load history, settlement envelopes, pore-pressure metadata, and Mohr-Coulomb material-point review gates.
+- Added `geotech fem demo consolidation`, staged consolidation draft/run support, WebGL/fallback rendering coverage, and mock scenario smoke checks while keeping full 2D/3D coupled production FEM blocked.
+- Updated GroundModel, ingest dossier, benchmark, and default hosted GLM agent paths so staged consolidation is treated as a human-reviewed preview route, not a contract-only route or production solver.
+
 ## [0.4.94] - 2026-06-03
 
 ### Ingest Job Persistence Hardening

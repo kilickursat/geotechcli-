@@ -29,7 +29,9 @@ describe('FEM production readiness contract', () => {
     ]);
     expect(report.blockers).toEqual(expect.arrayContaining([
       'nonlinear-constitutive-kernel-coupled-to-global-fem-solver',
-      'consolidation-time-stepping-kernel-coupled-to-fem-route',
+      '2d-3d-coupled-consolidation-fem-backend-implemented',
+      'drainage-boundary-validation-approved-against-project-conditions',
+      'settlement-time-benchmark-suite-approved-against-published-or-commercial-references',
       'seepage-kernel-coupled-to-fem-route-and-result-manifest',
       'support-design-engine-coupled-to-staged-excavation-route',
       'workspace-to-run-acceptance-validator-enforced',

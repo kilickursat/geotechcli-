@@ -344,7 +344,6 @@ describe('registerFemCommand', () => {
       ['slope-embankment', 'slope-embankment-deformation', 'slope height'],
       ['retaining-wall', 'retaining-wall-excavation-support', 'prop/anchor levels'],
       ['groundwater-sensitive', 'seepage-groundwater-coupling', 'piezometric surfaces'],
-      ['staged-settlement', 'staged-settlement-consolidation', 'stage durations'],
     ] as const) {
       const program = new Command();
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -753,6 +752,70 @@ describe('registerFemCommand', () => {
     expect(payload.draft.reviewGates).toContain('not-fem-solver');
   });
 
+  it('prepares a staged settlement consolidation FEM case draft from explicit CLI inputs', async () => {
+    const registerFemCommand = await loadRegisterFemCommand();
+    const program = new Command();
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-fem-consolidation-draft-'));
+    tempDirs.push(dir);
+    const casePath = join(dir, 'consolidation.analysis_case.json');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    program.exitOverride();
+    registerFemCommand(program);
+
+    await program.parseAsync([
+      'fem',
+      'draft',
+      'staged-settlement',
+      '--layer-thickness',
+      '10',
+      '--surface-area',
+      '200',
+      '--stage-loads',
+      '45,35,20',
+      '--stage-durations',
+      '0.5,1,2',
+      '--drainage',
+      'double',
+      '--elastic-modulus',
+      '30000',
+      '--poisson-ratio',
+      '0.32',
+      '--unit-weight',
+      '18.5',
+      '--constrained-modulus',
+      '8000',
+      '--cv',
+      '0.8',
+      '--friction-angle',
+      '28',
+      '--cohesion',
+      '12',
+      '--hydraulic-conductivity',
+      '1e-9',
+      '--case-output',
+      casePath,
+      '--json',
+    ], { from: 'user' });
+
+    const payload = JSON.parse(collectLogText(logSpy).trim());
+    const caseFile = JSON.parse(await readFile(casePath, 'utf-8'));
+
+    expect(payload.objective).toBe('staged-settlement-consolidation');
+    expect(payload.draft.recommendedAction).toBe('run-reviewed-case');
+    expect(payload.draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed');
+    expect(payload.draft.canAutoProceed).toBe(false);
+    expect(payload.draft.analysisCase.objective).toBe('staged_settlement_consolidation');
+    expect(payload.draft.analysisCase.geometry.consolidation.stages).toHaveLength(3);
+    expect(payload.draft.analysisCase.materials[0].model).toBe('mohr_coulomb');
+    expect(payload.draft.reviewGates).toContain('1d-consolidation-only');
+    expect(payload.draft.reviewGates).toContain('consolidation.1d-preview');
+    expect(caseFile.loads.map((load: { target: string }) => load.target)).toEqual([
+      'ground_surface',
+      'ground_surface',
+      'ground_surface',
+    ]);
+  });
+
   it('requires explicit experimental acknowledgement for running FEM case files', async () => {
     const { buildRaftDemoAnalysisCase } = await import('../../core/src/fem/index.js');
     const registerFemCommand = await loadRegisterFemCommand();
@@ -904,9 +967,10 @@ describe('registerFemCommand', () => {
     ).rejects.toThrow(/approval record is stale/i);
   });
 
-  it('dispatches reviewed excavation and tunnel FEM analysis cases through deterministic run backends', async () => {
+  it('dispatches reviewed excavation, tunnel, and consolidation FEM analysis cases through deterministic run backends', async () => {
     const {
       buildExcavationDemoAnalysisCase,
+      buildStagedSettlementConsolidationDemoAnalysisCase,
       buildTunnelVolumeLossDemoAnalysisCase,
     } = await import('../../core/src/fem/index.js');
     const registerFemCommand = await loadRegisterFemCommand();
@@ -916,6 +980,7 @@ describe('registerFemCommand', () => {
     for (const [name, caseFile, expectedBackend] of [
       ['excavation', buildExcavationDemoAnalysisCase(), 'builtin-staged-excavation-demo'],
       ['tunnel', buildTunnelVolumeLossDemoAnalysisCase(), 'builtin-tunnel-volume-loss-demo'],
+      ['consolidation', buildStagedSettlementConsolidationDemoAnalysisCase(), 'builtin-staged-consolidation-1d'],
     ] as const) {
       const program = new Command();
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -1179,6 +1244,46 @@ describe('registerFemCommand', () => {
     expect(html).not.toContain('id="stageSlider"');
   });
 
+  it('writes a staged consolidation WebGL artifact and JSON command envelope', async () => {
+    const registerFemCommand = await loadRegisterFemCommand();
+    const program = new Command();
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-fem-cli-'));
+    tempDirs.push(dir);
+    const htmlPath = join(dir, 'consolidation-demo.html');
+    const resultPath = join(dir, 'consolidation-demo.manifest.json');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    program.exitOverride();
+    registerFemCommand(program);
+
+    await program.parseAsync([
+      'fem',
+      'demo',
+      'consolidation',
+      '--experimental',
+      '--save-html',
+      htmlPath,
+      '--output',
+      resultPath,
+      '--no-open',
+      '--json',
+    ], { from: 'user' });
+
+    const payload = JSON.parse(collectLogText(logSpy).trim());
+    const html = await readFile(htmlPath, 'utf-8');
+    const manifest = JSON.parse(await readFile(resultPath, 'utf-8'));
+
+    expect(payload.kind).toBe('geotech-fem-demo-result');
+    expect(payload.demo).toBe('consolidation');
+    expect(payload.opened).toBe(false);
+    expect(payload.manifest.analysisCase.objective).toBe('staged_settlement_consolidation');
+    expect(payload.manifest.envelope.finalDegreeOfConsolidation).toBeGreaterThan(0);
+    expect(manifest.backend.id).toBe('builtin-staged-consolidation-1d');
+    expect(manifest.resultFields.map((field: { id: string }) => field.id)).toContain('final_degree_of_consolidation');
+    expect(html).toContain('Experimental 1D staged settlement consolidation preview');
+    expect(html).toContain('id="stageSlider"');
+    expect(html).not.toContain('<script src=');
+  });
+
   it('prints a quiet settlement value without creating the default HTML artifact', async () => {
     const registerFemCommand = await loadRegisterFemCommand();
     const program = new Command();
@@ -1219,6 +1324,17 @@ describe('registerFemCommand', () => {
 
     await expect(
       program.parseAsync(['fem', 'demo', 'tunnel', '--json'], { from: 'user' }),
+    ).rejects.toThrow(/--experimental/i);
+  });
+
+  it('requires explicit experimental acknowledgement for the consolidation demo', async () => {
+    const registerFemCommand = await loadRegisterFemCommand();
+    const program = new Command();
+    program.exitOverride();
+    registerFemCommand(program);
+
+    await expect(
+      program.parseAsync(['fem', 'demo', 'consolidation', '--json'], { from: 'user' }),
     ).rejects.toThrow(/--experimental/i);
   });
 });

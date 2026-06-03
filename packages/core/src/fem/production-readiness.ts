@@ -58,7 +58,7 @@ const ALL_PRODUCTION_FEATURES: FemProductionFeature[] = [
 const FEATURE_REQUIREMENTS: Record<FemProductionFeature, Omit<FemProductionFeatureRequirement, 'feature'>> = {
   'nonlinear-plasticity': {
     status: 'kernel-verified',
-    currentCoverage: 'A deterministic Mohr-Coulomb triaxial material-point kernel is benchmarked against closed-form yield. Current preview result manifests still use linear elastic materials only.',
+    currentCoverage: 'A deterministic Mohr-Coulomb triaxial material-point kernel is benchmarked against closed-form yield and is used as a staged-consolidation review gate. It is not coupled to a global 2D/3D plasticity solver or plastic strain field.',
     requiredForAcceptance: [
       'constitutive models accepted for geotechnical use, such as Mohr-Coulomb/Hardening Soil or equivalent',
       'stress-path, yield, plastic strain, and convergence validation fixtures',
@@ -72,15 +72,15 @@ const FEATURE_REQUIREMENTS: Record<FemProductionFeature, Omit<FemProductionFeatu
   },
   consolidation: {
     status: 'kernel-verified',
-    currentCoverage: 'A deterministic 1D Terzaghi backward-Euler consolidation kernel is benchmarked against analytical average consolidation. Current preview result manifests do not expose time-dependent consolidation fields.',
+    currentCoverage: 'A deterministic 1D Terzaghi backward-Euler consolidation kernel is benchmarked against analytical average consolidation and exposed through a human-reviewed staged-settlement/consolidation preview route. It is not a full 2D/3D coupled Biot FEM backend.',
     requiredForAcceptance: [
       'time-stepping consolidation backend with drainage boundary controls',
       'Cv, mv/Cc, drainage path, stage duration, and monitoring calibration schema',
       'settlement-time benchmark fixtures and tolerance envelopes',
     ],
     blockedUntil: [
-      'consolidation-time-stepping-kernel-coupled-to-fem-route',
-      'drainage-boundary-validation-approved',
+      '2d-3d-coupled-consolidation-fem-backend-implemented',
+      'drainage-boundary-validation-approved-against-project-conditions',
       'settlement-time-benchmark-suite-approved-against-published-or-commercial-references',
     ],
   },
@@ -100,7 +100,7 @@ const FEATURE_REQUIREMENTS: Record<FemProductionFeature, Omit<FemProductionFeatu
   },
   'advanced-staged-construction': {
     status: 'preview-only',
-    currentCoverage: 'Excavation preview includes deterministic stage visualization and proxies, but not production construction sequencing or nonlinear path-dependence.',
+    currentCoverage: 'Excavation and staged-consolidation previews include deterministic stage visualization and load histories, but not production construction sequencing, activation/deactivation, or nonlinear path-dependence.',
     requiredForAcceptance: [
       'construction-stage activation/deactivation model with support installation/removal',
       'stage-specific boundary, load, groundwater, and material state transitions',

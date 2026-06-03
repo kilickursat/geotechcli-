@@ -286,6 +286,119 @@ describe('AI fallback behavior', () => {
     expect(global.fetch).toHaveBeenCalled();
   });
 
+  it('uses mocked default hosted GLM to gate staged consolidation FEM planning through readiness and prepare-case tools', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        hostedBetaSuccessResponse([
+          'I will check FEM production readiness before drafting the staged consolidation case.',
+          '```tool',
+          JSON.stringify({
+            tool: 'assess_fem_production_readiness',
+            args: {
+              objective: 'staged-settlement-consolidation',
+              requestedFeatures: [
+                'consolidation',
+                'advanced-staged-construction',
+                'real-project-workspace-to-run-acceptance',
+              ],
+            },
+          }),
+          '```',
+        ].join('\n')),
+      )
+      .mockResolvedValueOnce(
+        hostedBetaSuccessResponse([
+          'Readiness is blocked, so I will prepare the staged consolidation route draft without claiming a solver run.',
+          '```tool',
+          JSON.stringify({
+            tool: 'prepare_fem_analysis_case',
+            args: {
+              objective: 'staged-settlement-consolidation',
+            },
+          }),
+          '```',
+        ].join('\n')),
+      )
+      .mockResolvedValueOnce(
+        hostedBetaSuccessResponse(
+          'Staged consolidation is draft-prepared but review-gated; production readiness is blocked and no solver was run.',
+        ),
+      );
+    global.fetch = fetchMock as typeof fetch;
+
+    const session = await runAgent(
+      'Use the default hosted GLM agent to plan a staged settlement consolidation FEM case. Check readiness first, then prepare the case route without running a solver.',
+      {
+        provider: 'hosted-beta',
+        apiKey: '',
+        timeout: 1000,
+      },
+      () => {},
+      undefined,
+      {
+        allowedTools: [
+          'assess_fem_production_readiness',
+          'prepare_fem_analysis_case',
+        ],
+        disableDeterministicPreflight: true,
+        requiredToolsBeforeFinal: [
+          'assess_fem_production_readiness',
+          'prepare_fem_analysis_case',
+        ],
+      },
+    );
+
+    const firstRequest = JSON.parse(
+      String(fetchMock.mock.calls[0]?.[1]?.body ?? '{}'),
+    ) as { model?: string };
+    expect(firstRequest.model).toBe('glm-5.1');
+
+    const toolCalls = session.steps.filter((step) => step.type === 'tool_call');
+    expect(toolCalls.map((step) => step.toolName)).toEqual([
+      'assess_fem_production_readiness',
+      'prepare_fem_analysis_case',
+    ]);
+    expect(toolCalls[0]?.toolArgs).toMatchObject({
+      objective: 'staged-settlement-consolidation',
+      requestedFeatures: expect.arrayContaining([
+        'consolidation',
+        'advanced-staged-construction',
+        'real-project-workspace-to-run-acceptance',
+      ]),
+    });
+    expect(toolCalls[1]?.toolArgs).toMatchObject({
+      objective: 'staged-settlement-consolidation',
+    });
+
+    const readinessResult = session.steps.find(
+      (step) => step.type === 'tool_result' && step.toolName === 'assess_fem_production_readiness',
+    );
+    expect(readinessResult?.content).toContain('FEM production readiness blocked');
+    expect((readinessResult?.toolResult?.data as any).productionReady).toBe(false);
+
+    const draftResult = session.steps.find(
+      (step) => step.type === 'tool_result' && step.toolName === 'prepare_fem_analysis_case',
+    );
+    expect(draftResult?.content).toContain('staged-settlement-consolidation');
+    expect(draftResult?.content).toContain('draft prepared');
+    expect(draftResult?.content).toContain('auto-proceed: no');
+    expect((draftResult?.toolResult?.data as any).implemented).toBe(true);
+    expect((draftResult?.toolResult?.data as any).recommendedAction).toBe('collect-inputs');
+    expect((draftResult?.toolResult?.data as any).canAutoProceed).toBe(false);
+    expect((draftResult?.toolResult?.data as any).missingUserInputs).toEqual(
+      expect.arrayContaining([
+        'stage loads',
+        'stage durations',
+      ]),
+    );
+    expect((draftResult?.toolResult?.data as any).analysisCase).toBeUndefined();
+
+    const answer = session.steps.find((step) => step.type === 'answer');
+    expect(answer?.content).toMatch(/draft-prepared/i);
+    expect(answer?.content).toMatch(/no solver/i);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
   it('returns a deterministic fallback answer in runSwarm when the first hosted-beta turn cannot reach the provider', async () => {
     global.fetch = vi.fn().mockResolvedValue(
       new Response(

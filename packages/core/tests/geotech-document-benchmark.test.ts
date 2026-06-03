@@ -410,6 +410,7 @@ describe('geotech document benchmark', () => {
         'foundation-settlement',
         'excavation-deformation',
         'tunnel-volume-loss-settlement',
+        'staged-settlement-consolidation',
       ],
       contractOnlyRoutes: [
         'shaft-deformation',
@@ -417,7 +418,6 @@ describe('geotech document benchmark', () => {
         'slope-embankment-deformation',
         'retaining-wall-excavation-support',
         'seepage-groundwater-coupling',
-        'staged-settlement-consolidation',
       ],
       agentRunAllowedRoutes: [],
       agentWebglAllowedRoutes: [],
@@ -439,6 +439,7 @@ describe('geotech document benchmark', () => {
         'foundation-settlement',
         'excavation-deformation',
         'tunnel-volume-loss-settlement',
+        'staged-settlement-consolidation',
       ],
       staleRunCommandRoutes: [],
     });
@@ -514,9 +515,15 @@ describe('geotech document benchmark', () => {
     expect(seepageRoute?.executionMode).toBe('contract-only');
     expect(seepageRoute?.requiredEvidence).toContain('groundwater observations');
     expect(seepageRoute?.reviewGates).toContain('seepage-solver-not-implemented');
-    expect(stagedRoute?.executionMode).toBe('contract-only');
+    expect(stagedRoute?.executionMode).toBe('human-reviewed-preview');
     expect(stagedRoute?.requiredEvidence).toContain('compressibility/consolidation parameters');
-    expect(stagedRoute?.contractReadiness?.disallowedAgentActions).toContain('invent-results');
+    expect(stagedRoute?.reviewGates).toEqual(expect.arrayContaining([
+      '1d-consolidation-only',
+      'time-rate-review-required',
+      'not-design-calculation',
+    ]));
+    expect(stagedRoute?.executionBoundary.humanRunCommandTemplate).toBe('geotech fem run <analysis_case.json> --experimental --reviewed');
+    expect(stagedRoute?.contractReadiness).toBeUndefined();
     expect(benchmark.evidenceContract).toMatchObject({
       schemaVersion: 2,
       providerNeutral: true,
@@ -797,6 +804,7 @@ describe('geotech document benchmark', () => {
         'foundation-settlement',
         'excavation-deformation',
         'tunnel-volume-loss-settlement',
+        'staged-settlement-consolidation',
       ],
       contractOnlyRoutes: [
         'shaft-deformation',
@@ -804,13 +812,18 @@ describe('geotech document benchmark', () => {
         'slope-embankment-deformation',
         'retaining-wall-excavation-support',
         'seepage-groundwater-coupling',
-        'staged-settlement-consolidation',
       ],
       agentRunAllowedRoutes: [],
       agentWebglAllowedRoutes: [],
       agentResultManifestAllowedRoutes: [],
       caseOutputAvailableRoutes: [],
       humanRunCommandAvailableRoutes: [],
+      runCommandRoutes: [
+        'foundation-settlement',
+        'excavation-deformation',
+        'tunnel-volume-loss-settlement',
+        'staged-settlement-consolidation',
+      ],
       staleRunCommandRoutes: [],
     });
     expect(fixture.femDraftReadiness.gates).toEqual(expect.arrayContaining([

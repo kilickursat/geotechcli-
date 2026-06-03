@@ -8,12 +8,14 @@ import {
   buildExcavationDemoAnalysisCase,
   buildLLMConfig,
   buildRaftDemoAnalysisCase,
+  buildStagedSettlementConsolidationDemoAnalysisCase,
   buildTunnelVolumeLossDemoAnalysisCase,
   prepareFemAnalysisCaseDraft,
   renderFemWebglHtml,
   runAgent,
   runBuiltinElasticExcavationDemo,
   runBuiltinElasticRaftDemo,
+  runBuiltinStagedSettlementConsolidationDemo,
   runBuiltinTunnelVolumeLossDemo,
   validateFemAnalysisCase,
   validateFemReviewerApprovalRecord,
@@ -42,8 +44,9 @@ import { addGlobalFlags, getGlobalFlags } from '../util/flags.js';
 const DEFAULT_RAFT_HTML = 'geotech-fem-raft-demo.html';
 const DEFAULT_EXCAVATION_HTML = 'geotech-fem-excavation-demo.html';
 const DEFAULT_TUNNEL_HTML = 'geotech-fem-tunnel-demo.html';
+const DEFAULT_CONSOLIDATION_HTML = 'geotech-fem-consolidation-demo.html';
 const DEFAULT_RUN_HTML = 'geotech-fem-run.html';
-type FemDemoKind = 'raft' | 'excavation' | 'tunnel';
+type FemDemoKind = 'raft' | 'excavation' | 'tunnel' | 'consolidation';
 const FEM_AGENT_TOOLS = [
   'list_fem_capabilities',
   'assess_fem_production_readiness',
@@ -216,6 +219,8 @@ function runDeterministicFemAnalysisCase(analysisCase: FemAnalysisCase): FemResu
       return runBuiltinElasticExcavationDemo(analysisCase);
     case 'tunnel_volume_loss_settlement':
       return runBuiltinTunnelVolumeLossDemo(analysisCase);
+    case 'staged_settlement_consolidation':
+      return runBuiltinStagedSettlementConsolidationDemo(analysisCase);
     default:
       throw new Error(`Unsupported FEM objective: ${String((analysisCase as { objective?: unknown }).objective)}.`);
   }
@@ -235,6 +240,10 @@ function mergeFemDraftInputs(
     excavation: {
       ...(base.excavation ?? {}),
       ...(override.excavation ?? {}),
+    },
+    consolidation: {
+      ...(base.consolidation ?? {}),
+      ...(override.consolidation ?? {}),
     },
     load: {
       ...(base.load ?? {}),
@@ -349,12 +358,20 @@ function buildFemDraftInput(
     tunnelCenterYM: parseNumberOption(opts.tunnelCenterY, '--tunnel-center-y') ?? parsed.geometry?.tunnelCenterYM,
     tunnelVolumeLossPercent: parseNumberOption(opts.volumeLoss, '--volume-loss') ?? parsed.geometry?.tunnelVolumeLossPercent,
     troughWidthParameterK: parseNumberOption(opts.troughWidth, '--trough-width') ?? parsed.geometry?.troughWidthParameterK,
+    consolidationLayerThicknessM: parseNumberOption(opts.layerThickness, '--layer-thickness') ?? parsed.geometry?.consolidationLayerThicknessM,
+    consolidationSurfaceAreaM2: parseNumberOption(opts.surfaceArea, '--surface-area') ?? parsed.geometry?.consolidationSurfaceAreaM2,
   };
   const excavation = {
     ...(parsed.excavation ?? {}),
     stageDepthsM: parseNumberListOption(opts.stageDepths, '--stage-depths') ?? parsed.excavation?.stageDepthsM,
     supportLevelsM: parseNumberListOption(opts.supportLevels, '--support-levels') ?? parsed.excavation?.supportLevelsM,
     wallType: typeof opts.wallType === 'string' ? opts.wallType as any : parsed.excavation?.wallType,
+  };
+  const consolidation = {
+    ...(parsed.consolidation ?? {}),
+    stageLoadsKpa: parseNumberListOption(opts.stageLoads, '--stage-loads') ?? parsed.consolidation?.stageLoadsKpa,
+    stageDurationsYears: parseNumberListOption(opts.stageDurations, '--stage-durations') ?? parsed.consolidation?.stageDurationsYears,
+    drainage: typeof opts.drainage === 'string' ? opts.drainage as any : parsed.consolidation?.drainage,
   };
   const load = {
     ...(parsed.load ?? {}),
@@ -365,6 +382,11 @@ function buildFemDraftInput(
     elasticModulusKpa: parseNumberOption(opts.elasticModulus, '--elastic-modulus') ?? parsed.material?.elasticModulusKpa,
     poissonRatio: parseNumberOption(opts.poissonRatio, '--poisson-ratio') ?? parsed.material?.poissonRatio,
     unitWeightKnM3: parseNumberOption(opts.unitWeight, '--unit-weight') ?? parsed.material?.unitWeightKnM3,
+    constrainedModulusKpa: parseNumberOption(opts.constrainedModulus, '--constrained-modulus') ?? parsed.material?.constrainedModulusKpa,
+    frictionAngleDeg: parseNumberOption(opts.frictionAngle, '--friction-angle') ?? parsed.material?.frictionAngleDeg,
+    cohesionKpa: parseNumberOption(opts.cohesion, '--cohesion') ?? parsed.material?.cohesionKpa,
+    coefficientOfConsolidationM2PerYear: parseNumberOption(opts.cv, '--cv') ?? parsed.material?.coefficientOfConsolidationM2PerYear,
+    hydraulicConductivityMPerS: parseNumberOption(opts.hydraulicConductivity, '--hydraulic-conductivity') ?? parsed.material?.hydraulicConductivityMPerS,
   };
   const groundwater = {
     ...(parsed.groundwater ?? {}),
@@ -379,6 +401,7 @@ function buildFemDraftInput(
     useDemoDefaults: opts.demoDefaults === true || parsed.useDemoDefaults === true,
     geometry,
     excavation,
+    consolidation,
     load,
     material,
     groundwater,
@@ -843,12 +866,33 @@ export function registerFemCommand(program: Command): void {
       );
     });
 
+  const consolidation = new Command('consolidation')
+    .description('Experimental 1D staged settlement consolidation preview')
+    .option('--experimental', 'Acknowledge that this FEM preview is experimental and not a design calculation')
+    .addHelpText('after', `
+  Examples:
+    geotech fem demo consolidation --experimental
+    geotech fem demo consolidation --experimental --save-html consolidation-fem.html --no-open
+    geotech fem demo consolidation --experimental --output consolidation-fem.manifest.json --json
+`)
+    .action(async (opts) => {
+      await runFemDemoCommand(
+        'consolidation',
+        DEFAULT_CONSOLIDATION_HTML,
+        'Experimental 1D Staged Settlement Consolidation Preview',
+        runBuiltinStagedSettlementConsolidationDemo(buildStagedSettlementConsolidationDemoAnalysisCase()),
+        opts as Record<string, unknown>,
+      );
+    });
+
   addGlobalFlags(raft);
   addGlobalFlags(excavation);
   addGlobalFlags(tunnel);
+  addGlobalFlags(consolidation);
   demo.addCommand(raft);
   demo.addCommand(excavation);
   demo.addCommand(tunnel);
+  demo.addCommand(consolidation);
   fem.addCommand(demo);
 
   const run = new Command('run')
@@ -912,10 +956,20 @@ export function registerFemCommand(program: Command): void {
     .option('--stage-depths <csv>', 'Comma-separated excavation stage depths in metres')
     .option('--support-levels <csv>', 'Comma-separated excavation support levels in metres')
     .option('--wall-type <type>', 'Excavation wall type: diaphragm_wall, secant_pile_wall, soldier_pile_lagging, unsupported_screening')
+    .option('--layer-thickness <m>', 'Staged consolidation layer thickness in metres')
+    .option('--surface-area <m2>', 'Staged consolidation tributary surface area in square metres')
+    .option('--stage-loads <csv>', 'Comma-separated staged consolidation surface loads in kPa')
+    .option('--stage-durations <csv>', 'Comma-separated staged consolidation durations in years')
+    .option('--drainage <type>', 'Staged consolidation drainage condition: single or double')
     .option('--pressure <kPa>', 'Raft pressure or excavation surcharge pressure in kPa')
     .option('--elastic-modulus <kPa>', 'Representative elastic modulus in kPa')
     .option('--poisson-ratio <ratio>', 'Representative Poisson ratio')
     .option('--unit-weight <kN/m3>', 'Representative unit weight in kN/m3')
+    .option('--constrained-modulus <kPa>', 'Representative constrained modulus for 1D consolidation settlement')
+    .option('--friction-angle <deg>', 'Mohr-Coulomb friction angle for consolidation strength gate')
+    .option('--cohesion <kPa>', 'Mohr-Coulomb cohesion for consolidation strength gate')
+    .option('--cv <m2/year>', 'Coefficient of consolidation in square metres per year')
+    .option('--hydraulic-conductivity <m/s>', 'Reviewed hydraulic conductivity used for traceability')
     .option('--groundwater-condition <condition>', 'Groundwater condition: not_modelled, below_domain, specified')
     .option('--groundwater-depth <m>', 'Groundwater depth in metres when condition is specified')
     .option('--groundwater-note <text>', 'Groundwater review note')
@@ -926,6 +980,7 @@ export function registerFemCommand(program: Command): void {
     geotech fem draft excavation-deformation --input fem-input.json --case-output analysis_case.json
     geotech fem draft foundation-settlement --workspace ./site-data --raft-length 10 --raft-width 8 --pressure 150 --json
     geotech fem draft tunnel-volume-loss-settlement --tunnel-diameter 6 --tunnel-depth 18 --tunnel-length 60 --volume-loss 1.2 --trough-width 0.5 --json
+    geotech fem draft staged-settlement-consolidation --layer-thickness 10 --surface-area 200 --stage-loads 45,35,20 --stage-durations 0.5,1,2 --drainage double --constrained-modulus 8000 --cv 0.8 --friction-angle 28 --cohesion 12 --json
 
   This command prepares a review-gated FEM analysis-case draft only. It does not run a solver,
   does not create WebGL results, and never auto-approves FEM output for design use.

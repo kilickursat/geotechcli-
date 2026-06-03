@@ -51,6 +51,9 @@ describe('FEM routing contract', () => {
     expect(capabilities.find((capability) => capability.objective === 'slope-embankment-deformation')?.executionMode).toBe('contract-only');
     expect(capabilities.find((capability) => capability.objective === 'retaining-wall-excavation-support')?.requiredUserInputs).toContain('prop/anchor levels');
     expect(capabilities.find((capability) => capability.objective === 'seepage-groundwater-coupling')?.reviewGates).toContain('seepage-solver-not-implemented');
+    expect(capabilities.find((capability) => capability.objective === 'staged-settlement-consolidation')?.status).toBe('implemented-demo');
+    expect(capabilities.find((capability) => capability.objective === 'staged-settlement-consolidation')?.executionMode).toBe('human-reviewed-preview');
+    expect(capabilities.find((capability) => capability.objective === 'staged-settlement-consolidation')?.deterministicBackend).toBe('builtin-staged-consolidation-1d');
     expect(capabilities.find((capability) => capability.objective === 'staged-settlement-consolidation')?.requiredEvidence).toContain('compressibility/consolidation parameters');
     expect(capabilities.every((capability) => capability.agentRunAllowed === false)).toBe(true);
   });
@@ -269,7 +272,6 @@ describe('FEM routing contract', () => {
     for (const [objective, expectedInput] of [
       ['slope-embankment-deformation', 'slope height'],
       ['retaining-wall-excavation-support', 'prop/anchor levels'],
-      ['staged-settlement-consolidation', 'stage durations'],
     ] as const) {
       const planned = prepareFemAnalysisCaseDraft({ objective });
       expect(planned.implemented).toBe(false);
@@ -286,6 +288,64 @@ describe('FEM routing contract', () => {
         'invent-results',
       ]);
     }
+  });
+
+  it('prepares staged settlement/consolidation drafts as human-reviewed experimental previews only', () => {
+    const missing = prepareFemAnalysisCaseDraft({ objective: 'staged-settlement-consolidation' });
+
+    expect(missing.implemented).toBe(true);
+    expect(missing.capability.executionMode).toBe('human-reviewed-preview');
+    expect(missing.capability.agentRunAllowed).toBe(false);
+    expect(missing.recommendedAction).toBe('collect-inputs');
+    expect(missing.analysisCase).toBeUndefined();
+    expect(missing.missingUserInputs).toEqual(expect.arrayContaining([
+      'consolidation layer thickness',
+      'consolidation tributary surface area',
+      'stage loads',
+      'stage durations',
+      'drainage condition',
+    ]));
+
+    const draft = prepareFemAnalysisCaseDraft({
+      objective: 'staged-settlement-consolidation',
+      geometry: {
+        consolidationLayerThicknessM: 10,
+        consolidationSurfaceAreaM2: 200,
+      },
+      consolidation: {
+        stageLoadsKpa: [45, 35, 20],
+        stageDurationsYears: [0.5, 1, 2],
+        drainage: 'double',
+      },
+      material: {
+        elasticModulusKpa: 30_000,
+        poissonRatio: 0.32,
+        unitWeightKnM3: 18.5,
+        constrainedModulusKpa: 8_000,
+        frictionAngleDeg: 28,
+        cohesionKpa: 12,
+        coefficientOfConsolidationM2PerYear: 0.8,
+        hydraulicConductivityMPerS: 1e-9,
+      },
+      evidenceRefs: [{ id: 'ev-con-1', source: 'GroundModel', page: 8 }],
+    });
+
+    expect(draft.implemented).toBe(true);
+    expect(draft.recommendedAction).toBe('run-reviewed-case');
+    expect(draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed');
+    expect(draft.canAutoProceed).toBe(false);
+    expect(draft.analysisCase?.objective).toBe('staged_settlement_consolidation');
+    expect(draft.analysisCase?.analysisType).toBe('time_dependent_1d_consolidation');
+    expect(draft.analysisCase?.geometry.consolidation?.stages).toHaveLength(3);
+    expect(draft.analysisCase?.materials[0]?.model).toBe('mohr_coulomb');
+    expect(draft.analysisCase?.loads.map((load) => load.target)).toEqual([
+      'ground_surface',
+      'ground_surface',
+      'ground_surface',
+    ]);
+    expect(draft.validation?.status).toBe('review');
+    expect(draft.reviewGates).toContain('1d-consolidation-only');
+    expect(draft.reviewGates).toContain('consolidation.1d-preview');
   });
 
   it('bridges GroundModel readiness into FEM draft inputs without converting placeholders into values', () => {

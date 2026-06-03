@@ -109,6 +109,22 @@ function assertReferenceChecks(name, objective, envelope, draftArgs) {
       `${name}: tunnel settlement volume per metre does not match total settlement volume`,
     );
   }
+
+  if (objective === 'staged_settlement_consolidation') {
+    const surfaceArea = Number(draftArgs[draftArgs.indexOf('--surface-area') + 1]);
+    const stageLoads = draftArgs[draftArgs.indexOf('--stage-loads') + 1].split(',').map(Number);
+    const stageDurations = draftArgs[draftArgs.indexOf('--stage-durations') + 1].split(',').map(Number);
+    const expectedLoad = stageLoads.reduce((total, load) => total + load * surfaceArea, 0);
+    const expectedDuration = stageDurations.reduce((total, duration) => total + duration, 0);
+    assert(
+      Math.abs(envelope.totalLoadKn - expectedLoad) <= 0.01,
+      `${name}: staged consolidation total load ${envelope.totalLoadKn} does not match staged pressure load ${expectedLoad}`,
+    );
+    assert(envelope.stageCount === stageLoads.length, `${name}: staged consolidation stage count mismatch`);
+    assert(envelope.finalDegreeOfConsolidation > 0 && envelope.finalDegreeOfConsolidation <= 1, `${name}: degree of consolidation must stay within 0-1`);
+    assert(envelope.maxMobilizedStrengthRatio >= 0 && envelope.maxMobilizedStrengthRatio <= 1, `${name}: mobilized strength ratio must stay within 0-1`);
+    assert(Math.abs(envelope.consolidationDurationYears - expectedDuration) <= 0.001, `${name}: consolidation duration mismatch`);
+  }
 }
 
 async function draftAndRun({ name, objective, draftArgs, expectedObjective, expectedBackend, expectedEnvelope, expectedFields = [], outDir, checkReviewGate = false }) {
@@ -206,7 +222,6 @@ const contractOnlyRoutes = [
   'slope-embankment-deformation',
   'retaining-wall-excavation-support',
   'seepage-groundwater-coupling',
-  'staged-settlement-consolidation',
 ];
 for (const route of contractOnlyRoutes) {
   const output = await runCli(['fem', 'draft', route, '--json']);
@@ -363,6 +378,36 @@ const cases = [
       '--elastic-modulus', '52000',
       '--poisson-ratio', '0.28',
       '--unit-weight', '19',
+    ],
+  },
+  {
+    name: 'consolidation-baseline',
+    objective: 'staged-settlement-consolidation',
+    expectedObjective: 'staged_settlement_consolidation',
+    expectedBackend: 'builtin-staged-consolidation-1d',
+    expectedFields: ['vertical_settlement', 'final_degree_of_consolidation', 'max_excess_pore_pressure', 'max_mobilized_strength_ratio'],
+    expectedEnvelope: {
+      finalSettlementMm: { min: 40, max: 55 },
+      plasticSettlementMm: { min: 0, max: 60 },
+      finalDegreeOfConsolidation: { min: 0.2, max: 1 },
+      maxExcessPorePressureKpa: { equals: 45, tolerance: 0.001 },
+      stageCount: { equals: 3, tolerance: 0.000001 },
+      totalLoadKn: { equals: 20000, tolerance: 0.001 },
+    },
+    draftArgs: [
+      '--layer-thickness', '10',
+      '--surface-area', '200',
+      '--stage-loads', '45,35,20',
+      '--stage-durations', '0.5,1,2',
+      '--drainage', 'double',
+      '--elastic-modulus', '30000',
+      '--poisson-ratio', '0.32',
+      '--unit-weight', '18.5',
+      '--constrained-modulus', '8000',
+      '--cv', '0.8',
+      '--friction-angle', '28',
+      '--cohesion', '12',
+      '--hydraulic-conductivity', '1e-9',
     ],
   },
 ];

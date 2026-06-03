@@ -128,26 +128,6 @@
         "agent-run-disabled",
         "human-review-required"
       ]
-    },
-    {
-      "workflow": "fem-staged-settlement-consolidation",
-      "objective": "staged-settlement-consolidation",
-      "draftCommand": "geotech fem draft staged-settlement-consolidation --input <json>",
-      "missingUserInputs": [
-        "load or fill stages",
-        "stage durations",
-        "foundation footprint",
-        "drainage path assumptions",
-        "target settlement or monitoring triggers"
-      ],
-      "requiredReviewGates": [
-        "planned-only",
-        "consolidation-backend-not-implemented",
-        "time-rate-review-required",
-        "solver-backend-not-implemented",
-        "agent-run-disabled",
-        "human-review-required"
-      ]
     }
   ],
   "requiredPrefill": {

@@ -55,6 +55,7 @@ function inferCase(manifest, requested) {
   if (manifest.analysisCase?.objective === 'foundation_settlement') return 'raft';
   if (manifest.analysisCase?.objective === 'excavation_deformation') return 'excavation';
   if (manifest.analysisCase?.objective === 'tunnel_volume_loss_settlement') return 'tunnel';
+  if (manifest.analysisCase?.objective === 'staged_settlement_consolidation') return 'consolidation';
   return 'auto';
 }
 
@@ -121,6 +122,18 @@ function caseManifestChecks(manifest, caseName) {
     assert(Number.isFinite(manifest.envelope?.troughWidthM), 'tunnel trough width is not finite');
     assert(manifest.resultFields?.some((field) => field.id === 'surface_settlement'), 'missing tunnel result field metadata');
     assert(manifest.steps?.map((step) => step.id).includes('final'), 'missing tunnel final step metadata');
+  } else if (caseName === 'consolidation') {
+    assert(manifest.analysisCase?.objective === 'staged_settlement_consolidation', 'not a staged consolidation manifest');
+    assert(manifest.backend?.id === 'builtin-staged-consolidation-1d', 'unexpected consolidation backend');
+    assert(manifest.mesh?.nodes === 715, 'unexpected consolidation node count');
+    assert(manifest.mesh?.elements === 480, 'unexpected consolidation element count');
+    assert(manifest.envelope?.stageCount === 3, 'consolidation stage count mismatch');
+    assert(Number.isFinite(manifest.envelope?.finalSettlementMm), 'consolidation final settlement is not finite');
+    assert(Number.isFinite(manifest.envelope?.finalDegreeOfConsolidation), 'consolidation degree is not finite');
+    assert(Number.isFinite(manifest.envelope?.maxExcessPorePressureKpa), 'consolidation pore pressure is not finite');
+    assert(manifest.resultFields?.some((field) => field.id === 'final_degree_of_consolidation'), 'missing consolidation result field metadata');
+    assert(manifest.steps?.length === 3, 'expected three consolidation result steps');
+    assert(manifest.datasets?.filter((dataset) => dataset.source === 'visualization.frame').length === 3, 'expected staged consolidation frame datasets');
   }
 }
 
@@ -244,7 +257,8 @@ async function assertControlBounds(page, viewportName) {
     return items
       .filter((item) => {
         const style = getComputedStyle(item);
-        return style.display !== 'none' && style.visibility !== 'hidden';
+        const rect = item.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
       })
       .map((item) => {
         const rect = item.getBoundingClientRect();
@@ -293,23 +307,33 @@ async function assertFrameControlsMatchManifest(page, manifest, viewportName) {
   const fieldOptions = await page.locator('#fieldSelect option').evaluateAll((options) =>
     options.map((option) => ({ value: option.value, label: option.textContent?.trim() ?? '' })),
   );
-  assert(fieldOptions.length === expectedFieldIds.length, `${viewportName}: field option count mismatch (${JSON.stringify({ fieldOptions, expectedFieldIds })})`);
-  for (const expected of expectedFieldIds) {
-    assert(fieldOptions.some((option) => option.value === expected), `${viewportName}: missing field option ${expected}`);
-    const metadataLabel = resultFields.find((field) => field.id === expected)?.label;
-    if (metadataLabel) {
-      assert(fieldOptions.some((option) => option.value === expected && option.label === metadataLabel), `${viewportName}: field option label did not match manifest metadata for ${expected}`);
+  if (expectedFieldIds.length > 1) {
+    assert(fieldOptions.length === expectedFieldIds.length, `${viewportName}: field option count mismatch (${JSON.stringify({ fieldOptions, expectedFieldIds })})`);
+    for (const expected of expectedFieldIds) {
+      assert(fieldOptions.some((option) => option.value === expected), `${viewportName}: missing field option ${expected}`);
+      const metadataLabel = resultFields.find((field) => field.id === expected)?.label;
+      if (metadataLabel) {
+        assert(fieldOptions.some((option) => option.value === expected && option.label === metadataLabel), `${viewportName}: field option label did not match manifest metadata for ${expected}`);
+      }
     }
+  } else {
+    const fieldSelectVisible = await page.locator('#fieldSelect').count() > 0 && await page.locator('#fieldSelect').isVisible();
+    assert(!fieldSelectVisible || fieldOptions.length === expectedFieldIds.length, `${viewportName}: single-field selector mismatch (${JSON.stringify({ fieldOptions, expectedFieldIds })})`);
   }
 
-  const sliderProbe = await page.locator('#stageSlider').evaluate((slider) => ({
-    min: slider.getAttribute('min'),
-    max: slider.getAttribute('max'),
-    step: slider.getAttribute('step'),
-  }));
-  assert(sliderProbe.min === '0', `${viewportName}: stage slider min mismatch (${JSON.stringify(sliderProbe)})`);
-  assert(sliderProbe.step === '1', `${viewportName}: stage slider step mismatch (${JSON.stringify(sliderProbe)})`);
-  assert(sliderProbe.max === String(Math.max(0, steps.length - 1)), `${viewportName}: stage slider max did not match manifest steps (${JSON.stringify({ sliderProbe, steps: steps.length })})`);
+  if (steps.length > 1) {
+    const sliderProbe = await page.locator('#stageSlider').evaluate((slider) => ({
+      min: slider.getAttribute('min'),
+      max: slider.getAttribute('max'),
+      step: slider.getAttribute('step'),
+    }));
+    assert(sliderProbe.min === '0', `${viewportName}: stage slider min mismatch (${JSON.stringify(sliderProbe)})`);
+    assert(sliderProbe.step === '1', `${viewportName}: stage slider step mismatch (${JSON.stringify(sliderProbe)})`);
+    assert(sliderProbe.max === String(Math.max(0, steps.length - 1)), `${viewportName}: stage slider max did not match manifest steps (${JSON.stringify({ sliderProbe, steps: steps.length })})`);
+  } else {
+    const stageSliderVisible = await page.locator('#stageSlider').count() > 0 && await page.locator('#stageSlider').isVisible();
+    assert(!stageSliderVisible, `${viewportName}: single-step stage slider should be hidden`);
+  }
 }
 
 async function assertViewer({ browser, htmlPath, manifest, caseName, outDir, viewportName, width, height, allowFallback, forceFallback }) {
@@ -405,6 +429,16 @@ async function assertViewer({ browser, htmlPath, manifest, caseName, outDir, vie
     await page.getByRole('button', { name: '60x' }).click();
     await assertScaleLabel(page, '60x');
     interactionProbe = await assertCanvasSignatureChanged(page, viewportName, interactionProbe, 'tunnel-scale-60');
+  } else if (caseName === 'consolidation') {
+    await page.getByText('Experimental 1D staged settlement consolidation preview').waitFor();
+    await page.locator('#stats').getByText('Final consolidation', { exact: true }).waitFor();
+    await page.locator('#stats').getByText('Max excess pore pressure', { exact: true }).waitFor();
+    await page.locator('#stageSlider').fill('0');
+    await page.locator('#stageLabel').getByText('Stage 1 - preload fill', { exact: true }).waitFor();
+    interactionProbe = await assertCanvasSignatureChanged(page, viewportName, interactionProbe, 'consolidation-stage-1');
+    await page.locator('#stageSlider').fill('2');
+    await page.locator('#stageLabel').getByText('Stage 3 - service surcharge hold', { exact: true }).waitFor();
+    interactionProbe = await assertCanvasSignatureChanged(page, viewportName, interactionProbe, 'consolidation-stage-3');
   }
 
   const probe = await assertCanvas(page, viewportName);
@@ -484,10 +518,11 @@ if (args.demo === 'all') {
   artifacts.push({ caseName: 'raft', ...(await generateDemoArtifacts('raft', outDir)) });
   artifacts.push({ caseName: 'excavation', ...(await generateDemoArtifacts('excavation', outDir)) });
   artifacts.push({ caseName: 'tunnel', ...(await generateDemoArtifacts('tunnel', outDir)) });
-} else if (args.demo === 'raft' || args.demo === 'excavation' || args.demo === 'tunnel') {
+  artifacts.push({ caseName: 'consolidation', ...(await generateDemoArtifacts('consolidation', outDir)) });
+} else if (args.demo === 'raft' || args.demo === 'excavation' || args.demo === 'tunnel' || args.demo === 'consolidation') {
   artifacts.push({ caseName: args.demo, ...(await generateDemoArtifacts(args.demo, outDir)) });
 } else {
-  assert(args.html && args.manifest, 'Usage: node scripts/smoke-fem-webgl.mjs --case <auto|raft|excavation|tunnel> --html <file> --manifest <file> --out <dir> [--allow-fallback] [--force-fallback]');
+  assert(args.html && args.manifest, 'Usage: node scripts/smoke-fem-webgl.mjs --case <auto|raft|excavation|tunnel|consolidation> --html <file> --manifest <file> --out <dir> [--allow-fallback] [--force-fallback]');
   artifacts.push({
     caseName: args.caseName,
     html: resolve(args.html),

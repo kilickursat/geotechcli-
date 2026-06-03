@@ -1011,7 +1011,7 @@ describe('ingest dossier HTML', () => {
     expect(dossier.femDraftCandidates?.find((candidate) => candidate.workflow === 'fem-slope-embankment-deformation')?.draft.capability.executionMode).toBe('contract-only');
     expect(dossier.femDraftCandidates?.find((candidate) => candidate.workflow === 'fem-retaining-wall-excavation-support')?.draft.capability.executionMode).toBe('contract-only');
     expect(dossier.femDraftCandidates?.find((candidate) => candidate.workflow === 'fem-seepage-groundwater-coupling')?.draft.capability.executionMode).toBe('contract-only');
-    expect(dossier.femDraftCandidates?.find((candidate) => candidate.workflow === 'fem-staged-settlement-consolidation')?.draft.capability.executionMode).toBe('contract-only');
+    expect(dossier.femDraftCandidates?.find((candidate) => candidate.workflow === 'fem-staged-settlement-consolidation')?.draft.capability.executionMode).toBe('human-reviewed-preview');
     const femRoutingTable = dossier.tables.find((table) => table.title === 'FEM draft routing');
     expect(femRoutingTable?.columns).toEqual([
       'Route',

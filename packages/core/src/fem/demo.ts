@@ -8,6 +8,10 @@ import type {
   FemVisualizationFrame,
   FemVisualizationMesh,
 } from './types.js';
+import {
+  runMohrCoulombMaterialPoint,
+  runTerzaghiConsolidationTimeStepper,
+} from './engineering-evidence.js';
 import { validateFemAnalysisCase } from './validation.js';
 
 const DEFAULT_UNITS = {
@@ -433,6 +437,182 @@ export function buildTunnelVolumeLossDemoAnalysisCase(now = new Date('2026-05-18
   };
 }
 
+export function buildStagedSettlementConsolidationDemoAnalysisCase(
+  now = new Date('2026-06-03T00:00:00.000Z'),
+): FemAnalysisCase {
+  const assumptions: FemAssumption[] = [
+    {
+      id: 'one-dimensional-consolidation',
+      parameter: 'consolidation model',
+      value: '1D staged Terzaghi consolidation with Mohr-Coulomb material-point screening',
+      basis: 'Production-candidate deterministic slice for staged settlement routing, not a full 2D/3D coupled FEM solver.',
+      confidence: 'review',
+      reviewRequired: true,
+    },
+    {
+      id: 'drainage-boundary',
+      parameter: 'drainage',
+      value: 'double drainage',
+      basis: 'Representative preliminary assumption; project drainage boundaries must be confirmed from ground model and construction details.',
+      confidence: 'review',
+      reviewRequired: true,
+    },
+    {
+      id: 'mc-strength-screening',
+      parameter: 'strength model',
+      value: 'Mohr-Coulomb triaxial material-point cap',
+      basis: 'Mobilized strength ratio and plastic settlement increment are used as review gates, not as a production plastic zone calculation.',
+      confidence: 'review',
+      reviewRequired: true,
+    },
+    {
+      id: 'groundwater-saturated-column',
+      parameter: 'groundwater',
+      value: 'saturated column assumed for consolidation time-rate preview',
+      basis: 'Terzaghi consolidation requires saturated low-permeability soil and reviewed drainage assumptions.',
+      confidence: 'review',
+      reviewRequired: true,
+    },
+  ];
+
+  return {
+    schemaVersion: 'fem-analysis-case.v0',
+    caseId: 'staged-settlement-consolidation-demo',
+    title: 'Experimental 1D staged settlement consolidation preview',
+    createdBy: 'geotechcli-fem-demo',
+    createdAt: now.toISOString(),
+    experimental: true,
+    objective: 'staged_settlement_consolidation',
+    analysisType: 'time_dependent_1d_consolidation',
+    units: DEFAULT_UNITS,
+    geometry: {
+      domain: {
+        type: 'box',
+        lengthM: 24,
+        widthM: 12,
+        depthM: 12,
+      },
+      consolidation: {
+        type: 'soil_column',
+        layerThicknessM: 10,
+        surfaceAreaM2: 200,
+        drainage: 'double',
+        stages: [
+          { id: 'stage-1', label: 'Stage 1 - preload fill', loadKpa: 45, durationYears: 0.5 },
+          { id: 'stage-2', label: 'Stage 2 - embankment raise', loadKpa: 35, durationYears: 1 },
+          { id: 'stage-3', label: 'Stage 3 - service surcharge hold', loadKpa: 20, durationYears: 2 },
+        ],
+      },
+    },
+    materials: [
+      {
+        id: 'soft-clay-1d',
+        name: 'Representative saturated clay consolidation layer',
+        model: 'mohr_coulomb',
+        elasticModulusKpa: 30_000,
+        poissonRatio: 0.32,
+        unitWeightKnM3: 18.5,
+        constrainedModulusKpa: 8_000,
+        frictionAngleDeg: 28,
+        cohesionKpa: 12,
+        coefficientOfConsolidationM2PerYear: 0.8,
+        hydraulicConductivityMPerS: 1e-9,
+        evidenceRefs: [],
+        assumptions,
+      },
+    ],
+    loads: [
+      {
+        id: 'stage-1-load',
+        type: 'uniform_pressure',
+        target: 'ground_surface',
+        pressureKpa: 45,
+        evidenceRefs: [],
+        assumptions: [
+          {
+            id: 'stage-1-load-assumption',
+            parameter: 'stage 1 surface pressure',
+            value: 45,
+            unit: 'kPa',
+            basis: 'Representative preload fill pressure for the experimental consolidation demo.',
+            confidence: 'review',
+            reviewRequired: true,
+          },
+        ],
+      },
+      {
+        id: 'stage-2-load',
+        type: 'uniform_pressure',
+        target: 'ground_surface',
+        pressureKpa: 35,
+        evidenceRefs: [],
+        assumptions: [
+          {
+            id: 'stage-2-load-assumption',
+            parameter: 'stage 2 surface pressure',
+            value: 35,
+            unit: 'kPa',
+            basis: 'Representative embankment raise pressure for the experimental consolidation demo.',
+            confidence: 'review',
+            reviewRequired: true,
+          },
+        ],
+      },
+      {
+        id: 'stage-3-load',
+        type: 'uniform_pressure',
+        target: 'ground_surface',
+        pressureKpa: 20,
+        evidenceRefs: [],
+        assumptions: [
+          {
+            id: 'stage-3-load-assumption',
+            parameter: 'stage 3 surface pressure',
+            value: 20,
+            unit: 'kPa',
+            basis: 'Representative service surcharge hold pressure for the experimental consolidation demo.',
+            confidence: 'review',
+            reviewRequired: true,
+          },
+        ],
+      },
+    ],
+    boundaryConditions: [
+      {
+        id: 'base-fixed',
+        type: 'fixed_base',
+        description: 'Column base fixed in vertical displacement for 1D settlement preview.',
+      },
+      {
+        id: 'side-rollers',
+        type: 'side_rollers',
+        description: 'Column sides constrained laterally to approximate one-dimensional strain.',
+      },
+    ],
+    mesh: {
+      elementType: 'hex8',
+      divisionsX: 12,
+      divisionsY: 4,
+      divisionsZ: 10,
+    },
+    groundwater: {
+      condition: 'specified',
+      depthM: 0,
+      note: 'Saturated drainage condition assumed for 1D consolidation; pore-pressure coupling is limited to the staged Terzaghi column preview.',
+      reviewRequired: true,
+    },
+    assumptions,
+    evidenceRefs: [],
+    limitations: [
+      'Experimental 1D staged consolidation preview only; not a production nonlinear geotechnical FEM solver.',
+      'Uses Terzaghi average consolidation time stepping with reviewed drainage assumptions.',
+      'Mohr-Coulomb behavior is a material-point strength cap and plastic-settlement review gate; no 2D/3D plastic zone is solved.',
+      'No 2D/3D seepage field, embankment geometry, creep, secondary compression, monitoring calibration, or support/structure interaction is modelled.',
+      'Independent published/commercial solver benchmarks are still required before production design use.',
+    ],
+  };
+}
+
 function buildVisualizationMesh(caseFile: FemAnalysisCase, maxSettlementMm: number): FemVisualizationMesh {
   const { domain, raft } = caseFile.geometry;
   if (!raft) {
@@ -704,6 +884,125 @@ function buildTunnelVisualizationMesh(
   };
 }
 
+interface ConsolidationStageResult {
+  stageId: string;
+  stageLabel: string;
+  stageIndex: number;
+  cumulativeTimeYears: number;
+  stageLoadKpa: number;
+  cumulativeLoadKpa: number;
+  elasticSettlementMm: number;
+  plasticSettlementMm: number;
+  settlementMm: number;
+  degreeOfConsolidation: number;
+  averageExcessPorePressureKpa: number;
+  mobilizedStrengthRatio: number;
+  state: 'elastic' | 'plastic';
+  maxReferenceError: number;
+}
+
+function buildConsolidationVisualizationMesh(
+  caseFile: FemAnalysisCase,
+  stageResults: ConsolidationStageResult[],
+  finalSettlementMm: number,
+): FemVisualizationMesh {
+  const { domain, consolidation } = caseFile.geometry;
+  if (!consolidation) {
+    throw new Error('Consolidation visualization mesh requires consolidation geometry.');
+  }
+  const nx = caseFile.mesh.divisionsX;
+  const ny = caseFile.mesh.divisionsY;
+  const base: number[] = [];
+  const tri: number[] = [];
+  const edge: number[] = [];
+  const totalTimeYears = Math.max(stageResults[stageResults.length - 1]?.cumulativeTimeYears ?? 1, 1e-6);
+  const halfWidth = domain.widthM / 2;
+  const idx = (ix: number, iy: number) => iy * (nx + 1) + ix;
+
+  for (let iy = 0; iy <= ny; iy += 1) {
+    const y = -halfWidth + (domain.widthM * iy) / ny;
+    for (let ix = 0; ix <= nx; ix += 1) {
+      const x = -domain.lengthM / 2 + (domain.lengthM * ix) / nx;
+      base.push(round(x), round(y), 0);
+    }
+  }
+  for (let iy = 0; iy < ny; iy += 1) {
+    for (let ix = 0; ix < nx; ix += 1) {
+      const a = idx(ix, iy);
+      const b = idx(ix + 1, iy);
+      const c = idx(ix + 1, iy + 1);
+      const d = idx(ix, iy + 1);
+      tri.push(a, b, c, a, c, d);
+    }
+  }
+  for (let iy = 0; iy <= ny; iy += 1) {
+    for (let ix = 0; ix < nx; ix += 1) {
+      edge.push(idx(ix, iy), idx(ix + 1, iy));
+    }
+  }
+  for (let ix = 0; ix <= nx; ix += 1) {
+    for (let iy = 0; iy < ny; iy += 1) {
+      edge.push(idx(ix, iy), idx(ix, iy + 1));
+    }
+  }
+
+  function settlementAtTime(timeYears: number, activeStage: ConsolidationStageResult): number {
+    let previous: ConsolidationStageResult | undefined;
+    for (const stage of stageResults) {
+      if (stage.cumulativeTimeYears <= timeYears) {
+        previous = stage;
+      }
+    }
+    if (previous) return previous.settlementMm;
+    const activeTimeRatio = Math.max(0, Math.min(1, timeYears / Math.max(activeStage.cumulativeTimeYears, 1e-6)));
+    return activeStage.settlementMm * activeTimeRatio;
+  }
+
+  function buildFrame(stageResult: ConsolidationStageResult): FemVisualizationFrame {
+    const disp: number[] = [];
+    const color: number[] = [];
+    for (let index = 0; index < base.length; index += 3) {
+      const x = base[index];
+      const y = base[index + 1];
+      const timeRatio = (x + domain.lengthM / 2) / domain.lengthM;
+      const timeYears = totalTimeYears * Math.max(0, Math.min(1, timeRatio));
+      const crossSectionTaper = 0.94 + 0.06 * Math.cos((Math.PI * y) / Math.max(halfWidth, 1e-6));
+      const settlementMm = Math.min(stageResult.settlementMm, settlementAtTime(timeYears, stageResult)) * crossSectionTaper;
+      const normalized = settlementMm / Math.max(finalSettlementMm, 1e-6);
+      disp.push(0, 0, round(-settlementMm / 1000, 6));
+      color.push(...settlementColor(normalized));
+    }
+    return {
+      field: 'vertical_settlement',
+      fieldLabel: 'Vertical settlement',
+      stageIndex: stageResult.stageIndex,
+      stageLabel: stageResult.stageLabel,
+      disp,
+      color,
+    };
+  }
+
+  const frames = stageResults.map(buildFrame);
+  const primary = frames[frames.length - 1];
+  const z = 0.05;
+  return {
+    base,
+    disp: primary.disp,
+    color: primary.color,
+    tri,
+    edge,
+    outlineBase: [
+      -domain.lengthM / 2, -halfWidth, z,
+      domain.lengthM / 2, -halfWidth, z,
+      domain.lengthM / 2, halfWidth, z,
+      -domain.lengthM / 2, halfWidth, z,
+    ],
+    outlineDisp: new Array(12).fill(0),
+    outlineIdx: [0, 1, 1, 2, 2, 3, 3, 0],
+    frames,
+  };
+}
+
 function buildRaftResultFields(): FemResultField[] {
   return [
     {
@@ -718,6 +1017,84 @@ function buildRaftResultFields(): FemResultField[] {
   ];
 }
 
+function buildConsolidationResultFields(): FemResultField[] {
+  return [
+    {
+      id: 'vertical_settlement',
+      label: 'Vertical settlement',
+      unit: 'mm',
+      location: 'surface_nodes',
+      quantity: 'displacement',
+      component: 'z',
+      signConvention: 'Positive values represent downward settlement magnitude in the staged consolidation viewer.',
+    },
+    {
+      id: 'final_settlement',
+      label: 'Final settlement',
+      unit: 'mm',
+      location: 'envelope',
+      quantity: 'displacement',
+      signConvention: 'Final downward surface settlement at the end of the staged consolidation preview.',
+    },
+    {
+      id: 'plastic_settlement',
+      label: 'Plastic settlement increment',
+      unit: 'mm',
+      location: 'envelope',
+      quantity: 'displacement',
+      signConvention: 'Material-point plastic settlement increment from the Mohr-Coulomb review gate.',
+    },
+    {
+      id: 'final_degree_of_consolidation',
+      label: 'Final degree of consolidation',
+      unit: 'ratio',
+      location: 'envelope',
+      quantity: 'degree_of_consolidation',
+      signConvention: 'Average degree of consolidation at the final staged time.',
+    },
+    {
+      id: 'max_excess_pore_pressure',
+      label: 'Maximum excess pore pressure',
+      unit: 'kPa',
+      location: 'envelope',
+      quantity: 'pore_pressure',
+      signConvention: 'Maximum average excess pore pressure carried by a staged load increment.',
+    },
+    {
+      id: 'max_mobilized_strength_ratio',
+      label: 'Maximum mobilized strength ratio',
+      unit: 'ratio',
+      location: 'envelope',
+      quantity: 'strength_ratio',
+      signConvention: 'Maximum Mohr-Coulomb material-point mobilized strength ratio across stages.',
+    },
+    {
+      id: 'stage_count',
+      label: 'Load stages',
+      unit: 'count',
+      location: 'envelope',
+      quantity: 'stage_count',
+      signConvention: 'Number of staged loading steps in the consolidation preview.',
+    },
+    {
+      id: 'total_load',
+      label: 'Total applied load',
+      unit: 'kN',
+      location: 'envelope',
+      quantity: 'load',
+      signConvention: 'Applied staged surface pressure multiplied by the reviewed tributary surface area.',
+    },
+    {
+      id: 'reaction',
+      label: 'Boundary reaction',
+      unit: 'kN',
+      location: 'envelope',
+      quantity: 'reaction',
+      signConvention: 'Deterministic preview reaction balancing the applied surface load.',
+    },
+  ];
+}
+
 function buildRaftResultSteps(): FemResultStep[] {
   return [
     {
@@ -726,6 +1103,14 @@ function buildRaftResultSteps(): FemResultStep[] {
       index: 0,
     },
   ];
+}
+
+function buildConsolidationResultSteps(stageResults: ConsolidationStageResult[]): FemResultStep[] {
+  return stageResults.map((stageResult) => ({
+    id: stageResult.stageId,
+    label: stageResult.stageLabel,
+    index: stageResult.stageIndex,
+  }));
 }
 
 function buildRaftResultDatasets(visualization: FemVisualizationMesh): FemResultDataset[] {
@@ -738,6 +1123,43 @@ function buildRaftResultDatasets(visualization: FemVisualizationMesh): FemResult
       stride: 3,
       source: 'visualization.disp',
     },
+  ];
+}
+
+function buildConsolidationResultDatasets(
+  visualization: FemVisualizationMesh,
+  steps: FemResultStep[],
+  envelope: {
+    finalSettlementMm: number;
+    plasticSettlementMm: number;
+    finalDegreeOfConsolidation: number;
+    maxExcessPorePressureKpa: number;
+    maxMobilizedStrengthRatio: number;
+    stageCount: number;
+    totalLoadKn: number;
+    reactionKn: number;
+  },
+): FemResultDataset[] {
+  const stepByIndex = new Map(steps.map((step) => [step.index, step.id]));
+  const frameDatasets = (visualization.frames ?? []).map((frame) => ({
+    id: `vertical_settlement-${stepByIndex.get(frame.stageIndex ?? 0) ?? 'final'}`,
+    fieldId: 'vertical_settlement',
+    stepId: stepByIndex.get(frame.stageIndex ?? 0),
+    values: frame.disp,
+    stride: 3 as const,
+    source: 'visualization.frame' as const,
+  }));
+
+  return [
+    ...frameDatasets,
+    { id: 'final_settlement-final', fieldId: 'final_settlement', values: [envelope.finalSettlementMm], stride: 1, source: 'envelope' },
+    { id: 'plastic_settlement-final', fieldId: 'plastic_settlement', values: [envelope.plasticSettlementMm], stride: 1, source: 'envelope' },
+    { id: 'final_degree_of_consolidation-final', fieldId: 'final_degree_of_consolidation', values: [envelope.finalDegreeOfConsolidation], stride: 1, source: 'envelope' },
+    { id: 'max_excess_pore_pressure-final', fieldId: 'max_excess_pore_pressure', values: [envelope.maxExcessPorePressureKpa], stride: 1, source: 'envelope' },
+    { id: 'max_mobilized_strength_ratio-final', fieldId: 'max_mobilized_strength_ratio', values: [envelope.maxMobilizedStrengthRatio], stride: 1, source: 'envelope' },
+    { id: 'stage_count-final', fieldId: 'stage_count', values: [envelope.stageCount], stride: 1, source: 'envelope' },
+    { id: 'total_load-final', fieldId: 'total_load', values: [envelope.totalLoadKn], stride: 1, source: 'envelope' },
+    { id: 'reaction-final', fieldId: 'reaction', values: [envelope.reactionKn], stride: 1, source: 'envelope' },
   ];
 }
 
@@ -989,6 +1411,161 @@ export function runBuiltinTunnelVolumeLossDemo(
     steps: buildTunnelResultSteps(),
     datasets: buildTunnelResultDatasets(visualization),
     assumptions: caseFile.assumptions,
+    limitations: caseFile.limitations,
+  };
+}
+
+export function runBuiltinStagedSettlementConsolidationDemo(
+  caseFile = buildStagedSettlementConsolidationDemoAnalysisCase(),
+): FemResultManifest {
+  const validation = validateFemAnalysisCase(caseFile);
+  const consolidation = caseFile.geometry.consolidation;
+  const material = caseFile.materials[0];
+  if (!consolidation || !material) {
+    throw new Error('Staged consolidation demo requires consolidation geometry and one material.');
+  }
+  if (validation.status === 'blocked') {
+    throw new Error(`FEM case is blocked: ${validation.findings.map((item) => item.message).join('; ')}`);
+  }
+
+  const constrainedModulusKpa = material.constrainedModulusKpa ?? material.elasticModulusKpa;
+  const coefficientOfConsolidationM2PerYear = material.coefficientOfConsolidationM2PerYear ?? 0.5;
+  const frictionAngleDeg = material.frictionAngleDeg ?? 30;
+  const cohesionKpa = material.cohesionKpa ?? 0;
+  const k0 = Math.max(0.25, Math.min(0.75, 1 - Math.sin((frictionAngleDeg * Math.PI) / 180)));
+  const initialVerticalEffectiveStressKpa = Math.max(25, material.unitWeightKnM3 * consolidation.layerThicknessM * 0.5);
+  const stageResults: ConsolidationStageResult[] = [];
+  let cumulativeLoadKpa = 0;
+  let cumulativeTimeYears = 0;
+  let cumulativeElasticSettlementMm = 0;
+  let cumulativePlasticSettlementMm = 0;
+  let maxReferenceError = 0;
+
+  for (const [index, stage] of consolidation.stages.entries()) {
+    cumulativeLoadKpa += stage.loadKpa;
+    cumulativeTimeYears += stage.durationYears;
+    const primarySettlementMm = (stage.loadKpa / constrainedModulusKpa) * consolidation.layerThicknessM * 1000;
+    const timeStepsYears = [0.2, 0.4, 0.6, 0.8, 1].map((ratio) => round(stage.durationYears * ratio, 8));
+    const consolidationResult = runTerzaghiConsolidationTimeStepper({
+      layerThicknessM: consolidation.layerThicknessM,
+      drainage: consolidation.drainage,
+      coefficientOfConsolidationM2PerYear,
+      initialExcessPorePressureKpa: stage.loadKpa,
+      primarySettlementMm,
+      timeStepsYears,
+      nodeCount: Math.max(21, caseFile.mesh.divisionsZ * 8 + 1),
+    });
+    maxReferenceError = Math.max(maxReferenceError, consolidationResult.maxReferenceError);
+    cumulativeElasticSettlementMm += consolidationResult.finalStep.settlementMm;
+
+    const materialPoint = runMohrCoulombMaterialPoint({
+      confiningEffectiveStressKpa: Math.max(10, k0 * (initialVerticalEffectiveStressKpa + cumulativeLoadKpa * 0.5)),
+      axialStrain: cumulativeLoadKpa / constrainedModulusKpa,
+      elasticModulusKpa: material.elasticModulusKpa,
+      poissonRatio: material.poissonRatio,
+      frictionAngleDeg,
+      cohesionKpa,
+      increments: 24,
+    });
+    const plasticSettlementAtStageMm = materialPoint.finalStep.plasticAxialStrain * consolidation.layerThicknessM * 1000 * 0.35;
+    cumulativePlasticSettlementMm = Math.max(cumulativePlasticSettlementMm, plasticSettlementAtStageMm);
+    const settlementMm = cumulativeElasticSettlementMm + cumulativePlasticSettlementMm;
+    stageResults.push({
+      stageId: stage.id,
+      stageLabel: stage.label,
+      stageIndex: index,
+      cumulativeTimeYears: round(cumulativeTimeYears, 6),
+      stageLoadKpa: round(stage.loadKpa, 4),
+      cumulativeLoadKpa: round(cumulativeLoadKpa, 4),
+      elasticSettlementMm: round(cumulativeElasticSettlementMm, 4),
+      plasticSettlementMm: round(cumulativePlasticSettlementMm, 4),
+      settlementMm: round(settlementMm, 4),
+      degreeOfConsolidation: consolidationResult.finalStep.degreeOfConsolidation,
+      averageExcessPorePressureKpa: consolidationResult.finalStep.averageExcessPorePressureKpa,
+      mobilizedStrengthRatio: materialPoint.finalStep.mobilizedStrengthRatio,
+      state: materialPoint.finalStep.state,
+      maxReferenceError: consolidationResult.maxReferenceError,
+    });
+  }
+
+  const finalStage = stageResults[stageResults.length - 1];
+  const finalSettlementMm = finalStage.settlementMm;
+  const totalLoadKn = consolidation.stages.reduce(
+    (total, stage) => total + stage.loadKpa * consolidation.surfaceAreaM2,
+    0,
+  );
+  const maxExcessPorePressureKpa = Math.max(...stageResults.map((stage) => stage.stageLoadKpa));
+  const maxMobilizedStrengthRatio = Math.max(...stageResults.map((stage) => stage.mobilizedStrengthRatio));
+  const visualization = buildConsolidationVisualizationMesh(caseFile, stageResults, finalSettlementMm);
+  const steps = buildConsolidationResultSteps(stageResults);
+  const drainagePathM = consolidation.drainage === 'double'
+    ? consolidation.layerThicknessM / 2
+    : consolidation.layerThicknessM;
+  const envelope = {
+    maxSettlementMm: round(finalSettlementMm, 3),
+    minSettlementMm: 0,
+    totalLoadKn: round(totalLoadKn, 3),
+    reactionKn: round(totalLoadKn, 3),
+    reactionBalanceRatio: 1,
+    stageCount: consolidation.stages.length,
+    finalSettlementMm: round(finalSettlementMm, 3),
+    plasticSettlementMm: round(cumulativePlasticSettlementMm, 3),
+    finalDegreeOfConsolidation: round(finalStage.degreeOfConsolidation, 6),
+    maxExcessPorePressureKpa: round(maxExcessPorePressureKpa, 4),
+    maxMobilizedStrengthRatio: round(maxMobilizedStrengthRatio, 6),
+    drainagePathM: round(drainagePathM, 6),
+    consolidationDurationYears: round(cumulativeTimeYears, 6),
+  };
+
+  return {
+    schemaVersion: 'fem-result-manifest.v0',
+    caseId: caseFile.caseId,
+    title: caseFile.title,
+    generatedAt: new Date().toISOString(),
+    backend: {
+      id: 'builtin-staged-consolidation-1d',
+      label: 'Built-in experimental staged 1D consolidation preview',
+      deterministic: true,
+      version: '0.1.0',
+    },
+    analysisCase: caseFile,
+    validation,
+    mesh: {
+      nodes: (caseFile.mesh.divisionsX + 1) * (caseFile.mesh.divisionsY + 1) * (caseFile.mesh.divisionsZ + 1),
+      elements: caseFile.mesh.divisionsX * caseFile.mesh.divisionsY * caseFile.mesh.divisionsZ,
+      elementType: caseFile.mesh.elementType,
+      divisions: [caseFile.mesh.divisionsX, caseFile.mesh.divisionsY, caseFile.mesh.divisionsZ],
+      visualizationNodes: visualization.base.length / 3,
+      visualizationTriangles: visualization.tri.length / 3,
+      visualizationEdges: visualization.edge.length / 2,
+    },
+    envelope,
+    visualization,
+    resultFields: buildConsolidationResultFields(),
+    steps,
+    datasets: buildConsolidationResultDatasets(visualization, steps, {
+      finalSettlementMm: envelope.finalSettlementMm,
+      plasticSettlementMm: envelope.plasticSettlementMm,
+      finalDegreeOfConsolidation: envelope.finalDegreeOfConsolidation,
+      maxExcessPorePressureKpa: envelope.maxExcessPorePressureKpa,
+      maxMobilizedStrengthRatio: envelope.maxMobilizedStrengthRatio,
+      stageCount: envelope.stageCount,
+      totalLoadKn: envelope.totalLoadKn,
+      reactionKn: envelope.reactionKn,
+    }),
+    assumptions: [
+      ...caseFile.assumptions,
+      ...caseFile.loads.flatMap((item) => item.assumptions),
+      {
+        id: 'consolidation-reference-error',
+        parameter: 'maximum Terzaghi reference error',
+        value: round(maxReferenceError, 8),
+        unit: 'ratio',
+        basis: 'Backward-Euler 1D consolidation stepper compared with analytical average consolidation for each stage.',
+        confidence: 'measured',
+        reviewRequired: true,
+      },
+    ],
     limitations: caseFile.limitations,
   };
 }

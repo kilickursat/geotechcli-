@@ -1,6 +1,7 @@
 import {
   buildExcavationDemoAnalysisCase,
   buildRaftDemoAnalysisCase,
+  buildStagedSettlementConsolidationDemoAnalysisCase,
   buildTunnelVolumeLossDemoAnalysisCase,
 } from './demo.js';
 import type {
@@ -69,11 +70,18 @@ export interface PrepareFemAnalysisCaseDraftInput {
     tunnelCenterYM?: number;
     tunnelVolumeLossPercent?: number;
     troughWidthParameterK?: number;
+    consolidationLayerThicknessM?: number;
+    consolidationSurfaceAreaM2?: number;
   };
   excavation?: {
     stageDepthsM?: number[];
     supportLevelsM?: number[];
     wallType?: 'diaphragm_wall' | 'secant_pile_wall' | 'soldier_pile_lagging' | 'unsupported_screening';
+  };
+  consolidation?: {
+    stageLoadsKpa?: number[];
+    stageDurationsYears?: number[];
+    drainage?: 'single' | 'double';
   };
   load?: {
     pressureKpa?: number;
@@ -82,6 +90,11 @@ export interface PrepareFemAnalysisCaseDraftInput {
     elasticModulusKpa?: number;
     poissonRatio?: number;
     unitWeightKnM3?: number;
+    constrainedModulusKpa?: number;
+    frictionAngleDeg?: number;
+    cohesionKpa?: number;
+    coefficientOfConsolidationM2PerYear?: number;
+    hydraulicConductivityMPerS?: number;
   };
   groundwater?: {
     condition?: 'not_modelled' | 'below_domain' | 'specified';
@@ -266,19 +279,21 @@ const CAPABILITIES: FemCapability[] = [
   {
     objective: 'staged-settlement-consolidation',
     label: 'Staged settlement / consolidation preview',
-    status: 'planned',
-    executionMode: 'contract-only',
+    status: 'implemented-demo',
+    executionMode: 'human-reviewed-preview',
     agentRunAllowed: false,
-    analysisType: 'time_dependent_settlement_consolidation_screening',
-    deterministicBackend: null,
-    description: 'Planned staged loading and consolidation contract for embankment, preload, and settlement-monitoring review.',
+    analysisType: 'time_dependent_1d_consolidation',
+    deterministicBackend: 'builtin-staged-consolidation-1d',
+    description: 'Experimental deterministic 1D staged consolidation preview using Terzaghi time stepping and Mohr-Coulomb material-point strength gates.',
     requiredEvidence: ['compressibility/consolidation parameters', 'stratigraphy', 'groundwater or drainage condition', 'load/stage evidence', 'settlement monitoring if available'],
     requiredUserInputs: ['load or fill stages', 'stage durations', 'foundation footprint', 'drainage path assumptions', 'target settlement or monitoring triggers'],
-    visualizationFields: ['settlement vs time', 'degree of consolidation', 'stage load history', 'monitoring comparison panel'],
-    reviewGates: ['planned-only', 'consolidation-backend-not-implemented', 'time-rate-review-required', 'not-design-calculation'],
-    limitations: ['No time-dependent FEM/consolidation backend, creep model, or monitoring calibration solver is available yet.'],
-    command: 'geotech fem draft staged-settlement-consolidation --input <json>',
-    draftCommandTemplate: 'geotech fem draft staged-settlement-consolidation --input <json>',
+    visualizationFields: ['settlement vs time', 'degree of consolidation envelope', 'stage load history', 'mobilized strength review gate'],
+    reviewGates: ['experimental-only', '1d-consolidation-only', 'mohr-coulomb-material-point-only', 'time-rate-review-required', 'not-design-calculation'],
+    limitations: ['No 2D/3D coupled Biot FEM, seepage field, embankment geometry, creep, secondary compression, or monitoring calibration solver is available yet.'],
+    command: 'geotech fem draft staged-settlement-consolidation --input <json> --case-output <analysis_case.json>',
+    demoCommand: 'geotech fem demo consolidation --experimental',
+    draftCommandTemplate: 'geotech fem draft staged-settlement-consolidation --input <json> --case-output <analysis_case.json>',
+    runCommandTemplate: 'geotech fem run <analysis_case.json> --experimental --reviewed',
   },
 ];
 
@@ -437,7 +452,8 @@ export function prepareFemAnalysisCaseDraft(input: PrepareFemAnalysisCaseDraftIn
   if (
     capability.objective !== 'foundation-settlement' &&
     capability.objective !== 'excavation-deformation' &&
-    capability.objective !== 'tunnel-volume-loss-settlement'
+    capability.objective !== 'tunnel-volume-loss-settlement' &&
+    capability.objective !== 'staged-settlement-consolidation'
   ) {
     return {
       schemaVersion: 'fem-analysis-case-draft.v1',
@@ -452,6 +468,138 @@ export function prepareFemAnalysisCaseDraft(input: PrepareFemAnalysisCaseDraftIn
       evidenceRefs: input.evidenceRefs ?? [],
       recommendedCommand: draftCommandFor(capability),
       contractReadiness: contractReadinessFor(capability),
+    };
+  }
+
+  if (capability.objective === 'staged-settlement-consolidation') {
+    const missing: string[] = [];
+    const useDemoDefaults = input.useDemoDefaults === true;
+    const layerThicknessM = input.geometry?.consolidationLayerThicknessM ?? (useDemoDefaults ? 10 : undefined);
+    const surfaceAreaM2 = input.geometry?.consolidationSurfaceAreaM2 ?? (useDemoDefaults ? 200 : undefined);
+    const stageLoadsInput = input.consolidation?.stageLoadsKpa ?? (useDemoDefaults ? [45, 35, 20] : undefined);
+    const stageDurationsInput = input.consolidation?.stageDurationsYears ?? (useDemoDefaults ? [0.5, 1, 2] : undefined);
+    const drainage = input.consolidation?.drainage ?? (useDemoDefaults ? 'double' : undefined);
+    const checkedLayerThicknessM = requirePositive(layerThicknessM, 'consolidation layer thickness', missing);
+    const checkedSurfaceAreaM2 = requirePositive(surfaceAreaM2, 'consolidation tributary surface area', missing);
+    if (!stageLoadsInput) missing.push('stage loads');
+    if (!stageDurationsInput) missing.push('stage durations');
+    const stageLoadsKpa = parseOptionalFiniteArray(stageLoadsInput, 'valid stage loads', missing, { positive: true });
+    const stageDurationsYears = parseOptionalFiniteArray(stageDurationsInput, 'valid stage durations', missing, { positive: true });
+    if (drainage !== 'single' && drainage !== 'double') missing.push('drainage condition');
+    if (stageLoadsKpa && stageDurationsYears && stageLoadsKpa.length !== stageDurationsYears.length) {
+      missing.push('matching stage load and duration counts');
+    }
+
+    if (
+      !checkedLayerThicknessM ||
+      !checkedSurfaceAreaM2 ||
+      !stageLoadsKpa ||
+      !stageDurationsYears ||
+      stageLoadsKpa.length !== stageDurationsYears.length ||
+      (drainage !== 'single' && drainage !== 'double')
+    ) {
+      return {
+        schemaVersion: 'fem-analysis-case-draft.v1',
+        objective: capability.objective,
+        capability,
+        implemented: true,
+        canAutoProceed: false,
+        recommendedAction: 'collect-inputs',
+        missingUserInputs: [...new Set(missing)],
+        assumptions: [],
+        reviewGates: ['missing-user-inputs', ...capability.reviewGates],
+        evidenceRefs: input.evidenceRefs ?? [],
+        recommendedCommand: draftCommandFor(capability),
+      };
+    }
+
+    const analysisCase = buildStagedSettlementConsolidationDemoAnalysisCase();
+    analysisCase.caseId = 'staged-settlement-consolidation-draft';
+    analysisCase.title = 'Experimental 1D staged settlement consolidation draft';
+    analysisCase.createdBy = 'geotechcli-fem-routing';
+    analysisCase.evidenceRefs = input.evidenceRefs ?? [];
+    analysisCase.materials.forEach((material) => {
+      material.evidenceRefs = input.evidenceRefs ?? [];
+    });
+    if (analysisCase.geometry.consolidation) {
+      analysisCase.geometry.consolidation.layerThicknessM = checkedLayerThicknessM;
+      analysisCase.geometry.consolidation.surfaceAreaM2 = checkedSurfaceAreaM2;
+      analysisCase.geometry.consolidation.drainage = drainage;
+      analysisCase.geometry.consolidation.stages = stageLoadsKpa.map((loadKpa, index) => ({
+        id: `stage-${index + 1}`,
+        label: `Stage ${index + 1} - ${loadKpa.toFixed(1)} kPa for ${stageDurationsYears[index].toFixed(2)} years`,
+        loadKpa,
+        durationYears: stageDurationsYears[index],
+      }));
+    }
+    analysisCase.geometry.domain.lengthM = input.geometry?.domainLengthM ?? Math.max(24, Math.sqrt(checkedSurfaceAreaM2) * 1.8);
+    analysisCase.geometry.domain.widthM = input.geometry?.domainWidthM ?? Math.max(12, Math.sqrt(checkedSurfaceAreaM2) * 0.9);
+    analysisCase.geometry.domain.depthM = input.geometry?.domainDepthM ?? Math.max(checkedLayerThicknessM * 1.2, analysisCase.geometry.domain.depthM);
+    analysisCase.loads = stageLoadsKpa.map((pressureKpa, index) => ({
+      id: `stage-${index + 1}-load`,
+      type: 'uniform_pressure',
+      target: 'ground_surface',
+      pressureKpa,
+      evidenceRefs: input.evidenceRefs ?? [],
+      assumptions: [
+        {
+          id: `stage-${index + 1}-load-assumption`,
+          parameter: 'staged surface pressure',
+          value: pressureKpa,
+          unit: 'kPa',
+          basis: 'User-provided staged consolidation load for experimental preview.',
+          confidence: 'review',
+          reviewRequired: true,
+        },
+      ],
+    }));
+    const material = analysisCase.materials[0];
+    if (finitePositive(input.material?.elasticModulusKpa)) material.elasticModulusKpa = input.material.elasticModulusKpa;
+    if (typeof input.material?.poissonRatio === 'number') material.poissonRatio = input.material.poissonRatio;
+    if (finitePositive(input.material?.unitWeightKnM3)) material.unitWeightKnM3 = input.material.unitWeightKnM3;
+    if (finitePositive(input.material?.constrainedModulusKpa)) material.constrainedModulusKpa = input.material.constrainedModulusKpa;
+    if (typeof input.material?.frictionAngleDeg === 'number') material.frictionAngleDeg = input.material.frictionAngleDeg;
+    if (typeof input.material?.cohesionKpa === 'number' && Number.isFinite(input.material.cohesionKpa) && input.material.cohesionKpa >= 0) {
+      material.cohesionKpa = input.material.cohesionKpa;
+    }
+    if (finitePositive(input.material?.coefficientOfConsolidationM2PerYear)) {
+      material.coefficientOfConsolidationM2PerYear = input.material.coefficientOfConsolidationM2PerYear;
+    }
+    if (finitePositive(input.material?.hydraulicConductivityMPerS)) material.hydraulicConductivityMPerS = input.material.hydraulicConductivityMPerS;
+    if (input.groundwater?.condition) {
+      analysisCase.groundwater.condition = input.groundwater.condition;
+    }
+    if (typeof input.groundwater?.depthM === 'number') {
+      analysisCase.groundwater.depthM = input.groundwater.depthM;
+    }
+    if (input.groundwater?.note) {
+      analysisCase.groundwater.note = input.groundwater.note;
+    }
+
+    const validation = validateFemAnalysisCase(analysisCase);
+    const reviewGates = [
+      ...capability.reviewGates,
+      ...validation.findings
+        .filter((finding) => finding.severity !== 'info')
+        .map((finding) => finding.code),
+    ];
+
+    return {
+      schemaVersion: 'fem-analysis-case-draft.v1',
+      objective: capability.objective,
+      capability,
+      implemented: true,
+      canAutoProceed: false,
+      recommendedAction: actionForValidation(validation),
+      missingUserInputs: validation.status === 'blocked' ? validation.findings
+        .filter((finding) => finding.severity === 'blocker')
+        .map((finding) => finding.code) : [],
+      assumptions: analysisCase.assumptions,
+      reviewGates: [...new Set(reviewGates)],
+      evidenceRefs: analysisCase.evidenceRefs,
+      analysisCase,
+      validation,
+      recommendedCommand: commandForValidation(capability, validation),
     };
   }
 

@@ -1,12 +1,14 @@
 export type FemObjective =
   | 'foundation_settlement'
   | 'excavation_deformation'
-  | 'tunnel_volume_loss_settlement';
+  | 'tunnel_volume_loss_settlement'
+  | 'staged_settlement_consolidation';
 
 export type FemAnalysisType =
   | 'static_3d_small_strain'
   | 'static_3d_staged_elastic'
-  | 'empirical_3d_settlement_surface';
+  | 'empirical_3d_settlement_surface'
+  | 'time_dependent_1d_consolidation';
 
 export type FemAssumptionConfidence = 'measured' | 'inferred' | 'review';
 
@@ -40,10 +42,15 @@ export interface FemAssumption {
 export interface FemMaterial {
   id: string;
   name: string;
-  model: 'linear_elastic';
+  model: 'linear_elastic' | 'mohr_coulomb';
   elasticModulusKpa: number;
   poissonRatio: number;
   unitWeightKnM3: number;
+  constrainedModulusKpa?: number;
+  frictionAngleDeg?: number;
+  cohesionKpa?: number;
+  coefficientOfConsolidationM2PerYear?: number;
+  hydraulicConductivityMPerS?: number;
   evidenceRefs: FemEvidenceRef[];
   assumptions: FemAssumption[];
 }
@@ -94,10 +101,25 @@ export interface FemTunnelGeometry {
   troughWidthParameterK: number;
 }
 
+export interface FemConsolidationStage {
+  id: string;
+  label: string;
+  loadKpa: number;
+  durationYears: number;
+}
+
+export interface FemConsolidationGeometry {
+  type: 'soil_column';
+  layerThicknessM: number;
+  surfaceAreaM2: number;
+  drainage: 'single' | 'double';
+  stages: FemConsolidationStage[];
+}
+
 export interface FemPressureLoad {
   id: string;
   type: 'uniform_pressure';
-  target: 'raft' | 'excavation_surcharge';
+  target: 'raft' | 'excavation_surcharge' | 'ground_surface';
   pressureKpa: number;
   evidenceRefs: FemEvidenceRef[];
   assumptions: FemAssumption[];
@@ -138,6 +160,7 @@ export interface FemAnalysisCase {
     raft?: FemRaftGeometry;
     excavation?: FemExcavationGeometry;
     tunnel?: FemTunnelGeometry;
+    consolidation?: FemConsolidationGeometry;
   };
   materials: FemMaterial[];
   loads: FemPressureLoad[];
@@ -188,7 +211,7 @@ export interface FemResultField {
   label: string;
   unit: string;
   location: 'surface_nodes' | 'outline_nodes' | 'envelope';
-  quantity: 'displacement' | 'reaction' | 'load' | 'stage_count';
+  quantity: 'displacement' | 'reaction' | 'load' | 'stage_count' | 'pore_pressure' | 'degree_of_consolidation' | 'strength_ratio';
   component?: 'x' | 'y' | 'z' | 'magnitude';
   signConvention?: string;
 }
@@ -224,6 +247,13 @@ export interface FemResultEnvelope {
   supportReactionKn?: number;
   boundaryReactionKn?: number;
   stageCount?: number;
+  finalSettlementMm?: number;
+  plasticSettlementMm?: number;
+  finalDegreeOfConsolidation?: number;
+  maxExcessPorePressureKpa?: number;
+  maxMobilizedStrengthRatio?: number;
+  drainagePathM?: number;
+  consolidationDurationYears?: number;
   tunnelDiameterM?: number;
   tunnelAxisDepthM?: number;
   volumeLossPercent?: number;
@@ -239,7 +269,7 @@ export interface FemResultManifest {
   title: string;
   generatedAt: string;
   backend: {
-    id: 'builtin-elastic3d-demo' | 'builtin-staged-excavation-demo' | 'builtin-tunnel-volume-loss-demo';
+    id: 'builtin-elastic3d-demo' | 'builtin-staged-excavation-demo' | 'builtin-tunnel-volume-loss-demo' | 'builtin-staged-consolidation-1d';
     label: string;
     deterministic: true;
     version: string;

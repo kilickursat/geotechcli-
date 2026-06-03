@@ -220,11 +220,20 @@ export function stripPlaceholderFemValues(input: PrepareFemAnalysisCaseDraftInpu
       tunnelCenterYM: toFiniteNumber(input.geometry.tunnelCenterYM),
       tunnelVolumeLossPercent: toFiniteNumber(input.geometry.tunnelVolumeLossPercent),
       troughWidthParameterK: toFiniteNumber(input.geometry.troughWidthParameterK),
+      consolidationLayerThicknessM: toFiniteNumber(input.geometry.consolidationLayerThicknessM),
+      consolidationSurfaceAreaM2: toFiniteNumber(input.geometry.consolidationSurfaceAreaM2),
     } : undefined,
     excavation: input.excavation ? {
       stageDepthsM: toFiniteNumberArray(input.excavation.stageDepthsM),
       supportLevelsM: toFiniteNumberArray(input.excavation.supportLevelsM),
       wallType: asWallType(input.excavation.wallType),
+    } : undefined,
+    consolidation: input.consolidation ? {
+      stageLoadsKpa: toFiniteNumberArray(input.consolidation.stageLoadsKpa),
+      stageDurationsYears: toFiniteNumberArray(input.consolidation.stageDurationsYears),
+      drainage: input.consolidation.drainage === 'single' || input.consolidation.drainage === 'double'
+        ? input.consolidation.drainage
+        : undefined,
     } : undefined,
     load: input.load ? {
       pressureKpa: toFiniteNumber(input.load.pressureKpa),
@@ -233,6 +242,11 @@ export function stripPlaceholderFemValues(input: PrepareFemAnalysisCaseDraftInpu
       elasticModulusKpa: toFiniteNumber(input.material.elasticModulusKpa),
       poissonRatio: toFiniteNumber(input.material.poissonRatio),
       unitWeightKnM3: toFiniteNumber(input.material.unitWeightKnM3),
+      constrainedModulusKpa: toFiniteNumber(input.material.constrainedModulusKpa),
+      frictionAngleDeg: toFiniteNumber(input.material.frictionAngleDeg),
+      cohesionKpa: toFiniteNumber(input.material.cohesionKpa),
+      coefficientOfConsolidationM2PerYear: toFiniteNumber(input.material.coefficientOfConsolidationM2PerYear),
+      hydraulicConductivityMPerS: toFiniteNumber(input.material.hydraulicConductivityMPerS),
     } : undefined,
     groundwater: input.groundwater ? {
       condition: asGroundwaterCondition(input.groundwater.condition),
@@ -249,6 +263,7 @@ function normalizeReadinessInput(
   const source = isRecord(value) ? value : {};
   const geometry = isRecord(source.geometry) ? source.geometry : {};
   const excavation = isRecord(source.excavation) ? source.excavation : {};
+  const consolidation = isRecord(source.consolidation) ? source.consolidation : {};
   const load = isRecord(source.load) ? source.load : {};
   const material = isRecord(source.material) ? source.material : {};
   const groundwater = isRecord(source.groundwater) ? source.groundwater : {};
@@ -274,11 +289,18 @@ function normalizeReadinessInput(
       tunnelCenterYM: geometry.tunnelCenterYM as number,
       tunnelVolumeLossPercent: geometry.tunnelVolumeLossPercent as number,
       troughWidthParameterK: geometry.troughWidthParameterK as number,
+      consolidationLayerThicknessM: geometry.consolidationLayerThicknessM as number,
+      consolidationSurfaceAreaM2: geometry.consolidationSurfaceAreaM2 as number,
     },
     excavation: {
       stageDepthsM: excavation.stageDepthsM as number[],
       supportLevelsM: excavation.supportLevelsM as number[],
       wallType: excavation.wallType as any,
+    },
+    consolidation: {
+      stageLoadsKpa: consolidation.stageLoadsKpa as number[],
+      stageDurationsYears: consolidation.stageDurationsYears as number[],
+      drainage: consolidation.drainage as any,
     },
     load: {
       pressureKpa: load.pressureKpa as number,
@@ -287,6 +309,11 @@ function normalizeReadinessInput(
       elasticModulusKpa: material.elasticModulusKpa as number,
       poissonRatio: material.poissonRatio as number,
       unitWeightKnM3: material.unitWeightKnM3 as number,
+      constrainedModulusKpa: material.constrainedModulusKpa as number,
+      frictionAngleDeg: material.frictionAngleDeg as number,
+      cohesionKpa: material.cohesionKpa as number,
+      coefficientOfConsolidationM2PerYear: material.coefficientOfConsolidationM2PerYear as number,
+      hydraulicConductivityMPerS: material.hydraulicConductivityMPerS as number,
     },
     groundwater: {
       condition: groundwater.condition as any,

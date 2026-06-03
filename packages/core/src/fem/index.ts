@@ -2,9 +2,11 @@ export * from './types.js';
 export {
   buildExcavationDemoAnalysisCase,
   buildRaftDemoAnalysisCase,
+  buildStagedSettlementConsolidationDemoAnalysisCase,
   buildTunnelVolumeLossDemoAnalysisCase,
   runBuiltinElasticExcavationDemo,
   runBuiltinElasticRaftDemo,
+  runBuiltinStagedSettlementConsolidationDemo,
   runBuiltinTunnelVolumeLossDemo,
 } from './demo.js';
 export {

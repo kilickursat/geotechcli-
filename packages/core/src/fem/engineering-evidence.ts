@@ -966,7 +966,7 @@ export function runFemEngineeringEvidenceSuite(
     remainingProductionBlockers: [
       '2d-3d-fem-assembly-and-sparse-solver-not-integrated-with-these-kernels',
       'nonlinear-plasticity-not-coupled-to-global-newton-iterations',
-      'consolidation-and-seepage-kernels-not-coupled-to-fem-result-manifest-fields',
+      'seepage-kernel-and-2d-3d-consolidation-not-coupled-to-global-fem-result-fields',
       'support-design-is-screening-level-and-not-jurisdiction-specific-structural-design',
       'published-commercial-cross-solver-benchmark-corpus-not-approved',
       'reviewer-approval-record-validator-exists-but-cli-run-does-not-enforce-persistence-for-every-run',

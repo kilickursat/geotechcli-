@@ -338,6 +338,86 @@ describe('FEM GroundModel planned-route acceptance fixtures', () => {
     }
   });
 
+  it('keeps staged settlement consolidation as a review-gated preview draft until project inputs are supplied', () => {
+    const fixture = loadFixture();
+    const [candidate] = buildFemDraftCandidatesFromGroundModel(makeAcceptanceGroundModel())
+      .filter((item) => item.workflow === 'fem-staged-settlement-consolidation');
+
+    expect(candidate).toBeDefined();
+    expect(candidate?.objective).toBe('staged-settlement-consolidation');
+    expect(candidate?.status).toBe('ready');
+    expect(candidate?.command).toBe('geotech fem draft staged-settlement-consolidation --input <json> --case-output <analysis_case.json>');
+    expect(candidate?.command).not.toMatch(/\bfem run\b/i);
+    expect(candidate?.canAutoProceed).toBe(false);
+    expect(candidate?.missingUserInputs).toEqual([
+      'consolidation layer thickness',
+      'consolidation tributary surface area',
+      'stage loads',
+      'stage durations',
+      'drainage condition',
+    ]);
+
+    expect(candidate?.bridge.input.useDemoDefaults).toBe(false);
+    expect(candidate?.bridge.input.material).toMatchObject({
+      elasticModulusKpa: fixture.requiredPrefill.elasticModulusKpa,
+      constrainedModulusKpa: fixture.requiredPrefill.elasticModulusKpa,
+      unitWeightKnM3: fixture.requiredPrefill.unitWeightKnM3,
+      frictionAngleDeg: 32,
+      cohesionKpa: 8,
+    });
+    expect(candidate?.bridge.input.groundwater).toMatchObject({
+      condition: 'specified',
+      depthM: fixture.requiredPrefill.groundwaterDepthM,
+    });
+
+    expect(candidate?.draft).toMatchObject({
+      implemented: true,
+      recommendedAction: 'collect-inputs',
+      recommendedCommand: 'geotech fem draft staged-settlement-consolidation --input <json> --case-output <analysis_case.json>',
+      capability: {
+        status: 'implemented-demo',
+        executionMode: 'human-reviewed-preview',
+        deterministicBackend: 'builtin-staged-consolidation-1d',
+        agentRunAllowed: false,
+      },
+    });
+    expect(candidate?.draft.analysisCase).toBeUndefined();
+    expect(candidate?.draft.contractReadiness).toBeUndefined();
+    expect(candidate?.draft.reviewGates).toEqual(expect.arrayContaining([
+      'missing-user-inputs',
+      'experimental-only',
+      '1d-consolidation-only',
+      'mohr-coulomb-material-point-only',
+      'time-rate-review-required',
+      'not-design-calculation',
+    ]));
+
+    expect(candidate?.executionBoundary).toMatchObject({
+      executionMode: 'human-reviewed-preview',
+      agentRunAllowed: false,
+      agentWebglRenderAllowed: false,
+      agentResultManifestAllowed: false,
+      humanReviewRequired: true,
+      caseOutputAvailable: false,
+      draftCommand: 'geotech fem draft staged-settlement-consolidation --input <json> --case-output <analysis_case.json>',
+    });
+    expect(candidate?.executionBoundary.humanRunCommand).toBeUndefined();
+    expect(candidate?.executionBoundary.blockedReasons).toEqual(expect.arrayContaining([
+      'consolidation layer thickness',
+      'consolidation tributary surface area',
+      'stage loads',
+      'stage durations',
+      'drainage condition',
+      'missing-user-inputs',
+    ]));
+
+    const validation = validateFemGroundModelDraftCandidate(candidate as FemGroundModelDraftCandidate);
+    expect(validation).toMatchObject({
+      status: 'accepted',
+      blockerCodes: [],
+    });
+  });
+
   it('fails closed when a planned GroundModel FEM route exposes unsafe execution boundaries', () => {
     const fixture = loadFixture();
     const [shaft] = buildFemDraftCandidatesFromGroundModel(makeAcceptanceGroundModel())

@@ -191,6 +191,7 @@ export interface GeotechDocumentBenchmark {
       status: string;
       executionMode: string;
       agentRunAllowed: false;
+      deterministicBackend?: string;
       executionBoundary: {
         schemaVersion: 'fem-benchmark-execution-boundary.v1';
         agentRunAllowed: false;
@@ -1129,6 +1130,7 @@ function summarizeFemDraftReadiness(
       status: capability.status,
       executionMode: capability.executionMode,
       agentRunAllowed: capability.agentRunAllowed,
+      ...(capability.deterministicBackend ? { deterministicBackend: capability.deterministicBackend } : {}),
       executionBoundary: {
         schemaVersion: 'fem-benchmark-execution-boundary.v1' as const,
         agentRunAllowed: false as const,
