@@ -375,6 +375,10 @@ describe('AI fallback behavior', () => {
     );
     expect(readinessResult?.content).toContain('FEM production readiness blocked');
     expect((readinessResult?.toolResult?.data as any).productionReady).toBe(false);
+    expect((readinessResult?.toolResult?.data as any).engineeringEvidence.verifiedFeatures)
+      .toContain('global-plane-strain-assembly');
+    expect((readinessResult?.toolResult?.data as any).agentEvidenceSummary)
+      .toContain('global-plane-strain-assembly');
 
     const draftResult = session.steps.find(
       (step) => step.type === 'tool_result' && step.toolName === 'prepare_fem_analysis_case',

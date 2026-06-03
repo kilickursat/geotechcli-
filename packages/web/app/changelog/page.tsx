@@ -8,6 +8,16 @@ const releases = [
     date: '2026-06-03',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added a benchmark-scale linear Quad4 plane-strain global assembly kernel with affine patch, skewed geometry, loaded reaction-balance, free-residual, dense-size-cap, and fail-fast validation coverage' },
+      { type: 'feat', text: 'Wired global assembly evidence into FEM engineering evidence, production-readiness summaries, exports, and mocked default GLM planning tests' },
+      { type: 'fix', text: 'Kept full production FEM blocked until nonlinear global solver coupling, pore-pressure/consolidation coupling, production sparse solver/result routes, support-design standards, persisted approvals, and independent benchmarks are approved' },
+    ],
+  },
+  {
+    version: '0.4.97',
+    date: '2026-06-03',
+    tag: '0.4.97 Release',
+    changes: [
       { type: 'fix', text: 'Hardened hosted-beta, Z.ai, OpenAI-compatible, Anthropic, and Hugging Face adapters so truncated provider JSON is reported as a provider response failure instead of a raw parser error' },
       { type: 'fix', text: 'Made async PDF ingest retry malformed provider JSON once at the page level before recording a resumable page failure' },
       { type: 'fix', text: 'Added regression coverage for malformed hosted/GLM responses and the reported Unterminated string in JSON failure mode' },

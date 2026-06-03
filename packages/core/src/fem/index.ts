@@ -94,3 +94,15 @@ export {
   type FemToleranceCheck,
 } from './engineering-evidence.js';
 export { renderFemWebglHtml } from './webgl.js';
+export {
+  buildPlaneStrainRectangularMesh,
+  runPlaneStrainQuad4Assembly,
+  type FemPlaneStrainAssemblyResult,
+  type FemPlaneStrainBoundaryCondition,
+  type FemPlaneStrainGaussPointResult,
+  type FemPlaneStrainMaterial,
+  type FemPlaneStrainModel,
+  type FemPlaneStrainNodalLoad,
+  type FemPlaneStrainNode,
+  type FemPlaneStrainQuad4Element,
+} from './plane-strain-assembly.js';

@@ -44,6 +44,7 @@ describe('FEM production readiness contract', () => {
       productionReady: false,
     });
     expect(report.engineeringEvidence.verifiedFeatures).toEqual(expect.arrayContaining([
+      'global-plane-strain-assembly',
       'nonlinear-plasticity',
       'consolidation',
       'seepage-pore-pressure-coupling',
@@ -95,5 +96,6 @@ describe('FEM production readiness contract', () => {
       'real-project-workspace-to-run-acceptance',
     ]);
     expect(data.agentEvidenceSummary).toContain('productionReady: no');
+    expect(data.agentEvidenceSummary).toContain('global-plane-strain-assembly');
   });
 });

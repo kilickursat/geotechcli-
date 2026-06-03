@@ -58,7 +58,7 @@ const ALL_PRODUCTION_FEATURES: FemProductionFeature[] = [
 const FEATURE_REQUIREMENTS: Record<FemProductionFeature, Omit<FemProductionFeatureRequirement, 'feature'>> = {
   'nonlinear-plasticity': {
     status: 'kernel-verified',
-    currentCoverage: 'Deterministic nonlinear material-point coverage now includes a Mohr-Coulomb triaxial strength cap plus a Drucker-Prager/Mohr-Coulomb-compatible principal-stress return-mapping kernel with yield residual and plastic strain state checks. It is not coupled to a global 2D/3D plasticity solver or plastic strain field.',
+    currentCoverage: 'Deterministic nonlinear material-point coverage now includes a Mohr-Coulomb triaxial strength cap plus a Drucker-Prager/Mohr-Coulomb-compatible principal-stress return-mapping kernel with yield residual and plastic strain state checks. A linear Quad4 plane-strain global assembly evidence kernel is also patch-tested, but nonlinear constitutive updates are not coupled to a global 2D/3D plasticity solver or plastic strain field.',
     requiredForAcceptance: [
       'constitutive models accepted for geotechnical use, such as Mohr-Coulomb/Hardening Soil or equivalent',
       'stress-path, yield, plastic strain, and convergence validation fixtures',
@@ -142,7 +142,7 @@ const FEATURE_REQUIREMENTS: Record<FemProductionFeature, Omit<FemProductionFeatu
   },
   'independent-benchmark-validation': {
     status: 'preview-only',
-    currentCoverage: 'Current fixtures verify deterministic preview envelopes and monotonic trends, not full production benchmark equivalence.',
+    currentCoverage: 'Current fixtures verify deterministic preview envelopes, monotonic trends, material-point closed forms, and a Quad4 plane-strain affine patch/global-equilibrium fixture. They do not yet prove full production benchmark equivalence against published or commercial solver references.',
     requiredForAcceptance: [
       'published analytical and numerical benchmark corpus by route',
       'tolerance envelopes for displacement, pore pressure, reaction, and settlement-time curves',

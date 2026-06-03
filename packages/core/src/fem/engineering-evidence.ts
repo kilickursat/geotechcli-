@@ -1,6 +1,11 @@
 import { calculateLateralEarthPressure } from '../geo/lateral-earth-pressure.js';
+import {
+  buildPlaneStrainRectangularMesh,
+  runPlaneStrainQuad4Assembly,
+} from './plane-strain-assembly.js';
 
 export type FemEngineeringKernelFeature =
+  | 'global-plane-strain-assembly'
   | 'nonlinear-plasticity'
   | 'consolidation'
   | 'seepage-pore-pressure-coupling'
@@ -1141,6 +1146,114 @@ export function runFemEngineeringEvidenceSuite(
     'Nonlinear material-point integration must report a converged plastic state and accumulated plastic strain variables.',
   ));
 
+  const patchMesh = buildPlaneStrainRectangularMesh({
+    widthM: 2,
+    heightM: 1,
+    divisionsX: 1,
+    divisionsY: 1,
+    materialId: 'soil',
+  });
+  const patchExx = 0.001;
+  const patchEyy = -0.0002;
+  const planeStrainPatch = runPlaneStrainQuad4Assembly({
+    schemaVersion: 'fem-plane-strain-model.v1',
+    nodes: patchMesh.nodes,
+    elements: patchMesh.elements,
+    materials: [{
+      id: 'soil',
+      elasticModulusKpa: 30_000,
+      poissonRatio: 0.3,
+    }],
+    boundaryConditions: patchMesh.nodes.flatMap((node) => [
+      { nodeId: node.id, dof: 'ux' as const, valueM: patchExx * node.xM },
+      { nodeId: node.id, dof: 'uy' as const, valueM: patchEyy * node.yM },
+    ]),
+    policy,
+  });
+  const maxExxError = Math.max(...planeStrainPatch.elements.flatMap((element) =>
+    element.gaussPoints.map((point) => Math.abs(point.strain[0] - patchExx)),
+  ));
+  const maxEyyError = Math.max(...planeStrainPatch.elements.flatMap((element) =>
+    element.gaussPoints.map((point) => Math.abs(point.strain[1] - patchEyy)),
+  ));
+  benchmarks.push(benchmark(
+    'quad4-plane-strain-affine-patch-exx',
+    'global-plane-strain-assembly',
+    'closed-form',
+    'maxExxPatchError',
+    maxExxError,
+    0,
+    1e-12,
+    'Quad4 plane-strain assembly must reproduce a prescribed affine displacement field at every Gauss point.',
+  ));
+  benchmarks.push(benchmark(
+    'quad4-plane-strain-affine-patch-eyy',
+    'global-plane-strain-assembly',
+    'closed-form',
+    'maxEyyPatchError',
+    maxEyyError,
+    0,
+    1e-12,
+    'Quad4 plane-strain assembly must reproduce constant vertical strain for the affine patch fixture.',
+  ));
+  benchmarks.push(benchmark(
+    'quad4-plane-strain-global-equilibrium',
+    'solver-convergence-and-tolerance',
+    'internal-balance',
+    'reactionBalanceRatio',
+    planeStrainPatch.reactionBalanceRatio,
+    1,
+    policy.forceBalanceTolerance,
+    'Global plane-strain assembly must preserve total force equilibrium for the affine patch fixture.',
+  ));
+  const loadedMesh = buildPlaneStrainRectangularMesh({
+    widthM: 2,
+    heightM: 1,
+    divisionsX: 2,
+    divisionsY: 1,
+    materialId: 'soil',
+  });
+  const loadedTopNodes = loadedMesh.nodes.filter((node) => node.yM === 1);
+  const loadedBottomNodes = loadedMesh.nodes.filter((node) => node.yM === 0);
+  const loadedPlaneStrain = runPlaneStrainQuad4Assembly({
+    schemaVersion: 'fem-plane-strain-model.v1',
+    nodes: loadedMesh.nodes,
+    elements: loadedMesh.elements,
+    materials: [{
+      id: 'soil',
+      elasticModulusKpa: 25_000,
+      poissonRatio: 0.28,
+    }],
+    boundaryConditions: loadedBottomNodes.flatMap((node) => [
+      { nodeId: node.id, dof: 'ux' as const },
+      { nodeId: node.id, dof: 'uy' as const },
+    ]),
+    nodalLoads: loadedTopNodes.map((node) => ({ nodeId: node.id, fyKn: -10 })),
+    policy,
+  });
+  const loadedReactionY = loadedPlaneStrain.nodes.reduce((sum, node) => sum + node.rxnYKn, 0);
+  benchmarks.push(benchmark(
+    'quad4-plane-strain-loaded-reaction-balance',
+    'global-plane-strain-assembly',
+    'internal-balance',
+    'verticalReactionSumKn',
+    loadedReactionY,
+    10 * loadedTopNodes.length,
+    1e-6,
+    'Externally loaded Quad4 plane-strain mesh must balance applied vertical nodal loads with support reactions.',
+    'kN',
+  ));
+  benchmarks.push(benchmark(
+    'quad4-plane-strain-loaded-free-residual',
+    'solver-convergence-and-tolerance',
+    'internal-balance',
+    'residualNormRatio',
+    loadedPlaneStrain.residualNormRatio,
+    0,
+    policy.forceBalanceTolerance,
+    'Externally loaded Quad4 plane-strain solve must satisfy free-DOF residual tolerance.',
+  ));
+
   const finalTimeYears = 0.197 * 25;
   const consolidationTimes = Array.from({ length: 80 }, (_, index) => finalTimeYears * ((index + 1) / 80));
   const consolidation = runTerzaghiConsolidationTimeStepper({
@@ -1293,7 +1406,7 @@ export function runFemEngineeringEvidenceSuite(
     benchmarks,
     convergencePolicy: policy,
     remainingProductionBlockers: [
-      '2d-3d-fem-assembly-and-sparse-solver-not-integrated-with-these-kernels',
+      'production-sparse-fem-solver-and-2d-3d-result-route-not-integrated-with-these-kernels',
       'nonlinear-plasticity-not-coupled-to-global-newton-iterations',
       'seepage-kernel-and-2d-3d-consolidation-not-coupled-to-global-fem-result-fields',
       'support-design-is-screening-level-and-not-jurisdiction-specific-structural-design',

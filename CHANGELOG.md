@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.98] - 2026-06-03
+
+### FEM Plane-Strain Evidence Kernel
+
+- Added a benchmark-scale linear Quad4 plane-strain global assembly kernel with affine patch, skewed geometry, loaded reaction-balance, free-residual, dense-size-cap, and fail-fast validation coverage.
+- Wired the new global assembly evidence into FEM engineering evidence, production-readiness summaries, exports, and mocked default GLM planning tests so agents can see the verified kernel without treating it as a production solver route.
+- Kept full production FEM blocked until nonlinear global solver coupling, pore-pressure/consolidation coupling, production sparse solver/result routes, support-design standards, persisted approvals, and independent published/commercial benchmarks are approved.
+
 ## [0.4.97] - 2026-06-03
 
 ### Ingest Provider Response Hardening

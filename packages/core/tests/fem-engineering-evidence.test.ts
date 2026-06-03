@@ -260,8 +260,14 @@ describe('FEM engineering evidence kernels', () => {
     expect(report.benchmarks.map((item) => item.id)).toEqual(expect.arrayContaining([
       'drucker-prager-return-map-yield-residual',
       'drucker-prager-material-state-plastic',
+      'quad4-plane-strain-affine-patch-exx',
+      'quad4-plane-strain-affine-patch-eyy',
+      'quad4-plane-strain-global-equilibrium',
+      'quad4-plane-strain-loaded-reaction-balance',
+      'quad4-plane-strain-loaded-free-residual',
     ]));
     expect(report.verifiedFeatures).toEqual(expect.arrayContaining([
+      'global-plane-strain-assembly',
       'nonlinear-plasticity',
       'consolidation',
       'seepage-pore-pressure-coupling',
