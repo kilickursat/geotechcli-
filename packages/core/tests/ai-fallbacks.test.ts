@@ -384,13 +384,21 @@ describe('AI fallback behavior', () => {
     expect((readinessResult?.toolResult?.data as any).engineeringEvidence.verifiedFeatures)
       .toContain('coupled-nonlinear-plane-strain');
     expect((readinessResult?.toolResult?.data as any).engineeringEvidence.verifiedFeatures)
+      .toContain('coupled-biot-plane-strain');
+    expect((readinessResult?.toolResult?.data as any).engineeringEvidence.verifiedFeatures)
       .toContain('seepage-pore-pressure-coupling');
+    expect((readinessResult?.toolResult?.data as any).engineeringEvidence.benchmarks.map((item: any) => item.id))
+      .toContain('quad4-plane-strain-biot-u-p-effective-stress-coupling');
     expect((readinessResult?.toolResult?.data as any).agentEvidenceSummary)
       .toContain('global-plane-strain-assembly');
     expect((readinessResult?.toolResult?.data as any).agentEvidenceSummary)
       .toContain('coupled-nonlinear-plane-strain');
     expect((readinessResult?.toolResult?.data as any).agentEvidenceSummary)
+      .toContain('quad4-plane-strain-biot-u-p-effective-stress-coupling');
+    expect((readinessResult?.toolResult?.data as any).agentEvidenceSummary)
       .toContain('seepage-pore-pressure-coupling');
+    expect((readinessResult?.toolResult?.data as any).agentEvidenceSummary)
+      .toContain('biot-u-p-coupling-evidence-kernel-not-route-backed-result-manifest-or-production-sparse-solver');
     const secondRequest = JSON.parse(
       String(fetchMock.mock.calls[1]?.[1]?.body ?? '{}'),
     ) as { model?: string; messages?: Array<{ content?: unknown }> };
@@ -403,6 +411,7 @@ describe('AI fallback behavior', () => {
     expect(secondPrompt).toContain('[Tool Result: assess_fem_production_readiness]');
     expect(secondPrompt).toContain('productionReady: no');
     expect(secondPrompt).toContain('coupled-nonlinear-plane-strain');
+    expect(secondPrompt).toContain('quad4-plane-strain-biot-u-p-effective-stress-coupling');
     expect(secondPrompt).toContain('seepage-pore-pressure-coupling');
 
     const draftResult = session.steps.find(

@@ -21,6 +21,7 @@ export interface FemPlaneStrainMaterial {
   hydraulicConductivityXMPerS?: number;
   hydraulicConductivityYMPerS?: number;
   biotCoefficient?: number;
+  specificStorage1PerM?: number;
   frictionAngleDeg?: number;
   cohesionKpa?: number;
   dilationAngleDeg?: number;
@@ -193,6 +194,97 @@ export interface FemPlaneStrainSeepageResult {
   maxPorePressureKpa: number;
   maxEffectiveStressReductionKpa: number;
   converged: boolean;
+  policy: FemConvergencePolicy;
+  limitations: string[];
+}
+
+export interface FemPlaneStrainPorePressureBoundaryCondition {
+  nodeId: string;
+  porePressureKpa: number;
+}
+
+export interface FemPlaneStrainPorePressureNodalFlux {
+  nodeId: string;
+  flowM3PerS?: number;
+}
+
+export interface FemPlaneStrainBiotConsolidationModel {
+  schemaVersion: 'fem-plane-strain-biot-consolidation-model.v1';
+  nodes: FemPlaneStrainNode[];
+  elements: FemPlaneStrainQuad4Element[];
+  materials: FemPlaneStrainMaterial[];
+  boundaryConditions: FemPlaneStrainBoundaryCondition[];
+  porePressureBoundaryConditions: FemPlaneStrainPorePressureBoundaryCondition[];
+  timeStepsSeconds: number[];
+  nodalLoads?: FemPlaneStrainNodalLoad[];
+  nodalFluxes?: FemPlaneStrainPorePressureNodalFlux[];
+  initialPorePressureKpa?: number;
+  defaultThicknessM?: number;
+  gammaWaterKpaPerM?: number;
+  policy?: FemConvergencePolicy;
+}
+
+export interface FemPlaneStrainBiotGaussPointResult {
+  elementId: string;
+  gaussPoint: number;
+  xi: number;
+  eta: number;
+  detJ: number;
+  strain: [number, number, number];
+  effectiveStressKpa: [number, number, number];
+  totalStressKpa: [number, number, number];
+  porePressureKpa: number;
+  biotCoefficient: number;
+  biotStressReductionKpa: number;
+  hydraulicGradientKpaPerM: [number, number];
+  darcyFluxMPerS: [number, number];
+}
+
+export interface FemPlaneStrainBiotStepResult {
+  step: number;
+  timeSeconds: number;
+  deltaTimeSeconds: number;
+  maxFreeResidualKn: number;
+  residualNormRatio: number;
+  maxFreePorePressureResidualM3PerS: number;
+  massBalanceErrorRatio: number;
+  maxPorePressureKpa: number;
+  maxVerticalSettlementM: number;
+  converged: boolean;
+}
+
+export interface FemPlaneStrainBiotConsolidationResult {
+  schemaVersion: 'fem-plane-strain-biot-consolidation-result.v1';
+  method: 'quad4-plane-strain-biot-u-p-backward-euler-evidence';
+  nodes: Array<FemPlaneStrainNode & {
+    uxM: number;
+    uyM: number;
+    porePressureKpa: number;
+    rxnXKn: number;
+    rxnYKn: number;
+    porePressureResidualM3PerS: number;
+  }>;
+  elements: Array<{
+    id: string;
+    areaM2: number;
+    thicknessM: number;
+    gaussPoints: FemPlaneStrainBiotGaussPointResult[];
+  }>;
+  timeSteps: FemPlaneStrainBiotStepResult[];
+  displacementDofCount: number;
+  freeDisplacementDofCount: number;
+  constrainedDisplacementDofCount: number;
+  porePressureDofCount: number;
+  freePorePressureDofCount: number;
+  constrainedPorePressureDofCount: number;
+  coupledUnknownCount: number;
+  maxBiotCouplingKpa: number;
+  maxFreeResidualKn: number;
+  residualNormRatio: number;
+  maxFreePorePressureResidualM3PerS: number;
+  massBalanceErrorRatio: number;
+  converged: boolean;
+  productionReady: false;
   policy: FemConvergencePolicy;
   limitations: string[];
 }
@@ -651,6 +743,21 @@ function hydraulicElementMatrices(input: {
   return { conductivity, areaM2, gauss };
 }
 
+function validateBiotMaterial(material: FemPlaneStrainMaterial): {
+  kxMPerS: number;
+  kyMPerS: number;
+  biotCoefficient: number;
+  specificStorage1PerM: number;
+} {
+  const hydraulic = validateHydraulicMaterial(material);
+  const specificStorage1PerM = material.specificStorage1PerM;
+  if (specificStorage1PerM == null) {
+    throw new Error(`material ${material.id} specificStorage1PerM is required for plane-strain Biot consolidation.`);
+  }
+  assertFinitePositive(specificStorage1PerM, `material ${material.id} specificStorage1PerM`);
+  return { ...hydraulic, specificStorage1PerM };
+}
+
 export function buildPlaneStrainRectangularMesh(input: {
   widthM: number;
   heightM: number;
@@ -900,6 +1007,464 @@ export function runPlaneStrainSteadySeepage(model: FemPlaneStrainSeepageModel): 
       'Benchmark-scale steady saturated Darcy seepage evidence kernel only.',
       'Solves hydraulic head on the Quad4 mesh and reports pore-pressure/effective-stress reduction metadata, but it does not add pore-pressure DOFs to the mechanical stiffness matrix.',
       'No transient 2D/3D Biot consolidation, unsaturated flow, uplift/piping design acceptance, production sparse solver, or route-backed result manifest is provided.',
+    ],
+  };
+}
+
+export function runPlaneStrainBiotConsolidation(
+  model: FemPlaneStrainBiotConsolidationModel,
+): FemPlaneStrainBiotConsolidationResult {
+  if (model.schemaVersion !== 'fem-plane-strain-biot-consolidation-model.v1') {
+    throw new Error('Only fem-plane-strain-biot-consolidation-model.v1 is supported.');
+  }
+  assertArray(model.nodes, 'nodes');
+  assertArray(model.elements, 'elements');
+  assertArray(model.materials, 'materials');
+  assertArray(model.boundaryConditions, 'boundaryConditions');
+  assertArray(model.porePressureBoundaryConditions, 'porePressureBoundaryConditions');
+  assertArray(model.timeStepsSeconds, 'timeStepsSeconds');
+  if (model.nodes.length < 4) throw new Error('Plane-strain Biot consolidation model requires at least four nodes.');
+  if (model.elements.length < 1) throw new Error('Plane-strain Biot consolidation model requires at least one element.');
+  if (model.materials.length < 1) throw new Error('Plane-strain Biot consolidation model requires at least one material.');
+  if (model.timeStepsSeconds.length < 1) {
+    throw new Error('Plane-strain Biot consolidation model requires at least one time step.');
+  }
+  if (model.defaultThicknessM != null) assertFinitePositive(model.defaultThicknessM, 'defaultThicknessM');
+  if (model.nodalLoads != null) assertArray(model.nodalLoads, 'nodalLoads');
+  if (model.nodalFluxes != null) assertArray(model.nodalFluxes, 'nodalFluxes');
+  const gammaWaterKpaPerM = model.gammaWaterKpaPerM ?? 9.81;
+  assertFinitePositive(gammaWaterKpaPerM, 'gammaWaterKpaPerM');
+  const initialPorePressureKpa = model.initialPorePressureKpa ?? 0;
+  assertFiniteNonNegative(initialPorePressureKpa, 'initialPorePressureKpa');
+  assertUniqueIds(model.nodes, 'node');
+  assertUniqueIds(model.materials, 'material');
+  assertUniqueIds(model.elements, 'element');
+
+  const policy = model.policy ?? DEFAULT_FEM_CONVERGENCE_POLICY;
+  validateConvergencePolicy(policy);
+  const nodeIndexById = new Map(model.nodes.map((node, index) => [node.id, index]));
+  const materialById = new Map(model.materials.map((material) => [material.id, material]));
+  const displacementDofCount = model.nodes.length * 2;
+  const porePressureDofCount = model.nodes.length;
+  if (displacementDofCount + porePressureDofCount > MAX_DENSE_DOF_COUNT) {
+    throw new Error(`Plane-strain Biot consolidation dense assembly is capped at ${MAX_DENSE_DOF_COUNT} coupled DOFs for benchmark-scale evidence runs.`);
+  }
+
+  let previousTimeSeconds = 0;
+  for (const [index, timeSeconds] of model.timeStepsSeconds.entries()) {
+    assertFinitePositive(timeSeconds, `timeStepsSeconds.${index}`);
+    if (timeSeconds <= previousTimeSeconds) {
+      throw new Error(`timeStepsSeconds.${index} must be strictly increasing.`);
+    }
+    previousTimeSeconds = timeSeconds;
+  }
+
+  for (const node of model.nodes) {
+    assertFinite(node.xM, `node ${node.id} xM`);
+    assertFinite(node.yM, `node ${node.id} yM`);
+  }
+  for (const material of model.materials) {
+    planeStrainD(material);
+    validateBiotMaterial(material);
+    if (material.unitWeightKnM3 != null) {
+      assertFiniteNonNegative(material.unitWeightKnM3, `material ${material.id} unitWeightKnM3`);
+    }
+  }
+
+  const stiffness = Array.from({ length: displacementDofCount }, () => new Array<number>(displacementDofCount).fill(0));
+  const coupling = Array.from({ length: displacementDofCount }, () => new Array<number>(porePressureDofCount).fill(0));
+  const pressureConductivity = Array.from({ length: porePressureDofCount }, () => new Array<number>(porePressureDofCount).fill(0));
+  const pressureStorage = Array.from({ length: porePressureDofCount }, () => new Array<number>(porePressureDofCount).fill(0));
+  const loads = new Array<number>(displacementDofCount).fill(0);
+  const fluxes = new Array<number>(porePressureDofCount).fill(0);
+
+  for (const load of model.nodalLoads ?? []) {
+    const nodeIndex = nodeIndexById.get(load.nodeId);
+    if (nodeIndex == null) throw new Error(`Unknown nodal load node: ${load.nodeId}.`);
+    const fxKn = load.fxKn ?? 0;
+    const fyKn = load.fyKn ?? 0;
+    assertFinite(fxKn, `nodal load ${load.nodeId}.fxKn`);
+    assertFinite(fyKn, `nodal load ${load.nodeId}.fyKn`);
+    loads[dofIndex(nodeIndex, 'ux')] += fxKn;
+    loads[dofIndex(nodeIndex, 'uy')] += fyKn;
+  }
+  for (const flux of model.nodalFluxes ?? []) {
+    const nodeIndex = nodeIndexById.get(flux.nodeId);
+    if (nodeIndex == null) throw new Error(`Unknown Biot nodal flux node: ${flux.nodeId}.`);
+    const flowM3PerS = flux.flowM3PerS ?? 0;
+    assertFinite(flowM3PerS, `nodal flux ${flux.nodeId}.flowM3PerS`);
+    fluxes[nodeIndex] += flowM3PerS;
+  }
+
+  const elementGaussCache: Array<{
+    element: FemPlaneStrainQuad4Element;
+    globalDofs: number[];
+    globalNodes: number[];
+    mechanicalGauss: Array<{ xi: number; eta: number; detJ: number; b: number[][] }>;
+    hydraulicGauss: ReturnType<typeof hydraulicElementMatrices>['gauss'];
+    areaM2: number;
+    thicknessM: number;
+  }> = [];
+
+  for (const element of model.elements) {
+    if (!Array.isArray(element.nodeIds) || element.nodeIds.length !== 4) {
+      throw new Error(`Plane-strain Biot element ${element.id} must reference exactly four nodes.`);
+    }
+    if (new Set(element.nodeIds).size !== 4) {
+      throw new Error(`Plane-strain Biot element ${element.id} has duplicate node references.`);
+    }
+    assertNonEmptyId(element.materialId, `element ${element.id} material`);
+    const nodeIndices = element.nodeIds.map((id) => {
+      const index = nodeIndexById.get(id);
+      if (index == null) throw new Error(`Unknown Biot element node: ${id}.`);
+      return index;
+    });
+    const material = materialById.get(element.materialId);
+    if (!material) throw new Error(`Unknown Biot element material: ${element.materialId}.`);
+    const biotMaterial = validateBiotMaterial(material);
+    const thicknessM = element.thicknessM ?? model.defaultThicknessM ?? 1;
+    assertFinitePositive(thicknessM, `element ${element.id} thicknessM`);
+    const nodes = nodeIndices.map((index) => model.nodes[index]);
+    const mechanical = elementMatrices({ nodes, material, thicknessM });
+    const hydraulic = hydraulicElementMatrices({ nodes, material, thicknessM });
+    const globalDofs = nodeIndices.flatMap((index) => [dofIndex(index, 'ux'), dofIndex(index, 'uy')]);
+
+    for (let localRow = 0; localRow < 8; localRow += 1) {
+      for (let localCol = 0; localCol < 8; localCol += 1) {
+        stiffness[globalDofs[localRow]][globalDofs[localCol]] += mechanical.stiffness[localRow][localCol];
+      }
+    }
+    for (let localRow = 0; localRow < 4; localRow += 1) {
+      for (let localCol = 0; localCol < 4; localCol += 1) {
+        pressureConductivity[nodeIndices[localRow]][nodeIndices[localCol]] +=
+          hydraulic.conductivity[localRow][localCol] / gammaWaterKpaPerM;
+      }
+    }
+    for (const [gaussIndex, point] of mechanical.gauss.entries()) {
+      const hydraulicPoint = hydraulic.gauss[gaussIndex];
+      for (let localDof = 0; localDof < 8; localDof += 1) {
+        const volumetricShapeDerivative = point.b[0][localDof] + point.b[1][localDof];
+        for (let localPressure = 0; localPressure < 4; localPressure += 1) {
+          coupling[globalDofs[localDof]][nodeIndices[localPressure]] +=
+            biotMaterial.biotCoefficient *
+            volumetricShapeDerivative *
+            hydraulicPoint.shape[localPressure] *
+            point.detJ *
+            thicknessM;
+        }
+      }
+      for (let localRow = 0; localRow < 4; localRow += 1) {
+        for (let localCol = 0; localCol < 4; localCol += 1) {
+          pressureStorage[nodeIndices[localRow]][nodeIndices[localCol]] +=
+            (biotMaterial.specificStorage1PerM / gammaWaterKpaPerM) *
+            hydraulicPoint.shape[localRow] *
+            hydraulicPoint.shape[localCol] *
+            point.detJ *
+            thicknessM;
+        }
+      }
+    }
+    elementGaussCache.push({
+      element,
+      globalDofs,
+      globalNodes: nodeIndices,
+      mechanicalGauss: mechanical.gauss,
+      hydraulicGauss: hydraulic.gauss,
+      areaM2: mechanical.areaM2,
+      thicknessM,
+    });
+  }
+
+  const prescribedDisplacements = new Map<number, number>();
+  for (const bc of model.boundaryConditions) {
+    const nodeIndex = nodeIndexById.get(bc.nodeId);
+    if (nodeIndex == null) throw new Error(`Unknown boundary-condition node: ${bc.nodeId}.`);
+    if (bc.dof !== 'ux' && bc.dof !== 'uy') {
+      throw new Error(`Boundary condition ${bc.nodeId} dof must be ux or uy.`);
+    }
+    const index = dofIndex(nodeIndex, bc.dof);
+    const value = bc.valueM ?? 0;
+    assertFinite(value, `boundary condition ${bc.nodeId}.${bc.dof}`);
+    const existing = prescribedDisplacements.get(index);
+    if (existing != null && Math.abs(existing - value) > 1e-12) {
+      throw new Error(`Conflicting boundary condition for ${bc.nodeId}.${bc.dof}.`);
+    }
+    prescribedDisplacements.set(index, value);
+  }
+  if (prescribedDisplacements.size === 0) {
+    throw new Error('Plane-strain Biot model requires at least one displacement boundary condition.');
+  }
+  const constrainedNodeIds = new Set(model.boundaryConditions.map((bc) => bc.nodeId));
+  const hasUxConstraint = model.boundaryConditions.some((bc) => bc.dof === 'ux');
+  const hasUyConstraint = model.boundaryConditions.some((bc) => bc.dof === 'uy');
+  if (prescribedDisplacements.size < 3 || constrainedNodeIds.size < 2 || !hasUxConstraint || !hasUyConstraint) {
+    throw new Error('Plane-strain Biot model has insufficient displacement constraints to restrain rigid-body modes.');
+  }
+
+  const prescribedPressures = new Map<number, number>();
+  for (const bc of model.porePressureBoundaryConditions) {
+    const nodeIndex = nodeIndexById.get(bc.nodeId);
+    if (nodeIndex == null) throw new Error(`Unknown pore-pressure boundary node: ${bc.nodeId}.`);
+    assertFiniteNonNegative(bc.porePressureKpa, `pore-pressure boundary ${bc.nodeId}.porePressureKpa`);
+    const existing = prescribedPressures.get(nodeIndex);
+    if (existing != null && Math.abs(existing - bc.porePressureKpa) > 1e-12) {
+      throw new Error(`Conflicting pore-pressure boundary condition for ${bc.nodeId}.`);
+    }
+    prescribedPressures.set(nodeIndex, bc.porePressureKpa);
+  }
+  if (prescribedPressures.size === 0) {
+    throw new Error('Plane-strain Biot consolidation model requires at least one pore-pressure boundary condition.');
+  }
+
+  const freeDisplacementDofs = Array.from({ length: displacementDofCount }, (_, index) => index)
+    .filter((index) => !prescribedDisplacements.has(index));
+  const freePressureDofs = Array.from({ length: porePressureDofCount }, (_, index) => index)
+    .filter((index) => !prescribedPressures.has(index));
+  const coupledUnknownCount = freeDisplacementDofs.length + freePressureDofs.length;
+  const pressureUnknownOffset = freeDisplacementDofs.length;
+  const displacement = new Array<number>(displacementDofCount).fill(0);
+  const porePressure = new Array<number>(porePressureDofCount).fill(initialPorePressureKpa);
+  for (const [index, value] of prescribedDisplacements) displacement[index] = value;
+  for (const [index, value] of prescribedPressures) porePressure[index] = value;
+  let previousDisplacement = [...displacement];
+  let previousPorePressure = [...porePressure];
+  let lastMechanicalResidual = new Array<number>(displacementDofCount).fill(0);
+  let lastPressureResidual = new Array<number>(porePressureDofCount).fill(0);
+  let lastResidualNormRatio = 0;
+  let lastMassBalanceErrorRatio = 0;
+  let lastMaxFreeResidualKn = 0;
+  let lastMaxFreePorePressureResidualM3PerS = 0;
+
+  const timeSteps: FemPlaneStrainBiotStepResult[] = [];
+  let previousStepTime = 0;
+
+  for (const [stepIndex, timeSeconds] of model.timeStepsSeconds.entries()) {
+    const deltaTimeSeconds = timeSeconds - previousStepTime;
+    previousStepTime = timeSeconds;
+    for (const [index, value] of prescribedDisplacements) displacement[index] = value;
+    for (const [index, value] of prescribedPressures) porePressure[index] = value;
+
+    if (coupledUnknownCount > 0) {
+      const matrix = Array.from({ length: coupledUnknownCount }, () => new Array<number>(coupledUnknownCount).fill(0));
+      const rhs = new Array<number>(coupledUnknownCount).fill(0);
+
+      for (const [rowIndex, globalDof] of freeDisplacementDofs.entries()) {
+        for (const [colIndex, colDof] of freeDisplacementDofs.entries()) {
+          matrix[rowIndex][colIndex] = stiffness[globalDof][colDof];
+        }
+        for (const [colIndex, pressureDof] of freePressureDofs.entries()) {
+          matrix[rowIndex][pressureUnknownOffset + colIndex] = -coupling[globalDof][pressureDof];
+        }
+        rhs[rowIndex] = loads[globalDof];
+        for (const [knownDof, value] of prescribedDisplacements) {
+          rhs[rowIndex] -= stiffness[globalDof][knownDof] * value;
+        }
+        for (const [knownPressure, value] of prescribedPressures) {
+          rhs[rowIndex] += coupling[globalDof][knownPressure] * value;
+        }
+      }
+
+      for (const [rowPressureIndex, pressureDof] of freePressureDofs.entries()) {
+        const rowIndex = pressureUnknownOffset + rowPressureIndex;
+        for (const [colIndex, displacementDof] of freeDisplacementDofs.entries()) {
+          matrix[rowIndex][colIndex] = coupling[displacementDof][pressureDof] / deltaTimeSeconds;
+        }
+        for (const [colIndex, colPressureDof] of freePressureDofs.entries()) {
+          matrix[rowIndex][pressureUnknownOffset + colIndex] =
+            pressureStorage[pressureDof][colPressureDof] / deltaTimeSeconds +
+            pressureConductivity[pressureDof][colPressureDof];
+        }
+        rhs[rowIndex] = fluxes[pressureDof];
+        for (let displacementDof = 0; displacementDof < displacementDofCount; displacementDof += 1) {
+          rhs[rowIndex] += coupling[displacementDof][pressureDof] *
+            previousDisplacement[displacementDof] /
+            deltaTimeSeconds;
+        }
+        for (let colPressureDof = 0; colPressureDof < porePressureDofCount; colPressureDof += 1) {
+          rhs[rowIndex] += pressureStorage[pressureDof][colPressureDof] *
+            previousPorePressure[colPressureDof] /
+            deltaTimeSeconds;
+        }
+        for (const [knownDof, value] of prescribedDisplacements) {
+          rhs[rowIndex] -= coupling[knownDof][pressureDof] * value / deltaTimeSeconds;
+        }
+        for (const [knownPressure, value] of prescribedPressures) {
+          rhs[rowIndex] -= (
+            pressureStorage[pressureDof][knownPressure] / deltaTimeSeconds +
+            pressureConductivity[pressureDof][knownPressure]
+          ) * value;
+        }
+      }
+
+      const solved = solveDenseLinearSystem(matrix, rhs);
+      for (const [index, dof] of freeDisplacementDofs.entries()) displacement[dof] = solved[index];
+      for (const [index, dof] of freePressureDofs.entries()) {
+        porePressure[dof] = Math.max(0, solved[pressureUnknownOffset + index]);
+      }
+      for (const [index, value] of prescribedDisplacements) displacement[index] = value;
+      for (const [index, value] of prescribedPressures) porePressure[index] = value;
+    }
+
+    const elasticInternal = matVec(stiffness, displacement);
+    const couplingLoad = matVec(coupling, porePressure);
+    const mechanicalInternal = elasticInternal.map((value, index) => value - couplingLoad[index]);
+    const mechanicalResidual = mechanicalInternal.map((value, index) => value - loads[index]);
+    const pressureResidual = new Array<number>(porePressureDofCount).fill(0);
+    for (let row = 0; row < porePressureDofCount; row += 1) {
+      let value = -fluxes[row];
+      for (let displacementDof = 0; displacementDof < displacementDofCount; displacementDof += 1) {
+        value += coupling[displacementDof][row] *
+          (displacement[displacementDof] - previousDisplacement[displacementDof]) /
+          deltaTimeSeconds;
+      }
+      for (let pressureDof = 0; pressureDof < porePressureDofCount; pressureDof += 1) {
+        value += pressureStorage[row][pressureDof] *
+          (porePressure[pressureDof] - previousPorePressure[pressureDof]) /
+          deltaTimeSeconds;
+        value += pressureConductivity[row][pressureDof] * porePressure[pressureDof];
+      }
+      pressureResidual[row] = value;
+    }
+
+    const maxFreeResidualKn = freeDisplacementDofs.length > 0
+      ? Math.max(...freeDisplacementDofs.map((index) => Math.abs(mechanicalResidual[index])))
+      : 0;
+    const loadNorm = Math.max(
+      Math.hypot(...loads),
+      Math.hypot(...mechanicalInternal),
+      Math.hypot(...couplingLoad),
+      Math.hypot(...Array.from(prescribedDisplacements.keys()).map((index) => mechanicalResidual[index])),
+      1,
+    );
+    const residualNormRatio = maxFreeResidualKn / loadNorm;
+    const maxFreePorePressureResidualM3PerS = freePressureDofs.length > 0
+      ? Math.max(...freePressureDofs.map((index) => Math.abs(pressureResidual[index])))
+      : 0;
+    const freePressureResidualSum = freePressureDofs
+      .reduce((sum, index) => sum + Math.abs(pressureResidual[index]), 0);
+    const pressureScale = Math.max(
+      Math.hypot(...fluxes),
+      Math.hypot(...pressureResidual),
+      Math.hypot(...Array.from(prescribedPressures.keys()).map((index) => pressureResidual[index])),
+      1e-12,
+    );
+    const massBalanceErrorRatio = freePressureResidualSum / pressureScale;
+    const maxPorePressureKpa = Math.max(...porePressure);
+    const maxVerticalSettlementM = Math.max(0, -Math.min(...model.nodes.map((_, index) => displacement[dofIndex(index, 'uy')])));
+    const converged = residualNormRatio <= policy.forceBalanceTolerance &&
+      massBalanceErrorRatio <= policy.porePressureMassBalanceTolerance;
+
+    timeSteps.push({
+      step: stepIndex + 1,
+      timeSeconds: round(timeSeconds, 8),
+      deltaTimeSeconds: round(deltaTimeSeconds, 8),
+      maxFreeResidualKn: round(maxFreeResidualKn, 12),
+      residualNormRatio: round(residualNormRatio, 12),
+      maxFreePorePressureResidualM3PerS: Number(maxFreePorePressureResidualM3PerS.toExponential(12)),
+      massBalanceErrorRatio: round(massBalanceErrorRatio, 12),
+      maxPorePressureKpa: round(maxPorePressureKpa, 8),
+      maxVerticalSettlementM: round(maxVerticalSettlementM, 12),
+      converged,
+    });
+
+    previousDisplacement = [...displacement];
+    previousPorePressure = [...porePressure];
+    lastMechanicalResidual = mechanicalResidual;
+    lastPressureResidual = pressureResidual;
+    lastResidualNormRatio = residualNormRatio;
+    lastMassBalanceErrorRatio = massBalanceErrorRatio;
+    lastMaxFreeResidualKn = maxFreeResidualKn;
+    lastMaxFreePorePressureResidualM3PerS = maxFreePorePressureResidualM3PerS;
+  }
+
+  let maxBiotCouplingKpa = 0;
+  const elementOutputs = elementGaussCache.map((entry) => {
+    const material = materialById.get(entry.element.materialId)!;
+    const d = planeStrainD(material);
+    const elementDisplacement = entry.globalDofs.map((index) => displacement[index]);
+    const localPressures = entry.globalNodes.map((index) => porePressure[index]);
+    const gaussPoints: FemPlaneStrainBiotGaussPointResult[] = entry.mechanicalGauss.map((point, index) => {
+      const hydraulicPoint = entry.hydraulicGauss[index];
+      const strain = point.b.map((row) => row.reduce((sum, value, col) => sum + value * elementDisplacement[col], 0)) as [number, number, number];
+      const effectiveStress = d.map((row) => row.reduce((sum, value, col) => sum + value * strain[col], 0)) as [number, number, number];
+      const porePressureKpa = Math.max(0, hydraulicPoint.shape.reduce((sum, shape, node) => sum + shape * localPressures[node], 0));
+      const biotStressReductionKpa = hydraulicPoint.biotCoefficient * porePressureKpa;
+      const totalStress = [
+        effectiveStress[0] - biotStressReductionKpa,
+        effectiveStress[1] - biotStressReductionKpa,
+        effectiveStress[2],
+      ] as [number, number, number];
+      const gradientX = hydraulicPoint.dNdx.reduce((sum, dNdx, node) => sum + dNdx * localPressures[node], 0);
+      const gradientY = hydraulicPoint.dNdy.reduce((sum, dNdy, node) => sum + dNdy * localPressures[node], 0);
+      maxBiotCouplingKpa = Math.max(maxBiotCouplingKpa, biotStressReductionKpa);
+      return {
+        elementId: entry.element.id,
+        gaussPoint: index + 1,
+        xi: round(point.xi, 10),
+        eta: round(point.eta, 10),
+        detJ: round(point.detJ, 10),
+        strain: [round(strain[0], 12), round(strain[1], 12), round(strain[2], 12)],
+        effectiveStressKpa: [
+          round(effectiveStress[0], 8),
+          round(effectiveStress[1], 8),
+          round(effectiveStress[2], 8),
+        ],
+        totalStressKpa: [
+          round(totalStress[0], 8),
+          round(totalStress[1], 8),
+          round(totalStress[2], 8),
+        ],
+        porePressureKpa: round(porePressureKpa, 8),
+        biotCoefficient: round(hydraulicPoint.biotCoefficient, 8),
+        biotStressReductionKpa: round(biotStressReductionKpa, 8),
+        hydraulicGradientKpaPerM: [round(gradientX, 8), round(gradientY, 8)],
+        darcyFluxMPerS: [
+          Number((-(hydraulicPoint.kxMPerS / gammaWaterKpaPerM) * gradientX).toExponential(12)),
+          Number((-(hydraulicPoint.kyMPerS / gammaWaterKpaPerM) * gradientY).toExponential(12)),
+        ],
+      };
+    });
+    return {
+      id: entry.element.id,
+      areaM2: round(entry.areaM2, 10),
+      thicknessM: round(entry.thicknessM, 10),
+      gaussPoints,
+    };
+  });
+
+  return {
+    schemaVersion: 'fem-plane-strain-biot-consolidation-result.v1',
+    method: 'quad4-plane-strain-biot-u-p-backward-euler-evidence',
+    nodes: model.nodes.map((node, index) => ({
+      ...node,
+      uxM: round(displacement[dofIndex(index, 'ux')], 12),
+      uyM: round(displacement[dofIndex(index, 'uy')], 12),
+      porePressureKpa: round(porePressure[index], 8),
+      rxnXKn: round(lastMechanicalResidual[dofIndex(index, 'ux')], 8),
+      rxnYKn: round(lastMechanicalResidual[dofIndex(index, 'uy')], 8),
+      porePressureResidualM3PerS: Number(lastPressureResidual[index].toExponential(12)),
+    })),
+    elements: elementOutputs,
+    timeSteps,
+    displacementDofCount,
+    freeDisplacementDofCount: freeDisplacementDofs.length,
+    constrainedDisplacementDofCount: prescribedDisplacements.size,
+    porePressureDofCount,
+    freePorePressureDofCount: freePressureDofs.length,
+    constrainedPorePressureDofCount: prescribedPressures.size,
+    coupledUnknownCount,
+    maxBiotCouplingKpa: round(maxBiotCouplingKpa, 8),
+    maxFreeResidualKn: round(lastMaxFreeResidualKn, 12),
+    residualNormRatio: round(lastResidualNormRatio, 12),
+    maxFreePorePressureResidualM3PerS: Number(lastMaxFreePorePressureResidualM3PerS.toExponential(12)),
+    massBalanceErrorRatio: round(lastMassBalanceErrorRatio, 12),
+    converged: timeSteps.every((step) => step.converged),
+    productionReady: false,
+    policy,
+    limitations: [
+      'Benchmark-scale saturated linear-elastic Quad4 Biot u-p evidence kernel only.',
+      'Uses dense backward-Euler displacement/pore-pressure coupling with a coupled DOF cap; it is not a production sparse solver or route-backed result manifest.',
+      'Pore pressure is treated as excess pressure in kPa for deterministic evidence; groundwater elevation routing, unsaturated flow, uplift/piping design, nonlinear plasticity coupling, staged activation, and cross-solver validation are not provided.',
     ],
   };
 }

@@ -3,9 +3,11 @@ import { describe, expect, it } from 'vitest';
 import {
   buildPlaneStrainRectangularMesh,
   assessFemProductionReadiness,
+  runPlaneStrainBiotConsolidation,
   runPlaneStrainDruckerPragerLoadSteps,
   runPlaneStrainQuad4Assembly,
   runPlaneStrainSteadySeepage,
+  type FemPlaneStrainBiotConsolidationModel,
   type FemPlaneStrainModel,
   type FemPlaneStrainSeepageModel,
 } from '../src/fem/index.js';
@@ -191,6 +193,134 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
       }],
       headBoundaryConditions: [{ nodeId: 'n-0-0', headM: 1 }],
     })).toThrow(/at least two hydraulic head boundary conditions/);
+  });
+
+  it('solves benchmark-scale Quad4 Biot u-p consolidation with stress-coupling evidence', () => {
+    const mesh = buildPlaneStrainRectangularMesh({
+      widthM: 2,
+      heightM: 1,
+      divisionsX: 2,
+      divisionsY: 2,
+      materialId: 'soil',
+    });
+    const bottomNodes = mesh.nodes.filter((node) => node.yM === 0);
+    const topNodes = mesh.nodes.filter((node) => node.yM === 1);
+    const materials = [{
+      id: 'soil',
+      elasticModulusKpa: 25_000,
+      poissonRatio: 0.28,
+      hydraulicConductivityXMPerS: 1e-6,
+      hydraulicConductivityYMPerS: 1e-6,
+      biotCoefficient: 0.8,
+      specificStorage1PerM: 1e-4,
+    }];
+    const boundaryConditions = bottomNodes.flatMap((node) => [
+      { nodeId: node.id, dof: 'ux' as const },
+      { nodeId: node.id, dof: 'uy' as const },
+    ]);
+    const nodalLoads = topNodes.map((node) => ({ nodeId: node.id, fyKn: -8 }));
+    const drained = runPlaneStrainQuad4Assembly({
+      schemaVersion: 'fem-plane-strain-model.v1',
+      nodes: mesh.nodes,
+      elements: mesh.elements,
+      materials,
+      boundaryConditions,
+      nodalLoads,
+    });
+    const result = runPlaneStrainBiotConsolidation({
+      schemaVersion: 'fem-plane-strain-biot-consolidation-model.v1',
+      nodes: mesh.nodes,
+      elements: mesh.elements,
+      materials,
+      boundaryConditions,
+      porePressureBoundaryConditions: [
+        ...bottomNodes.map((node) => ({ nodeId: node.id, porePressureKpa: 100 })),
+        ...topNodes.map((node) => ({ nodeId: node.id, porePressureKpa: 0 })),
+      ],
+      nodalLoads,
+      initialPorePressureKpa: 100,
+      timeStepsSeconds: [3_600, 7_200, 14_400],
+    });
+
+    const drainedTopSettlement = Math.max(0, -Math.min(
+      ...topNodes.map((node) => drained.nodes.find((item) => item.id === node.id)?.uyM ?? 0),
+    ));
+    const coupledTopSettlement = Math.max(0, -Math.min(
+      ...topNodes.map((node) => result.nodes.find((item) => item.id === node.id)?.uyM ?? 0),
+    ));
+    const firstGauss = result.elements[0].gaussPoints[0];
+
+    expect(result.schemaVersion).toBe('fem-plane-strain-biot-consolidation-result.v1');
+    expect(result.method).toBe('quad4-plane-strain-biot-u-p-backward-euler-evidence');
+    expect(result.productionReady).toBe(false);
+    expect(result.displacementDofCount).toBe(mesh.nodes.length * 2);
+    expect(result.porePressureDofCount).toBe(mesh.nodes.length);
+    expect(result.freeDisplacementDofCount).toBeGreaterThan(0);
+    expect(result.freePorePressureDofCount).toBeGreaterThan(0);
+    expect(result.coupledUnknownCount).toBe(result.freeDisplacementDofCount + result.freePorePressureDofCount);
+    expect(result.timeSteps).toHaveLength(3);
+    expect(result.converged).toBe(true);
+    expect(result.maxFreeResidualKn).toBeLessThanOrEqual(result.policy.forceBalanceTolerance);
+    expect(result.massBalanceErrorRatio).toBeLessThanOrEqual(result.policy.porePressureMassBalanceTolerance);
+    expect(result.maxBiotCouplingKpa).toBeGreaterThan(0);
+    expect(coupledTopSettlement).not.toBeCloseTo(drainedTopSettlement, 12);
+    expect(firstGauss.porePressureKpa).toBeGreaterThan(0);
+    expect(firstGauss.effectiveStressKpa[1] - firstGauss.totalStressKpa[1])
+      .toBeCloseTo(firstGauss.biotStressReductionKpa, 7);
+    expect(firstGauss.totalStressKpa[1]).toBeLessThan(firstGauss.effectiveStressKpa[1]);
+    expect(result.limitations.join(' ')).toMatch(/Benchmark-scale/i);
+    expect(result.limitations.join(' ')).toMatch(/not a production sparse solver/i);
+    expect(result.limitations.join(' ')).toMatch(/nonlinear plasticity coupling/i);
+  });
+
+  it('rejects unsafe Biot u-p consolidation inputs before solving', () => {
+    const mesh = buildPlaneStrainRectangularMesh({
+      widthM: 1,
+      heightM: 1,
+      divisionsX: 1,
+      divisionsY: 1,
+      materialId: 'soil',
+    });
+    const model: FemPlaneStrainBiotConsolidationModel = {
+      schemaVersion: 'fem-plane-strain-biot-consolidation-model.v1',
+      nodes: mesh.nodes,
+      elements: mesh.elements,
+      materials: [{
+        id: 'soil',
+        elasticModulusKpa: 30_000,
+        poissonRatio: 0.3,
+        hydraulicConductivityXMPerS: 1e-6,
+        specificStorage1PerM: 1e-4,
+      }],
+      boundaryConditions: mesh.nodes
+        .filter((node) => node.yM === 0)
+        .flatMap((node) => [
+          { nodeId: node.id, dof: 'ux' as const },
+          { nodeId: node.id, dof: 'uy' as const },
+        ]),
+      porePressureBoundaryConditions: [{ nodeId: 'n-0-0', porePressureKpa: 0 }],
+      timeStepsSeconds: [1],
+    };
+
+    expect(() => runPlaneStrainBiotConsolidation({
+      ...model,
+      materials: [{ id: 'soil', elasticModulusKpa: 30_000, poissonRatio: 0.3, hydraulicConductivityXMPerS: 1e-6 }],
+    })).toThrow(/specificStorage1PerM is required/);
+    expect(() => runPlaneStrainBiotConsolidation({
+      ...model,
+      porePressureBoundaryConditions: [],
+    })).toThrow(/at least one pore-pressure boundary condition/);
+    expect(() => runPlaneStrainBiotConsolidation({
+      ...model,
+      timeStepsSeconds: [2, 1],
+    })).toThrow(/timeStepsSeconds\.1 must be strictly increasing/);
+    expect(() => runPlaneStrainBiotConsolidation({
+      ...model,
+      porePressureBoundaryConditions: [
+        { nodeId: 'n-0-0', porePressureKpa: 0 },
+        { nodeId: 'n-0-0', porePressureKpa: 1 },
+      ],
+    })).toThrow(/Conflicting pore-pressure boundary condition/);
   });
 
   it('reproduces a prescribed affine displacement patch at every Gauss point', () => {

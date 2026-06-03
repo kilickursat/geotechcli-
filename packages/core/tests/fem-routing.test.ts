@@ -921,6 +921,12 @@ describe('FEM routing contract', () => {
     expect(productionResult.success).toBe(true);
     expect(productionResult.summary).toContain('support-design');
     expect((productionResult.data as any).productionReady).toBe(false);
+    expect((productionResult.data as any).agentEvidenceSummary).toContain(
+      'quad4-plane-strain-biot-u-p-effective-stress-coupling',
+    );
+    expect((productionResult.data as any).agentEvidenceSummary).toContain(
+      'biot-u-p-coupling-evidence-kernel-not-route-backed-result-manifest-or-production-sparse-solver',
+    );
 
     const draftResult = await toolRegistry.execute('prepare_fem_analysis_case', {
       objective: 'foundation-settlement',

@@ -561,7 +561,7 @@ function buildFemAgentTask(task: string, objective?: string, workspaceSummary?: 
 function requiredFemAgentToolsForTask(task: string): readonly string[] {
   const normalized = task.toLowerCase();
   const required = new Set<string>();
-  if (/\b(production|production-grade|design-ready|nonlinear|plasticity|consolidation|seepage|pore[- ]?pressure|support design|wall design|anchor design|basal heave|workspace-to-run|real project|benchmark validation)\b/.test(normalized)) {
+  if (/\b(production|production-grade|design-ready|nonlinear|plasticity|consolidation|seepage|pore[- ]?pressure|biot|u-p|support design|wall design|anchor design|basal heave|workspace-to-run|real project|benchmark validation)\b/.test(normalized)) {
     required.add('assess_fem_production_readiness');
   }
   if (/\b(draft|prepare|create)\b/.test(normalized) && /\b(case|analysis|fem|settlement|excavation|tunnel|foundation)\b/.test(normalized)) {

@@ -273,10 +273,15 @@ describe('FEM engineering evidence kernels', () => {
       'quad4-plane-strain-seepage-linear-head-flow',
       'quad4-plane-strain-seepage-boundary-mass-balance',
       'quad4-plane-strain-seepage-effective-stress-reduction',
+      'quad4-plane-strain-biot-u-p-dof-coupling',
+      'quad4-plane-strain-biot-u-p-effective-stress-coupling',
+      'quad4-plane-strain-biot-u-p-free-residual',
+      'quad4-plane-strain-biot-u-p-mass-residual',
     ]));
     expect(report.verifiedFeatures).toEqual(expect.arrayContaining([
       'global-plane-strain-assembly',
       'coupled-nonlinear-plane-strain',
+      'coupled-biot-plane-strain',
       'nonlinear-plasticity',
       'consolidation',
       'seepage-pore-pressure-coupling',
@@ -285,5 +290,8 @@ describe('FEM engineering evidence kernels', () => {
       'licensed-engineer-review-workflow',
     ]));
     expect(report.remainingProductionBlockers).toContain('published-commercial-cross-solver-benchmark-corpus-not-approved');
+    expect(report.remainingProductionBlockers).toContain(
+      'biot-u-p-coupling-evidence-kernel-not-route-backed-result-manifest-or-production-sparse-solver',
+    );
   });
 });

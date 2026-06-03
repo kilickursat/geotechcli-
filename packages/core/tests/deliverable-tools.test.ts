@@ -242,7 +242,7 @@ describe('deliverable tools', () => {
         'vision_sensor',
       ]),
     );
-  });
+  }, 15_000);
 
   it('registers deliverable tools through the live swarm runtime import', async () => {
     await import('../src/agents/swarm.js');

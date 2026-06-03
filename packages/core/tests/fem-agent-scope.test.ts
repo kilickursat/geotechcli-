@@ -74,7 +74,7 @@ describe('FEM scoped agent', () => {
         finishReason: 'stop',
       })
       .mockResolvedValueOnce({
-        text: 'I need to assess production readiness first.\n```tool\n{"tool":"assess_fem_production_readiness","args":{"objective":"excavation-deformation","requestedFeatures":["nonlinear-plasticity","consolidation","seepage-pore-pressure-coupling","support-design"]}}\n```',
+        text: 'I need to assess production readiness first.\n```tool\n{"tool":"assess_fem_production_readiness","args":{"objective":"excavation-deformation","requestedFeatures":["nonlinear-plasticity","consolidation","biot-u-p-coupling","seepage-pore-pressure-coupling","support-design"]}}\n```',
         usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
         latencyMs: 1,
         finishReason: 'stop',
@@ -123,6 +123,12 @@ describe('FEM scoped agent', () => {
         content: expect.stringContaining('FEM production readiness blocked'),
       }),
     ]));
+    const readinessResult = session.steps.find(
+      (step) => step.type === 'tool_result' && step.toolName === 'assess_fem_production_readiness',
+    );
+    expect((readinessResult?.toolResult?.data as any).productionReady).toBe(false);
+    expect((readinessResult?.toolResult?.data as any).agentEvidenceSummary)
+      .toContain('quad4-plane-strain-biot-u-p-effective-stress-coupling');
     expect(session.steps.find((step) => step.type === 'answer')?.content).toContain('Production-grade FEM is blocked');
   });
 

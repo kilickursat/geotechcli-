@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.102] - 2026-06-03
+
+### FEM Biot u-p Evidence
+
+- Added a benchmark-scale Quad4 plane-strain Biot u-p backward-Euler evidence kernel that assembles displacement and pore-pressure DOFs in one coupled solve with pressure storage, Darcy pressure-gradient flow, Biot stress reduction, residual, and mass-balance metrics.
+- Exposed the new coupled Biot runner/types through core FEM exports and added deterministic tests for drained-vs-pressurized displacement response, stress sign convention, residual policies, and unsafe input rejection.
+- Updated FEM production-readiness and mocked/default GLM agent summaries so the new Biot evidence is visible while full production FEM remains blocked until route-backed manifests, production sparse solvers, nonlinear plasticity coupling, independent benchmarks, support design, and enforced approvals are complete.
+
 ## [0.4.101] - 2026-06-03
 
 ### Ingest Live Progress Hardening

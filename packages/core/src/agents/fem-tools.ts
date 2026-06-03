@@ -101,6 +101,12 @@ function normalizeProductionFeature(value: unknown): FemProductionFeature | unde
     case 'pore-pressure-coupling':
     case 'seepage-pore-pressure-coupling':
     case 'groundwater-coupling':
+    case 'biot':
+    case 'biot-coupling':
+    case 'biot-u-p':
+    case 'biot-u-p-coupling':
+    case 'u-p-coupling':
+    case 'up-coupling':
       return 'seepage-pore-pressure-coupling';
     case 'advanced-staging':
     case 'advanced-staged-construction':
@@ -221,6 +227,11 @@ toolRegistry.register(
           `current mode: ${report.currentMode}`,
           `engineering evidence: ${report.engineeringEvidence.status}`,
           `verified kernels: ${report.engineeringEvidence.verifiedFeatures.join(', ') || 'none'}`,
+          `accepted benchmarks: ${report.engineeringEvidence.benchmarks
+            .filter((benchmark) => benchmark.status === 'accepted')
+            .map((benchmark) => benchmark.id)
+            .join(', ') || 'none'}`,
+          `production blockers: ${report.blockers.join(', ') || 'none'}`,
           `blocked features: ${report.blockedFeatures.map((feature) => feature.feature).join(', ')}`,
           `safe actions: ${report.safeUserActions.join(' | ')}`,
         ].join('\n'),

@@ -1,6 +1,7 @@
 import { calculateLateralEarthPressure } from '../geo/lateral-earth-pressure.js';
 import {
   buildPlaneStrainRectangularMesh,
+  runPlaneStrainBiotConsolidation,
   runPlaneStrainDruckerPragerLoadSteps,
   runPlaneStrainQuad4Assembly,
   runPlaneStrainSteadySeepage,
@@ -9,6 +10,7 @@ import {
 export type FemEngineeringKernelFeature =
   | 'global-plane-strain-assembly'
   | 'coupled-nonlinear-plane-strain'
+  | 'coupled-biot-plane-strain'
   | 'nonlinear-plasticity'
   | 'consolidation'
   | 'seepage-pore-pressure-coupling'
@@ -1541,6 +1543,94 @@ export function runFemEngineeringEvidenceSuite(
     'kPa',
   ));
 
+  const biotMesh = buildPlaneStrainRectangularMesh({
+    widthM: 2,
+    heightM: 1,
+    divisionsX: 2,
+    divisionsY: 2,
+    materialId: 'soil',
+  });
+  const biotBottomNodes = biotMesh.nodes.filter((node) => node.yM === 0);
+  const biotTopNodes = biotMesh.nodes.filter((node) => node.yM === 1);
+  const biot = runPlaneStrainBiotConsolidation({
+    schemaVersion: 'fem-plane-strain-biot-consolidation-model.v1',
+    nodes: biotMesh.nodes,
+    elements: biotMesh.elements,
+    materials: [{
+      id: 'soil',
+      elasticModulusKpa: 25_000,
+      poissonRatio: 0.28,
+      hydraulicConductivityXMPerS: 1e-6,
+      hydraulicConductivityYMPerS: 1e-6,
+      biotCoefficient: 0.8,
+      specificStorage1PerM: 1e-4,
+    }],
+    boundaryConditions: biotBottomNodes.flatMap((node) => [
+      { nodeId: node.id, dof: 'ux' as const },
+      { nodeId: node.id, dof: 'uy' as const },
+    ]),
+    porePressureBoundaryConditions: [
+      ...biotBottomNodes.map((node) => ({ nodeId: node.id, porePressureKpa: 100 })),
+      ...biotTopNodes.map((node) => ({ nodeId: node.id, porePressureKpa: 0 })),
+    ],
+    nodalLoads: biotTopNodes.map((node) => ({ nodeId: node.id, fyKn: -10 })),
+    initialPorePressureKpa: 100,
+    timeStepsSeconds: [3_600, 7_200, 14_400],
+    policy,
+  });
+  const biotFirstGauss = biot.elements[0].gaussPoints[0];
+  const biotStressSignError = Math.abs(
+    (biotFirstGauss.effectiveStressKpa[1] - biotFirstGauss.totalStressKpa[1]) -
+    biotFirstGauss.biotStressReductionKpa,
+  );
+  benchmarks.push(benchmark(
+    'quad4-plane-strain-biot-u-p-dof-coupling',
+    'coupled-biot-plane-strain',
+    'internal-balance',
+    'hasCoupledDisplacementAndPorePressureDofs',
+    biot.displacementDofCount > 0 &&
+      biot.porePressureDofCount > 0 &&
+      biot.freeDisplacementDofCount > 0 &&
+      biot.freePorePressureDofCount > 0 &&
+      biot.coupledUnknownCount > biot.freeDisplacementDofCount
+      ? 1
+      : 0,
+    1,
+    0,
+    'Quad4 Biot evidence kernel must assemble coupled displacement and pore-pressure unknowns in the same backward-Euler solve.',
+  ));
+  benchmarks.push(benchmark(
+    'quad4-plane-strain-biot-u-p-effective-stress-coupling',
+    'seepage-pore-pressure-coupling',
+    'internal-balance',
+    'effectiveMinusTotalStressError',
+    biotStressSignError,
+    0,
+    1e-7,
+    'Biot u-p evidence kernel must apply positive pore pressure as total-stress reduction in the tension-positive plane-strain convention.',
+    'kPa',
+  ));
+  benchmarks.push(benchmark(
+    'quad4-plane-strain-biot-u-p-free-residual',
+    'solver-convergence-and-tolerance',
+    'internal-balance',
+    'residualNormRatio',
+    biot.residualNormRatio,
+    0,
+    policy.forceBalanceTolerance,
+    'Biot u-p evidence kernel must satisfy the coupled mechanical free-DOF residual policy.',
+  ));
+  benchmarks.push(benchmark(
+    'quad4-plane-strain-biot-u-p-mass-residual',
+    'coupled-biot-plane-strain',
+    'internal-balance',
+    'massBalanceErrorRatio',
+    biot.massBalanceErrorRatio,
+    0,
+    policy.porePressureMassBalanceTolerance,
+    'Biot u-p evidence kernel must satisfy the free pore-pressure residual policy for the backward-Euler pressure equation.',
+  ));
+
   const coupling = runHydroMechanicalCoupling1D({
     totalVerticalStressKpa: 200,
     porePressureBeforeKpa: 80,
@@ -1636,7 +1726,7 @@ export function runFemEngineeringEvidenceSuite(
     remainingProductionBlockers: [
       'production-sparse-fem-solver-and-2d-3d-result-route-not-integrated-with-these-kernels',
       'nonlinear-plane-strain-plasticity-is-benchmark-scale-without-consistent-tangent-hardening-calibration-or-cross-solver-validation',
-      'seepage-pore-pressure-field-not-assembled-as-biots-u-p-mechanical-coupling-or-route-backed-result-manifest',
+      'biot-u-p-coupling-evidence-kernel-not-route-backed-result-manifest-or-production-sparse-solver',
       'support-design-is-screening-level-and-not-jurisdiction-specific-structural-design',
       'published-commercial-cross-solver-benchmark-corpus-not-approved',
       'reviewer-approval-record-validator-exists-but-cli-run-does-not-enforce-persistence-for-every-run',

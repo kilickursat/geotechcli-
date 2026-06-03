@@ -194,6 +194,12 @@ describe('registerFemCommand', () => {
       'fem',
       'agent',
       'draft',
+      '2D',
+      'u-p',
+      'Biot',
+      'coupling',
+      'readiness',
+      'for',
       'a',
       'braced',
       'excavation',
@@ -213,6 +219,10 @@ describe('registerFemCommand', () => {
           'assess_fem_production_readiness',
           'prepare_fem_analysis_case',
           'validate_fem_analysis_case',
+        ],
+        requiredToolsBeforeFinal: [
+          'assess_fem_production_readiness',
+          'prepare_fem_analysis_case',
         ],
       }),
     );

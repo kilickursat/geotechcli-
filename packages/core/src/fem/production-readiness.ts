@@ -72,7 +72,7 @@ const FEATURE_REQUIREMENTS: Record<FemProductionFeature, Omit<FemProductionFeatu
   },
   consolidation: {
     status: 'kernel-verified',
-    currentCoverage: 'A deterministic 1D Terzaghi backward-Euler consolidation kernel is benchmarked against analytical average consolidation and exposed through a human-reviewed staged-settlement/consolidation preview route. A new nonlinear 1D column backend solves staged vertical equilibrium with Drucker-Prager material-point return mapping, but it is not a full 2D/3D coupled Biot FEM backend.',
+    currentCoverage: 'A deterministic 1D Terzaghi backward-Euler consolidation kernel is benchmarked against analytical average consolidation and exposed through a human-reviewed staged-settlement/consolidation preview route. A nonlinear 1D column backend solves staged vertical equilibrium with Drucker-Prager material-point return mapping. A benchmark-scale 2D Quad4 Biot u-p backward-Euler evidence kernel now assembles displacement and pore-pressure DOFs, but it is not a route-backed production sparse solver or nonlinear staged-construction backend.',
     requiredForAcceptance: [
       'time-stepping consolidation backend with drainage boundary controls',
       'Cv, mv/Cc, drainage path, stage duration, and monitoring calibration schema',
@@ -86,13 +86,14 @@ const FEATURE_REQUIREMENTS: Record<FemProductionFeature, Omit<FemProductionFeatu
   },
   'seepage-pore-pressure-coupling': {
     status: 'kernel-verified',
-    currentCoverage: 'Deterministic 1D Darcy seepage and effective-stress coupling kernels are benchmarked against closed-form flow and settlement checks. A benchmark-scale Quad4 plane-strain steady seepage evidence kernel now solves hydraulic head, boundary mass balance, Gauss-point pore pressure, Darcy flux, and Biot effective-stress-reduction metadata. Current preview result manifests still record groundwater as assumptions only and no mechanical stiffness matrix includes pore-pressure DOFs.',
+    currentCoverage: 'Deterministic 1D Darcy seepage and effective-stress coupling kernels are benchmarked against closed-form flow and settlement checks. Benchmark-scale Quad4 evidence kernels now solve steady seepage head/flux/effective-stress metadata and a linear-elastic Biot u-p backward-Euler fixture with displacement and pore-pressure DOFs. Current preview result manifests still record groundwater as assumptions only; no seepage/u-p route-backed result manifest, production sparse solver, nonlinear plasticity coupling, or independent cross-solver validation is approved.',
     requiredForAcceptance: [
       'steady/transient seepage solver with hydraulic boundary conditions',
       'pore-pressure coupling into effective stress/deformation calculations',
       'uplift, gradient, and dewatering acceptance checks',
     ],
     blockedUntil: [
+      'biot-u-p-coupling-evidence-kernel-not-route-backed-result-manifest-or-production-sparse-solver',
       'seepage-kernel-coupled-to-fem-route-and-result-manifest',
       'hydro-mechanical-coupling-accepted-for-2d-3d-fem',
       'pore-pressure-benchmark-suite-approved-against-published-or-commercial-references',
@@ -142,7 +143,7 @@ const FEATURE_REQUIREMENTS: Record<FemProductionFeature, Omit<FemProductionFeatu
   },
   'independent-benchmark-validation': {
     status: 'preview-only',
-    currentCoverage: 'Current fixtures verify deterministic preview envelopes, monotonic trends, material-point closed forms, Quad4 linear patch/global-equilibrium fixtures, benchmark-scale mechanical-only Drucker-Prager plane-strain evidence cases, and Quad4 steady-seepage mass-balance/effective-stress metadata. They do not yet prove full production benchmark equivalence against published or commercial solver references.',
+    currentCoverage: 'Current fixtures verify deterministic preview envelopes, monotonic trends, material-point closed forms, Quad4 linear patch/global-equilibrium fixtures, benchmark-scale mechanical-only Drucker-Prager plane-strain evidence cases, Quad4 steady-seepage mass-balance/effective-stress metadata, and a benchmark-scale Quad4 Biot u-p coupled residual fixture. They do not yet prove full production benchmark equivalence against published or commercial solver references.',
     requiredForAcceptance: [
       'published analytical and numerical benchmark corpus by route',
       'tolerance envelopes for displacement, pore pressure, reaction, and settlement-time curves',

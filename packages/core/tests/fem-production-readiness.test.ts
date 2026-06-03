@@ -32,6 +32,7 @@ describe('FEM production readiness contract', () => {
       '2d-3d-coupled-consolidation-fem-backend-implemented',
       'drainage-boundary-validation-approved-against-project-conditions',
       'settlement-time-benchmark-suite-approved-against-published-or-commercial-references',
+      'biot-u-p-coupling-evidence-kernel-not-route-backed-result-manifest-or-production-sparse-solver',
       'seepage-kernel-coupled-to-fem-route-and-result-manifest',
       'support-design-engine-coupled-to-staged-excavation-route',
       'workspace-to-run-acceptance-validator-enforced',
@@ -46,12 +47,16 @@ describe('FEM production readiness contract', () => {
     expect(report.engineeringEvidence.verifiedFeatures).toEqual(expect.arrayContaining([
       'global-plane-strain-assembly',
       'coupled-nonlinear-plane-strain',
+      'coupled-biot-plane-strain',
       'nonlinear-plasticity',
       'consolidation',
       'seepage-pore-pressure-coupling',
       'support-design',
       'licensed-engineer-review-workflow',
     ]));
+    expect(report.engineeringEvidence.benchmarks.map((item) => item.id)).toContain(
+      'quad4-plane-strain-biot-u-p-effective-stress-coupling',
+    );
     expect(report.releasePositioning).toContain('not a full production-grade nonlinear geotechnical FEM solver yet');
   });
 
@@ -83,7 +88,7 @@ describe('FEM production readiness contract', () => {
   it('exposes a scoped FEM agent tool for production-readiness blockers', async () => {
     const result = await toolRegistry.execute('assess_fem_production_readiness', {
       objective: 'foundation settlement',
-      requestedFeatures: ['nonlinear', 'consolidation', 'workspace-to-run'],
+      requestedFeatures: ['nonlinear', 'consolidation', 'biot-u-p-coupling', 'workspace-to-run'],
     });
 
     expect(result.success).toBe(true);
@@ -94,10 +99,15 @@ describe('FEM production readiness contract', () => {
     expect(data.requestedFeatures).toEqual([
       'nonlinear-plasticity',
       'consolidation',
+      'seepage-pore-pressure-coupling',
       'real-project-workspace-to-run-acceptance',
     ]);
     expect(data.agentEvidenceSummary).toContain('productionReady: no');
     expect(data.agentEvidenceSummary).toContain('global-plane-strain-assembly');
     expect(data.agentEvidenceSummary).toContain('coupled-nonlinear-plane-strain');
+    expect(data.agentEvidenceSummary).toContain('quad4-plane-strain-biot-u-p-effective-stress-coupling');
+    expect(data.agentEvidenceSummary).toContain(
+      'biot-u-p-coupling-evidence-kernel-not-route-backed-result-manifest-or-production-sparse-solver',
+    );
   });
 });

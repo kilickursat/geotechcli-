@@ -8,6 +8,16 @@ const releases = [
     date: '2026-06-03',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added a benchmark-scale Quad4 plane-strain Biot u-p backward-Euler evidence kernel with coupled displacement and pore-pressure DOFs, pressure storage, Darcy pressure-gradient flow, and Biot stress reduction' },
+      { type: 'feat', text: 'Extended FEM evidence and mocked default GLM planning summaries with Biot u-p benchmark IDs, residual/mass-balance metrics, and stress sign-convention coverage' },
+      { type: 'fix', text: 'Kept full production FEM blocked until route-backed manifests, production sparse solvers, nonlinear plasticity coupling, independent benchmarks, support design, and enforced approvals are complete' },
+    ],
+  },
+  {
+    version: '0.4.101',
+    date: '2026-06-03',
+    tag: '0.4.101 Release',
+    changes: [
       { type: 'fix', text: 'Fixed large resumable PDF ingest live progress so transient partial job.json reads are skipped and retried instead of aborting with a raw Unterminated string in JSON error' },
       { type: 'fix', text: 'Added regression coverage for foreground ingest wait recovery while the background worker continues to a completed persisted result' },
       { type: 'fix', text: 'Kept repeated unreadable persisted job state bounded with resume/wait guidance rather than silently hanging' },
