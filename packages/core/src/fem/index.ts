@@ -96,9 +96,13 @@ export {
 export { renderFemWebglHtml } from './webgl.js';
 export {
   buildPlaneStrainRectangularMesh,
+  runPlaneStrainDruckerPragerLoadSteps,
   runPlaneStrainQuad4Assembly,
   type FemPlaneStrainAssemblyResult,
   type FemPlaneStrainBoundaryCondition,
+  type FemPlaneStrainDruckerPragerGaussPointResult,
+  type FemPlaneStrainDruckerPragerResult,
+  type FemPlaneStrainDruckerPragerStepResult,
   type FemPlaneStrainGaussPointResult,
   type FemPlaneStrainMaterial,
   type FemPlaneStrainModel,

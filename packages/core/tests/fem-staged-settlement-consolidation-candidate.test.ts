@@ -271,7 +271,7 @@ describe('staged settlement consolidation production-candidate deterministic sli
       .toMatch(/1D Terzaghi.*human-reviewed staged-settlement\/consolidation preview/i);
     expect(readiness.blockers).toEqual(expect.arrayContaining([
       '2d-3d-coupled-consolidation-fem-backend-implemented',
-      'nonlinear-constitutive-kernel-coupled-to-global-fem-solver',
+      'production-nonlinear-global-fem-solver-route-and-consistent-tangent-not-approved',
       'stage-activation-backend-implemented',
       'published-benchmark-corpus-approved',
     ]));

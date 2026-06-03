@@ -1,11 +1,13 @@
 import { calculateLateralEarthPressure } from '../geo/lateral-earth-pressure.js';
 import {
   buildPlaneStrainRectangularMesh,
+  runPlaneStrainDruckerPragerLoadSteps,
   runPlaneStrainQuad4Assembly,
 } from './plane-strain-assembly.js';
 
 export type FemEngineeringKernelFeature =
   | 'global-plane-strain-assembly'
+  | 'coupled-nonlinear-plane-strain'
   | 'nonlinear-plasticity'
   | 'consolidation'
   | 'seepage-pore-pressure-coupling'
@@ -1252,6 +1254,166 @@ export function runFemEngineeringEvidenceSuite(
     0,
     policy.forceBalanceTolerance,
     'Externally loaded Quad4 plane-strain solve must satisfy free-DOF residual tolerance.',
+  ));
+
+  const dpElasticMesh = buildPlaneStrainRectangularMesh({
+    widthM: 2,
+    heightM: 1,
+    divisionsX: 2,
+    divisionsY: 1,
+    materialId: 'soil',
+  });
+  const dpElasticTopNodes = dpElasticMesh.nodes.filter((node) => node.yM === 1);
+  const dpElasticBottomNodes = dpElasticMesh.nodes.filter((node) => node.yM === 0);
+  const dpElasticModel = {
+    schemaVersion: 'fem-plane-strain-model.v1' as const,
+    nodes: dpElasticMesh.nodes,
+    elements: dpElasticMesh.elements,
+    materials: [{
+      id: 'soil',
+      elasticModulusKpa: 25_000,
+      poissonRatio: 0.28,
+      frictionAngleDeg: 35,
+      cohesionKpa: 10_000,
+      dilationAngleDeg: 0,
+    }],
+    boundaryConditions: dpElasticBottomNodes.flatMap((node) => [
+      { nodeId: node.id, dof: 'ux' as const },
+      { nodeId: node.id, dof: 'uy' as const },
+    ]),
+    nodalLoads: dpElasticTopNodes.map((node) => ({ nodeId: node.id, fyKn: -5 })),
+    policy,
+  };
+  const dpLinearReference = runPlaneStrainQuad4Assembly(dpElasticModel);
+  const dpElastic = runPlaneStrainDruckerPragerLoadSteps(dpElasticModel);
+  const maxDpElasticDisplacementDifference = Math.max(...dpLinearReference.nodes.map((node) => {
+    const nonlinearNode = dpElastic.nodes.find((item) => item.id === node.id)!;
+    return Math.hypot(nonlinearNode.uxM - node.uxM, nonlinearNode.uyM - node.uyM);
+  }));
+  benchmarks.push(benchmark(
+    'quad4-plane-strain-dp-elastic-regression',
+    'coupled-nonlinear-plane-strain',
+    'internal-balance',
+    'maxDisplacementDifferenceM',
+    maxDpElasticDisplacementDifference,
+    0,
+    1e-9,
+    'Drucker-Prager plane-strain load-step kernel must match the linear Quad4 solve when strength is not mobilized.',
+    'm',
+  ));
+
+  const shearMesh = buildPlaneStrainRectangularMesh({
+    widthM: 2,
+    heightM: 1,
+    divisionsX: 1,
+    divisionsY: 1,
+    materialId: 'soil',
+  });
+  const gammaXy = 0.02;
+  const dpShearPatch = runPlaneStrainDruckerPragerLoadSteps({
+    schemaVersion: 'fem-plane-strain-model.v1',
+    nodes: shearMesh.nodes,
+    elements: shearMesh.elements,
+    materials: [{
+      id: 'soil',
+      elasticModulusKpa: 30_000,
+      poissonRatio: 0.3,
+      frictionAngleDeg: 30,
+      cohesionKpa: 5,
+      dilationAngleDeg: 0,
+    }],
+    boundaryConditions: shearMesh.nodes.flatMap((node) => [
+      { nodeId: node.id, dof: 'ux' as const, valueM: gammaXy * node.yM },
+      { nodeId: node.id, dof: 'uy' as const, valueM: 0 },
+    ]),
+    policy,
+  });
+  benchmarks.push(benchmark(
+    'quad4-plane-strain-dp-affine-plastic-patch',
+    'coupled-nonlinear-plane-strain',
+    'internal-balance',
+    'maxYieldResidualRatio',
+    dpShearPatch.maxYieldResidualRatio,
+    0,
+    policy.residualTolerance,
+    'Prescribed shear patch must drive all Quad4 Gauss points to Drucker-Prager yield with residual inside policy tolerance.',
+  ));
+
+  const dpLoaded = runPlaneStrainDruckerPragerLoadSteps({
+    schemaVersion: 'fem-plane-strain-model.v1',
+    nodes: dpElasticMesh.nodes,
+    elements: dpElasticMesh.elements,
+    materials: [{
+      id: 'soil',
+      elasticModulusKpa: 25_000,
+      poissonRatio: 0.28,
+      frictionAngleDeg: 32,
+      cohesionKpa: 5,
+      dilationAngleDeg: 0,
+    }],
+    boundaryConditions: dpElasticBottomNodes.flatMap((node) => [
+      { nodeId: node.id, dof: 'ux' as const },
+      { nodeId: node.id, dof: 'uy' as const },
+    ]),
+    nodalLoads: dpElasticTopNodes.map((node) => ({ nodeId: node.id, fyKn: -30 })),
+    policy,
+  }, {
+    loadStepFractions: [0.25, 0.5, 0.75, 1],
+  });
+  const plasticStrainMonotonic = dpLoaded.loadSteps.every((step, index, steps) =>
+    index === 0 || step.maxEquivalentPlasticStrain >= steps[index - 1].maxEquivalentPlasticStrain,
+  );
+  benchmarks.push(benchmark(
+    'quad4-plane-strain-dp-global-newton-residual',
+    'solver-convergence-and-tolerance',
+    'internal-balance',
+    'residualNormRatio',
+    dpLoaded.residualNormRatio,
+    0,
+    policy.forceBalanceTolerance,
+    'Load-controlled mechanical nonlinear plane-strain kernel must satisfy global free-DOF residual tolerance.',
+  ));
+  benchmarks.push(benchmark(
+    'quad4-plane-strain-dp-stage-state-carryover',
+    'coupled-nonlinear-plane-strain',
+    'internal-balance',
+    'plasticStrainMonotonic',
+    dpLoaded.plasticGaussPointCount > 0 && plasticStrainMonotonic ? 1 : 0,
+    1,
+    0,
+    'Staged nonlinear plane-strain load steps must retain monotonic plastic-strain evidence across increasing load factors.',
+  ));
+
+  const dpCollapse = runPlaneStrainDruckerPragerLoadSteps({
+    schemaVersion: 'fem-plane-strain-model.v1',
+    nodes: dpElasticMesh.nodes,
+    elements: dpElasticMesh.elements,
+    materials: [{
+      id: 'soil',
+      elasticModulusKpa: 25_000,
+      poissonRatio: 0.28,
+      frictionAngleDeg: 32,
+      cohesionKpa: 1,
+      dilationAngleDeg: 0,
+    }],
+    boundaryConditions: dpElasticBottomNodes.flatMap((node) => [
+      { nodeId: node.id, dof: 'ux' as const },
+      { nodeId: node.id, dof: 'uy' as const },
+    ]),
+    nodalLoads: dpElasticTopNodes.map((node) => ({ nodeId: node.id, fyKn: -30 })),
+    policy,
+  }, {
+    loadStepFractions: [0.25, 0.5, 0.75, 1],
+  });
+  benchmarks.push(benchmark(
+    'quad4-plane-strain-dp-collapse-detection',
+    'coupled-nonlinear-plane-strain',
+    'internal-balance',
+    'collapseDetected',
+    dpCollapse.converged ? 0 : 1,
+    1,
+    0,
+    'Low-strength/high-load plane-strain fixture must report nonconvergence instead of a clean accepted nonlinear solve.',
   ));
 
   const finalTimeYears = 0.197 * 25;

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildPlaneStrainRectangularMesh,
+  assessFemProductionReadiness,
+  runPlaneStrainDruckerPragerLoadSteps,
   runPlaneStrainQuad4Assembly,
   type FemPlaneStrainModel,
 } from '../src/fem/index.js';
@@ -183,6 +185,150 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
     expect(result.converged).toBe(true);
   });
 
+  it('matches the linear elastic Quad4 solve when Drucker-Prager strength is not mobilized', () => {
+    const mesh = buildPlaneStrainRectangularMesh({
+      widthM: 2,
+      heightM: 1,
+      divisionsX: 2,
+      divisionsY: 1,
+      materialId: 'soil',
+    });
+    const topNodes = mesh.nodes.filter((node) => node.yM === 1);
+    const bottomNodes = mesh.nodes.filter((node) => node.yM === 0);
+    const model: FemPlaneStrainModel = {
+      schemaVersion: 'fem-plane-strain-model.v1',
+      nodes: mesh.nodes,
+      elements: mesh.elements,
+      materials: [{
+        id: 'soil',
+        elasticModulusKpa: 25_000,
+        poissonRatio: 0.28,
+        frictionAngleDeg: 35,
+        cohesionKpa: 10_000,
+        dilationAngleDeg: 0,
+      }],
+      boundaryConditions: bottomNodes.flatMap((node) => [
+        { nodeId: node.id, dof: 'ux' as const },
+        { nodeId: node.id, dof: 'uy' as const },
+      ]),
+      nodalLoads: topNodes.map((node) => ({ nodeId: node.id, fyKn: -5 })),
+    };
+
+    const linear = runPlaneStrainQuad4Assembly(model);
+    const nonlinear = runPlaneStrainDruckerPragerLoadSteps(model);
+
+    expect(nonlinear.schemaVersion).toBe('fem-plane-strain-drucker-prager-result.v1');
+    expect(nonlinear.method).toBe('quad4-plane-strain-drucker-prager-modified-newton');
+    expect(nonlinear.converged).toBe(true);
+    expect(nonlinear.plasticGaussPointCount).toBe(0);
+    expect(nonlinear.maxEquivalentPlasticStrain).toBe(0);
+    expect(nonlinear.reactionBalanceRatio).toBeGreaterThan(0.999);
+    for (const linearNode of linear.nodes) {
+      const nonlinearNode = nonlinear.nodes.find((node) => node.id === linearNode.id)!;
+      expect(nonlinearNode.uxM).toBeCloseTo(linearNode.uxM, 10);
+      expect(nonlinearNode.uyM).toBeCloseTo(linearNode.uyM, 10);
+      expect(nonlinearNode.rxnYKn).toBeCloseTo(linearNode.rxnYKn, 6);
+    }
+  });
+
+  it('projects a prescribed shear patch to Drucker-Prager yield at Gauss points', () => {
+    const mesh = buildPlaneStrainRectangularMesh({
+      widthM: 2,
+      heightM: 1,
+      divisionsX: 1,
+      divisionsY: 1,
+      materialId: 'soil',
+    });
+    const gammaXy = 0.02;
+    const result = runPlaneStrainDruckerPragerLoadSteps({
+      schemaVersion: 'fem-plane-strain-model.v1',
+      nodes: mesh.nodes,
+      elements: mesh.elements,
+      materials: [{
+        id: 'soil',
+        elasticModulusKpa: 30_000,
+        poissonRatio: 0.3,
+        frictionAngleDeg: 30,
+        cohesionKpa: 5,
+        dilationAngleDeg: 0,
+      }],
+      boundaryConditions: mesh.nodes.flatMap((node) => [
+        { nodeId: node.id, dof: 'ux' as const, valueM: gammaXy * node.yM },
+        { nodeId: node.id, dof: 'uy' as const, valueM: 0 },
+      ]),
+    });
+
+    expect(result.converged).toBe(true);
+    expect(result.freeDofCount).toBe(0);
+    expect(result.plasticGaussPointCount).toBe(4);
+    expect(result.maxYieldResidualRatio).toBeLessThanOrEqual(result.policy.residualTolerance);
+    expect(result.maxEquivalentPlasticStrain).toBeGreaterThan(0);
+    for (const point of result.elements[0].gaussPoints) {
+      expect(point.state).toBe('plastic');
+      expect(point.strain[2]).toBeCloseTo(gammaXy, 12);
+      expect(point.yieldResidualRatio).toBeLessThanOrEqual(result.policy.residualTolerance);
+      expect(point.compressionPositivePrincipalStressKpa[0]).toBeGreaterThan(0);
+      expect(point.stressKpa[2]).toBeGreaterThan(0);
+    }
+  });
+
+  it('runs staged nonlinear plane-strain load steps with monotonic settlement and reaction balance', () => {
+    const mesh = buildPlaneStrainRectangularMesh({
+      widthM: 2,
+      heightM: 1,
+      divisionsX: 2,
+      divisionsY: 1,
+      materialId: 'soil',
+    });
+    const topNodes = mesh.nodes.filter((node) => node.yM === 1);
+    const bottomNodes = mesh.nodes.filter((node) => node.yM === 0);
+    const result = runPlaneStrainDruckerPragerLoadSteps({
+      schemaVersion: 'fem-plane-strain-model.v1',
+      nodes: mesh.nodes,
+      elements: mesh.elements,
+      materials: [{
+        id: 'soil',
+        elasticModulusKpa: 25_000,
+        poissonRatio: 0.28,
+        frictionAngleDeg: 32,
+        cohesionKpa: 5,
+        dilationAngleDeg: 0,
+      }],
+      boundaryConditions: bottomNodes.flatMap((node) => [
+        { nodeId: node.id, dof: 'ux' as const },
+        { nodeId: node.id, dof: 'uy' as const },
+      ]),
+      nodalLoads: topNodes.map((node) => ({ nodeId: node.id, fyKn: -30 })),
+    }, {
+      loadStepFractions: [0.25, 0.5, 0.75, 1],
+    });
+
+    const topSettlements = topNodes.map((node) => result.nodes.find((resultNode) => resultNode.id === node.id)?.uyM ?? 0);
+
+    expect(result.converged).toBe(true);
+    expect(result.loadSteps).toHaveLength(4);
+    expect(result.loadSteps.every((step) => step.converged)).toBe(true);
+    expect(result.loadSteps.at(-1)?.loadFactor).toBe(1);
+    expect(result.loadSteps.at(-1)?.plasticGaussPointCount).toBeGreaterThan(0);
+    expect(result.plasticGaussPointCount).toBeGreaterThan(0);
+    expect(result.maxEquivalentPlasticStrain).toBeGreaterThan(0);
+    expect(result.residualNormRatio).toBeLessThanOrEqual(result.policy.forceBalanceTolerance);
+    expect(result.reactionBalanceRatio).toBeGreaterThan(1 - 3 * result.policy.forceBalanceTolerance);
+    expect(Math.min(...topSettlements)).toBeLessThan(0);
+    for (let index = 1; index < result.loadSteps.length; index += 1) {
+      expect(result.loadSteps[index].maxEquivalentPlasticStrain)
+        .toBeGreaterThanOrEqual(result.loadSteps[index - 1].maxEquivalentPlasticStrain);
+    }
+  });
+
+  it('keeps nonlinear plane-strain evidence out of the production-ready gate', () => {
+    const report = assessFemProductionReadiness();
+
+    expect(report.productionReady).toBe(false);
+    expect(report.status).toBe('blocked');
+    expect(report.releasePositioning).toContain('not a full production-grade nonlinear geotechnical FEM solver yet');
+  });
+
   it('rejects duplicate identifiers, invalid loads, conflicting supports, bad connectivity, and singular systems', () => {
     expect(() => runPlaneStrainQuad4Assembly(baseModel({
       nodes: [
@@ -264,5 +410,9 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
           { nodeId: node.id, dof: 'uy' as const },
         ]),
     })).toThrow(/dense assembly is capped/);
+
+    expect(() => runPlaneStrainDruckerPragerLoadSteps(baseModel(), {
+      loadStepFractions: [0.5, 0.25, 1],
+    })).toThrow(/loadStepFractions\.1/);
   });
 });

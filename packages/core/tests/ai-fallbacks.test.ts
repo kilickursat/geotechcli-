@@ -297,6 +297,7 @@ describe('AI fallback behavior', () => {
             args: {
               objective: 'staged-settlement-consolidation',
               requestedFeatures: [
+                'nonlinear-plasticity',
                 'consolidation',
                 'advanced-staged-construction',
                 'real-project-workspace-to-run-acceptance',
@@ -362,6 +363,7 @@ describe('AI fallback behavior', () => {
       objective: 'staged-settlement-consolidation',
       requestedFeatures: expect.arrayContaining([
         'consolidation',
+        'nonlinear-plasticity',
         'advanced-staged-construction',
         'real-project-workspace-to-run-acceptance',
       ]),
@@ -377,8 +379,24 @@ describe('AI fallback behavior', () => {
     expect((readinessResult?.toolResult?.data as any).productionReady).toBe(false);
     expect((readinessResult?.toolResult?.data as any).engineeringEvidence.verifiedFeatures)
       .toContain('global-plane-strain-assembly');
+    expect((readinessResult?.toolResult?.data as any).engineeringEvidence.verifiedFeatures)
+      .toContain('coupled-nonlinear-plane-strain');
     expect((readinessResult?.toolResult?.data as any).agentEvidenceSummary)
       .toContain('global-plane-strain-assembly');
+    expect((readinessResult?.toolResult?.data as any).agentEvidenceSummary)
+      .toContain('coupled-nonlinear-plane-strain');
+    const secondRequest = JSON.parse(
+      String(fetchMock.mock.calls[1]?.[1]?.body ?? '{}'),
+    ) as { model?: string; messages?: Array<{ content?: unknown }> };
+    const secondPrompt = (secondRequest.messages ?? [])
+      .map((message) => typeof message.content === 'string'
+        ? message.content
+        : JSON.stringify(message.content))
+      .join('\n');
+    expect(secondRequest.model).toBe('glm-5.1');
+    expect(secondPrompt).toContain('[Tool Result: assess_fem_production_readiness]');
+    expect(secondPrompt).toContain('productionReady: no');
+    expect(secondPrompt).toContain('coupled-nonlinear-plane-strain');
 
     const draftResult = session.steps.find(
       (step) => step.type === 'tool_result' && step.toolName === 'prepare_fem_analysis_case',

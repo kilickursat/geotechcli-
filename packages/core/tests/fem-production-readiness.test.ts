@@ -28,7 +28,7 @@ describe('FEM production readiness contract', () => {
       'licensed-engineer-review-workflow',
     ]);
     expect(report.blockers).toEqual(expect.arrayContaining([
-      'nonlinear-constitutive-kernel-coupled-to-global-fem-solver',
+      'production-nonlinear-global-fem-solver-route-and-consistent-tangent-not-approved',
       '2d-3d-coupled-consolidation-fem-backend-implemented',
       'drainage-boundary-validation-approved-against-project-conditions',
       'settlement-time-benchmark-suite-approved-against-published-or-commercial-references',
@@ -45,6 +45,7 @@ describe('FEM production readiness contract', () => {
     });
     expect(report.engineeringEvidence.verifiedFeatures).toEqual(expect.arrayContaining([
       'global-plane-strain-assembly',
+      'coupled-nonlinear-plane-strain',
       'nonlinear-plasticity',
       'consolidation',
       'seepage-pore-pressure-coupling',
@@ -97,5 +98,6 @@ describe('FEM production readiness contract', () => {
     ]);
     expect(data.agentEvidenceSummary).toContain('productionReady: no');
     expect(data.agentEvidenceSummary).toContain('global-plane-strain-assembly');
+    expect(data.agentEvidenceSummary).toContain('coupled-nonlinear-plane-strain');
   });
 });

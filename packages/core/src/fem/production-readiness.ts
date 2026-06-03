@@ -58,14 +58,14 @@ const ALL_PRODUCTION_FEATURES: FemProductionFeature[] = [
 const FEATURE_REQUIREMENTS: Record<FemProductionFeature, Omit<FemProductionFeatureRequirement, 'feature'>> = {
   'nonlinear-plasticity': {
     status: 'kernel-verified',
-    currentCoverage: 'Deterministic nonlinear material-point coverage now includes a Mohr-Coulomb triaxial strength cap plus a Drucker-Prager/Mohr-Coulomb-compatible principal-stress return-mapping kernel with yield residual and plastic strain state checks. A linear Quad4 plane-strain global assembly evidence kernel is also patch-tested, but nonlinear constitutive updates are not coupled to a global 2D/3D plasticity solver or plastic strain field.',
+    currentCoverage: 'Deterministic nonlinear material-point coverage now includes a Mohr-Coulomb triaxial strength cap plus a Drucker-Prager/Mohr-Coulomb-compatible principal-stress return-mapping kernel with yield residual and plastic strain state checks. A benchmark-scale mechanical-only Quad4 plane-strain Drucker-Prager evidence kernel now couples Gauss-point stress projection to global residual/reaction checks, but it is not a production sparse solver route and has no Biot pore-pressure DOF, consistent tangent approval, staged activation, or project result manifest.',
     requiredForAcceptance: [
       'constitutive models accepted for geotechnical use, such as Mohr-Coulomb/Hardening Soil or equivalent',
       'stress-path, yield, plastic strain, and convergence validation fixtures',
       'independent benchmark comparison against published or commercial-solver reference cases',
     ],
     blockedUntil: [
-      'nonlinear-constitutive-kernel-coupled-to-global-fem-solver',
+      'production-nonlinear-global-fem-solver-route-and-consistent-tangent-not-approved',
       'plasticity-benchmark-suite-approved-against-published-or-commercial-references',
       'solver-convergence-audit-passed',
     ],
@@ -142,7 +142,7 @@ const FEATURE_REQUIREMENTS: Record<FemProductionFeature, Omit<FemProductionFeatu
   },
   'independent-benchmark-validation': {
     status: 'preview-only',
-    currentCoverage: 'Current fixtures verify deterministic preview envelopes, monotonic trends, material-point closed forms, and a Quad4 plane-strain affine patch/global-equilibrium fixture. They do not yet prove full production benchmark equivalence against published or commercial solver references.',
+    currentCoverage: 'Current fixtures verify deterministic preview envelopes, monotonic trends, material-point closed forms, Quad4 linear patch/global-equilibrium fixtures, and benchmark-scale mechanical-only Drucker-Prager plane-strain evidence cases. They do not yet prove full production benchmark equivalence against published or commercial solver references.',
     requiredForAcceptance: [
       'published analytical and numerical benchmark corpus by route',
       'tolerance envelopes for displacement, pore pressure, reaction, and settlement-time curves',

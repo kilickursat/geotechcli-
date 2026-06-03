@@ -8,6 +8,16 @@ const releases = [
     date: '2026-06-03',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added a benchmark-scale mechanical-only Quad4 plane-strain Drucker-Prager load-step kernel with Gauss-point plastic state, residual/reaction checks, and collapse detection' },
+      { type: 'feat', text: 'Extended FEM evidence with elastic-regression, shear plastic-patch, global residual, staged plastic-strain monotonicity, and collapse-detection benchmarks' },
+      { type: 'fix', text: 'Kept full production FEM blocked until sparse solver routes, Biot/pore-pressure coupling, consistent tangent approval, external benchmarks, support design, and enforced approvals are complete' },
+    ],
+  },
+  {
+    version: '0.4.98',
+    date: '2026-06-03',
+    tag: '0.4.98 Release',
+    changes: [
       { type: 'feat', text: 'Added a benchmark-scale linear Quad4 plane-strain global assembly kernel with affine patch, skewed geometry, loaded reaction-balance, free-residual, dense-size-cap, and fail-fast validation coverage' },
       { type: 'feat', text: 'Wired global assembly evidence into FEM engineering evidence, production-readiness summaries, exports, and mocked default GLM planning tests' },
       { type: 'fix', text: 'Kept full production FEM blocked until nonlinear global solver coupling, pore-pressure/consolidation coupling, production sparse solver/result routes, support-design standards, persisted approvals, and independent benchmarks are approved' },

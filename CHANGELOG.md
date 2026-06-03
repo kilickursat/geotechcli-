@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.99] - 2026-06-03
+
+### FEM Nonlinear Plane-Strain Evidence
+
+- Added a benchmark-scale mechanical-only Quad4 plane-strain Drucker-Prager load-step kernel that couples Gauss-point stress projection to global residual/reaction checks with explicit solver iterations, plastic Gauss-point state, yield residuals, and collapse/nonconvergence detection.
+- Extended FEM engineering evidence with elastic-regression, shear plastic-patch, global residual, staged plastic-strain monotonicity, and collapse-detection benchmarks for the new nonlinear plane-strain kernel.
+- Updated production-readiness and default hosted GLM tests so agents can see the verified nonlinear plane-strain evidence while full production FEM remains blocked until sparse solver routes, Biot/pore-pressure coupling, consistent tangent approval, external benchmarks, support design, and enforced approvals are complete.
+
 ## [0.4.98] - 2026-06-03
 
 ### FEM Plane-Strain Evidence Kernel

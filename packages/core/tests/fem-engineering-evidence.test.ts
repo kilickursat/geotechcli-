@@ -265,9 +265,15 @@ describe('FEM engineering evidence kernels', () => {
       'quad4-plane-strain-global-equilibrium',
       'quad4-plane-strain-loaded-reaction-balance',
       'quad4-plane-strain-loaded-free-residual',
+      'quad4-plane-strain-dp-elastic-regression',
+      'quad4-plane-strain-dp-affine-plastic-patch',
+      'quad4-plane-strain-dp-global-newton-residual',
+      'quad4-plane-strain-dp-stage-state-carryover',
+      'quad4-plane-strain-dp-collapse-detection',
     ]));
     expect(report.verifiedFeatures).toEqual(expect.arrayContaining([
       'global-plane-strain-assembly',
+      'coupled-nonlinear-plane-strain',
       'nonlinear-plasticity',
       'consolidation',
       'seepage-pore-pressure-coupling',
