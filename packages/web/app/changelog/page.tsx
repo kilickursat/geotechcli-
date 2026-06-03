@@ -8,9 +8,9 @@ const releases = [
     date: '2026-06-04',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
-      { type: 'feat', text: 'Added one-way prescribed pore-pressure increments to the benchmark-scale plane-strain Drucker-Prager evidence kernel with effective-vs-total stress audit metadata' },
-      { type: 'feat', text: 'Added schema-backed external benchmark comparison validation for scalar and series-summary records while keeping default accepted comparisons at zero until real published/commercial artifacts exist' },
-      { type: 'fix', text: 'Added workspace-to-run acceptance JSON for geotech fem draft --workspace flows and verified the default hosted GLM FEM agent still blocks full production FEM claims' },
+      { type: 'feat', text: 'Added generated published-source FEM benchmark comparison records for Terzaghi consolidation and alpha-zero Biot pressure dissipation with deterministic SHA-256 evidence/result hashes' },
+      { type: 'feat', text: 'Added sequential one-way Biot-pressure replay into the benchmark-scale Drucker-Prager effective-stress solve with explicit no-pressure-DOF audit metadata' },
+      { type: 'fix', text: 'Added geotech fem run --require-approval-record and workspace acceptance metadata for strict reviewer approval persistence while full production FEM remains blocked' },
     ],
   },
   {

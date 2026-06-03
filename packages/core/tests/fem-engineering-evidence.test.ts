@@ -370,18 +370,37 @@ describe('FEM engineering evidence kernels', () => {
         }),
       }),
     ]));
-    expect(report.externalBenchmarkAcceptance.comparisonResults).toEqual([]);
+    expect(report.externalBenchmarkAcceptance.comparisonResults).toHaveLength(2);
+    expect(report.externalBenchmarkAcceptance.comparisonResults).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'published-terzaghi-1d-consolidation-tv-0-197',
+        quantityRequirementId: 'consolidation-settlement-time-curve',
+        referenceId: 'terzaghi-1943-theoretical-soil-mechanics',
+        comparisonKind: 'series-summary',
+        accepted: true,
+      }),
+      expect.objectContaining({
+        id: 'published-biot-alpha-zero-terzaghi-pressure-dissipation-tv-0-197',
+        quantityRequirementId: 'biot-pore-pressure-dissipation',
+        referenceId: 'biot-1941-three-dimensional-consolidation',
+        comparisonKind: 'series-summary',
+        accepted: true,
+      }),
+    ]));
     expect(report.externalBenchmarkAcceptance.coverageSummary).toMatchObject({
       schemaVersion: 'fem-external-benchmark-coverage.v1',
-      acceptedComparisonCount: 0,
-      acceptedPublishedComparisonCount: 0,
+      acceptedComparisonCount: 2,
+      acceptedPublishedComparisonCount: 2,
       acceptedCommercialComparisonCount: 0,
       acceptedOpenSourceComparisonCount: 0,
       fullyCoveredRequiredQuantityIds: [],
-      partiallyCoveredRequiredQuantityIds: [],
-      missingRequiredSourceTypes: ['published-source', 'commercial-solver'],
+      partiallyCoveredRequiredQuantityIds: [
+        'consolidation-settlement-time-curve',
+        'biot-pore-pressure-dissipation',
+      ],
+      missingRequiredSourceTypes: ['commercial-solver'],
     });
-    expect(report.externalBenchmarkAcceptance.acceptanceStatement).toContain('External benchmark acceptance is incomplete');
+    expect(report.externalBenchmarkAcceptance.acceptanceStatement).toContain('Partial external benchmark evidence is present');
     expect(report.externalBenchmarkAcceptance.requiredQuantities).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: 'consolidation-settlement-time-curve',
@@ -408,6 +427,45 @@ describe('FEM engineering evidence kernels', () => {
     ]));
     expect(report.remainingProductionBlockers).toEqual(expect.arrayContaining([
       'published-commercial-cross-solver-benchmark-corpus-not-approved',
+      'external-benchmark-commercial-solver-citation-missing',
+      'external-benchmark-comparison-results-missing',
+    ]));
+  });
+
+  it('generates deterministic published-source external benchmark hashes without clearing commercial blockers', () => {
+    const first = runFemEngineeringEvidenceSuite().externalBenchmarkAcceptance;
+    const second = runFemEngineeringEvidenceSuite().externalBenchmarkAcceptance;
+    const sourceTypeById = new Map(first.references.map((reference) => [reference.id, reference.sourceType]));
+
+    expect(first.comparisonResults).toHaveLength(2);
+    expect(first.comparisonResults.map((result) => sourceTypeById.get(result.referenceId)))
+      .toEqual(['published-source', 'published-source']);
+    expect(first.comparisonResults.map((result) => result.id)).toEqual([
+      'published-terzaghi-1d-consolidation-tv-0-197',
+      'published-biot-alpha-zero-terzaghi-pressure-dissipation-tv-0-197',
+    ]);
+    expect(first.comparisonResults.map((result) => result.evidenceHashSha256))
+      .toEqual(second.comparisonResults.map((result) => result.evidenceHashSha256));
+    expect(first.comparisonResults.map((result) => result.resultHashSha256))
+      .toEqual(second.comparisonResults.map((result) => result.resultHashSha256));
+
+    for (const result of first.comparisonResults) {
+      expect(result.evidenceHashSha256).toMatch(/^[a-f0-9]{64}$/);
+      expect(result.resultHashSha256).toMatch(/^[a-f0-9]{64}$/);
+      expect(result.evidenceHashSha256).not.toBe('a'.repeat(64));
+      expect(result.resultHashSha256).not.toBe('b'.repeat(64));
+      expect(result.candidateSolver?.solverType).toBe('geotechcli-kernel');
+      expect(result.seriesSummary?.seriesHashSha256).toMatch(/^[a-f0-9]{64}$/);
+      expect(result.seriesSummary?.pointCount).toBeGreaterThan(10);
+      expect(result.seriesSummary?.maxAbsoluteError).toBeGreaterThanOrEqual(0);
+      expect(result.seriesSummary?.maxRelativeError).toBeGreaterThanOrEqual(0);
+    }
+    expect(first.coverageSummary).toMatchObject({
+      acceptedPublishedComparisonCount: 2,
+      acceptedCommercialComparisonCount: 0,
+      missingRequiredSourceTypes: ['commercial-solver'],
+    });
+    expect(first.blockerCodes).toEqual(expect.arrayContaining([
       'external-benchmark-commercial-solver-citation-missing',
       'external-benchmark-comparison-results-missing',
     ]));
@@ -641,6 +699,69 @@ describe('FEM engineering evidence kernels', () => {
     ]));
   });
 
+  it('blocks series-summary comparison results when the curve error exceeds the requirement', () => {
+    const badSeries = {
+      ...seriesSummary('9'),
+      maxAbsoluteError: 25,
+      maxRelativeError: 0.5,
+    };
+    const contract = buildFemExternalBenchmarkAcceptanceContract({
+      references: [
+        {
+          id: 'published-benchmark-1',
+          sourceType: 'published-source',
+          label: 'Published benchmark',
+          citation: 'Example Author (2024), benchmark.',
+          publishedSource: {
+            title: 'Benchmark',
+            authors: ['Example Author'],
+            year: 2024,
+            publication: 'Example Journal',
+          },
+        },
+      ],
+      requiredQuantities: [
+        {
+          id: 'settlement-time',
+          feature: 'consolidation',
+          quantity: 'settlement-time curve',
+          unit: 'mm',
+          tolerance: 0.02,
+          toleranceType: 'relative',
+          requiredReferenceSourceTypes: ['published-source'],
+        },
+      ],
+      comparisonResults: [
+        {
+          id: 'published-bad-curve',
+          quantityRequirementId: 'settlement-time',
+          referenceId: 'published-benchmark-1',
+          caseId: 'case-1',
+          comparisonKind: 'series-summary',
+          metricName: 'settlementAtFinalTime',
+          quantity: 'settlement-time curve',
+          unit: 'mm',
+          actual: 50,
+          expected: 50,
+          tolerance: 0.02,
+          toleranceType: 'relative',
+          accepted: true,
+          candidateSolver: localCandidateSolver('case-1'),
+          evidenceHashSha256: 'a'.repeat(64),
+          resultHashSha256: 'b'.repeat(64),
+          seriesSummary: badSeries,
+        },
+      ],
+    });
+
+    expect(contract.status).toBe('blocked');
+    expect(contract.coverageSummary.acceptedComparisonCount).toBe(0);
+    expect(contract.blockerCodes).toEqual(expect.arrayContaining([
+      'external-benchmark.comparison-results.published-bad-curve.series-tolerance-exceeded',
+      'external-benchmark.required-quantities.settlement-time.accepted-comparison-missing.published-source',
+    ]));
+  });
+
   it('blocks external comparison results without metric names, solver metadata, hashes, or valid series summaries', () => {
     const contract = buildFemExternalBenchmarkAcceptanceContract({
       references: [
@@ -770,6 +891,16 @@ describe('FEM engineering evidence kernels', () => {
       status: 'accepted',
       evidence: expect.stringContaining('drained-dissipation transient acceptance gate'),
     });
+    expect(benchmarks.get('quad4-plane-strain-dp-sequential-biot-pressure-replay-audit')).toMatchObject({
+      feature: 'seepage-pore-pressure-coupling',
+      referenceType: 'internal-balance',
+      quantity: 'sequentialPressureReplayAccepted',
+      actual: 1,
+      expected: 1,
+      tolerance: 0,
+      status: 'accepted',
+      evidence: expect.stringContaining('Sequential pressure replay'),
+    });
   });
 
   it('records support member yield, buckling, flexure, and reviewer-metadata evidence', () => {
@@ -821,6 +952,7 @@ describe('FEM engineering evidence kernels', () => {
       'quad4-plane-strain-biot-u-p-alpha-zero-decoupling',
       'quad4-plane-strain-biot-u-p-terzaghi-pressure-dissipation',
       'quad4-plane-strain-biot-u-p-drained-dissipation-acceptance',
+      'quad4-plane-strain-dp-sequential-biot-pressure-replay-audit',
       'excavation-support-staged-reaction-sequence',
       'support-member-yield-buckling-interaction',
     ]));

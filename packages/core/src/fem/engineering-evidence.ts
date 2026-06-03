@@ -1,7 +1,10 @@
+import { createHash } from 'node:crypto';
+
 import { calculateLateralEarthPressure } from '../geo/lateral-earth-pressure.js';
 import {
   buildPlaneStrainRectangularMesh,
   runPlaneStrainBiotConsolidation,
+  runPlaneStrainDruckerPragerBiotPressureReplay,
   runPlaneStrainDruckerPragerLoadSteps,
   runPlaneStrainQuad4Assembly,
   runPlaneStrainSteadySeepage,
@@ -631,6 +634,33 @@ function round(value: number, digits = 6): number {
   return Math.round(value * scale) / scale;
 }
 
+function canonicalFemBenchmarkJson(value: unknown): string {
+  if (value === null || value === undefined) return 'null';
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw new Error('Cannot hash non-finite FEM benchmark value.');
+    return JSON.stringify(round(value, 12));
+  }
+  if (typeof value === 'string' || typeof value === 'boolean') {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalFemBenchmarkJson(item)).join(',')}]`;
+  }
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, itemValue]) => itemValue !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right));
+    return `{${entries
+      .map(([key, itemValue]) => `${JSON.stringify(key)}:${canonicalFemBenchmarkJson(itemValue)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(String(value));
+}
+
+function hashFemBenchmarkPayload(value: unknown): string {
+  return createHash('sha256').update(canonicalFemBenchmarkJson(value)).digest('hex');
+}
+
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
@@ -708,6 +738,20 @@ function hasValidSeriesSummary(value: unknown): value is FemExternalBenchmarkSer
     maxRelativeError >= 0 &&
     (rmsError == null || (Number.isFinite(rmsError) && rmsError >= 0)) &&
     hasValidSha256(summary.seriesHashSha256);
+}
+
+function seriesSummarySatisfiesRequirementTolerance(
+  summary: FemExternalBenchmarkSeriesSummary,
+  requirement: FemExternalBenchmarkQuantityRequirement,
+): boolean {
+  if (requirement.toleranceType === 'absolute') {
+    return summary.maxAbsoluteError <= requirement.tolerance;
+  }
+  if (requirement.toleranceType === 'relative') {
+    return summary.maxRelativeError <= requirement.tolerance;
+  }
+  return summary.maxAbsoluteError <= requirement.tolerance ||
+    summary.maxRelativeError <= requirement.tolerance;
 }
 
 function copyExternalBenchmarkReference(
@@ -797,6 +841,13 @@ export function buildFemExternalBenchmarkAcceptanceContract(options: {
     if (result.quantityRequirementId !== requirement.id || !result.accepted) return false;
     if (result.comparisonKind !== 'scalar' && result.comparisonKind !== 'series-summary') return false;
     if (result.comparisonKind === 'series-summary' && !hasValidSeriesSummary(result.seriesSummary)) return false;
+    if (
+      result.comparisonKind === 'series-summary' &&
+      result.seriesSummary &&
+      !seriesSummarySatisfiesRequirementTolerance(result.seriesSummary, requirement)
+    ) {
+      return false;
+    }
     if (!isNonEmptyString(result.metricName)) return false;
     if (!hasSolverRunMetadata(result.candidateSolver)) return false;
     if (referenceRequiresSolverRunMetadata(reference) && !hasSolverRunMetadata(result.referenceSolver)) return false;
@@ -975,6 +1026,14 @@ export function buildFemExternalBenchmarkAcceptanceContract(options: {
       blockerCodes.push(`external-benchmark.comparison-results.${resultCode}.series-summary-invalid`);
     }
     const requirement = quantityById.get(result.quantityRequirementId);
+    if (
+      requirement &&
+      result.comparisonKind === 'series-summary' &&
+      hasValidSeriesSummary(result.seriesSummary) &&
+      !seriesSummarySatisfiesRequirementTolerance(result.seriesSummary, requirement)
+    ) {
+      blockerCodes.push(`external-benchmark.comparison-results.${resultCode}.series-tolerance-exceeded`);
+    }
     if (requirement) {
       if (result.quantity !== requirement.quantity) {
         blockerCodes.push(`external-benchmark.comparison-results.${resultCode}.quantity-mismatch`);
@@ -1099,6 +1158,252 @@ export function buildFemExternalBenchmarkAcceptanceContract(options: {
         : 'External benchmark acceptance is incomplete; production readiness remains blocked until source citations, commercial solver references, and accepted comparison results cover every required FEM quantity.'
       : 'External benchmark references and comparison results cover the required FEM quantities; this still does not approve production design without solver-route and reviewer-workflow acceptance.',
   };
+}
+
+function femSeriesStatistics(values: readonly number[]): FemExternalBenchmarkSeriesStatistics {
+  if (values.length === 0) throw new Error('FEM benchmark series must include at least one value.');
+  const sum = values.reduce((total, value) => total + value, 0);
+  return {
+    min: round(Math.min(...values), 10),
+    max: round(Math.max(...values), 10),
+    final: round(values[values.length - 1], 10),
+    mean: round(sum / values.length, 10),
+  };
+}
+
+function buildFemExternalBenchmarkSeriesSummary(input: {
+  xQuantity: string;
+  xUnit: string;
+  yQuantity: string;
+  yUnit: string;
+  points: ReadonlyArray<{ x: number; actual: number; expected: number }>;
+  notes?: string[];
+}): FemExternalBenchmarkSeriesSummary {
+  if (input.points.length === 0) {
+    throw new Error('FEM external benchmark comparison series must include at least one point.');
+  }
+  const points = input.points.map((point) => ({
+    x: round(point.x, 10),
+    actual: round(point.actual, 10),
+    expected: round(point.expected, 10),
+  }));
+  const actual = points.map((point) => point.actual);
+  const expected = points.map((point) => point.expected);
+  const errors = points.map((point) => Math.abs(point.actual - point.expected));
+  const relativeErrors = points.map((point) =>
+    Math.abs(point.actual - point.expected) / Math.max(Math.abs(point.expected), 1e-12));
+  const rmsError = Math.sqrt(errors.reduce((sum, error) => sum + error * error, 0) / errors.length);
+
+  return {
+    xQuantity: input.xQuantity,
+    xUnit: input.xUnit,
+    yQuantity: input.yQuantity,
+    yUnit: input.yUnit,
+    pointCount: points.length,
+    actual: femSeriesStatistics(actual),
+    expected: femSeriesStatistics(expected),
+    maxAbsoluteError: round(Math.max(...errors), 10),
+    maxRelativeError: round(Math.max(...relativeErrors), 10),
+    rmsError: round(rmsError, 10),
+    seriesHashSha256: hashFemBenchmarkPayload({
+      schemaVersion: 'fem-external-benchmark-series.v1',
+      xQuantity: input.xQuantity,
+      xUnit: input.xUnit,
+      yQuantity: input.yQuantity,
+      yUnit: input.yUnit,
+      points,
+    }),
+    ...(input.notes ? { notes: [...input.notes] } : {}),
+  };
+}
+
+function externalBenchmarkFinalAccepted(input: {
+  actual: number;
+  expected: number;
+  tolerance: number;
+  toleranceType: FemExternalBenchmarkToleranceType;
+  unit: string;
+  quantity: string;
+}): boolean {
+  return evaluateFemTolerance(
+    input.quantity,
+    input.actual,
+    input.expected,
+    input.toleranceType === 'relative' ? 0 : input.tolerance,
+    input.toleranceType === 'absolute'
+      ? { unit: input.unit }
+      : { relativeTolerance: input.tolerance, unit: input.unit },
+  ).accepted;
+}
+
+function buildDefaultPublishedExternalBenchmarkComparisonResults(input: {
+  consolidation: FemConsolidationTimeStepperResult;
+  biotTerzaghi: ReturnType<typeof runPlaneStrainBiotConsolidation>;
+  biotTerzaghiInitialPressureKpa: number;
+  biotTerzaghiHydraulicConductivityMPerS: number;
+  biotTerzaghiSpecificStorage1PerM: number;
+}): FemExternalBenchmarkComparisonResult[] {
+  const consolidationRequirement = DEFAULT_EXTERNAL_BENCHMARK_REQUIRED_QUANTITIES
+    .find((requirement) => requirement.id === 'consolidation-settlement-time-curve');
+  const biotRequirement = DEFAULT_EXTERNAL_BENCHMARK_REQUIRED_QUANTITIES
+    .find((requirement) => requirement.id === 'biot-pore-pressure-dissipation');
+  if (!consolidationRequirement || !biotRequirement) {
+    throw new Error('Default FEM external benchmark quantity requirements are missing.');
+  }
+
+  const consolidationPoints = input.consolidation.steps.map((step) => ({
+    x: step.timeFactor,
+    actual: step.degreeOfConsolidation,
+    expected: step.referenceDegreeOfConsolidation,
+  }));
+  const consolidationSeries = buildFemExternalBenchmarkSeriesSummary({
+    xQuantity: 'time factor',
+    xUnit: 'Tv',
+    yQuantity: 'average degree of consolidation',
+    yUnit: 'ratio',
+    points: consolidationPoints,
+    notes: [
+      'Backward-Euler drainage-column series compared with the Terzaghi average-consolidation Fourier-series reference.',
+    ],
+  });
+  const consolidationActual = input.consolidation.finalStep.degreeOfConsolidation;
+  const consolidationExpected = input.consolidation.finalStep.referenceDegreeOfConsolidation;
+  const consolidationEvidencePayload = {
+    schemaVersion: 'fem-external-benchmark-evidence.v1',
+    caseId: 'terzaghi-1d-backward-euler-tv-0-197',
+    sourceId: 'terzaghi-1943-theoretical-soil-mechanics',
+    method: input.consolidation.method,
+    drainagePathM: input.consolidation.drainagePathM,
+    nodeCount: input.consolidation.nodeCount,
+    finalTimeFactor: input.consolidation.finalStep.timeFactor,
+    seriesHashSha256: consolidationSeries.seriesHashSha256,
+  };
+  const consolidationResultPayload = {
+    actual: consolidationActual,
+    expected: consolidationExpected,
+    maxAbsoluteError: consolidationSeries.maxAbsoluteError,
+    maxRelativeError: consolidationSeries.maxRelativeError,
+    resultSeriesHashSha256: consolidationSeries.seriesHashSha256,
+  };
+  const consolidationAccepted = externalBenchmarkFinalAccepted({
+    actual: consolidationActual,
+    expected: consolidationExpected,
+    tolerance: consolidationRequirement.tolerance,
+    toleranceType: consolidationRequirement.toleranceType,
+    unit: consolidationRequirement.unit,
+    quantity: consolidationRequirement.quantity,
+  }) && seriesSummarySatisfiesRequirementTolerance(consolidationSeries, consolidationRequirement);
+
+  const biotCvPerSecond =
+    input.biotTerzaghiHydraulicConductivityMPerS / input.biotTerzaghiSpecificStorage1PerM;
+  const biotPoints = input.biotTerzaghi.timeSteps.map((step) => {
+    const timeFactor = step.timeSeconds * biotCvPerSecond;
+    return {
+      x: timeFactor,
+      actual: step.pressureDiagnostics.averagePorePressureKpa,
+      expected: input.biotTerzaghiInitialPressureKpa * (1 - terzaghiAverageConsolidation(timeFactor)),
+    };
+  });
+  const biotSeries = buildFemExternalBenchmarkSeriesSummary({
+    xQuantity: 'time factor',
+    xUnit: 'Tv',
+    yQuantity: 'average excess pore pressure',
+    yUnit: 'kPa',
+    points: biotPoints,
+    notes: [
+      'Alpha-zero Quad4 Biot u-p pressure-diffusion series compared with the Terzaghi drained-column analytical curve.',
+    ],
+  });
+  const biotActual = input.biotTerzaghi.pressureDiagnostics.averagePorePressureKpa;
+  const biotExpected = biotPoints[biotPoints.length - 1].expected;
+  const biotEvidencePayload = {
+    schemaVersion: 'fem-external-benchmark-evidence.v1',
+    caseId: 'quad4-biot-alpha-zero-terzaghi-top-drained-tv-0-197',
+    sourceId: 'biot-1941-three-dimensional-consolidation',
+    method: input.biotTerzaghi.method,
+    pressureKind: input.biotTerzaghi.numericalContract.pressureKind,
+    pressureUnit: input.biotTerzaghi.numericalContract.pressureUnit,
+    timeStepCount: input.biotTerzaghi.timeSteps.length,
+    transientAcceptance: input.biotTerzaghi.transientAcceptance,
+    finalTimeFactor: round(biotPoints[biotPoints.length - 1].x, 10),
+    seriesHashSha256: biotSeries.seriesHashSha256,
+  };
+  const biotResultPayload = {
+    actual: biotActual,
+    expected: biotExpected,
+    maxAbsoluteError: biotSeries.maxAbsoluteError,
+    maxRelativeError: biotSeries.maxRelativeError,
+    resultSeriesHashSha256: biotSeries.seriesHashSha256,
+  };
+  const biotAccepted = externalBenchmarkFinalAccepted({
+    actual: biotActual,
+    expected: biotExpected,
+    tolerance: biotRequirement.tolerance,
+    toleranceType: biotRequirement.toleranceType,
+    unit: biotRequirement.unit,
+    quantity: biotRequirement.quantity,
+  }) && seriesSummarySatisfiesRequirementTolerance(biotSeries, biotRequirement);
+
+  return [
+    {
+      id: 'published-terzaghi-1d-consolidation-tv-0-197',
+      quantityRequirementId: consolidationRequirement.id,
+      referenceId: 'terzaghi-1943-theoretical-soil-mechanics',
+      caseId: 'terzaghi-1d-backward-euler-tv-0-197',
+      comparisonKind: 'series-summary',
+      metricName: 'averageDegreeOfConsolidationTimeCurve',
+      quantity: consolidationRequirement.quantity,
+      unit: consolidationRequirement.unit,
+      actual: round(consolidationActual, 10),
+      expected: round(consolidationExpected, 10),
+      tolerance: consolidationRequirement.tolerance,
+      toleranceType: consolidationRequirement.toleranceType,
+      accepted: consolidationAccepted,
+      candidateSolver: {
+        name: 'geotechCLI FEM evidence suite',
+        version: 'strong-beta',
+        solverType: 'geotechcli-kernel',
+        analysisProcedure: 'backward-Euler 1D Terzaghi consolidation time stepper',
+        elementType: '1D drainage-column finite-difference grid',
+        runId: 'terzaghi-1d-backward-euler-tv-0-197',
+      },
+      evidenceHashSha256: hashFemBenchmarkPayload(consolidationEvidencePayload),
+      resultHashSha256: hashFemBenchmarkPayload(consolidationResultPayload),
+      seriesSummary: consolidationSeries,
+      notes: [
+        'Generated published-source comparison record only; commercial solver comparison remains missing.',
+      ],
+    },
+    {
+      id: 'published-biot-alpha-zero-terzaghi-pressure-dissipation-tv-0-197',
+      quantityRequirementId: biotRequirement.id,
+      referenceId: 'biot-1941-three-dimensional-consolidation',
+      caseId: 'quad4-biot-alpha-zero-terzaghi-top-drained-tv-0-197',
+      comparisonKind: 'series-summary',
+      metricName: 'averageExcessPorePressureDissipationTimeCurve',
+      quantity: biotRequirement.quantity,
+      unit: biotRequirement.unit,
+      actual: round(biotActual, 10),
+      expected: round(biotExpected, 10),
+      tolerance: biotRequirement.tolerance,
+      toleranceType: biotRequirement.toleranceType,
+      accepted: biotAccepted,
+      candidateSolver: {
+        name: 'geotechCLI FEM evidence suite',
+        version: 'strong-beta',
+        solverType: 'geotechcli-kernel',
+        analysisProcedure: 'linear-elastic Quad4 Biot u-p backward-Euler pressure diffusion',
+        elementType: 'Quad4 plane-strain u-p evidence mesh',
+        runId: 'quad4-biot-alpha-zero-terzaghi-top-drained-tv-0-197',
+      },
+      evidenceHashSha256: hashFemBenchmarkPayload(biotEvidencePayload),
+      resultHashSha256: hashFemBenchmarkPayload(biotResultPayload),
+      seriesSummary: biotSeries,
+      notes: [
+        'Generated published-source comparison record for an alpha-zero Biot pressure-diffusion specialization; commercial solver comparison remains missing.',
+      ],
+    },
+  ];
 }
 
 export function evaluateFemTolerance(
@@ -2762,6 +3067,46 @@ export function runFemEngineeringEvidenceSuite(
     'Top-drained alpha-zero Biot Terzaghi fixture must pass the stricter drained-dissipation transient acceptance gate.',
   ));
 
+  const biotPressureReplay = runPlaneStrainDruckerPragerBiotPressureReplay({
+    mechanicalModel: {
+      schemaVersion: 'fem-plane-strain-model.v1',
+      nodes: biotTerzaghiMesh.nodes,
+      elements: biotTerzaghiMesh.elements,
+      materials: [{
+        id: 'soil',
+        elasticModulusKpa: 30_000,
+        poissonRatio: 0.3,
+        frictionAngleDeg: 35,
+        cohesionKpa: 10_000,
+        dilationAngleDeg: 0,
+        biotCoefficient: 0.8,
+      }],
+      boundaryConditions: biotTerzaghiBottomNodes.flatMap((node) => [
+        { nodeId: node.id, dof: 'ux' as const },
+        { nodeId: node.id, dof: 'uy' as const },
+      ]),
+      policy,
+    },
+    biotResult: biotTerzaghi,
+    solverOptions: { loadStepFractions: [1] },
+  });
+  benchmarks.push(benchmark(
+    'quad4-plane-strain-dp-sequential-biot-pressure-replay-audit',
+    'seepage-pore-pressure-coupling',
+    'internal-balance',
+    'sequentialPressureReplayAccepted',
+    biotPressureReplay.converged &&
+      biotPressureReplay.pressureReplayAudit.mode === 'sequential-one-way-biot-pressure-replay' &&
+      biotPressureReplay.pressureReplayAudit.sourceTransientAccepted &&
+      biotPressureReplay.hydroMechanicalCoupling?.porePressureDofCount === 0 &&
+      biotPressureReplay.hydroMechanicalCoupling.maxAbsAppliedEffectiveStressReductionKpa > 0
+      ? 1
+      : 0,
+    1,
+    0,
+    'Sequential pressure replay must feed an accepted linear Biot u-p pressure frame into the Drucker-Prager effective-stress residual while auditing that no pore-pressure DOFs or monolithic Biot-plastic tangent are assembled.',
+  ));
+
   const coupling = runHydroMechanicalCoupling1D({
     totalVerticalStressKpa: 200,
     porePressureBeforeKpa: 80,
@@ -2951,7 +3296,15 @@ export function runFemEngineeringEvidenceSuite(
       .map((item) => item.feature),
   )];
   const status = benchmarks.every((item) => item.status === 'accepted') ? 'kernel-verified' : 'blocked';
-  const externalBenchmarkAcceptance = buildFemExternalBenchmarkAcceptanceContract();
+  const externalBenchmarkAcceptance = buildFemExternalBenchmarkAcceptanceContract({
+    comparisonResults: buildDefaultPublishedExternalBenchmarkComparisonResults({
+      consolidation,
+      biotTerzaghi,
+      biotTerzaghiInitialPressureKpa,
+      biotTerzaghiHydraulicConductivityMPerS,
+      biotTerzaghiSpecificStorage1PerM,
+    }),
+  });
 
   return {
     schemaVersion: 'fem-engineering-evidence.v1',

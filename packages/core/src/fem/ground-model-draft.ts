@@ -36,6 +36,9 @@ export interface FemGroundModelExecutionBoundary {
   caseOutputAvailable: boolean;
   draftCommand: string;
   humanRunCommand?: string;
+  approvalRecordSchema?: 'fem-reviewer-approval.v1';
+  approvalRecordRequiredForProductionAcceptance?: true;
+  strictApprovalRunCommand?: string;
   blockedReasons: string[];
 }
 
@@ -69,6 +72,9 @@ export interface FemWorkspaceToRunAcceptance {
   workflow: GroundModelCalculationReadiness['workflow'];
   caseOutputAvailable: boolean;
   humanRunCommand?: string;
+  approvalRecordSchema?: 'fem-reviewer-approval.v1';
+  approvalRecordRequiredForProductionAcceptance?: true;
+  strictApprovalRunCommand?: string;
   blockerCodes: string[];
   reviewCodes: string[];
   evidenceIds: string[];
@@ -400,6 +406,11 @@ function buildExecutionBoundary(
     caseOutputAvailable,
     draftCommand: command,
     ...(humanRunCommand ? { humanRunCommand } : {}),
+    approvalRecordSchema: 'fem-reviewer-approval.v1',
+    approvalRecordRequiredForProductionAcceptance: true,
+    ...(humanRunCommand
+      ? { strictApprovalRunCommand: `${humanRunCommand} --require-approval-record --approval-record <fem-approval.json>` }
+      : {}),
     blockedReasons: [...new Set(blockedReasons)],
   };
 }
@@ -614,6 +625,16 @@ export function validateFemWorkspaceToRunAcceptance(
     workflow: candidate.workflow,
     caseOutputAvailable: boundary.caseOutputAvailable,
     ...(boundary.humanRunCommand ? { humanRunCommand: boundary.humanRunCommand } : {}),
+    approvalRecordSchema: boundary.approvalRecordSchema ?? 'fem-reviewer-approval.v1',
+    approvalRecordRequiredForProductionAcceptance: true,
+    ...(boundary.strictApprovalRunCommand
+      ? { strictApprovalRunCommand: boundary.strictApprovalRunCommand }
+      : boundary.humanRunCommand
+        ? {
+            strictApprovalRunCommand:
+              `${boundary.humanRunCommand} --require-approval-record --approval-record <fem-approval.json>`,
+          }
+        : {}),
     blockerCodes: [...new Set(blockers)],
     reviewCodes: [...new Set(reviewCodes)],
     evidenceIds,

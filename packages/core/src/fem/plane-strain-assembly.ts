@@ -507,6 +507,38 @@ export interface FemPlaneStrainBiotConsolidationResult {
   limitations: string[];
 }
 
+export interface FemPlaneStrainDruckerPragerBiotPressureReplayAudit {
+  schemaVersion: 'fem-plane-strain-dp-biot-pressure-replay-audit.v1';
+  mode: 'sequential-one-way-biot-pressure-replay';
+  pressureFrameSource: 'final-biot-step';
+  sourceMethod: FemPlaneStrainBiotConsolidationResult['method'];
+  sourceTransientAccepted: boolean;
+  sourceTransientBlockerCodes: string[];
+  sourceAcceptedStepCount: number;
+  sourcePorePressureDofCount: number;
+  sourceMassBalanceErrorRatio: number;
+  sourceResidualNormRatio: number;
+  replayNodeCount: number;
+  pressureScale: number;
+  maxInputPorePressureKpa: number;
+  maxAppliedEffectiveStressReductionKpa: number;
+  limitations: string[];
+}
+
+export interface FemPlaneStrainDruckerPragerBiotPressureReplayInput {
+  mechanicalModel: FemPlaneStrainModel;
+  biotResult: FemPlaneStrainBiotConsolidationResult;
+  solverOptions?: FemPlaneStrainDruckerPragerSolverOptions;
+  pressureScale?: number;
+  requireAcceptedTransient?: boolean;
+  maxMassBalanceErrorRatio?: number;
+}
+
+export interface FemPlaneStrainDruckerPragerBiotPressureReplayResult
+  extends FemPlaneStrainDruckerPragerResult {
+  pressureReplayAudit: FemPlaneStrainDruckerPragerBiotPressureReplayAudit;
+}
+
 const GAUSS_POINTS: Array<[number, number, number]> = [
   [-1 / Math.sqrt(3), -1 / Math.sqrt(3), 1],
   [1 / Math.sqrt(3), -1 / Math.sqrt(3), 1],
@@ -3169,5 +3201,78 @@ export function runPlaneStrainDruckerPragerLoadSteps(
         : 'Uses elastic global tangent with committed Gauss-point Drucker-Prager return mapping; no production consistent tangent, production sparse solver, hardening calibration, staged activation, pore-pressure DOF, or route-backed result manifest is provided.',
       'Use for deterministic evidence and regression tests only until independent published/commercial benchmark comparison and licensed production approval gates are complete.',
     ],
+  };
+}
+
+export function runPlaneStrainDruckerPragerBiotPressureReplay(
+  input: FemPlaneStrainDruckerPragerBiotPressureReplayInput,
+): FemPlaneStrainDruckerPragerBiotPressureReplayResult {
+  const pressureScale = input.pressureScale ?? 1;
+  assertFiniteNonNegative(pressureScale, 'pressureScale');
+  if ((input.mechanicalModel.prescribedPorePressureIncrements?.length ?? 0) > 0) {
+    throw new Error('Biot pressure replay cannot be combined with pre-existing prescribedPorePressureIncrements.');
+  }
+  const requireAcceptedTransient = input.requireAcceptedTransient ?? true;
+  if (requireAcceptedTransient && !input.biotResult.transientAcceptance.accepted) {
+    throw new Error(
+      `Biot pressure replay requires an accepted upstream transient result; blockers: ${input.biotResult.transientAcceptance.blockerCodes.join(', ') || 'unknown'}.`,
+    );
+  }
+  const massBalanceLimit = input.maxMassBalanceErrorRatio ??
+    input.mechanicalModel.policy?.porePressureMassBalanceTolerance ??
+    input.biotResult.policy.porePressureMassBalanceTolerance;
+  assertFiniteNonNegative(massBalanceLimit, 'maxMassBalanceErrorRatio');
+  if (input.biotResult.massBalanceErrorRatio > massBalanceLimit) {
+    throw new Error(
+      `Biot pressure replay rejected because upstream mass-balance ratio ${input.biotResult.massBalanceErrorRatio} exceeds ${massBalanceLimit}.`,
+    );
+  }
+
+  const pressureByNodeId = new Map(input.biotResult.nodes.map((node) => [node.id, node.porePressureKpa]));
+  const prescribedPorePressureIncrements = input.mechanicalModel.nodes.map((node) => {
+    const pressure = pressureByNodeId.get(node.id);
+    if (pressure == null) {
+      throw new Error(`Biot pressure replay node mismatch: mechanical node ${node.id} is missing from the Biot pressure frame.`);
+    }
+    const scaledPressure = pressure * pressureScale;
+    assertFiniteNonNegative(scaledPressure, `Biot pressure replay ${node.id}.porePressureKpa`);
+    return {
+      nodeId: node.id,
+      porePressureIncrementKpa: scaledPressure,
+    };
+  });
+
+  const result = runPlaneStrainDruckerPragerLoadSteps({
+    ...input.mechanicalModel,
+    prescribedPorePressureIncrements,
+  }, input.solverOptions);
+
+  return {
+    ...result,
+    pressureReplayAudit: {
+      schemaVersion: 'fem-plane-strain-dp-biot-pressure-replay-audit.v1',
+      mode: 'sequential-one-way-biot-pressure-replay',
+      pressureFrameSource: 'final-biot-step',
+      sourceMethod: input.biotResult.method,
+      sourceTransientAccepted: input.biotResult.transientAcceptance.accepted,
+      sourceTransientBlockerCodes: [...input.biotResult.transientAcceptance.blockerCodes],
+      sourceAcceptedStepCount: input.biotResult.transientAcceptance.acceptedStepCount,
+      sourcePorePressureDofCount: input.biotResult.porePressureDofCount,
+      sourceMassBalanceErrorRatio: input.biotResult.massBalanceErrorRatio,
+      sourceResidualNormRatio: input.biotResult.residualNormRatio,
+      replayNodeCount: prescribedPorePressureIncrements.length,
+      pressureScale: round(pressureScale, 8),
+      maxInputPorePressureKpa: round(
+        Math.max(0, ...prescribedPorePressureIncrements.map((item) => Math.abs(item.porePressureIncrementKpa))),
+        8,
+      ),
+      maxAppliedEffectiveStressReductionKpa:
+        result.hydroMechanicalCoupling?.maxAbsAppliedEffectiveStressReductionKpa ?? 0,
+      limitations: [
+        'Sequential one-way replay only: a final accepted linear Biot u-p pressure frame is applied as prescribed pore-pressure increments in the Drucker-Prager mechanical solve.',
+        'No pore-pressure DOFs, pressure equation, plastic volumetric source term, or consistent Biot-plastic tangent is assembled in the nonlinear iterations.',
+        'Mechanical load factor and pressure time remain separate engineering inputs; this wrapper replays the selected final pressure frame through the existing DP load-step ramp.',
+      ],
+    },
   };
 }

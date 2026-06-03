@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.114] - 2026-06-04
+
+### FEM Benchmark Evidence, Pressure Replay, and Approval Gates
+
+- Added deterministic generated published-source external benchmark comparison records for Terzaghi consolidation and alpha-zero Biot pressure dissipation, with canonical SHA-256 evidence/result hashes, series summaries, and curve-level tolerance enforcement while commercial-solver coverage remains blocked.
+- Added a sequential one-way Biot-pressure replay wrapper that feeds an accepted final Biot u-p pressure frame into the benchmark-scale Drucker-Prager effective-stress solve with explicit no-pressure-DOF/no-monolithic-coupling audit metadata and fail-closed upstream transient checks.
+- Added `geotech fem run --require-approval-record` plus workspace acceptance metadata for strict reviewer approval persistence, while keeping production-design approval scope blocked and full production FEM readiness false.
+
 ## [0.4.113] - 2026-06-04
 
 ### FEM Effective-Stress Evidence and Workspace Acceptance

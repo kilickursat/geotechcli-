@@ -4,6 +4,7 @@ import {
   buildPlaneStrainRectangularMesh,
   assessFemProductionReadiness,
   runPlaneStrainBiotConsolidation,
+  runPlaneStrainDruckerPragerBiotPressureReplay,
   runPlaneStrainDruckerPragerLoadSteps,
   runPlaneStrainQuad4Assembly,
   runPlaneStrainSteadySeepage,
@@ -898,6 +899,150 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
     expect(firstPoint.stressKpa[1] - firstPoint.totalStressKpa![1]).toBeCloseTo(80, 8);
     expect(firstPoint.totalStressKpa![2]).toBeCloseTo(firstPoint.stressKpa[2], 8);
     expect(pressured).not.toHaveProperty('productionReady');
+  });
+
+  it('replays an accepted Biot pressure frame into the Drucker-Prager solve with an explicit sequential audit', () => {
+    const mesh = buildPlaneStrainRectangularMesh({
+      widthM: 1,
+      heightM: 1,
+      divisionsX: 1,
+      divisionsY: 1,
+      materialId: 'soil',
+    });
+    const bottomNodes = mesh.nodes.filter((node) => node.yM === 0);
+    const topNodes = mesh.nodes.filter((node) => node.yM === 1);
+    const biot = runPlaneStrainBiotConsolidation({
+      schemaVersion: 'fem-plane-strain-biot-consolidation-model.v1',
+      nodes: mesh.nodes,
+      elements: mesh.elements,
+      materials: [{
+        id: 'soil',
+        elasticModulusKpa: 30_000,
+        poissonRatio: 0.3,
+        hydraulicConductivityXMPerS: 1e-6,
+        hydraulicConductivityYMPerS: 1e-6,
+        biotCoefficient: 0,
+        specificStorage1PerM: 1e-4,
+      }],
+      boundaryConditions: bottomNodes.flatMap((node) => [
+        { nodeId: node.id, dof: 'ux' as const },
+        { nodeId: node.id, dof: 'uy' as const },
+      ]),
+      porePressureBoundaryConditions: topNodes.map((node) => ({ nodeId: node.id, porePressureKpa: 0 })),
+      initialPorePressureKpa: 100,
+      timeStepsSeconds: [1_000, 2_000, 3_000],
+    });
+    const mechanicalModel: FemPlaneStrainModel = {
+      schemaVersion: 'fem-plane-strain-model.v1',
+      nodes: mesh.nodes,
+      elements: mesh.elements,
+      materials: [{
+        id: 'soil',
+        elasticModulusKpa: 30_000,
+        poissonRatio: 0.3,
+        frictionAngleDeg: 35,
+        cohesionKpa: 10_000,
+        dilationAngleDeg: 0,
+        biotCoefficient: 0.8,
+      }],
+      boundaryConditions: bottomNodes.flatMap((node) => [
+        { nodeId: node.id, dof: 'ux' as const },
+        { nodeId: node.id, dof: 'uy' as const },
+      ]),
+    };
+
+    const replayed = runPlaneStrainDruckerPragerBiotPressureReplay({
+      mechanicalModel,
+      biotResult: biot,
+      solverOptions: { loadStepFractions: [1] },
+    });
+    const firstPoint = replayed.elements[0].gaussPoints[0];
+
+    expect(biot.transientAcceptance.accepted).toBe(true);
+    expect(replayed.converged).toBe(true);
+    expect(replayed.pressureReplayAudit).toMatchObject({
+      schemaVersion: 'fem-plane-strain-dp-biot-pressure-replay-audit.v1',
+      mode: 'sequential-one-way-biot-pressure-replay',
+      pressureFrameSource: 'final-biot-step',
+      sourceTransientAccepted: true,
+      sourcePorePressureDofCount: mesh.nodes.length,
+      replayNodeCount: mesh.nodes.length,
+      pressureScale: 1,
+    });
+    expect(replayed.pressureReplayAudit.limitations.join(' ')).toMatch(/No pore-pressure DOFs/i);
+    expect(replayed.hydroMechanicalCoupling).toMatchObject({
+      mode: 'one-way-prescribed-pore-pressure-increment',
+      porePressureDofCount: 0,
+    });
+    expect(firstPoint.porePressureIncrementKpa).toBeGreaterThan(0);
+    expect(firstPoint.stressKpa[0] - firstPoint.totalStressKpa![0])
+      .toBeCloseTo(firstPoint.biotStressReductionKpa!, 8);
+    expect(firstPoint.stressKpa[1] - firstPoint.totalStressKpa![1])
+      .toBeCloseTo(firstPoint.biotStressReductionKpa!, 8);
+    expect(JSON.stringify(replayed)).not.toContain('"productionReady":true');
+  });
+
+  it('fails closed when Biot pressure replay is requested from an unaccepted transient frame', () => {
+    const mesh = buildPlaneStrainRectangularMesh({
+      widthM: 1,
+      heightM: 1,
+      divisionsX: 1,
+      divisionsY: 1,
+      materialId: 'soil',
+    });
+    const bottomNodes = mesh.nodes.filter((node) => node.yM === 0);
+    const topNodes = mesh.nodes.filter((node) => node.yM === 1);
+    const biot = runPlaneStrainBiotConsolidation({
+      schemaVersion: 'fem-plane-strain-biot-consolidation-model.v1',
+      nodes: mesh.nodes,
+      elements: mesh.elements,
+      materials: [{
+        id: 'soil',
+        elasticModulusKpa: 30_000,
+        poissonRatio: 0.3,
+        hydraulicConductivityXMPerS: 1e-6,
+        hydraulicConductivityYMPerS: 1e-6,
+        biotCoefficient: 0,
+        specificStorage1PerM: 1e-4,
+      }],
+      boundaryConditions: bottomNodes.flatMap((node) => [
+        { nodeId: node.id, dof: 'ux' as const },
+        { nodeId: node.id, dof: 'uy' as const },
+      ]),
+      porePressureBoundaryConditions: topNodes.map((node) => ({ nodeId: node.id, porePressureKpa: 0 })),
+      initialPorePressureKpa: 100,
+      timeStepsSeconds: [1_000, 2_000, 3_000],
+    });
+    const unacceptedBiot = {
+      ...biot,
+      transientAcceptance: {
+        ...biot.transientAcceptance,
+        accepted: false,
+        blockerCodes: ['pressure-overshoot-nonzero'],
+      },
+    };
+    const mechanicalModel = baseModel({
+      nodes: mesh.nodes,
+      elements: mesh.elements,
+      materials: [{
+        id: 'soil',
+        elasticModulusKpa: 30_000,
+        poissonRatio: 0.3,
+        frictionAngleDeg: 35,
+        cohesionKpa: 10_000,
+        biotCoefficient: 0.8,
+      }],
+      boundaryConditions: bottomNodes.flatMap((node) => [
+        { nodeId: node.id, dof: 'ux' as const },
+        { nodeId: node.id, dof: 'uy' as const },
+      ]),
+    });
+
+    expect(() => runPlaneStrainDruckerPragerBiotPressureReplay({
+      mechanicalModel,
+      biotResult: unacceptedBiot,
+      solverOptions: { loadStepFractions: [1] },
+    })).toThrow(/requires an accepted upstream transient result/i);
   });
 
   it('decouples prescribed Drucker-Prager pore-pressure increments when Biot alpha is zero', () => {

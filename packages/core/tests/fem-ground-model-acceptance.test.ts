@@ -558,6 +558,10 @@ describe('FEM GroundModel planned-route acceptance fixtures', () => {
       workflow: 'fem-foundation-settlement',
       caseOutputAvailable: true,
       humanRunCommand: 'geotech fem run <analysis_case.json> --experimental --reviewed',
+      approvalRecordSchema: 'fem-reviewer-approval.v1',
+      approvalRecordRequiredForProductionAcceptance: true,
+      strictApprovalRunCommand:
+        'geotech fem run <analysis_case.json> --experimental --reviewed --require-approval-record --approval-record <fem-approval.json>',
       blockerCodes: [],
     });
     expect(acceptance.evidenceIds).toEqual(expect.arrayContaining(['ev-es-1', 'ev-gamma-1', 'ev-gw-1']));

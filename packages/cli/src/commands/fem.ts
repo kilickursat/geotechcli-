@@ -546,6 +546,11 @@ function buildFemWorkspaceExecutionBoundary(
     caseOutputAvailable,
     draftCommand,
     ...(humanRunCommand ? { humanRunCommand } : {}),
+    approvalRecordSchema: 'fem-reviewer-approval.v1',
+    approvalRecordRequiredForProductionAcceptance: true,
+    ...(humanRunCommand
+      ? { strictApprovalRunCommand: `${humanRunCommand} --require-approval-record --approval-record <fem-approval.json>` }
+      : {}),
     blockedReasons: [...new Set(blockedReasons)],
   };
 }
@@ -948,6 +953,11 @@ async function runFemAnalysisCaseCommand(caseFilePath: string, opts: Record<stri
   }
   const existingApprovalRecord = validateExistingFemApprovalRecord(opts.approvalRecord, analysisCase, sourceText);
   const generatedApprovalRecord = buildFemReviewerApprovalRecord(analysisCase, sourceText, caseValidation, opts);
+  if (opts.requireApprovalRecord && !existingApprovalRecord && !generatedApprovalRecord) {
+    throw new Error(
+      'FEM run requires a persisted reviewer approval record. Provide --approval-record <file>, or provide --approval-output with --reviewer-name, --reviewer-license, and --reviewer-jurisdiction.',
+    );
+  }
 
   const manifest = runDeterministicFemAnalysisCase(analysisCase, backend);
   const resultValidation = validateFemResultManifest(manifest);
@@ -1134,6 +1144,7 @@ export function registerFemCommand(program: Command): void {
     .option('--experimental', 'Acknowledge that this FEM run is experimental and not a design calculation')
     .option('--reviewed', 'Confirm a human reviewed geometry, loads, staging, assumptions, validation findings, and limitations')
     .option('--backend <name>', 'Deterministic backend: preview, nonlinear-column, biot-up, or plane-strain-dp-adaptive')
+    .option('--require-approval-record', 'Fail closed unless this run validates or persists a fem-reviewer-approval.v1 record')
     .option('--approval-record <file>', 'Validate an existing fem-reviewer-approval.v1 record against the current case hash before running')
     .option('--approval-output <file>', 'Persist a fem-reviewer-approval.v1 record for this run')
     .option('--reviewer-name <name>', 'Reviewer name for persisted FEM approval metadata')
@@ -1150,13 +1161,14 @@ export function registerFemCommand(program: Command): void {
     geotech fem run consolidation_case.json --experimental --reviewed --backend nonlinear-column --output fem-nonlinear-column.manifest.json --json
     geotech fem run seepage_case.json --experimental --reviewed --backend biot-up --output fem-biot-up.manifest.json --json
     geotech fem run plane_strain_case.json --experimental --reviewed --backend plane-strain-dp-adaptive --output fem-plane-strain-dp-adaptive.manifest.json --json
-    geotech fem run analysis_case.json --experimental --reviewed --approval-output fem-approval.json --reviewer-name "Jane Engineer" --reviewer-license PE-12345 --reviewer-jurisdiction US-CA
+    geotech fem run analysis_case.json --experimental --reviewed --require-approval-record --approval-output fem-approval.json --reviewer-name "Jane Engineer" --reviewer-license PE-12345 --reviewer-jurisdiction US-CA
     geotech fem run analysis_case.json --experimental --reviewed --json
 
   This command executes only deterministic built-in preview/nonlinear-column/biot-up/plane-strain-dp-adaptive backends from a reviewed analysis_case.json.
   It requires --reviewed as an explicit human-review acknowledgement.
   Use --approval-output with reviewer metadata to persist identity, license, assumptions, limitations, validation summary, experimental-preview scope, and case hash.
   Use --approval-record to fail closed when a prior approval record is stale or does not match the current case hash.
+  Use --require-approval-record when the run must fail unless a matching approval record is supplied or persisted in the same command.
   production-design approval scope fails closed in strong beta until production acceptance gates are implemented.
   It is not exposed as an agent tool; LLMs can plan, draft, and validate FEM cases, but users approve runs.
 `)

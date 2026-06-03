@@ -144,6 +144,7 @@ export {
 export {
   buildPlaneStrainRectangularMesh,
   runPlaneStrainBiotConsolidation,
+  runPlaneStrainDruckerPragerBiotPressureReplay,
   runPlaneStrainDruckerPragerLoadSteps,
   runPlaneStrainQuad4Assembly,
   runPlaneStrainSteadySeepage,
@@ -159,6 +160,9 @@ export {
   type FemPlaneStrainBoundaryCondition,
   type FemPlaneStrainDruckerPragerAdaptiveLoadStepAttemptAudit,
   type FemPlaneStrainDruckerPragerAdaptiveLoadSteppingAudit,
+  type FemPlaneStrainDruckerPragerBiotPressureReplayAudit,
+  type FemPlaneStrainDruckerPragerBiotPressureReplayInput,
+  type FemPlaneStrainDruckerPragerBiotPressureReplayResult,
   type FemPlaneStrainDruckerPragerFailure,
   type FemPlaneStrainDruckerPragerGaussPointResult,
   type FemPlaneStrainDruckerPragerHydroMechanicalCouplingAudit,

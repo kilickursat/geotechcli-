@@ -637,6 +637,10 @@ describe('registerFemCommand', () => {
       objective: 'foundation-settlement',
       caseOutputAvailable: true,
       humanRunCommand: `geotech fem run "${casePath}" --experimental --reviewed`,
+      approvalRecordSchema: 'fem-reviewer-approval.v1',
+      approvalRecordRequiredForProductionAcceptance: true,
+      strictApprovalRunCommand:
+        `geotech fem run "${casePath}" --experimental --reviewed --require-approval-record --approval-record <fem-approval.json>`,
       blockerCodes: [],
       evidenceIds: ['ev-es-1', 'ev-gw-1'],
     });
@@ -1009,6 +1013,66 @@ describe('registerFemCommand', () => {
     expect(payload.warnings.join(' ')).toMatch(/LLM agents can plan and validate/i);
     expect(manifest.analysisCase.caseId).toBe('raft-settlement-demo');
     expect(html).toContain('raft-settlement-demo');
+  });
+
+  it('enforces a persisted FEM approval record when strict approval is required', async () => {
+    const { buildRaftDemoAnalysisCase } = await import('../../core/src/fem/index.js');
+    const registerFemCommand = await loadRegisterFemCommand();
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-fem-strict-approval-'));
+    tempDirs.push(dir);
+    const casePath = join(dir, 'analysis_case.json');
+    const approvalPath = join(dir, 'fem-strict-approval.json');
+    await writeFile(casePath, JSON.stringify(buildRaftDemoAnalysisCase(), null, 2), 'utf-8');
+
+    const missingRecordProgram = new Command();
+    missingRecordProgram.exitOverride();
+    registerFemCommand(missingRecordProgram);
+    await expect(
+      missingRecordProgram.parseAsync([
+        'fem',
+        'run',
+        casePath,
+        '--experimental',
+        '--reviewed',
+        '--require-approval-record',
+        '--no-open',
+        '--json',
+      ], { from: 'user' }),
+    ).rejects.toThrow(/requires a persisted reviewer approval record/i);
+
+    const approvedProgram = new Command();
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    approvedProgram.exitOverride();
+    registerFemCommand(approvedProgram);
+    await approvedProgram.parseAsync([
+      'fem',
+      'run',
+      casePath,
+      '--experimental',
+      '--reviewed',
+      '--require-approval-record',
+      '--approval-output',
+      approvalPath,
+      '--reviewer-name',
+      'Jane Engineer',
+      '--reviewer-license',
+      'PE-98765',
+      '--reviewer-jurisdiction',
+      'US-CA',
+      '--approval-assumptions',
+      'geometry and loading reviewed',
+      '--no-open',
+      '--json',
+    ], { from: 'user' });
+
+    const payload = JSON.parse(collectLogText(logSpy).trim());
+    const approvalRecord = JSON.parse(await readFile(approvalPath, 'utf-8'));
+    expect(payload.approvalPath).toBe(approvalPath);
+    expect(payload.approvalRecord.schemaVersion).toBe('fem-reviewer-approval.v1');
+    expect(payload.approvalRecord.caseHashSha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(approvalRecord.reviewer.licenseId).toBe('PE-98765');
+    expect(approvalRecord.assumptions.join(' ')).toMatch(/geometry and loading reviewed/i);
+    logSpy.mockRestore();
   });
 
   it('persists FEM reviewer approval metadata and rejects stale approval records', async () => {

@@ -978,7 +978,7 @@ describe('FEM routing contract', () => {
     expect((productionResult.data as any).agentEvidenceSummary).toContain(
       'quad4-plane-strain-biot-u-p-effective-stress-coupling',
     );
-    expect((productionResult.data as any).agentEvidenceSummary).toContain('external benchmark comparison results: 0');
+    expect((productionResult.data as any).agentEvidenceSummary).toContain('external benchmark comparison results: 2');
     expect((productionResult.data as any).agentEvidenceSummary).toContain('biot-u-p-route-backed-preview-is-not-production-sparse-solver');
 
     const draftResult = await toolRegistry.execute('prepare_fem_analysis_case', {

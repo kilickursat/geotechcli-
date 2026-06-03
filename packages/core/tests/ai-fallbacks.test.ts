@@ -726,7 +726,7 @@ describe('AI fallback behavior', () => {
     const readinessData = readinessResult?.toolResult?.data as any;
     expect(readinessData.productionReady).toBe(false);
     expect(readinessData.agentEvidenceSummary).toContain('productionReady: no');
-    expect(readinessData.agentEvidenceSummary).toContain('external benchmark comparison results: 0');
+    expect(readinessData.agentEvidenceSummary).toContain('external benchmark comparison results: 2');
     expect(readinessData.blockers).toEqual(expect.arrayContaining([
       'external-benchmark-commercial-solver-citation-missing',
       'external-benchmark-comparison-results-missing',

@@ -53,9 +53,10 @@ describe('FEM production readiness contract', () => {
       status: 'blocked',
       productionReadinessBlocked: true,
       coverageSummary: expect.objectContaining({
-        acceptedComparisonCount: 0,
+        acceptedComparisonCount: 2,
+        acceptedPublishedComparisonCount: 2,
         acceptedCommercialComparisonCount: 0,
-        missingRequiredSourceTypes: ['published-source', 'commercial-solver'],
+        missingRequiredSourceTypes: ['commercial-solver'],
       }),
       blockerCodes: expect.arrayContaining([
         'external-benchmark-commercial-solver-citation-missing',
@@ -78,6 +79,7 @@ describe('FEM production readiness contract', () => {
       'quad4-plane-strain-biot-u-p-alpha-zero-decoupling',
       'quad4-plane-strain-biot-u-p-terzaghi-pressure-dissipation',
       'quad4-plane-strain-dp-adaptive-cutback-rollback-recovery',
+      'quad4-plane-strain-dp-sequential-biot-pressure-replay-audit',
       'excavation-support-staged-reaction-sequence',
     ]));
     expect(report.releasePositioning).toContain('not a full production-grade nonlinear geotechnical FEM solver yet');
@@ -187,8 +189,9 @@ describe('FEM production readiness contract', () => {
     expect(data.agentEvidenceSummary).toContain('quad4-plane-strain-biot-u-p-alpha-zero-decoupling');
     expect(data.agentEvidenceSummary).toContain('quad4-plane-strain-biot-u-p-terzaghi-pressure-dissipation');
     expect(data.agentEvidenceSummary).toContain('quad4-plane-strain-dp-adaptive-cutback-rollback-recovery');
+    expect(data.agentEvidenceSummary).toContain('quad4-plane-strain-dp-sequential-biot-pressure-replay-audit');
     expect(data.agentEvidenceSummary).toContain('external benchmark references:');
-    expect(data.agentEvidenceSummary).toContain('external benchmark comparison results: 0');
+    expect(data.agentEvidenceSummary).toContain('external benchmark comparison results: 2');
     expect(data.agentEvidenceSummary).toContain('external-benchmark-commercial-solver-citation-missing');
     expect(data.agentEvidenceSummary).toContain(
       'biot-u-p-route-backed-preview-is-not-production-sparse-solver',
