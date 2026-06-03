@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const coreMocks = vi.hoisted(() => ({
@@ -169,10 +169,19 @@ function makeProjectWorkflowRoutePlan(options: {
   };
 }
 
-function findAncestorContaining(startPath: string, relativeMarker: string): string | undefined {
+function isWithinOrSamePath(candidate: string, parent: string): boolean {
+  const relation = relative(parent, candidate);
+  return relation === '' || (!relation.startsWith('..') && !isAbsolute(relation));
+}
+
+function findNearestWorkspaceMarker(startPath: string): { path: string; detectedBy: 'geotech_project_file' | 'git_root' } | undefined {
   let current = resolve(startPath);
+  const tempRoot = resolve(tmpdir());
+  const stopAt = isWithinOrSamePath(current, tempRoot) ? tempRoot : undefined;
   for (;;) {
-    if (existsSync(join(current, relativeMarker))) return current;
+    if (existsSync(join(current, '.geotech', 'project.json'))) return { path: current, detectedBy: 'geotech_project_file' };
+    if (existsSync(join(current, '.git'))) return { path: current, detectedBy: 'git_root' };
+    if (stopAt && current === stopAt) return undefined;
     const parent = dirname(current);
     if (parent === current) return undefined;
     current = parent;
@@ -190,20 +199,19 @@ function makeWorkspaceRoot(options: { workspacePath?: string } = {}) {
     };
   }
   const cwd = process.cwd();
-  const geotechRoot = findAncestorContaining(cwd, join('.geotech', 'project.json'));
-  if (geotechRoot) {
+  const nearestMarker = findNearestWorkspaceMarker(cwd);
+  if (nearestMarker) {
     return {
-      path: geotechRoot,
-      detectedBy: 'geotech_project_file',
+      path: nearestMarker.path,
+      detectedBy: nearestMarker.detectedBy,
       trustLevel: 'inferred',
       readScope: 'root_only',
       writeScope: 'geotech_output_only',
     };
   }
-  const gitRoot = findAncestorContaining(cwd, '.git');
   return {
-    path: gitRoot ?? resolve(cwd),
-    detectedBy: gitRoot ? 'git_root' : 'cwd',
+    path: resolve(cwd),
+    detectedBy: 'cwd',
     trustLevel: 'inferred',
     readScope: 'root_only',
     writeScope: 'geotech_output_only',

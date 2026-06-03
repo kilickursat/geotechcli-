@@ -812,6 +812,98 @@ describe('registerFemCommand', () => {
     expect(html).toContain('raft-settlement-demo');
   });
 
+  it('persists FEM reviewer approval metadata and rejects stale approval records', async () => {
+    const { buildRaftDemoAnalysisCase } = await import('../../core/src/fem/index.js');
+    const registerFemCommand = await loadRegisterFemCommand();
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-fem-approval-'));
+    tempDirs.push(dir);
+    const casePath = join(dir, 'analysis_case.json');
+    const approvalPath = join(dir, 'fem-approval.json');
+    await writeFile(casePath, JSON.stringify(buildRaftDemoAnalysisCase(), null, 2), 'utf-8');
+
+    {
+      const program = new Command();
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      program.exitOverride();
+      registerFemCommand(program);
+
+      await program.parseAsync([
+        'fem',
+        'run',
+        casePath,
+        '--experimental',
+        '--reviewed',
+        '--approval-output',
+        approvalPath,
+        '--reviewer-name',
+        'Jane Engineer',
+        '--reviewer-license',
+        'PE-98765',
+        '--reviewer-jurisdiction',
+        'US-CA',
+        '--approval-assumptions',
+        'project geometry checked',
+        '--no-open',
+        '--json',
+      ], { from: 'user' });
+
+      const payload = JSON.parse(collectLogText(logSpy).trim());
+      const approvalRecord = JSON.parse(await readFile(approvalPath, 'utf-8'));
+
+      expect(payload.approvalPath).toBe(approvalPath);
+      expect(payload.approvalRecord.schemaVersion).toBe('fem-reviewer-approval.v1');
+      expect(payload.approvalRecord.reviewer.licenseId).toBe('PE-98765');
+      expect(payload.approvalRecord.caseHashSha256).toMatch(/^[a-f0-9]{64}$/);
+      expect(approvalRecord.validationSummary.blockers).toBe(0);
+      expect(approvalRecord.assumptions.join(' ')).toMatch(/project geometry checked/i);
+      logSpy.mockRestore();
+    }
+
+    {
+      const program = new Command();
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      program.exitOverride();
+      registerFemCommand(program);
+
+      await program.parseAsync([
+        'fem',
+        'run',
+        casePath,
+        '--experimental',
+        '--reviewed',
+        '--approval-record',
+        approvalPath,
+        '--no-open',
+        '--json',
+      ], { from: 'user' });
+
+      const payload = JSON.parse(collectLogText(logSpy).trim());
+      expect(payload.approvalRecord.caseId).toBe('raft-settlement-demo');
+      expect(payload.warnings.join(' ')).toMatch(/approval record.*case hash/i);
+      logSpy.mockRestore();
+    }
+
+    const changedCase = buildRaftDemoAnalysisCase();
+    changedCase.loads[0].pressureKpa += 1;
+    await writeFile(casePath, JSON.stringify(changedCase, null, 2), 'utf-8');
+    const staleProgram = new Command();
+    staleProgram.exitOverride();
+    registerFemCommand(staleProgram);
+
+    await expect(
+      staleProgram.parseAsync([
+        'fem',
+        'run',
+        casePath,
+        '--experimental',
+        '--reviewed',
+        '--approval-record',
+        approvalPath,
+        '--json',
+      ], { from: 'user' }),
+    ).rejects.toThrow(/approval record is stale/i);
+  });
+
   it('dispatches reviewed excavation and tunnel FEM analysis cases through deterministic run backends', async () => {
     const {
       buildExcavationDemoAnalysisCase,

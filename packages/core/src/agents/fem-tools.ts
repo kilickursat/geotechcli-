@@ -219,6 +219,8 @@ toolRegistry.register(
           `FEM production readiness: ${report.status}`,
           `productionReady: ${report.productionReady ? 'yes' : 'no'}`,
           `current mode: ${report.currentMode}`,
+          `engineering evidence: ${report.engineeringEvidence.status}`,
+          `verified kernels: ${report.engineeringEvidence.verifiedFeatures.join(', ') || 'none'}`,
           `blocked features: ${report.blockedFeatures.map((feature) => feature.feature).join(', ')}`,
           `safe actions: ${report.safeUserActions.join(' | ')}`,
         ].join('\n'),

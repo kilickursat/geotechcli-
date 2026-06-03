@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.93] - 2026-06-03
+
+### FEM Engineering Evidence Kernels
+
+- Added deterministic FEM engineering evidence kernels for Mohr-Coulomb material-point plasticity, 1D Terzaghi consolidation time stepping, 1D Darcy seepage, effective-stress hydro-mechanical coupling, excavation support screening, convergence/tolerance policy, and reviewer approval-record validation.
+- Added benchmarked kernel tests for closed-form triaxial strength, consolidation degree, Darcy flow, mass balance, effective-stress settlement, support safety factors, and approval-record contracts.
+- Updated FEM production-readiness reporting so verified kernels are visible to agents and users while full production FEM remains blocked until the kernels are coupled to solver routes and independently benchmarked against published or commercial references.
+- Added `geotech fem run` approval-record support so users can persist reviewer identity, license, jurisdiction, assumptions, limitations, validation summary, and case hash, or reject stale approval records before a reviewed preview run.
+- Kept FEM positioned as experimental preview plus engineering evidence gates, not a production nonlinear FEM solver.
+
 ## [0.4.92] - 2026-06-03
 
 ### FEM Production-Readiness Guardrails

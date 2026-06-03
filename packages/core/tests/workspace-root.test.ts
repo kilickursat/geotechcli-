@@ -53,4 +53,16 @@ describe('resolveWorkspaceRoot', () => {
     expect(root.path).toBe(resolve(workspace));
     expect(root.detectedBy).toBe('git_root');
   });
+
+  it('does not climb out of an unmarked OS temp workspace', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'geotech-root-unmarked-temp-'));
+    const child = join(workspace, 'data');
+    mkdirSync(child, { recursive: true });
+    tempDirs.push(workspace);
+
+    const root = resolveWorkspaceRoot({ cwd: child });
+
+    expect(root.path).toBe(resolve(child));
+    expect(root.detectedBy).toBe('cwd');
+  });
 });

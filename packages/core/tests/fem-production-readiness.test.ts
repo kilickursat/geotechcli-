@@ -28,13 +28,25 @@ describe('FEM production readiness contract', () => {
       'licensed-engineer-review-workflow',
     ]);
     expect(report.blockers).toEqual(expect.arrayContaining([
-      'nonlinear-constitutive-backend-implemented',
-      'consolidation-time-stepping-backend-implemented',
-      'seepage-solver-implemented',
-      'support-design-engine-implemented',
+      'nonlinear-constitutive-kernel-coupled-to-global-fem-solver',
+      'consolidation-time-stepping-kernel-coupled-to-fem-route',
+      'seepage-kernel-coupled-to-fem-route-and-result-manifest',
+      'support-design-engine-coupled-to-staged-excavation-route',
       'workspace-to-run-acceptance-validator-enforced',
       'published-benchmark-corpus-approved',
-      'reviewer-approval-record-implemented',
+      'reviewer-approval-record-enforced-by-cli-run',
+    ]));
+    expect(report.engineeringEvidence).toMatchObject({
+      schemaVersion: 'fem-engineering-evidence.v1',
+      status: 'kernel-verified',
+      productionReady: false,
+    });
+    expect(report.engineeringEvidence.verifiedFeatures).toEqual(expect.arrayContaining([
+      'nonlinear-plasticity',
+      'consolidation',
+      'seepage-pore-pressure-coupling',
+      'support-design',
+      'licensed-engineer-review-workflow',
     ]));
     expect(report.releasePositioning).toContain('not a full production-grade nonlinear geotechnical FEM solver yet');
   });
@@ -61,7 +73,7 @@ describe('FEM production readiness contract', () => {
       'Built-in demo command: geotech fem demo excavation --experimental',
       'Reviewed run command template: geotech fem run <analysis_case.json> --experimental --reviewed',
     ]));
-    expect(report.blockedFeatures.map((feature) => feature.status)).toEqual(['missing', 'missing']);
+    expect(report.blockedFeatures.map((feature) => feature.status)).toEqual(['kernel-verified', 'kernel-verified']);
   });
 
   it('exposes a scoped FEM agent tool for production-readiness blockers', async () => {

@@ -1,4 +1,8 @@
 import { listFemCapabilities, type FemRouteObjective } from './routing.js';
+import {
+  runFemEngineeringEvidenceSuite,
+  type FemEngineeringEvidenceReport,
+} from './engineering-evidence.js';
 
 export type FemProductionFeature =
   | 'nonlinear-plasticity'
@@ -12,7 +16,7 @@ export type FemProductionFeature =
 
 export interface FemProductionFeatureRequirement {
   feature: FemProductionFeature;
-  status: 'missing' | 'preview-only' | 'accepted';
+  status: 'missing' | 'preview-only' | 'kernel-verified' | 'accepted';
   currentCoverage: string;
   requiredForAcceptance: string[];
   blockedUntil: string[];
@@ -34,6 +38,7 @@ export interface FemProductionReadinessReport {
     runCommandTemplate?: string;
   }>;
   blockedFeatures: FemProductionFeatureRequirement[];
+  engineeringEvidence: FemEngineeringEvidenceReport;
   blockers: string[];
   safeUserActions: string[];
   releasePositioning: string;
@@ -52,45 +57,45 @@ const ALL_PRODUCTION_FEATURES: FemProductionFeature[] = [
 
 const FEATURE_REQUIREMENTS: Record<FemProductionFeature, Omit<FemProductionFeatureRequirement, 'feature'>> = {
   'nonlinear-plasticity': {
-    status: 'missing',
-    currentCoverage: 'Current FEM preview materials are linear elastic only.',
+    status: 'kernel-verified',
+    currentCoverage: 'A deterministic Mohr-Coulomb triaxial material-point kernel is benchmarked against closed-form yield. Current preview result manifests still use linear elastic materials only.',
     requiredForAcceptance: [
       'constitutive models accepted for geotechnical use, such as Mohr-Coulomb/Hardening Soil or equivalent',
       'stress-path, yield, plastic strain, and convergence validation fixtures',
       'independent benchmark comparison against published or commercial-solver reference cases',
     ],
     blockedUntil: [
-      'nonlinear-constitutive-backend-implemented',
-      'plasticity-benchmark-suite-approved',
+      'nonlinear-constitutive-kernel-coupled-to-global-fem-solver',
+      'plasticity-benchmark-suite-approved-against-published-or-commercial-references',
       'solver-convergence-audit-passed',
     ],
   },
   consolidation: {
-    status: 'missing',
-    currentCoverage: 'Current previews do not solve time-dependent consolidation, drainage, or creep.',
+    status: 'kernel-verified',
+    currentCoverage: 'A deterministic 1D Terzaghi backward-Euler consolidation kernel is benchmarked against analytical average consolidation. Current preview result manifests do not expose time-dependent consolidation fields.',
     requiredForAcceptance: [
       'time-stepping consolidation backend with drainage boundary controls',
       'Cv, mv/Cc, drainage path, stage duration, and monitoring calibration schema',
       'settlement-time benchmark fixtures and tolerance envelopes',
     ],
     blockedUntil: [
-      'consolidation-time-stepping-backend-implemented',
+      'consolidation-time-stepping-kernel-coupled-to-fem-route',
       'drainage-boundary-validation-approved',
-      'settlement-time-benchmark-suite-approved',
+      'settlement-time-benchmark-suite-approved-against-published-or-commercial-references',
     ],
   },
   'seepage-pore-pressure-coupling': {
-    status: 'missing',
-    currentCoverage: 'Current previews record groundwater assumptions but do not solve pore pressure, seepage, uplift, or coupling.',
+    status: 'kernel-verified',
+    currentCoverage: 'Deterministic 1D Darcy seepage and effective-stress coupling kernels are benchmarked against closed-form flow and settlement checks. Current preview result manifests still record groundwater as assumptions only.',
     requiredForAcceptance: [
       'steady/transient seepage solver with hydraulic boundary conditions',
       'pore-pressure coupling into effective stress/deformation calculations',
       'uplift, gradient, and dewatering acceptance checks',
     ],
     blockedUntil: [
-      'seepage-solver-implemented',
-      'hydro-mechanical-coupling-accepted',
-      'pore-pressure-benchmark-suite-approved',
+      'seepage-kernel-coupled-to-fem-route-and-result-manifest',
+      'hydro-mechanical-coupling-accepted-for-2d-3d-fem',
+      'pore-pressure-benchmark-suite-approved-against-published-or-commercial-references',
     ],
   },
   'advanced-staged-construction': {
@@ -108,17 +113,17 @@ const FEATURE_REQUIREMENTS: Record<FemProductionFeature, Omit<FemProductionFeatu
     ],
   },
   'support-design': {
-    status: 'missing',
-    currentCoverage: 'Current excavation preview reports support reaction proxies only; it does not design struts, anchors, walls, or basal-heave resistance.',
+    status: 'kernel-verified',
+    currentCoverage: 'A deterministic Rankine support-screening kernel checks support capacity, passive toe resistance, and basal heave for controlled fixtures. It is not a wall/strut/anchor structural design engine.',
     requiredForAcceptance: [
       'wall/strut/anchor structural design checks with explicit standards assumptions',
       'basal heave, kick-out, surcharge, and toe embedment verification',
       'support reaction benchmark and safety-factor audit fixtures',
     ],
     blockedUntil: [
-      'support-design-engine-implemented',
-      'basal-heave-and-toe-checks-approved',
-      'support-design-benchmark-suite-approved',
+      'support-design-engine-coupled-to-staged-excavation-route',
+      'basal-heave-and-toe-checks-approved-for-project-standards',
+      'support-design-benchmark-suite-approved-against-published-or-commercial-references',
     ],
   },
   'real-project-workspace-to-run-acceptance': {
@@ -150,15 +155,15 @@ const FEATURE_REQUIREMENTS: Record<FemProductionFeature, Omit<FemProductionFeatu
     ],
   },
   'licensed-engineer-review-workflow': {
-    status: 'preview-only',
-    currentCoverage: 'Current CLI requires --reviewed, but does not persist a named reviewer, license, design responsibility, or approval record.',
+    status: 'kernel-verified',
+    currentCoverage: 'A reviewer approval-record contract validates identity, license, jurisdiction, case hash, validation summary, assumptions, limitations, scope, and approval text. CLI preview runs still accept --reviewed without enforcing persisted approval metadata on every run.',
     requiredForAcceptance: [
       'reviewer identity and approval metadata captured for production runs',
       'assumption, limitation, and change-control audit trail',
       'jurisdiction/standard-specific sign-off workflow',
     ],
     blockedUntil: [
-      'reviewer-approval-record-implemented',
+      'reviewer-approval-record-enforced-by-cli-run',
       'assumption-change-control-audit-approved',
       'jurisdiction-signoff-workflow-approved',
     ],
@@ -194,6 +199,7 @@ export function assessFemProductionReadiness(options: {
     feature,
     ...FEATURE_REQUIREMENTS[feature],
   }));
+  const engineeringEvidence = runFemEngineeringEvidenceSuite();
 
   return {
     schemaVersion: 'fem-production-readiness.v1',
@@ -204,17 +210,22 @@ export function assessFemProductionReadiness(options: {
     currentMode,
     supportedPreviewRoutes,
     blockedFeatures,
-    blockers: [...new Set(blockedFeatures.flatMap((feature) => feature.blockedUntil))],
+    engineeringEvidence,
+    blockers: [...new Set([
+      ...blockedFeatures.flatMap((feature) => feature.blockedUntil),
+      ...engineeringEvidence.remainingProductionBlockers,
+    ])],
     safeUserActions: [
       'Use implemented routes only as experimental, human-reviewed previews.',
+      'Use FEM engineering evidence kernels for deterministic acceptance-gate checks only; they are not standalone production FEM result manifests.',
       ...supportedPreviewRoutes.flatMap((route) => [
         ...(route.draftCommandTemplate ? [`Draft command template: ${route.draftCommandTemplate}`] : []),
         ...(route.demoCommand ? [`Built-in demo command: ${route.demoCommand}`] : []),
         ...(route.runCommandTemplate ? [`Reviewed run command template: ${route.runCommandTemplate}`] : []),
       ]),
-      'Keep nonlinear/plasticity, consolidation, seepage, support design, and production acceptance requests in blocked planning state until the required solver and benchmark gates are implemented.',
+      'Keep full nonlinear/plasticity, consolidation, seepage, support design, and production acceptance requests in blocked planning state until the kernels are coupled to solver routes and independently benchmarked.',
     ],
     releasePositioning:
-      'geotechCLI strong-beta must describe FEM as deterministic experimental previews plus contract-only planning for advanced routes; it is not a full production-grade nonlinear geotechnical FEM solver yet.',
+      'geotechCLI strong-beta must describe FEM as deterministic experimental previews plus verified engineering evidence kernels and contract-only planning for advanced routes; it is not a full production-grade nonlinear geotechnical FEM solver yet.',
   };
 }

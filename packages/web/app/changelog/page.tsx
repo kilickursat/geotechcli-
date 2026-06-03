@@ -8,6 +8,16 @@ const releases = [
     date: '2026-06-03',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added deterministic FEM engineering evidence kernels for Mohr-Coulomb material-point plasticity, 1D Terzaghi consolidation, 1D Darcy seepage, effective-stress coupling, support screening, tolerance policy, and reviewer approval validation' },
+      { type: 'feat', text: 'Added persisted FEM approval-record support so reviewed preview runs can carry reviewer identity, license, jurisdiction, assumptions, limitations, validation summary, and case hash' },
+      { type: 'fix', text: 'Kept FEM production readiness blocked until the verified kernels are coupled to solver routes and independently benchmarked against published or commercial references' },
+    ],
+  },
+  {
+    version: '0.4.92',
+    date: '2026-06-03',
+    tag: '0.4.92 Release',
+    changes: [
       { type: 'feat', text: 'Added a deterministic FEM production-readiness assessment for nonlinear/plasticity, consolidation, seepage/pore-pressure coupling, advanced staging, support design, real project workspace-to-run, benchmark, and reviewer gates' },
       { type: 'fix', text: 'Kept full production-grade FEM claims blocked until solver physics, independent benchmarks, reviewed workspace acceptance, and licensed-review records are implemented' },
       { type: 'fix', text: 'Required geotech fem run to include --experimental --reviewed and extended FEM smoke coverage with contract-only route checks, reference balances, and cross-scenario trend assertions' },

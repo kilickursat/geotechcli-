@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { createHash } from 'node:crypto';
 import { Command } from 'commander';
 import {
   analyzeWorkspace,
@@ -15,11 +16,13 @@ import {
   runBuiltinElasticRaftDemo,
   runBuiltinTunnelVolumeLossDemo,
   validateFemAnalysisCase,
+  validateFemReviewerApprovalRecord,
   validateFemResultManifest,
   type AgentStep,
   type FemAnalysisCase,
   type FemAnalysisCaseDraft,
   type FemGroundModelDraftBridge,
+  type FemReviewerApprovalRecord,
   type FemResultManifest,
   type FemRouteObjective,
   type PrepareFemAnalysisCaseDraftInput,
@@ -86,6 +89,8 @@ interface FemRunJsonEnvelope {
   casePath: string;
   objective: FemAnalysisCase['objective'];
   manifest: FemResultManifest;
+  approvalRecord?: FemReviewerApprovalRecord;
+  approvalPath?: string;
   htmlPath?: string;
   resultPath?: string;
   opened: boolean;
@@ -189,15 +194,17 @@ function parseFemDraftInput(value: unknown): Partial<PrepareFemAnalysisCaseDraft
   return parsed as Partial<PrepareFemAnalysisCaseDraftInput>;
 }
 
-function loadFemAnalysisCase(filePath: string): { casePath: string; analysisCase: FemAnalysisCase } {
+function loadFemAnalysisCase(filePath: string): { casePath: string; analysisCase: FemAnalysisCase; sourceText: string } {
   const resolved = resolve(filePath);
-  const parsed = JSON.parse(readFileSync(resolved, 'utf-8')) as unknown;
+  const sourceText = readFileSync(resolved, 'utf-8');
+  const parsed = JSON.parse(sourceText) as unknown;
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error('FEM analysis case file must contain a JSON object.');
   }
   return {
     casePath: resolved,
     analysisCase: parsed as FemAnalysisCase,
+    sourceText,
   };
 }
 
@@ -393,6 +400,102 @@ function buildWarnings(manifest: FemResultManifest): string[] {
       .filter((finding) => finding.severity !== 'info')
       .map((finding) => finding.message),
   ];
+}
+
+function sha256Hex(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function parseOptionalCsvText(value: unknown): string[] {
+  if (typeof value !== 'string') return [];
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
+function optionText(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function buildFemReviewerApprovalRecord(
+  analysisCase: FemAnalysisCase,
+  sourceText: string,
+  validation: ReturnType<typeof validateFemAnalysisCase>,
+  opts: Record<string, unknown>,
+): FemReviewerApprovalRecord | undefined {
+  const approvalOutput = optionText(opts.approvalOutput);
+  const reviewerName = optionText(opts.reviewerName);
+  const reviewerLicense = optionText(opts.reviewerLicense);
+  const reviewerJurisdiction = optionText(opts.reviewerJurisdiction);
+  const hasApprovalOptions = Boolean(approvalOutput || reviewerName || reviewerLicense || reviewerJurisdiction);
+  if (!hasApprovalOptions) return undefined;
+  if (!approvalOutput) {
+    throw new Error('FEM approval metadata must be persisted. Provide --approval-output <file> when reviewer metadata is supplied.');
+  }
+  if (!reviewerName || !reviewerLicense || !reviewerJurisdiction) {
+    throw new Error('Persisted FEM approval requires --reviewer-name, --reviewer-license, and --reviewer-jurisdiction.');
+  }
+
+  const assumptions = [
+    ...analysisCase.assumptions.map((item) => `${item.parameter}: ${item.value}${item.unit ? ` ${item.unit}` : ''}`),
+    ...parseOptionalCsvText(opts.approvalAssumptions),
+  ];
+  const limitations = [
+    ...analysisCase.limitations,
+    ...parseOptionalCsvText(opts.approvalLimitations),
+  ];
+  const record: FemReviewerApprovalRecord = {
+    schemaVersion: 'fem-reviewer-approval.v1',
+    recordId: `fem-approval-${analysisCase.caseId}-${Date.now()}`,
+    caseId: analysisCase.caseId,
+    caseHashSha256: sha256Hex(sourceText),
+    validationSummary: {
+      status: validation.status,
+      blockers: validation.blockers,
+      reviewItems: validation.reviewItems,
+      findingCodes: validation.findings.map((finding) => finding.code),
+    },
+    reviewer: {
+      name: reviewerName,
+      licenseId: reviewerLicense,
+      jurisdiction: reviewerJurisdiction,
+    },
+    approvedAt: new Date().toISOString(),
+    scope: opts.approvalScope === 'production-design' ? 'production-design' : 'experimental-preview',
+    assumptions,
+    limitations,
+    approvalStatement: optionText(opts.approvalStatement)
+      ?? 'Reviewed and accepted for experimental preview execution.',
+  };
+  const approvalValidation = validateFemReviewerApprovalRecord(record);
+  if (approvalValidation.status === 'blocked') {
+    throw new Error(`FEM approval record failed validation: ${approvalValidation.blockerCodes.join(', ')}`);
+  }
+  return record;
+}
+
+function validateExistingFemApprovalRecord(
+  recordPath: unknown,
+  analysisCase: FemAnalysisCase,
+  sourceText: string,
+): FemReviewerApprovalRecord | undefined {
+  const approvalRecordPath = optionText(recordPath);
+  if (!approvalRecordPath) return undefined;
+  const resolved = resolve(approvalRecordPath);
+  const record = JSON.parse(readFileSync(resolved, 'utf-8')) as Partial<FemReviewerApprovalRecord>;
+  const validation = validateFemReviewerApprovalRecord(record);
+  if (validation.status === 'blocked') {
+    throw new Error(`FEM approval record failed validation: ${validation.blockerCodes.join(', ')}`);
+  }
+  const expectedHash = sha256Hex(sourceText);
+  if (record.caseId !== analysisCase.caseId) {
+    throw new Error(`FEM approval record is for case ${record.caseId ?? '(missing)'}, not ${analysisCase.caseId}.`);
+  }
+  if (record.caseHashSha256 !== expectedHash) {
+    throw new Error('FEM approval record is stale: case hash does not match the current analysis_case.json.');
+  }
+  return record as FemReviewerApprovalRecord;
 }
 
 function buildFemAgentTask(task: string, objective?: string, workspaceSummary?: string): string {
@@ -605,16 +708,23 @@ async function runFemAnalysisCaseCommand(caseFilePath: string, opts: Record<stri
     throw new Error('FEM runs require --reviewed to confirm a human has reviewed the analysis_case.json geometry, loads, staging, assumptions, validation findings, and limitations.');
   }
 
-  const { casePath, analysisCase } = loadFemAnalysisCase(caseFilePath);
+  const { casePath, analysisCase, sourceText } = loadFemAnalysisCase(caseFilePath);
   const caseValidation = validateFemAnalysisCase(analysisCase);
   if (caseValidation.status === 'blocked') {
     throw new Error(`FEM analysis case failed validation: ${caseValidation.findings.map((item) => item.message).join('; ')}`);
   }
+  const existingApprovalRecord = validateExistingFemApprovalRecord(opts.approvalRecord, analysisCase, sourceText);
+  const generatedApprovalRecord = buildFemReviewerApprovalRecord(analysisCase, sourceText, caseValidation, opts);
 
   const manifest = runDeterministicFemAnalysisCase(analysisCase);
   const resultValidation = validateFemResultManifest(manifest);
   if (resultValidation.status === 'blocked') {
     throw new Error(`FEM result manifest failed validation: ${resultValidation.findings.map((item) => item.message).join('; ')}`);
+  }
+
+  let approvalPath: string | undefined;
+  if (generatedApprovalRecord && typeof opts.approvalOutput === 'string' && opts.approvalOutput.trim()) {
+    approvalPath = writeUtf8File(opts.approvalOutput, JSON.stringify(generatedApprovalRecord, null, 2));
   }
 
   let htmlPath: string | undefined;
@@ -641,12 +751,16 @@ async function runFemAnalysisCaseCommand(caseFilePath: string, opts: Record<stri
     casePath,
     objective: analysisCase.objective,
     manifest,
+    approvalRecord: generatedApprovalRecord ?? existingApprovalRecord,
+    approvalPath,
     htmlPath,
     resultPath,
     opened,
     warnings: [
       'Experimental deterministic FEM run only; not a design calculation.',
       'Run was invoked by the CLI from a reviewed analysis_case.json file with --reviewed; LLM agents can plan and validate cases but cannot execute this command as a tool.',
+      ...(generatedApprovalRecord ? ['Persisted FEM reviewer approval metadata for this run.'] : []),
+      ...(existingApprovalRecord ? ['Validated existing FEM approval record against the current case hash before this run.'] : []),
       ...buildWarnings(manifest),
     ],
   };
@@ -742,14 +856,26 @@ export function registerFemCommand(program: Command): void {
     .argument('<analysisCaseJson>', 'Path to fem-analysis-case.v0 JSON produced by geotech fem draft or manual review')
     .option('--experimental', 'Acknowledge that this FEM run is experimental and not a design calculation')
     .option('--reviewed', 'Confirm a human reviewed geometry, loads, staging, assumptions, validation findings, and limitations')
+    .option('--approval-record <file>', 'Validate an existing fem-reviewer-approval.v1 record against the current case hash before running')
+    .option('--approval-output <file>', 'Persist a fem-reviewer-approval.v1 record for this run')
+    .option('--reviewer-name <name>', 'Reviewer name for persisted FEM approval metadata')
+    .option('--reviewer-license <id>', 'Reviewer license or registration id for persisted FEM approval metadata')
+    .option('--reviewer-jurisdiction <code>', 'Reviewer license jurisdiction for persisted FEM approval metadata')
+    .option('--approval-scope <scope>', 'Approval scope: experimental-preview or production-design')
+    .option('--approval-statement <text>', 'Reviewer approval statement; defaults to reviewed and accepted for experimental preview execution')
+    .option('--approval-assumptions <csv>', 'Additional comma-separated assumptions to persist in the FEM approval record')
+    .option('--approval-limitations <csv>', 'Additional comma-separated limitations to persist in the FEM approval record')
     .addHelpText('after', `
   Examples:
     geotech fem draft foundation-settlement --raft-length 10 --raft-width 8 --pressure 150 --case-output analysis_case.json
     geotech fem run analysis_case.json --experimental --reviewed --save-html fem-run.html --output fem-run.manifest.json --no-open
+    geotech fem run analysis_case.json --experimental --reviewed --approval-output fem-approval.json --reviewer-name "Jane Engineer" --reviewer-license PE-12345 --reviewer-jurisdiction US-CA
     geotech fem run analysis_case.json --experimental --reviewed --json
 
   This command executes only deterministic built-in preview backends from a reviewed analysis_case.json.
   It requires --reviewed as an explicit human-review acknowledgement.
+  Use --approval-output with reviewer metadata to persist identity, license, assumptions, limitations, validation summary, and case hash.
+  Use --approval-record to fail closed when a prior approval record is stale or does not match the current case hash.
   It is not exposed as an agent tool; LLMs can plan, draft, and validate FEM cases, but users approve runs.
 `)
     .action(async (caseFilePath: string, opts) => {
