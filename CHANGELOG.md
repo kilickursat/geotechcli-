@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.4.91] - 2026-06-03
+
 ### Corpus Mixed Digital/Scanned Coverage
 
 - Added a small cached mixed digital/scanned PDF benchmark fixture to the internal geotechnical corpus registry.

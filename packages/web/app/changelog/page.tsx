@@ -5,8 +5,18 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 const releases = [
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-06-01',
+    date: '2026-06-03',
     tag: `${GEOTECHCLI_VERSION} Release`,
+    changes: [
+      { type: 'feat', text: 'Added production-candidate guardrail contracts for preprocessing, corpus benchmarking, BYOK, standards profiles, calculation drafts, planned FEM routes, and deterministic signal analysis' },
+      { type: 'fix', text: 'Added runtime OpenRouter and Hugging Face BYOK aliases so users can bring OPENROUTER_API_KEY, OPENROUTER_MODEL, and HUGGINGFACE_API_KEY into real CLI sessions' },
+      { type: 'fix', text: 'Kept AI-assisted and FEM-derived outputs review-gated, path-safe, and free of raw prompt, response, model payload, private path, and token-shaped leakage in persisted artifacts' },
+    ],
+  },
+  {
+    version: '0.4.90',
+    date: '2026-06-01',
+    tag: '0.4.90 Release',
     changes: [
       { type: 'feat', text: 'Added a provider-neutral BYOK benchmark contract using the same preprocessed page-evidence prompt across hosted-beta, OpenAI-compatible, OpenRouter/free, and local/HF-compatible routes' },
       { type: 'fix', text: 'Made BYOK response validation require compact JSON, source-evidence citations, preserved review gates, and no claims of direct image/PDF inspection' },
