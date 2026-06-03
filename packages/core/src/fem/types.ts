@@ -295,6 +295,7 @@ export interface FemResultEnvelope {
   plasticGaussPointCount?: number;
   maxEquivalentPlasticStrain?: number;
   maxEquivalentPlasticStrainIncrement?: number;
+  maxHardeningStressKpa?: number;
   adaptiveAttemptCount?: number;
   adaptiveAcceptedStepCount?: number;
   adaptiveRejectedAttemptCount?: number;

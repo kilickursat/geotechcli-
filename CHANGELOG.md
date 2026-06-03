@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.119] - 2026-06-04
+
+### FEM Route-Backed Hardening Evidence
+
+- Forwarded reviewed `hardeningModulusKpa` values into the route-backed plane-strain Drucker-Prager adaptive backend instead of dropping them at run time.
+- Added `maxHardeningStressKpa` result-envelope evidence and validation so hardened DP manifests fail closed when the hardening evidence is missing, negative, or inconsistent with accumulated plastic strain.
+- Extended core and CLI coverage for persisted hardening evidence while keeping the backend explicitly experimental and `productionReady: false`.
+
 ## [0.4.118] - 2026-06-04
 
 ### Ingest Wait Resilience and FEM Hardening Evidence

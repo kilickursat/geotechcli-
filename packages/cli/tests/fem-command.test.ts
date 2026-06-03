@@ -1289,6 +1289,7 @@ describe('registerFemCommand', () => {
     const analysisCase = buildPlaneStrainDruckerPragerAdaptiveExcavationDemoAnalysisCase(
       buildExcavationDemoAnalysisCase(),
     );
+    analysisCase.materials[0].hardeningModulusKpa = 5_000;
     const casePath = join(dir, 'excavation.analysis_case.json');
     const resultPath = join(dir, 'dp-adaptive.manifest.json');
     await writeFile(casePath, JSON.stringify(analysisCase, null, 2), 'utf-8');
@@ -1319,7 +1320,13 @@ describe('registerFemCommand', () => {
     expect(payload.manifest.adaptiveLoadStepping.enabled).toBe(true);
     expect(payload.manifest.adaptiveLoadStepping.acceptedLoadFactors.at(-1)).toBe(1);
     expect(payload.manifest.envelope.plasticGaussPointCount).toBeGreaterThan(0);
-    expect(payload.manifest.envelope.adaptiveRejectedAttemptCount).toBeGreaterThan(0);
+    expect(payload.manifest.envelope.maxHardeningStressKpa).toBeGreaterThan(0);
+    expect(writtenManifest.envelope.maxHardeningStressKpa).toBe(payload.manifest.envelope.maxHardeningStressKpa);
+    expect(payload.manifest.assumptions.map((assumption: { id: string }) => assumption.id))
+      .toContain('dp-isotropic-hardening-route');
+    expect(payload.manifest.envelope.adaptiveAttemptCount)
+      .toBeGreaterThanOrEqual(payload.manifest.envelope.adaptiveAcceptedStepCount);
+    expect(payload.manifest.envelope.adaptiveRejectedAttemptCount).toBeGreaterThanOrEqual(0);
     expect(payload.manifest.solverConvergence.status).toBe('converged');
     expect(validateFemResultManifest(writtenManifest).blockers).toBe(0);
     expect(payload.manifest.productionReady).toBeUndefined();

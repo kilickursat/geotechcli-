@@ -253,6 +253,25 @@ describe('experimental FEM raft demo', () => {
     expect(validation.blockers).toBe(0);
   });
 
+  it('forwards reviewed isotropic hardening through the plane-strain Drucker-Prager adaptive route', () => {
+    const analysisCase = buildPlaneStrainDruckerPragerAdaptiveExcavationDemoAnalysisCase(
+      buildExcavationDemoAnalysisCase(),
+    );
+    analysisCase.materials[0].hardeningModulusKpa = 5_000;
+
+    const manifest = runBuiltinPlaneStrainDruckerPragerAdaptivePreview(analysisCase);
+    const validation = validateFemResultManifest(manifest);
+
+    expect(manifest.envelope.maxEquivalentPlasticStrain).toBeGreaterThan(0);
+    expect(manifest.envelope.maxHardeningStressKpa).toBeGreaterThan(0);
+    expect(manifest.envelope.maxHardeningStressKpa)
+      .toBeCloseTo(5_000 * manifest.envelope.maxEquivalentPlasticStrain!, 8);
+    expect(manifest.assumptions.map((assumption) => assumption.id)).toContain('dp-isotropic-hardening-route');
+    expect(manifest.backend.productionReady).toBe(false);
+    expect(validation.status).toBe('review');
+    expect(validation.blockers).toBe(0);
+  });
+
   it('blocks stale plane-strain Drucker-Prager adaptive acceptance metadata before rendering', () => {
     const manifest = runBuiltinPlaneStrainDruckerPragerAdaptivePreview(
       buildPlaneStrainDruckerPragerAdaptiveExcavationDemoAnalysisCase(buildExcavationDemoAnalysisCase()),
@@ -280,6 +299,13 @@ describe('experimental FEM raft demo', () => {
       ...manifest,
       productionReady: true,
     } as FemResultManifest;
+    const hardeningCase = buildPlaneStrainDruckerPragerAdaptiveExcavationDemoAnalysisCase(
+      buildExcavationDemoAnalysisCase(),
+    );
+    hardeningCase.materials[0].hardeningModulusKpa = 5_000;
+    const hardeningManifest = runBuiltinPlaneStrainDruckerPragerAdaptivePreview(hardeningCase);
+    const missingHardeningEnvelope = { ...hardeningManifest.envelope };
+    delete missingHardeningEnvelope.maxHardeningStressKpa;
 
     expect(validateFemResultManifest({
       ...manifest,
@@ -293,6 +319,17 @@ describe('experimental FEM raft demo', () => {
     }
     expect(validateFemResultManifest(overclaimed).findings.map((finding) => finding.code))
       .toContain('result.production-ready.overclaim');
+    expect(validateFemResultManifest({
+      ...hardeningManifest,
+      envelope: missingHardeningEnvelope,
+    }).findings.map((finding) => finding.code)).toContain('result.envelope.dp.max-hardening-stress.non-finite');
+    expect(validateFemResultManifest({
+      ...hardeningManifest,
+      envelope: {
+        ...hardeningManifest.envelope,
+        maxHardeningStressKpa: -1,
+      },
+    }).findings.map((finding) => finding.code)).toContain('result.envelope.dp.max-hardening-stress.non-negative');
     expect(() => renderFemWebglHtml(staleFinalLoad)).toThrow(/final-load-mismatch/i);
   });
 

@@ -289,6 +289,7 @@ export function runBuiltinPlaneStrainDruckerPragerAdaptivePreview(
       unitWeightKnM3: material.unitWeightKnM3,
       frictionAngleDeg: material.frictionAngleDeg,
       cohesionKpa: material.cohesionKpa,
+      hardeningModulusKpa: material.hardeningModulusKpa,
       dilationAngleDeg: 0,
     }],
     boundaryConditions: buildBoundaryConditions(mesh, widthM, heightM),
@@ -307,6 +308,10 @@ export function runBuiltinPlaneStrainDruckerPragerAdaptivePreview(
   const visualization = buildPlaneStrainDpVisualization(caseFile, result);
   const maxSettlementMm = round(Math.max(...result.nodes.map((node) => Math.max(0, -node.uyM))) * 1000, 6);
   const maxHorizontalDisplacementMm = round(Math.max(...result.nodes.map((node) => Math.abs(node.uxM))) * 1000, 6);
+  const maxHardeningStressKpa = Math.max(
+    0,
+    ...result.elements.flatMap((element) => element.gaussPoints.map((point) => point.hardeningStressKpa)),
+  );
   const solverIterations = result.loadSteps.reduce((total, step) => total + step.iterations, 0);
   const rejectedAttemptCount = result.adaptiveLoadStepping.attempts.filter((attempt) => !attempt.accepted).length;
   const adaptiveLoadStepping = {
@@ -339,6 +344,9 @@ export function runBuiltinPlaneStrainDruckerPragerAdaptivePreview(
     plasticGaussPointCount: result.plasticGaussPointCount,
     maxEquivalentPlasticStrain: round(result.maxEquivalentPlasticStrain, 12),
     maxEquivalentPlasticStrainIncrement: round(result.maxEquivalentPlasticStrainIncrement, 12),
+    ...(material.hardeningModulusKpa != null && material.hardeningModulusKpa > 0 ? {
+      maxHardeningStressKpa: round(maxHardeningStressKpa, 8),
+    } : {}),
     adaptiveAttemptCount: result.adaptiveLoadStepping.attemptedStepCount,
     adaptiveAcceptedStepCount: result.adaptiveLoadStepping.acceptedStepCount,
     adaptiveRejectedAttemptCount: rejectedAttemptCount,
@@ -383,6 +391,15 @@ export function runBuiltinPlaneStrainDruckerPragerAdaptivePreview(
         confidence: 'measured',
         reviewRequired: true,
       },
+      ...(material.hardeningModulusKpa != null && material.hardeningModulusKpa > 0 ? [{
+        id: 'dp-isotropic-hardening-route',
+        parameter: 'Drucker-Prager hardening modulus',
+        value: material.hardeningModulusKpa,
+        unit: 'kPa',
+        basis: 'Route-backed adaptive Drucker-Prager preview forwarded the reviewed hardening modulus into Gauss-point return mapping and reports the resulting hardening stress envelope; calibration and independent benchmark approval are still required.',
+        confidence: 'review' as const,
+        reviewRequired: true,
+      }] : []),
     ],
     limitations: [
       'Experimental route-backed plane-strain Drucker-Prager preview only; not a production nonlinear FEM design solver.',

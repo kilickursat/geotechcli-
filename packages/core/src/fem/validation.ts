@@ -311,6 +311,7 @@ function validateOptionalResultMetadata(
     ['plastic_gauss_point_count', manifest.envelope.plasticGaussPointCount],
     ['max_equivalent_plastic_strain', manifest.envelope.maxEquivalentPlasticStrain],
     ['max_equivalent_plastic_strain_increment', manifest.envelope.maxEquivalentPlasticStrainIncrement],
+    ['max_hardening_stress', manifest.envelope.maxHardeningStressKpa],
     ['adaptive_attempt_count', manifest.envelope.adaptiveAttemptCount],
     ['adaptive_accepted_step_count', manifest.envelope.adaptiveAcceptedStepCount],
     ['adaptive_rejected_attempt_count', manifest.envelope.adaptiveRejectedAttemptCount],
@@ -1685,6 +1686,30 @@ function validatePlaneStrainDpAdaptiveAcceptance(
   const plasticGaussPointCountOk = pushFiniteNumberFinding(findings, envelope.plasticGaussPointCount, 'result.envelope.dp.plastic-gauss-point-count', 'DP envelope plastic Gauss-point count', { nonNegative: true });
   pushFiniteNumberFinding(findings, envelope.maxEquivalentPlasticStrain, 'result.envelope.dp.max-equivalent-plastic-strain', 'DP envelope max equivalent plastic strain', { nonNegative: true });
   pushFiniteNumberFinding(findings, envelope.maxEquivalentPlasticStrainIncrement, 'result.envelope.dp.max-equivalent-plastic-strain-increment', 'DP envelope max equivalent plastic strain increment', { nonNegative: true });
+  if (envelope.maxHardeningStressKpa != null) {
+    pushFiniteNumberFinding(findings, envelope.maxHardeningStressKpa, 'result.envelope.dp.max-hardening-stress', 'DP envelope max hardening stress', { nonNegative: true });
+  }
+  const hardeningModulusKpa = manifest.analysisCase.materials[0]?.hardeningModulusKpa;
+  if (isFiniteNumber(hardeningModulusKpa) && hardeningModulusKpa > 0) {
+    const hardeningStressOk = pushFiniteNumberFinding(
+      findings,
+      envelope.maxHardeningStressKpa,
+      'result.envelope.dp.max-hardening-stress',
+      'DP envelope max hardening stress',
+      { nonNegative: true },
+    );
+    if (hardeningStressOk && isFiniteNumber(envelope.maxEquivalentPlasticStrain)) {
+      const expectedHardeningStressKpa = hardeningModulusKpa * envelope.maxEquivalentPlasticStrain;
+      pushApproximateMatchFinding(
+        findings,
+        envelope.maxHardeningStressKpa,
+        expectedHardeningStressKpa,
+        'result.envelope.dp.max-hardening-stress-mismatch',
+        'DP hardening stress envelope',
+        Math.max(1e-8, Math.abs(expectedHardeningStressKpa) * 1e-6),
+      );
+    }
+  }
   const adaptiveAttemptCountOk = pushFiniteNumberFinding(findings, envelope.adaptiveAttemptCount, 'result.envelope.dp.adaptive-attempt-count', 'DP envelope adaptive attempt count', { positive: true });
   const adaptiveAcceptedStepCountOk = pushFiniteNumberFinding(findings, envelope.adaptiveAcceptedStepCount, 'result.envelope.dp.adaptive-accepted-step-count', 'DP envelope adaptive accepted step count', { positive: true });
   const adaptiveRejectedAttemptCountOk = pushFiniteNumberFinding(findings, envelope.adaptiveRejectedAttemptCount, 'result.envelope.dp.adaptive-rejected-attempt-count', 'DP envelope adaptive rejected attempt count', { nonNegative: true });
