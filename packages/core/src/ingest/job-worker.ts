@@ -155,6 +155,7 @@ const FATAL_PROVIDER_STOP_PATTERNS = [
 
 const VISUAL_TAIL_RUN_MIN_PAGES = 3;
 const VISUAL_TAIL_RUN_SLOW_FAILURE_THRESHOLD = 2;
+const CHECKPOINT_RAW_TEXT_LIMIT = 1800;
 
 function nowIso(now?: () => Date): string {
   return (now ?? (() => new Date()))().toISOString();
@@ -731,6 +732,29 @@ function normalizeTextHint(value: string | null | undefined): string | undefined
 
   const normalized = value.replace(/\s+/g, ' ').trim();
   return normalized ? normalized.slice(0, 1600) : undefined;
+}
+
+function compactCheckpointRawText(value: string): string {
+  if (value.length <= CHECKPOINT_RAW_TEXT_LIMIT) {
+    return value;
+  }
+
+  return `${value.slice(0, CHECKPOINT_RAW_TEXT_LIMIT)}\n[geotechcli checkpoint raw text truncated; ${value.length - CHECKPOINT_RAW_TEXT_LIMIT} characters omitted]`;
+}
+
+function compactCheckpointResult<T>(result: T): T {
+  if (!isRecord(result)) {
+    return result;
+  }
+
+  const next: Record<string, unknown> = { ...result };
+  for (const key of ['rawLLMText', 'rawVisionText']) {
+    if (typeof next[key] === 'string') {
+      next[key] = compactCheckpointRawText(next[key]);
+    }
+  }
+
+  return next as T;
 }
 
 function mapPageSourceKind(classification: PdfPageClassification | null | undefined): 'pdf-page' | 'raster-image' {
@@ -1388,6 +1412,33 @@ function buildSyntheticBoreholeResult(job: PersistedIngestJobRecord, inspection:
   }, job.checkpoints.pages);
 }
 
+function buildCheckpointTextRecovery(
+  job: PersistedIngestJobRecord,
+  pageInputs: PreparedPdfPageInputBase[],
+): typeof recoverDocumentTextHint {
+  return async (input) => {
+    const pageNumber =
+      typeof input.pdfPageNumber === 'number'
+        ? input.pdfPageNumber
+        : pageInputs.find((page) => page.base64 === input.imageBase64 && page.mimeType === input.mimeType)?.pageNumber;
+    const checkpoint = pageNumber == null
+      ? undefined
+      : job.checkpoints.pages.find((page) => page.pageNumber === pageNumber);
+    const checkpointText = normalizeTextHint(checkpoint?.ocrTextHint);
+    const acceptedExistingText = input.existingTextAccepted !== false
+      ? normalizeTextHint(input.existingTextHint)
+      : undefined;
+
+    return {
+      textHint: checkpointText ?? acceptedExistingText,
+      source: checkpoint?.ocrSource ?? (acceptedExistingText ? 'native-text' : 'none'),
+      warnings: checkpoint?.ocrWarnings ?? [],
+      latencyMs: 0,
+      transformed: false,
+    };
+  };
+}
+
 function buildSyntheticGeotechDocumentResult(
   job: PersistedIngestJobRecord,
   inspection: PdfDocumentInspection | null,
@@ -1943,6 +1994,7 @@ async function finalizeJobResult(
         pages: job.checkpoints.pages
           .map((checkpoint) => pageInputMap.get(checkpoint.pageNumber))
           .filter((page): page is PreparedBoreholePageInput => Boolean(page)),
+        recoverTextHint: buildCheckpointTextRecovery(job, pageInputs),
         interpretPageWithContext: async (_base64, _mimeType, _config, context) => {
           const pageNumber = context?.pageNumber;
           if (!pageNumber) {
@@ -1951,7 +2003,7 @@ async function finalizeJobResult(
 
           const checkpoint = findCheckpoint(job, pageNumber);
           if (checkpoint.status === 'completed' && checkpoint.result) {
-            return checkpoint.result as BoreholeInterpretation;
+            return compactCheckpointResult(checkpoint.result as BoreholeInterpretation);
           }
 
           throw new Error(normalizeCheckpointErrorMessage(checkpoint.error ?? `Page ${pageNumber} failed during async ingest.`));
@@ -1993,6 +2045,7 @@ async function finalizeJobResult(
       pages: job.checkpoints.pages
         .map((checkpoint) => geotechPageInputMap.get(checkpoint.pageNumber))
         .filter((page): page is PreparedGeotechPageInput => Boolean(page)),
+      recoverTextHint: buildCheckpointTextRecovery(job, pageInputs),
       interpretPage: async (_base64, _mimeType, _config, context) => {
         const pageNumber = typeof context?.pageNumber === 'number' ? context.pageNumber : undefined;
         if (!pageNumber) {
@@ -2000,7 +2053,7 @@ async function finalizeJobResult(
         }
         const checkpoint = findCheckpoint(job, pageNumber);
         if (checkpoint.status === 'completed' && checkpoint.result) {
-          return checkpoint.result as GeotechDocumentInsight;
+          return compactCheckpointResult(checkpoint.result as GeotechDocumentInsight);
         }
         throw new Error(normalizeCheckpointErrorMessage(checkpoint.error ?? `Page ${pageNumber} failed during async ingest.`));
       },
@@ -2011,7 +2064,7 @@ async function finalizeJobResult(
         }
         const checkpoint = findCheckpoint(job, pageNumber);
         if (checkpoint.status === 'completed' && checkpoint.result) {
-          return checkpoint.result as GeotechDocumentInsight;
+          return compactCheckpointResult(checkpoint.result as GeotechDocumentInsight);
         }
         throw new Error(normalizeCheckpointErrorMessage(checkpoint.error ?? `Page ${pageNumber} failed during async ingest.`));
       },
@@ -2291,7 +2344,7 @@ export async function runPersistedIngestJobWorker(
                         ocrSource: processed.ocrSource,
                         ocrWarnings: processed.ocrWarnings,
                         evidenceCache: processed.evidenceCache,
-                        result: processed.result,
+                        result: compactCheckpointResult(processed.result),
                       }
                     : checkpoint
                 ),
@@ -2368,7 +2421,7 @@ export async function runPersistedIngestJobWorker(
         if (checkpoint.status === 'completed' && checkpoint.result) {
           state = advanceBoreholeProcessingState(
             state,
-            checkpoint.result as BoreholeInterpretation,
+            compactCheckpointResult(checkpoint.result as BoreholeInterpretation),
             checkpoint.ocrTextHint,
             currentJob.request.overrideBoreholeId,
           );
@@ -2470,7 +2523,7 @@ export async function runPersistedIngestJobWorker(
                       ocrTextHint: processed.ocrTextHint,
                       ocrSource: processed.ocrSource,
                       ocrWarnings: processed.ocrWarnings,
-                      result: processed.result,
+                      result: compactCheckpointResult(processed.result),
                     }
                   : pageCheckpoint
               ),

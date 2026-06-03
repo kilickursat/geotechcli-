@@ -917,6 +917,66 @@ describe('persisted ingest jobs', () => {
     expect(completed.result?.ingestResult.pageFailures).toEqual([]);
   });
 
+  it('finalizes borehole async jobs from checkpoints without rerunning OCR and compacts raw page diagnostics', async () => {
+    const filePath = join(configDir, 'checkpoint-replay-source.pdf');
+    await writeBlankPdf(filePath, 2);
+
+    const job = createPersistedIngestJob({
+      documentType: 'borehole-log',
+      filePath,
+      inspection: makeInspection(2, () => 'image-only'),
+      config: makeConfig(),
+    });
+
+    const recoverDocumentTextHint = vi.fn(async ({ pdfPageNumber }) => ({
+      textHint: `Recovered OCR text for page ${pdfPageNumber ?? 0}.`,
+      source: 'vision-ocr' as const,
+      warnings: [`OCR recovered page ${pdfPageNumber ?? 0}.`],
+      latencyMs: 5,
+      transformed: false,
+    }));
+    const longRawText = 'A'.repeat(6000);
+    const interpretBoreholeLogWithContext = vi.fn(async (_base64, _mimeType, _config, context) => ({
+      ...makeBoreholeInterpretation(context.pageNumber ?? 1, context.totalPages ?? 2),
+      rawLLMText: longRawText,
+    }));
+
+    const completed = await runPersistedIngestJobWorker(job.jobId, {
+      buildLLMConfig: makeConfig,
+      readDocumentPdfPageInputs: async () => [1, 2].map((pageNumber) => ({
+        base64: `checkpoint-replay-page-${pageNumber}`,
+        mimeType: 'image/png',
+        fileBytes: 120,
+        filePath,
+        ext: 'png',
+        kind: 'image',
+        pageNumber,
+        totalPages: 2,
+        sourceKind: 'raster-image',
+        normalizedArtifact: {
+          kind: 'image',
+          source: 'full-page-raster',
+          mimeType: 'image/png',
+          fileBytes: 120,
+          textSource: 'none',
+          textQuality: null,
+          warnings: [],
+        },
+      })),
+      recoverDocumentTextHint,
+      interpretBoreholeLogWithContext,
+    });
+
+    expect(completed.status).toBe('completed');
+    expect(recoverDocumentTextHint).toHaveBeenCalledTimes(2);
+    expect(interpretBoreholeLogWithContext).toHaveBeenCalledTimes(2);
+
+    const checkpointResult = completed.checkpoints.pages[0]?.result as BoreholeInterpretation | undefined;
+    expect(checkpointResult?.rawLLMText).toContain('checkpoint raw text truncated');
+    expect(checkpointResult?.rawLLMText.length).toBeLessThan(2000);
+    expect(completed.result?.ingestResult.boreholes[0]?.rawLLMText).toContain('checkpoint raw text truncated');
+  });
+
   it('downgrades repeated malformed provider JSON on visual borehole pages after retry', async () => {
     const filePath = join(configDir, 'downgrade-repeated-malformed-provider-json-source.pdf');
     await writeBlankPdf(filePath, 2);

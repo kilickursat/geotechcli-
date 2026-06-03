@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.112] - 2026-06-04
+
+### Large PDF Ingest Checkpoint Replay
+
+- Hardened async PDF ingest finalization so completed page checkpoints replay from persisted OCR/text hints instead of making fresh OCR/model calls during the final document merge.
+- Compacted per-page raw model diagnostic text stored in ingest job checkpoints, reducing very large `job.json` churn on 100+ page borehole PDFs while preserving structured extraction fields, warnings, evidence sources, and review findings.
+- Added regression coverage for checkpoint-only borehole finalization and raw diagnostic compaction so large ingest jobs complete to reviewable results instead of surfacing raw transient JSON parse errors.
+
 ## [0.4.111] - 2026-06-04
 
 ### FEM Adaptive DP Route and Guardrails

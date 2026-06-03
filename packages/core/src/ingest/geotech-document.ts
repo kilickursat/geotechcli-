@@ -216,6 +216,7 @@ export interface IngestGeotechDocumentOptions {
   pages?: GeotechDocumentPageInput[];
   interpretPage?: typeof interpretGeotechDocumentPage;
   extractTextFacts?: typeof extractGeotechDocumentFactsFromText;
+  recoverTextHint?: typeof recoverDocumentTextHint;
   transcribePageImageText?: typeof transcribeDocumentImageText;
   synthesizeDocument?: (input: {
     config: LLMConfig;
@@ -2119,6 +2120,7 @@ export async function ingestGeotechDocument(
 ): Promise<GeotechDocumentIngestResult> {
   const interpretPage = options.interpretPage ?? interpretGeotechDocumentPage;
   const extractTextFacts = options.extractTextFacts ?? extractGeotechDocumentFactsFromText;
+  const recoverTextHint = options.recoverTextHint ?? recoverDocumentTextHint;
   const transcribePageImageText = options.transcribePageImageText ?? transcribeDocumentImageText;
   const now = options.now ?? (() => new Date());
 
@@ -2280,7 +2282,7 @@ export async function ingestGeotechDocument(
 
         if (!cachedTextHint) {
           const recovery = await withPageTimeout(
-            recoverDocumentTextHint({
+            recoverTextHint({
               existingTextHint: pageTextHint,
               existingTextAccepted: inspectionPage?.normalizedArtifact?.textQuality.accepted ?? true,
               imageBase64: page.base64,

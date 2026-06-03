@@ -100,6 +100,7 @@ export interface IngestBoreholeLogDocumentOptions {
   pages?: BoreholeVisionPageInput[];
   interpretSingleImage?: typeof interpretBoreholeLog;
   interpretPageWithContext?: typeof interpretBoreholeLogWithContext;
+  recoverTextHint?: typeof recoverDocumentTextHint;
   transcribePageImageText?: typeof transcribeDocumentImageText;
   now?: () => Date;
 }
@@ -663,6 +664,7 @@ export async function ingestBoreholeLogDocument(
 ): Promise<BoreholeDocumentIngestResult> {
   const interpretSingleImage = options.interpretSingleImage ?? interpretBoreholeLog;
   const interpretPageWithContext = options.interpretPageWithContext ?? interpretBoreholeLogWithContext;
+  const recoverTextHint = options.recoverTextHint ?? recoverDocumentTextHint;
   const transcribePageImageText = options.transcribePageImageText ?? transcribeDocumentImageText;
   const now = options.now ?? (() => new Date());
 
@@ -712,7 +714,7 @@ export async function ingestBoreholeLogDocument(
           ...options.config,
           timeout: Math.min(Math.max(options.config.timeout ?? 120000, 60000), 180000),
         };
-        const recovery = await recoverDocumentTextHint({
+        const recovery = await recoverTextHint({
           existingTextHint: pageTextHint,
           existingTextAccepted: inspectionPage?.normalizedArtifact?.textQuality.accepted ?? true,
           imageBase64: page.base64,

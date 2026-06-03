@@ -8,6 +8,16 @@ const releases = [
     date: '2026-06-04',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'fix', text: 'Hardened async PDF ingest finalization so completed page checkpoints replay from persisted OCR/text hints instead of making fresh OCR/model calls during final merge' },
+      { type: 'fix', text: 'Compacted per-page raw model diagnostic text stored in ingest job checkpoints to reduce large job.json churn on 100+ page borehole PDFs' },
+      { type: 'fix', text: 'Added checkpoint-only borehole finalization regression coverage so large ingest jobs complete to reviewable results instead of surfacing transient JSON parse errors' },
+    ],
+  },
+  {
+    version: '0.4.111',
+    date: '2026-06-04',
+    tag: '0.4.111 Release',
+    changes: [
       { type: 'feat', text: 'Added reviewed experimental geotech fem run --backend plane-strain-dp-adaptive for explicit 2D Drucker-Prager excavation cases with adaptive cutback rollback audit' },
       { type: 'feat', text: 'Hardened result validation for adaptive DP metadata, solver residuals, full-load acceptance, rollback signatures, and productionReady overclaims' },
       { type: 'fix', text: 'Extended FEM readiness and default hosted GLM guardrails so nonlinear evidence is visible while full production FEM remains blocked' },
