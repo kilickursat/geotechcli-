@@ -3,10 +3,11 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { normalizeBoreholeLocation, type BoreholeLocation } from '../ingest/geotech-schemas.js';
 
@@ -16,6 +17,9 @@ import { normalizeBoreholeLocation, type BoreholeLocation } from '../ingest/geot
 // Each project = one directory with structured JSON files.
 // No native dependencies (no SQLite binary to compile across platforms).
 // ---------------------------------------------------------------------------
+
+const ATOMIC_WRITE_RETRY_DELAYS_MS = [10, 25, 50, 100, 200, 400];
+const TRANSIENT_JSON_READ_RETRY_DELAYS_MS = [10, 25, 50, 100, 200, 400];
 
 export interface ProjectMeta {
   id: string;
@@ -137,6 +141,63 @@ function asNumber(value: unknown): number | undefined {
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function isRetryableFileAccessError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | null)?.code;
+  return code === 'EPERM' || code === 'EBUSY' || code === 'EACCES';
+}
+
+function atomicWriteJson(filePath: string, value: unknown): void {
+  const dir = dirname(filePath);
+  if (dir && !existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+
+  const tempPath = `${filePath}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
+  const serialized = JSON.stringify(value, null, 2);
+  writeFileSync(tempPath, serialized, 'utf-8');
+
+  for (let attempt = 0; attempt <= ATOMIC_WRITE_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      renameSync(tempPath, filePath);
+      return;
+    } catch (error) {
+      if (!isRetryableFileAccessError(error) || attempt === ATOMIC_WRITE_RETRY_DELAYS_MS.length) {
+        rmSync(tempPath, { force: true });
+        throw error;
+      }
+      sleepSync(ATOMIC_WRITE_RETRY_DELAYS_MS[attempt] ?? 0);
+    }
+  }
+}
+
+function readProjectJsonWithTransientRetry(projectId: string, filePath: string): unknown {
+  for (let attempt = 0; attempt <= TRANSIENT_JSON_READ_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      return JSON.parse(readFileSync(filePath, 'utf-8')) as unknown;
+    } catch (error) {
+      const retryable = error instanceof SyntaxError || isRetryableFileAccessError(error);
+      if (!retryable || attempt === TRANSIENT_JSON_READ_RETRY_DELAYS_MS.length) {
+        if (error instanceof SyntaxError) {
+          throw new Error(
+            `Project "${projectId}" could not be read because project.json is not valid JSON after retrying transient reads. `
+            + `This can happen if an older geotechCLI version exposed a partial project write. `
+            + `Retry the command after any running ingest, agent, or skill workflow finishes. `
+            + `Parse error: ${error.message}`,
+          );
+        }
+        throw error;
+      }
+      sleepSync(TRANSIENT_JSON_READ_RETRY_DELAYS_MS[attempt] ?? 0);
+    }
+  }
+
+  throw new Error(`Project "${projectId}" could not be read after retrying transient reads.`);
 }
 
 function createId(prefix: string): string {
@@ -451,7 +512,7 @@ export function loadProject(projectId: string): ProjectData {
     );
   }
 
-  const raw = JSON.parse(readFileSync(filePath, 'utf-8')) as unknown;
+  const raw = readProjectJsonWithTransientRetry(projectId, filePath);
   return normalizeProjectData(raw);
 }
 
@@ -464,11 +525,7 @@ export function saveProject(project: ProjectData): void {
   normalized.activeAnalysisContext.lastUpdatedAt =
     normalized.activeAnalysisContext.lastUpdatedAt ?? normalized.meta.updatedAt;
 
-  writeFileSync(
-    getProjectFilePath(normalized.meta.id),
-    JSON.stringify(normalized, null, 2),
-    'utf-8',
-  );
+  atomicWriteJson(getProjectFilePath(normalized.meta.id), normalized);
 }
 
 export function listProjects(): ProjectMeta[] {

@@ -8,6 +8,16 @@ const releases = [
     date: '2026-06-03',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'fix', text: 'Fixed resumable ingest job checkpoint persistence so large job.json writes stay atomic while the CLI polls live progress' },
+      { type: 'fix', text: 'Added transient persisted-job JSON read retries and job-aware resume guidance instead of surfacing bare parser errors on partial checkpoint reads' },
+      { type: 'fix', text: 'Hardened project storage with the same atomic-write and transient-read policy for project-backed ingest reviews, artifacts, notes, and active context' },
+    ],
+  },
+  {
+    version: '0.4.93',
+    date: '2026-06-03',
+    tag: '0.4.93 Release',
+    changes: [
       { type: 'feat', text: 'Added deterministic FEM engineering evidence kernels for Mohr-Coulomb material-point plasticity, 1D Terzaghi consolidation, 1D Darcy seepage, effective-stress coupling, support screening, tolerance policy, and reviewer approval validation' },
       { type: 'feat', text: 'Added persisted FEM approval-record support so reviewed preview runs can carry reviewer identity, license, jurisdiction, assumptions, limitations, validation summary, and case hash' },
       { type: 'fix', text: 'Kept FEM production readiness blocked until the verified kernels are coupled to solver routes and independently benchmarked against published or commercial references' },

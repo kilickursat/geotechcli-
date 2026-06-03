@@ -1,4 +1,5 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
 import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { PDFDocument } from 'pdf-lib';
@@ -191,6 +192,36 @@ async function writeBlankPdf(filePath: string, pageCount: number): Promise<void>
   writeFileSync(filePath, Buffer.from(await pdf.save()));
 }
 
+function persistedJobJsonPath(configDir: string, jobId: string): string {
+  const jobDir = jobId
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 48);
+  return join(configDir, 'ingest-jobs', jobDir, 'job.json');
+}
+
+function rewriteFileFromChild(filePath: string, contents: string, delayMs: number): ReturnType<typeof spawn> {
+  const script = [
+    "const { writeFileSync } = require('node:fs');",
+    "const [filePath, contents, delayMs] = process.argv.slice(1);",
+    "setTimeout(() => writeFileSync(filePath, contents, 'utf-8'), Number(delayMs));",
+  ].join(' ');
+  return spawn(process.execPath, ['-e', script, filePath, contents, String(delayMs)], {
+    stdio: 'ignore',
+    windowsHide: true,
+  });
+}
+
+async function waitForChildExit(child: ReturnType<typeof spawn>): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return;
+  }
+  await new Promise<void>((resolve) => {
+    child.once('exit', () => resolve());
+  });
+}
+
 describe('persisted ingest jobs', () => {
   let configDir = '';
   let previousConfigDir: string | undefined;
@@ -230,6 +261,53 @@ describe('persisted ingest jobs', () => {
     expect(shouldUseAsyncIngestJob(weightedInspection)).toBe(true);
     expect(shouldUseAsyncIngestJob(smallInspection)).toBe(false);
     expect(shouldUseAsyncIngestJob(null, 6)).toBe(true);
+  });
+
+  it('retries transient partial job JSON reads during live polling', async () => {
+    const filePath = join(configDir, 'transient-partial-job-json-source.pdf');
+    await writeBlankPdf(filePath, 1);
+
+    const job = createPersistedIngestJob({
+      documentType: 'borehole-log',
+      filePath,
+      inspection: makeInspection(1),
+      config: makeConfig(),
+    });
+
+    const jobJsonPath = persistedJobJsonPath(configDir, job.jobId);
+    const validJson = readFileSync(jobJsonPath, 'utf-8');
+    writeFileSync(jobJsonPath, validJson.slice(0, Math.floor(validJson.length / 2)), 'utf-8');
+
+    const repair = rewriteFileFromChild(jobJsonPath, validJson, 50);
+    try {
+      const loaded = loadPersistedIngestJob(job.jobId);
+      expect(loaded?.jobId).toBe(job.jobId);
+      expect(loaded?.status).toBe('queued');
+    } finally {
+      await waitForChildExit(repair);
+    }
+  });
+
+  it('reports permanent corrupt job JSON with resumable ingest context', async () => {
+    const filePath = join(configDir, 'corrupt-job-json-source.pdf');
+    await writeBlankPdf(filePath, 1);
+
+    const job = createPersistedIngestJob({
+      documentType: 'borehole-log',
+      filePath,
+      inspection: makeInspection(1),
+      config: makeConfig(),
+    });
+
+    writeFileSync(
+      persistedJobJsonPath(configDir, job.jobId),
+      '{"kind":"geotech-ingest-job-record","schemaVersion":1,"jobId":"',
+      'utf-8',
+    );
+
+    expect(() => loadPersistedIngestJob(job.jobId)).toThrow(
+      /job\.json is not valid JSON after retrying transient reads.*geotech ingest resume/i,
+    );
   });
 
   it('builds hosted-beta segments from effective page cost and detects long geotech PDFs', () => {

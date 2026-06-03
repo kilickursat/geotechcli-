@@ -120,6 +120,8 @@ export interface CreatePersistedIngestJobOptions {
 const JOB_SCHEMA_VERSION = 1;
 const PAGE_PREPROCESSING_CONCURRENCY = 2;
 const STALE_HEARTBEAT_FLOOR_MS = 10 * 60 * 1000;
+const ATOMIC_WRITE_RETRY_DELAYS_MS = [10, 25, 50, 100, 200, 400];
+const TRANSIENT_JSON_READ_RETRY_DELAYS_MS = [10, 25, 50, 100, 200, 400];
 
 function nowIso(now?: () => Date): string {
   return (now ?? (() => new Date()))().toISOString();
@@ -165,30 +167,61 @@ function getJobRecordPath(jobId: string): string {
   return join(getJobDir(jobId), 'job.json');
 }
 
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function isRetryableFileAccessError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | null)?.code;
+  return code === 'EPERM' || code === 'EBUSY' || code === 'EACCES';
+}
+
 function atomicWriteJson(filePath: string, value: unknown): void {
   const dir = dirname(filePath);
   if (dir && !existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
 
-  const tempPath = `${filePath}.tmp`;
+  const tempPath = `${filePath}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
   const serialized = JSON.stringify(value, null, 2);
   writeFileSync(tempPath, serialized, 'utf-8');
 
-  try {
-    renameSync(tempPath, filePath);
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException | null)?.code;
-    if (code !== 'EPERM' && code !== 'EBUSY' && code !== 'EACCES') {
-      throw error;
+  for (let attempt = 0; attempt <= ATOMIC_WRITE_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      renameSync(tempPath, filePath);
+      return;
+    } catch (error) {
+      if (!isRetryableFileAccessError(error) || attempt === ATOMIC_WRITE_RETRY_DELAYS_MS.length) {
+        rmSync(tempPath, { force: true });
+        throw error;
+      }
+      sleepSync(ATOMIC_WRITE_RETRY_DELAYS_MS[attempt] ?? 0);
     }
-
-    // Windows can reject the atomic rename when another process is briefly
-    // reading the current job file; fall back to an in-place overwrite so the
-    // async ingest worker can keep checkpointing progress.
-    writeFileSync(filePath, serialized, 'utf-8');
-    rmSync(tempPath, { force: true });
   }
+}
+
+function readJobJsonWithTransientRetry(jobId: string, filePath: string): unknown {
+  for (let attempt = 0; attempt <= TRANSIENT_JSON_READ_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      return JSON.parse(readFileSync(filePath, 'utf-8')) as unknown;
+    } catch (error) {
+      const retryable = error instanceof SyntaxError || isRetryableFileAccessError(error);
+      if (!retryable || attempt === TRANSIENT_JSON_READ_RETRY_DELAYS_MS.length) {
+        if (error instanceof SyntaxError) {
+          throw new Error(
+            `Persisted ingest job "${jobId}" could not be read because its job.json is not valid JSON after retrying transient reads. `
+            + `This can happen if an older geotechCLI version exposed a partial checkpoint write. `
+            + `If the worker is still running, retry the command; otherwise run "geotech ingest resume ${jobId}". `
+            + `Parse error: ${error.message}`,
+          );
+        }
+        throw error;
+      }
+      sleepSync(TRANSIENT_JSON_READ_RETRY_DELAYS_MS[attempt] ?? 0);
+    }
+  }
+
+  throw new Error(`Persisted ingest job "${jobId}" could not be read after retrying transient reads.`);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -954,7 +987,7 @@ export function loadPersistedIngestJob(jobId: string): PersistedIngestJobRecord 
     return null;
   }
 
-  const raw = JSON.parse(readFileSync(filePath, 'utf-8')) as unknown;
+  const raw = readJobJsonWithTransientRetry(jobId, filePath);
   return normalizePersistedIngestJobRecord(raw);
 }
 

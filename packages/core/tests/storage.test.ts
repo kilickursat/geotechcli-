@@ -123,4 +123,17 @@ describe('Project storage', () => {
     expect(loaded.derivedParameters).toEqual({});
     expect(loaded.activeAnalysisContext.context).toEqual({});
   });
+
+  it('reports corrupt project JSON with project context', () => {
+    const project = createProject('Partial Write Project');
+    writeFileSync(
+      join(configDir, 'projects', project.meta.id, 'project.json'),
+      '{"meta":{"id":"',
+      'utf-8',
+    );
+
+    expect(() => loadProject(project.meta.id)).toThrow(
+      /project\.json is not valid JSON after retrying transient reads/i,
+    );
+  });
 });

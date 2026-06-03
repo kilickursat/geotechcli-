@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.94] - 2026-06-03
+
+### Ingest Job Persistence Hardening
+
+- Fixed resumable ingest jobs so large `job.json` checkpoint writes stay atomic under live CLI polling instead of falling back to in-place overwrites on Windows file-lock races.
+- Added transient JSON-read retries for persisted ingest jobs so a briefly partial checkpoint read is retried before any error is surfaced.
+- Added job-aware recovery messaging for corrupt persisted ingest state, including the `geotech ingest resume <jobId>` path instead of a bare JSON parser error.
+- Hardened project storage writes and reads with the same atomic-write and transient-read policy for project-backed ingest reviews, case files, artifacts, notes, and active context.
+- Added regression coverage for transient half-written job JSON, permanent corrupt job JSON, and corrupt project JSON.
+
 ## [0.4.93] - 2026-06-03
 
 ### FEM Engineering Evidence Kernels
