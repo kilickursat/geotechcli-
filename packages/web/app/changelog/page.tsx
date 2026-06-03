@@ -5,8 +5,18 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 const releases = [
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-06-03',
+    date: '2026-06-04',
     tag: `${GEOTECHCLI_VERSION} Release`,
+    changes: [
+      { type: 'feat', text: 'Added committed Gauss-point Drucker-Prager state history with strain increments and accumulated plastic-strain evidence' },
+      { type: 'feat', text: 'Added non-monotonic loadHistoryFactors coverage for unload/reload FEM evidence without resetting plastic state to virgin material' },
+      { type: 'fix', text: 'Updated FEM readiness summaries so path-dependent plasticity evidence is visible while full production FEM remains blocked' },
+    ],
+  },
+  {
+    version: '0.4.108',
+    date: '2026-06-03',
+    tag: '0.4.108 Release',
     changes: [
       { type: 'feat', text: 'Added audited CSR sparse linear-algebra utilities and an opt-in sparse Conjugate Gradient backend for benchmark-scale Drucker-Prager plane-strain load steps' },
       { type: 'feat', text: 'Added structured external benchmark acceptance metadata with published/commercial source requirements, quantity tolerances, and readiness blockers' },

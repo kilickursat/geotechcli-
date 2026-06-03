@@ -408,6 +408,37 @@ describe('FEM engineering evidence kernels', () => {
     expect(contract.acceptanceStatement).toContain('does not approve production FEM design use');
   });
 
+  it('records Gauss-point plasticity and path-state evidence without clearing production blockers', () => {
+    const report = runFemEngineeringEvidenceSuite();
+    const benchmarks = new Map(report.benchmarks.map((item) => [item.id, item]));
+
+    expect(benchmarks.get('quad4-plane-strain-dp-affine-plastic-patch')).toMatchObject({
+      feature: 'coupled-nonlinear-plane-strain',
+      referenceType: 'internal-balance',
+      quantity: 'maxYieldResidualRatio',
+      expected: 0,
+      tolerance: report.convergencePolicy.residualTolerance,
+      status: 'accepted',
+      evidence: expect.stringContaining('all Quad4 Gauss points'),
+    });
+    expect(benchmarks.get('quad4-plane-strain-dp-stage-state-carryover')).toMatchObject({
+      feature: 'coupled-nonlinear-plane-strain',
+      referenceType: 'internal-balance',
+      quantity: 'plasticStrainMonotonic',
+      actual: 1,
+      expected: 1,
+      tolerance: 0,
+      status: 'accepted',
+      evidence: expect.stringContaining('monotonic plastic-strain evidence'),
+    });
+    expect(report.productionReady).toBe(false);
+    expect(report.remainingProductionBlockers).toEqual(expect.arrayContaining([
+      'production-sparse-fem-solver-and-2d-3d-result-route-not-integrated-with-these-kernels',
+      'nonlinear-plane-strain-plasticity-is-benchmark-scale-without-consistent-tangent-hardening-calibration-or-cross-solver-validation',
+      'published-commercial-cross-solver-benchmark-corpus-not-approved',
+    ]));
+  });
+
   it('runs the full evidence suite without changing the public production gate', () => {
     const report = runFemEngineeringEvidenceSuite();
 

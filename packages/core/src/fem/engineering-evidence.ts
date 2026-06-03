@@ -1739,6 +1739,33 @@ export function runFemEngineeringEvidenceSuite(
   const plasticStrainMonotonic = dpLoaded.loadSteps.every((step, index, steps) =>
     index === 0 || step.maxEquivalentPlasticStrain >= steps[index - 1].maxEquivalentPlasticStrain,
   );
+  const dpUnloadReload = runPlaneStrainDruckerPragerLoadSteps({
+    schemaVersion: 'fem-plane-strain-model.v1',
+    nodes: dpElasticMesh.nodes,
+    elements: dpElasticMesh.elements,
+    materials: [{
+      id: 'soil',
+      elasticModulusKpa: 25_000,
+      poissonRatio: 0.28,
+      frictionAngleDeg: 32,
+      cohesionKpa: 5,
+      dilationAngleDeg: 0,
+    }],
+    boundaryConditions: dpElasticBottomNodes.flatMap((node) => [
+      { nodeId: node.id, dof: 'ux' as const },
+      { nodeId: node.id, dof: 'uy' as const },
+    ]),
+    nodalLoads: dpElasticTopNodes.map((node) => ({ nodeId: node.id, fyKn: -30 })),
+    policy,
+  }, {
+    loadHistoryFactors: [0.5, 1, 0.1, 1],
+  });
+  const plasticStrainCarryover = dpUnloadReload.converged &&
+    dpUnloadReload.loadSteps[1].maxEquivalentPlasticStrain > 0 &&
+    dpUnloadReload.loadSteps[2].maxEquivalentPlasticStrain >= dpUnloadReload.loadSteps[1].maxEquivalentPlasticStrain &&
+    dpUnloadReload.elements
+      .flatMap((element) => element.gaussPoints)
+      .some((point) => point.previousEquivalentPlasticStrain > 0);
   benchmarks.push(benchmark(
     'quad4-plane-strain-dp-global-newton-residual',
     'solver-convergence-and-tolerance',
@@ -1754,10 +1781,10 @@ export function runFemEngineeringEvidenceSuite(
     'coupled-nonlinear-plane-strain',
     'internal-balance',
     'plasticStrainMonotonic',
-    dpLoaded.plasticGaussPointCount > 0 && plasticStrainMonotonic ? 1 : 0,
+    dpLoaded.plasticGaussPointCount > 0 && plasticStrainMonotonic && plasticStrainCarryover ? 1 : 0,
     1,
     0,
-    'Staged nonlinear plane-strain load steps must retain monotonic plastic-strain evidence across increasing load factors.',
+    'Staged nonlinear plane-strain load steps must retain monotonic plastic-strain evidence and committed plastic-state carryover through unload/reload histories.',
   ));
 
   const dpCollapse = runPlaneStrainDruckerPragerLoadSteps({

@@ -91,6 +91,11 @@ export interface FemPlaneStrainAssemblyResult {
 export interface FemPlaneStrainDruckerPragerGaussPointResult extends FemPlaneStrainGaussPointResult {
   outOfPlaneStressKpa: number;
   compressionPositivePrincipalStressKpa: [number, number, number];
+  strainIncrement: [number, number, number];
+  previousEquivalentPlasticStrain: number;
+  equivalentPlasticStrainIncrement: number;
+  plasticStrainPrincipal: [number, number, number];
+  volumetricPlasticStrain: number;
   yieldValueKpa: number;
   yieldResidualRatio: number;
   plasticMultiplier: number;
@@ -126,6 +131,7 @@ export interface FemPlaneStrainLinearSolverAudit {
 
 export interface FemPlaneStrainDruckerPragerSolverOptions {
   loadStepFractions?: readonly number[];
+  loadHistoryFactors?: readonly number[];
   linearSolver?: FemPlaneStrainLinearSolverKind;
   linearSolverTolerance?: number;
   linearSolverMaxIterations?: number;
@@ -160,6 +166,7 @@ export interface FemPlaneStrainDruckerPragerStepResult {
   reactionBalanceRatio: number;
   maxYieldResidualRatio: number;
   maxEquivalentPlasticStrain: number;
+  maxEquivalentPlasticStrainIncrement: number;
   plasticGaussPointCount: number;
   linearSolver: FemPlaneStrainLinearSolverKind;
   linearIterations: number;
@@ -188,13 +195,15 @@ export interface FemPlaneStrainDruckerPragerResult {
   linearSolver: FemPlaneStrainLinearSolverKind;
   nonlinearAlgorithm: 'modified-newton';
   globalTangent: 'elastic';
-  materialIntegration: 'total-strain-drucker-prager-projection';
+  materialIntegration: 'incremental-committed-drucker-prager-return-mapping';
+  stateStorage: 'committed-gauss-point-history';
   loadSteps: FemPlaneStrainDruckerPragerStepResult[];
   maxFreeResidualKn: number;
   residualNormRatio: number;
   reactionBalanceRatio: number;
   maxYieldResidualRatio: number;
   maxEquivalentPlasticStrain: number;
+  maxEquivalentPlasticStrainIncrement: number;
   plasticGaussPointCount: number;
   converged: boolean;
   status: 'converged' | 'nonconverged';
@@ -202,6 +211,17 @@ export interface FemPlaneStrainDruckerPragerResult {
   policy: FemConvergencePolicy;
   limitations: string[];
 }
+
+interface PlaneStrainDruckerPragerGaussPointState {
+  strain: [number, number, number];
+  stressKpa: [number, number, number];
+  sigmaZKpa: number;
+  equivalentPlasticStrain: number;
+  plasticStrainPrincipal: [number, number, number];
+  volumetricPlasticStrain: number;
+}
+
+type PlaneStrainDruckerPragerStateGrid = PlaneStrainDruckerPragerGaussPointState[][];
 
 export interface FemPlaneStrainHydraulicHeadBoundaryCondition {
   nodeId: string;
@@ -616,60 +636,154 @@ function deviatoricNorm(values: [number, number, number]): number {
   return Math.hypot(values[0] - mean, values[1] - mean, values[2] - mean);
 }
 
-function projectDruckerPragerStress(input: {
+function principalTrace(values: [number, number, number]): number {
+  return values[0] + values[1] + values[2];
+}
+
+function principalDeviator(values: [number, number, number]): [number, number, number] {
+  const mean = principalTrace(values) / 3;
+  return [values[0] - mean, values[1] - mean, values[2] - mean];
+}
+
+function addPrincipal(
+  a: [number, number, number],
+  b: [number, number, number],
+): [number, number, number] {
+  return [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+}
+
+function scalePrincipal(values: [number, number, number], scale: number): [number, number, number] {
+  return [values[0] * scale, values[1] * scale, values[2] * scale];
+}
+
+function initialDruckerPragerState(): PlaneStrainDruckerPragerGaussPointState {
+  return {
+    strain: [0, 0, 0],
+    stressKpa: [0, 0, 0],
+    sigmaZKpa: 0,
+    equivalentPlasticStrain: 0,
+    plasticStrainPrincipal: [0, 0, 0],
+    volumetricPlasticStrain: 0,
+  };
+}
+
+function integrateDruckerPragerStress(input: {
   material: FemPlaneStrainMaterial;
   policy: FemConvergencePolicy;
   strain: [number, number, number];
-  stress: [number, number, number];
-  sigmaZKpa: number;
-}): Omit<FemPlaneStrainDruckerPragerGaussPointResult, 'elementId' | 'gaussPoint' | 'xi' | 'eta' | 'detJ'> {
+  previous: PlaneStrainDruckerPragerGaussPointState;
+}): {
+  result: Omit<FemPlaneStrainDruckerPragerGaussPointResult, 'elementId' | 'gaussPoint' | 'xi' | 'eta' | 'detJ'>;
+  nextState: PlaneStrainDruckerPragerGaussPointState;
+} {
   const { material, strain } = input;
   const params = druckerPragerParameters(material);
-  const principal = principalCompressionFromPlaneStress(input.stress, input.sigmaZKpa);
+  const d = planeStrainD(material);
+  const strainIncrement = strain.map((value, index) => value - input.previous.strain[index]) as [number, number, number];
+  const stressIncrement = d.map((row) =>
+    row.reduce((sum, value, col) => sum + value * strainIncrement[col], 0)) as [number, number, number];
+  const trialStress: [number, number, number] = [
+    input.previous.stressKpa[0] + stressIncrement[0],
+    input.previous.stressKpa[1] + stressIncrement[1],
+    input.previous.stressKpa[2] + stressIncrement[2],
+  ];
+  const trialSigmaZKpa = input.previous.sigmaZKpa + planeStrainSigmaZ(material, strainIncrement);
+  const principal = principalCompressionFromPlaneStress(trialStress, trialSigmaZKpa);
   const principalStress = principal.values;
-  const trace = principalStress[0] + principalStress[1] + principalStress[2];
+  const trace = principalTrace(principalStress);
   const mean = trace / 3;
   const q = deviatoricNorm(principalStress);
-  const intercept = params.compressionInterceptKpa;
+  const hardeningModulusKpa = material.hardeningModulusKpa ?? 0;
+  const intercept = params.compressionInterceptKpa +
+    hardeningModulusKpa * input.previous.equivalentPlasticStrain;
   const yieldValue = q - params.rho * trace - intercept;
   const yieldScale = Math.max(q, Math.abs(params.rho * trace), Math.abs(intercept), 1);
   if (yieldValue <= 0 || Math.abs(yieldValue) / yieldScale <= input.policy.residualTolerance) {
-    return {
+    const nextState: PlaneStrainDruckerPragerGaussPointState = {
       strain,
-      stressKpa: input.stress,
-      outOfPlaneStressKpa: input.sigmaZKpa,
-      compressionPositivePrincipalStressKpa: principalStress,
-      yieldValueKpa: yieldValue,
-      yieldResidualRatio: Math.max(0, yieldValue) / yieldScale,
-      plasticMultiplier: 0,
-      equivalentPlasticStrain: 0,
-      state: 'elastic',
+      stressKpa: trialStress,
+      sigmaZKpa: trialSigmaZKpa,
+      equivalentPlasticStrain: input.previous.equivalentPlasticStrain,
+      plasticStrainPrincipal: input.previous.plasticStrainPrincipal,
+      volumetricPlasticStrain: input.previous.volumetricPlasticStrain,
+    };
+    return {
+      nextState,
+      result: {
+        strain,
+        stressKpa: trialStress,
+        outOfPlaneStressKpa: trialSigmaZKpa,
+        compressionPositivePrincipalStressKpa: principalStress,
+        strainIncrement,
+        previousEquivalentPlasticStrain: input.previous.equivalentPlasticStrain,
+        equivalentPlasticStrainIncrement: 0,
+        plasticStrainPrincipal: nextState.plasticStrainPrincipal,
+        volumetricPlasticStrain: nextState.volumetricPlasticStrain,
+        yieldValueKpa: yieldValue,
+        yieldResidualRatio: Math.max(0, yieldValue) / yieldScale,
+        plasticMultiplier: 0,
+        equivalentPlasticStrain: nextState.equivalentPlasticStrain,
+        state: 'elastic',
+      },
     };
   }
 
-  const targetQ = Math.max(0, params.rho * trace + intercept);
-  const scale = q > 0 ? targetQ / q : 0;
-  const correctedPrincipal = principalStress.map((value) => mean + (value - mean) * scale) as [number, number, number];
-  const corrected = planeStressFromPrincipalCompression(correctedPrincipal, principal.angleRad);
-  const correctedQ = deviatoricNorm(correctedPrincipal);
-  const correctedYieldValue = correctedQ - params.rho * trace - intercept;
-  const correctedScale = Math.max(correctedQ, Math.abs(params.rho * trace), Math.abs(intercept), 1);
   const moduli = elasticModuli(material);
   const denominator = 2 * moduli.shearModulusKpa +
     9 * moduli.bulkModulusKpa * params.rho * params.rhoBar +
-    (material.hardeningModulusKpa ?? 0);
+    hardeningModulusKpa;
   const plasticMultiplier = Math.max(0, yieldValue / Math.max(denominator, 1e-12));
-
-  return {
+  const updatedEquivalentPlasticStrain = input.previous.equivalentPlasticStrain + plasticMultiplier;
+  const updatedIntercept = params.compressionInterceptKpa +
+    hardeningModulusKpa * updatedEquivalentPlasticStrain;
+  const trialDeviator = principalDeviator(principalStress);
+  const flowDirection = q > 0 ? scalePrincipal(trialDeviator, 1 / q) : [0, 0, 0] as [number, number, number];
+  const plasticStrainIncrement = addPrincipal(
+    scalePrincipal(flowDirection, plasticMultiplier),
+    [-params.rhoBar * plasticMultiplier, -params.rhoBar * plasticMultiplier, -params.rhoBar * plasticMultiplier],
+  );
+  const correctedDeviator = addPrincipal(
+    trialDeviator,
+    scalePrincipal(flowDirection, -2 * moduli.shearModulusKpa * plasticMultiplier),
+  );
+  const correctedTrace = trace + 9 * moduli.bulkModulusKpa * params.rhoBar * plasticMultiplier;
+  const correctedPrincipal = addPrincipal(
+    correctedDeviator,
+    [correctedTrace / 3, correctedTrace / 3, correctedTrace / 3],
+  );
+  const corrected = planeStressFromPrincipalCompression(correctedPrincipal, principal.angleRad);
+  const correctedQ = deviatoricNorm(correctedPrincipal);
+  const correctedYieldValue = correctedQ - params.rho * correctedTrace - updatedIntercept;
+  const correctedScale = Math.max(correctedQ, Math.abs(params.rho * correctedTrace), Math.abs(updatedIntercept), 1);
+  const plasticStrainPrincipal = addPrincipal(input.previous.plasticStrainPrincipal, plasticStrainIncrement);
+  const volumetricPlasticStrain = input.previous.volumetricPlasticStrain + principalTrace(plasticStrainIncrement);
+  const nextState: PlaneStrainDruckerPragerGaussPointState = {
     strain,
     stressKpa: corrected.stress,
-    outOfPlaneStressKpa: corrected.sigmaZKpa,
-    compressionPositivePrincipalStressKpa: correctedPrincipal,
-    yieldValueKpa: correctedYieldValue,
-    yieldResidualRatio: Math.abs(correctedYieldValue) / correctedScale,
-    plasticMultiplier,
-    equivalentPlasticStrain: plasticMultiplier,
-    state: 'plastic',
+    sigmaZKpa: corrected.sigmaZKpa,
+    equivalentPlasticStrain: updatedEquivalentPlasticStrain,
+    plasticStrainPrincipal,
+    volumetricPlasticStrain,
+  };
+
+  return {
+    nextState,
+    result: {
+      strain,
+      stressKpa: corrected.stress,
+      outOfPlaneStressKpa: corrected.sigmaZKpa,
+      compressionPositivePrincipalStressKpa: correctedPrincipal,
+      strainIncrement,
+      previousEquivalentPlasticStrain: input.previous.equivalentPlasticStrain,
+      equivalentPlasticStrainIncrement: plasticMultiplier,
+      plasticStrainPrincipal,
+      volumetricPlasticStrain,
+      yieldValueKpa: correctedYieldValue,
+      yieldResidualRatio: Math.abs(correctedYieldValue) / correctedScale,
+      plasticMultiplier,
+      equivalentPlasticStrain: updatedEquivalentPlasticStrain,
+      state: 'plastic',
+    },
   };
 }
 
@@ -2083,6 +2197,7 @@ function evaluatePlaneStrainDruckerPragerState(input: {
   system: PlaneStrainAssemblySystem;
   displacement: number[];
   loadFactor: number;
+  committedStates: PlaneStrainDruckerPragerStateGrid;
 }): {
   internal: number[];
   residual: number[];
@@ -2091,31 +2206,39 @@ function evaluatePlaneStrainDruckerPragerState(input: {
   reactionBalanceRatio: number;
   maxYieldResidualRatio: number;
   maxEquivalentPlasticStrain: number;
+  maxEquivalentPlasticStrainIncrement: number;
   plasticGaussPointCount: number;
+  trialStates: PlaneStrainDruckerPragerStateGrid;
   elements: FemPlaneStrainDruckerPragerResult['elements'];
 } {
-  const { system, displacement, loadFactor } = input;
+  const { system, displacement, loadFactor, committedStates } = input;
   const internal = new Array<number>(system.dofCount).fill(0);
   let maxYieldResidualRatio = 0;
   let maxEquivalentPlasticStrain = 0;
+  let maxEquivalentPlasticStrainIncrement = 0;
   let plasticGaussPointCount = 0;
 
-  const elements = system.elementGaussCache.map((entry) => {
+  const trialStates: PlaneStrainDruckerPragerStateGrid = [];
+  const elements = system.elementGaussCache.map((entry, elementIndex) => {
     const material = system.materialById.get(entry.element.materialId)!;
-    const d = planeStrainD(material);
     const elementDisplacement = entry.globalDofs.map((index) => displacement[index]);
     const gaussPoints: FemPlaneStrainDruckerPragerGaussPointResult[] = entry.gauss.map((point, index) => {
       const strain = point.b.map((row) => row.reduce((sum, value, col) => sum + value * elementDisplacement[col], 0)) as [number, number, number];
-      const elasticStress = d.map((row) => row.reduce((sum, value, col) => sum + value * strain[col], 0)) as [number, number, number];
-      const projected = projectDruckerPragerStress({
+      const integrated = integrateDruckerPragerStress({
         material,
         policy: system.policy,
         strain,
-        stress: elasticStress,
-        sigmaZKpa: planeStrainSigmaZ(material, strain),
+        previous: committedStates[elementIndex]?.[index] ?? initialDruckerPragerState(),
       });
+      const projected = integrated.result;
+      trialStates[elementIndex] = trialStates[elementIndex] ?? [];
+      trialStates[elementIndex][index] = integrated.nextState;
       maxYieldResidualRatio = Math.max(maxYieldResidualRatio, projected.yieldResidualRatio);
       maxEquivalentPlasticStrain = Math.max(maxEquivalentPlasticStrain, projected.equivalentPlasticStrain);
+      maxEquivalentPlasticStrainIncrement = Math.max(
+        maxEquivalentPlasticStrainIncrement,
+        projected.equivalentPlasticStrainIncrement,
+      );
       if (projected.state === 'plastic') plasticGaussPointCount += 1;
 
       for (let localDof = 0; localDof < 8; localDof += 1) {
@@ -2148,6 +2271,19 @@ function evaluatePlaneStrainDruckerPragerState(input: {
           round(projected.compressionPositivePrincipalStressKpa[1], 8),
           round(projected.compressionPositivePrincipalStressKpa[2], 8),
         ] as [number, number, number],
+        strainIncrement: [
+          round(projected.strainIncrement[0], 12),
+          round(projected.strainIncrement[1], 12),
+          round(projected.strainIncrement[2], 12),
+        ] as [number, number, number],
+        previousEquivalentPlasticStrain: round(projected.previousEquivalentPlasticStrain, 12),
+        equivalentPlasticStrainIncrement: round(projected.equivalentPlasticStrainIncrement, 12),
+        plasticStrainPrincipal: [
+          round(projected.plasticStrainPrincipal[0], 12),
+          round(projected.plasticStrainPrincipal[1], 12),
+          round(projected.plasticStrainPrincipal[2], 12),
+        ] as [number, number, number],
+        volumetricPlasticStrain: round(projected.volumetricPlasticStrain, 12),
         yieldValueKpa: round(projected.yieldValueKpa, 10),
         yieldResidualRatio: round(projected.yieldResidualRatio, 12),
         plasticMultiplier: round(projected.plasticMultiplier, 12),
@@ -2199,14 +2335,38 @@ function evaluatePlaneStrainDruckerPragerState(input: {
     reactionBalanceRatio,
     maxYieldResidualRatio,
     maxEquivalentPlasticStrain,
+    maxEquivalentPlasticStrainIncrement,
     plasticGaussPointCount,
+    trialStates,
     elements,
   };
 }
 
-function normalizeLoadStepFractions(loadStepFractions?: readonly number[]): number[] {
-  const fractions = loadStepFractions && loadStepFractions.length > 0
-    ? [...loadStepFractions]
+function normalizeLoadStepFractions(options: {
+  loadStepFractions?: readonly number[];
+  loadHistoryFactors?: readonly number[];
+}): number[] {
+  if (options.loadStepFractions != null && options.loadHistoryFactors != null) {
+    throw new Error('Specify either loadStepFractions or loadHistoryFactors, not both.');
+  }
+  if (options.loadHistoryFactors != null) {
+    if (!Array.isArray(options.loadHistoryFactors) || options.loadHistoryFactors.length === 0) {
+      throw new Error('loadHistoryFactors must contain at least one load factor when provided.');
+    }
+    const history = [...options.loadHistoryFactors];
+    for (const [index, factor] of history.entries()) {
+      if (!Number.isFinite(factor) || factor < 0 || factor > 1) {
+        throw new Error(`loadHistoryFactors.${index} must be finite and between 0 and 1.`);
+      }
+    }
+    if (history[history.length - 1] !== 1) {
+      throw new Error('loadHistoryFactors must end at 1.');
+    }
+    return history;
+  }
+
+  const fractions = options.loadStepFractions && options.loadStepFractions.length > 0
+    ? [...options.loadStepFractions]
     : [0.25, 0.5, 0.75, 1];
   let previous = 0;
   for (const [index, fraction] of fractions.entries()) {
@@ -2227,6 +2387,10 @@ function isDruckerPragerStepConverged(
 ): boolean {
   return evaluation.residualNormRatio <= policy.forceBalanceTolerance &&
     evaluation.maxYieldResidualRatio <= policy.residualTolerance;
+}
+
+function createInitialDruckerPragerStateGrid(system: PlaneStrainAssemblySystem): PlaneStrainDruckerPragerStateGrid {
+  return system.elementGaussCache.map((entry) => entry.gauss.map(() => initialDruckerPragerState()));
 }
 
 function druckerPragerResidualHistoryEntry(
@@ -2368,7 +2532,10 @@ export function runPlaneStrainDruckerPragerLoadSteps(
   const system = assemblePlaneStrainSystem(model, {
     storage: linearSolver === 'sparse-csr-cg' ? 'triplets-only' : 'dense-and-triplets',
   });
-  const loadStepFractions = normalizeLoadStepFractions(options.loadStepFractions);
+  const loadStepFractions = normalizeLoadStepFractions({
+    loadStepFractions: options.loadStepFractions,
+    loadHistoryFactors: options.loadHistoryFactors,
+  });
   const linearSolverTolerance = options.linearSolverTolerance ?? Math.min(1e-10, system.policy.forceBalanceTolerance / 10);
   if (!Number.isFinite(linearSolverTolerance) || linearSolverTolerance <= 0) {
     throw new Error('linearSolverTolerance must be a finite positive number.');
@@ -2385,12 +2552,18 @@ export function runPlaneStrainDruckerPragerLoadSteps(
     })
     : undefined;
   const displacement = new Array<number>(system.dofCount).fill(0);
+  let committedStates = createInitialDruckerPragerStateGrid(system);
   let finalEvaluation: ReturnType<typeof evaluatePlaneStrainDruckerPragerState> | undefined;
   const loadSteps: FemPlaneStrainDruckerPragerStepResult[] = [];
 
   for (const [stepIndex, loadFactor] of loadStepFractions.entries()) {
     for (const [index, value] of system.prescribed) displacement[index] = value * loadFactor;
-    let evaluation = evaluatePlaneStrainDruckerPragerState({ system, displacement, loadFactor });
+    let evaluation = evaluatePlaneStrainDruckerPragerState({
+      system,
+      displacement,
+      loadFactor,
+      committedStates,
+    });
     let iterations = 0;
     let converged = isDruckerPragerStepConverged(evaluation, system.policy);
     const residualHistory: FemPlaneStrainDruckerPragerResidualHistoryEntry[] = [
@@ -2429,12 +2602,18 @@ export function runPlaneStrainDruckerPragerLoadSteps(
         displacement[dof] += correction[correctionIndex];
       }
       for (const [index, value] of system.prescribed) displacement[index] = value * loadFactor;
-      evaluation = evaluatePlaneStrainDruckerPragerState({ system, displacement, loadFactor });
+      evaluation = evaluatePlaneStrainDruckerPragerState({
+        system,
+        displacement,
+        loadFactor,
+        committedStates,
+      });
       converged = isDruckerPragerStepConverged(evaluation, system.policy);
       residualHistory.push(druckerPragerResidualHistoryEntry(iterations, evaluation, system.policy));
     }
 
     finalEvaluation = evaluation;
+    if (converged) committedStates = evaluation.trialStates;
     const terminationReason = druckerPragerTerminationReason(
       evaluation,
       system.policy,
@@ -2452,6 +2631,7 @@ export function runPlaneStrainDruckerPragerLoadSteps(
       reactionBalanceRatio: round(evaluation.reactionBalanceRatio, 12),
       maxYieldResidualRatio: round(evaluation.maxYieldResidualRatio, 12),
       maxEquivalentPlasticStrain: round(evaluation.maxEquivalentPlasticStrain, 12),
+      maxEquivalentPlasticStrainIncrement: round(evaluation.maxEquivalentPlasticStrainIncrement, 12),
       plasticGaussPointCount: evaluation.plasticGaussPointCount,
       linearSolver,
       linearIterations: linearSolverAudits.reduce((sum, audit) => sum + audit.iterations, 0),
@@ -2488,13 +2668,15 @@ export function runPlaneStrainDruckerPragerLoadSteps(
     linearSolver,
     nonlinearAlgorithm: 'modified-newton',
     globalTangent: 'elastic',
-    materialIntegration: 'total-strain-drucker-prager-projection',
+    materialIntegration: 'incremental-committed-drucker-prager-return-mapping',
+    stateStorage: 'committed-gauss-point-history',
     loadSteps,
     maxFreeResidualKn: round(finalEvaluation.maxFreeResidualKn, 12),
     residualNormRatio: round(finalEvaluation.residualNormRatio, 12),
     reactionBalanceRatio: round(finalEvaluation.reactionBalanceRatio, 12),
     maxYieldResidualRatio: round(finalEvaluation.maxYieldResidualRatio, 12),
     maxEquivalentPlasticStrain: round(finalEvaluation.maxEquivalentPlasticStrain, 12),
+    maxEquivalentPlasticStrainIncrement: round(finalEvaluation.maxEquivalentPlasticStrainIncrement, 12),
     plasticGaussPointCount: finalEvaluation.plasticGaussPointCount,
     converged: status === 'converged',
     status,
@@ -2513,8 +2695,8 @@ export function runPlaneStrainDruckerPragerLoadSteps(
       'Benchmark-scale modified-Newton plane-strain plasticity evidence kernel only.',
       ...(failedStep ? ['Nonconverged load-step result is reported fail-closed and must not be treated as an accepted engineering solve.'] : []),
       linearSolver === 'sparse-csr-cg'
-        ? 'Uses an experimental CSR Conjugate Gradient linear solve audit, elastic global tangent, and Gauss-point Drucker-Prager stress projection; no production consistent tangent, hardening calibration, staged activation, pore-pressure DOF, or route-backed result manifest is provided.'
-        : 'Uses elastic global tangent with Gauss-point Drucker-Prager stress projection; no production consistent tangent, production sparse solver, hardening calibration, staged activation, pore-pressure DOF, or route-backed result manifest is provided.',
+        ? 'Uses an experimental CSR Conjugate Gradient linear solve audit, elastic global tangent, and committed Gauss-point Drucker-Prager return mapping; no production consistent tangent, hardening calibration, staged activation, pore-pressure DOF, or route-backed result manifest is provided.'
+        : 'Uses elastic global tangent with committed Gauss-point Drucker-Prager return mapping; no production consistent tangent, production sparse solver, hardening calibration, staged activation, pore-pressure DOF, or route-backed result manifest is provided.',
       'Use for deterministic evidence and regression tests only until independent published/commercial benchmark comparison and licensed production approval gates are complete.',
     ],
   };

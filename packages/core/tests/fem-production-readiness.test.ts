@@ -107,6 +107,56 @@ describe('FEM production readiness contract', () => {
     expect(report.blockers).toContain('jurisdiction-specific-wall-strut-anchor-structural-design-not-implemented');
   });
 
+  it('recognizes nonlinear Gauss-point evidence while keeping full FEM production readiness blocked', () => {
+    const report = assessFemProductionReadiness({
+      requestedFeatures: [
+        'nonlinear-plasticity',
+        'advanced-staged-construction',
+        'independent-benchmark-validation',
+      ],
+    });
+    const nonlinear = report.blockedFeatures.find((feature) => feature.feature === 'nonlinear-plasticity');
+    const stagedConstruction = report.blockedFeatures.find(
+      (feature) => feature.feature === 'advanced-staged-construction',
+    );
+    const benchmarkValidation = report.blockedFeatures.find(
+      (feature) => feature.feature === 'independent-benchmark-validation',
+    );
+
+    expect(report.productionReady).toBe(false);
+    expect(report.status).toBe('blocked');
+    expect(nonlinear).toMatchObject({
+      status: 'kernel-verified',
+      currentCoverage: expect.stringContaining('committed Gauss-point return mapping'),
+      blockedUntil: expect.arrayContaining([
+        'production-nonlinear-global-fem-solver-route-and-consistent-tangent-not-approved',
+      ]),
+    });
+    expect(nonlinear?.currentCoverage).toContain('not a production sparse solver route');
+    expect(stagedConstruction).toMatchObject({
+      status: 'preview-only',
+      currentCoverage: expect.stringContaining('committed material-state carryover through load histories'),
+      blockedUntil: expect.arrayContaining(['path-dependent-stage-benchmark-suite-approved']),
+    });
+    expect(stagedConstruction?.currentCoverage).toContain('activation/deactivation');
+    expect(benchmarkValidation).toMatchObject({
+      status: 'preview-only',
+      currentCoverage: expect.stringContaining('Drucker-Prager plane-strain evidence cases'),
+      blockedUntil: expect.arrayContaining(['published-benchmark-corpus-approved']),
+    });
+    expect(report.engineeringEvidence.benchmarks.map((item) => item.id)).toEqual(expect.arrayContaining([
+      'quad4-plane-strain-dp-affine-plastic-patch',
+      'quad4-plane-strain-dp-stage-state-carryover',
+    ]));
+    expect(report.blockers).toEqual(expect.arrayContaining([
+      'production-nonlinear-global-fem-solver-route-and-consistent-tangent-not-approved',
+      'path-dependent-stage-benchmark-suite-approved',
+      'published-benchmark-corpus-approved',
+      'nonlinear-plane-strain-plasticity-is-benchmark-scale-without-consistent-tangent-hardening-calibration-or-cross-solver-validation',
+      'published-commercial-cross-solver-benchmark-corpus-not-approved',
+    ]));
+  });
+
   it('exposes a scoped FEM agent tool for production-readiness blockers', async () => {
     const result = await toolRegistry.execute('assess_fem_production_readiness', {
       objective: 'foundation settlement',

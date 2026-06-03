@@ -34,6 +34,63 @@ function baseModel(overrides: Partial<FemPlaneStrainModel> = {}): FemPlaneStrain
   };
 }
 
+function druckerPragerSettlementPatch(overrides: {
+  loadKnPerTopNode?: number;
+  cohesionKpa?: number;
+  frictionAngleDeg?: number;
+} = {}): { model: FemPlaneStrainModel; topNodeIds: string[] } {
+  const mesh = buildPlaneStrainRectangularMesh({
+    widthM: 2,
+    heightM: 1,
+    divisionsX: 2,
+    divisionsY: 1,
+    materialId: 'soil',
+  });
+  const topNodes = mesh.nodes.filter((node) => node.yM === 1);
+  const bottomNodes = mesh.nodes.filter((node) => node.yM === 0);
+  return {
+    model: {
+      schemaVersion: 'fem-plane-strain-model.v1',
+      nodes: mesh.nodes,
+      elements: mesh.elements,
+      materials: [{
+        id: 'soil',
+        elasticModulusKpa: 25_000,
+        poissonRatio: 0.28,
+        frictionAngleDeg: overrides.frictionAngleDeg ?? 32,
+        cohesionKpa: overrides.cohesionKpa ?? 5,
+        dilationAngleDeg: 0,
+      }],
+      boundaryConditions: bottomNodes.flatMap((node) => [
+        { nodeId: node.id, dof: 'ux' as const },
+        { nodeId: node.id, dof: 'uy' as const },
+      ]),
+      nodalLoads: topNodes.map((node) => ({ nodeId: node.id, fyKn: -(overrides.loadKnPerTopNode ?? 30) })),
+    },
+    topNodeIds: topNodes.map((node) => node.id),
+  };
+}
+
+function maxTopSettlementMagnitude(
+  result: ReturnType<typeof runPlaneStrainDruckerPragerLoadSteps>,
+  topNodeIds: string[],
+): number {
+  return Math.max(
+    ...topNodeIds.map((nodeId) => Math.abs(result.nodes.find((node) => node.id === nodeId)?.uyM ?? 0)),
+  );
+}
+
+function scaleNodalLoads(model: FemPlaneStrainModel, scale: number): FemPlaneStrainModel {
+  return {
+    ...model,
+    nodalLoads: model.nodalLoads?.map((load) => ({
+      ...load,
+      fxKn: load.fxKn == null ? undefined : load.fxKn * scale,
+      fyKn: load.fyKn == null ? undefined : load.fyKn * scale,
+    })),
+  };
+}
+
 describe('plane-strain Quad4 global assembly evidence kernel', () => {
   it('builds deterministic rectangular meshes and rejects unsafe division counts', () => {
     const mesh = buildPlaneStrainRectangularMesh({
@@ -739,7 +796,8 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
     expect(sparse.linearSolver).toBe('sparse-csr-cg');
     expect(sparse.nonlinearAlgorithm).toBe('modified-newton');
     expect(sparse.globalTangent).toBe('elastic');
-    expect(sparse.materialIntegration).toBe('total-strain-drucker-prager-projection');
+    expect(sparse.materialIntegration).toBe('incremental-committed-drucker-prager-return-mapping');
+    expect(sparse.stateStorage).toBe('committed-gauss-point-history');
     expect(sparse.converged).toBe(true);
     expect(sparse.reactionBalanceRatio).toBeGreaterThan(0.999);
     expect(sparse.loadSteps.every((step) => step.linearSolver === 'sparse-csr-cg')).toBe(true);
@@ -897,6 +955,58 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
     }
   });
 
+  it('keeps refined nonlinear plane-strain load steps inside a small displacement and plastic-strain envelope', () => {
+    const { model, topNodeIds } = druckerPragerSettlementPatch();
+    const coarse = runPlaneStrainDruckerPragerLoadSteps(model, {
+      loadStepFractions: [0.25, 0.5, 0.75, 1],
+    });
+    const refined = runPlaneStrainDruckerPragerLoadSteps(model, {
+      loadStepFractions: [0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1],
+    });
+    const coarseSettlementM = maxTopSettlementMagnitude(coarse, topNodeIds);
+    const refinedSettlementM = maxTopSettlementMagnitude(refined, topNodeIds);
+    const settlementEnvelopeM = Math.max(5e-6, coarseSettlementM * 0.02);
+    const plasticStrainEnvelope = Math.max(5e-6, coarse.maxEquivalentPlasticStrain * 0.05);
+
+    expect(coarse.converged).toBe(true);
+    expect(refined.converged).toBe(true);
+    expect(coarse.plasticGaussPointCount).toBeGreaterThan(0);
+    expect(refined.plasticGaussPointCount).toBeGreaterThan(0);
+    expect(refined.loadSteps).toHaveLength(8);
+    expect(refined.loadSteps.every((step) => step.converged)).toBe(true);
+    expect(Math.abs(refinedSettlementM - coarseSettlementM)).toBeLessThanOrEqual(settlementEnvelopeM);
+    expect(Math.abs(refined.maxEquivalentPlasticStrain - coarse.maxEquivalentPlasticStrain))
+      .toBeLessThanOrEqual(plasticStrainEnvelope);
+  });
+
+  it('retains committed Drucker-Prager plastic strain history through unload and reload steps', () => {
+    const unloadLoadFactor = 0.1;
+    const { model } = druckerPragerSettlementPatch();
+    const unloadReload = runPlaneStrainDruckerPragerLoadSteps(model, {
+      loadHistoryFactors: [0.5, 1, unloadLoadFactor, 1],
+    });
+    const virginUnload = runPlaneStrainDruckerPragerLoadSteps(scaleNodalLoads(model, unloadLoadFactor), {
+      loadStepFractions: [1],
+    });
+    const peakStep = unloadReload.loadSteps[1];
+    const unloadedStep = unloadReload.loadSteps[2];
+    const finalStep = unloadReload.loadSteps.at(-1)!;
+    const finalGaussPoints = unloadReload.elements.flatMap((element) => element.gaussPoints);
+
+    expect(unloadReload.materialIntegration).toBe('incremental-committed-drucker-prager-return-mapping');
+    expect(unloadReload.stateStorage).toBe('committed-gauss-point-history');
+    expect(unloadReload.loadSteps.map((step) => step.loadFactor)).toEqual([0.5, 1, unloadLoadFactor, 1]);
+    expect(unloadReload.loadSteps.every((step) => step.converged)).toBe(true);
+    expect(peakStep.maxEquivalentPlasticStrain).toBeGreaterThan(0);
+    expect(virginUnload.maxEquivalentPlasticStrain).toBe(0);
+    expect(unloadedStep.maxEquivalentPlasticStrain).toBeGreaterThan(virginUnload.maxEquivalentPlasticStrain);
+    expect(unloadedStep.maxEquivalentPlasticStrain).toBeGreaterThanOrEqual(peakStep.maxEquivalentPlasticStrain);
+    expect(finalStep.maxEquivalentPlasticStrain).toBeGreaterThanOrEqual(unloadedStep.maxEquivalentPlasticStrain);
+    expect(finalGaussPoints.some((point) => point.previousEquivalentPlasticStrain > 0)).toBe(true);
+    expect(Math.max(...finalGaussPoints.map((point) => point.equivalentPlasticStrain)))
+      .toBeCloseTo(unloadReload.maxEquivalentPlasticStrain, 12);
+  });
+
   it('fails closed when nonlinear plane-strain load steps exceed the iteration budget', () => {
     const mesh = buildPlaneStrainRectangularMesh({
       widthM: 2,
@@ -1040,8 +1150,17 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
     })).toThrow(/dense assembly is capped/);
 
     expect(() => runPlaneStrainDruckerPragerLoadSteps(baseModel(), {
-      loadStepFractions: [0.5, 0.25, 1],
+      loadStepFractions: [0.5, 0.5, 1],
     })).toThrow(/loadStepFractions\.1/);
+
+    expect(() => runPlaneStrainDruckerPragerLoadSteps(baseModel(), {
+      loadHistoryFactors: [0.5, 1, 0.25],
+    })).toThrow(/loadHistoryFactors must end at 1/);
+
+    expect(() => runPlaneStrainDruckerPragerLoadSteps(baseModel(), {
+      loadStepFractions: [0.5, 1],
+      loadHistoryFactors: [0.5, 1],
+    })).toThrow(/Specify either loadStepFractions or loadHistoryFactors/);
 
     expect(() => runPlaneStrainDruckerPragerLoadSteps(baseModel(), {
       linearSolver: 'bad-solver' as any,

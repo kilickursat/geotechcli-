@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.109] - 2026-06-04
+
+### FEM Committed Plasticity State
+
+- Added committed Gauss-point Drucker-Prager state history to the benchmark-scale plane-strain nonlinear solver, including strain increments, accumulated plastic strain, plastic strain tensor components, and volumetric plastic strain in result evidence.
+- Added a non-monotonic `loadHistoryFactors` path for unload/reload evidence and deterministic tests proving committed plastic strain is not reset to virgin material during load reversal.
+- Strengthened FEM engineering evidence and production-readiness summaries so the new path-dependent plasticity evidence is visible while full production FEM remains blocked behind consistent tangent, stage activation, pore-pressure coupling, external benchmark, and licensed approval gates.
+
 ## [0.4.108] - 2026-06-03
 
 ### FEM Sparse Solver and Benchmark Gates

@@ -58,7 +58,7 @@ const ALL_PRODUCTION_FEATURES: FemProductionFeature[] = [
 const FEATURE_REQUIREMENTS: Record<FemProductionFeature, Omit<FemProductionFeatureRequirement, 'feature'>> = {
   'nonlinear-plasticity': {
     status: 'kernel-verified',
-    currentCoverage: 'Deterministic nonlinear material-point coverage now includes a Mohr-Coulomb triaxial strength cap plus a Drucker-Prager/Mohr-Coulomb-compatible principal-stress return-mapping kernel with yield residual and plastic strain state checks. A benchmark-scale mechanical-only Quad4 plane-strain Drucker-Prager evidence kernel now couples Gauss-point stress projection to global residual/reaction checks, but it is not a production sparse solver route and has no Biot pore-pressure DOF, consistent tangent approval, staged activation, or project result manifest.',
+    currentCoverage: 'Deterministic nonlinear material-point coverage now includes a Mohr-Coulomb triaxial strength cap plus a Drucker-Prager/Mohr-Coulomb-compatible principal-stress return-mapping kernel with yield residual and plastic strain state checks. A benchmark-scale mechanical-only Quad4 plane-strain Drucker-Prager evidence kernel now couples committed Gauss-point return mapping and plastic state carryover to global residual/reaction checks, but it is not a production sparse solver route and has no Biot pore-pressure DOF, consistent tangent approval, staged activation, or project result manifest.',
     requiredForAcceptance: [
       'constitutive models accepted for geotechnical use, such as Mohr-Coulomb/Hardening Soil or equivalent',
       'stress-path, yield, plastic strain, and convergence validation fixtures',
@@ -101,7 +101,7 @@ const FEATURE_REQUIREMENTS: Record<FemProductionFeature, Omit<FemProductionFeatu
   },
   'advanced-staged-construction': {
     status: 'preview-only',
-    currentCoverage: 'Excavation and staged-consolidation previews include deterministic stage visualization and load histories; staged consolidation can also run a nonlinear 1D column backend. Production construction sequencing, activation/deactivation, and 2D/3D nonlinear path-dependence remain unavailable.',
+    currentCoverage: 'Excavation and staged-consolidation previews include deterministic stage visualization and load histories; staged consolidation can also run a nonlinear 1D column backend. The benchmark-scale plane-strain Drucker-Prager kernel now supports committed material-state carryover through load histories, but production construction sequencing, activation/deactivation, and 2D/3D staged path-dependence remain unavailable.',
     requiredForAcceptance: [
       'construction-stage activation/deactivation model with support installation/removal',
       'stage-specific boundary, load, groundwater, and material state transitions',
