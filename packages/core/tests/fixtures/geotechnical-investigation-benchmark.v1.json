@@ -180,7 +180,7 @@
           "caseOutputAvailable": false,
           "humanRunCommandAvailable": false,
           "draftCommand": "geotech fem draft foundation-settlement --input <json> --case-output <analysis_case.json>",
-          "humanRunCommandTemplate": "geotech fem run <analysis_case.json> --experimental",
+          "humanRunCommandTemplate": "geotech fem run <analysis_case.json> --experimental --reviewed",
           "blockedReasons": [
             "ground-model-missing-spt-n-values",
             "ground-model-partial-pages-remain",
@@ -195,7 +195,7 @@
           ]
         },
         "recommendedCommand": "geotech fem draft foundation-settlement --input <json> --case-output <analysis_case.json>",
-        "runCommandTemplate": "geotech fem run <analysis_case.json> --experimental",
+        "runCommandTemplate": "geotech fem run <analysis_case.json> --experimental --reviewed",
         "readinessStatus": "needs_engineering_review",
         "readinessScore": 61,
         "requiredEvidence": [
@@ -234,7 +234,7 @@
           "caseOutputAvailable": false,
           "humanRunCommandAvailable": false,
           "draftCommand": "geotech fem draft excavation-deformation --input <json> --case-output <analysis_case.json>",
-          "humanRunCommandTemplate": "geotech fem run <analysis_case.json> --experimental",
+          "humanRunCommandTemplate": "geotech fem run <analysis_case.json> --experimental --reviewed",
           "blockedReasons": [
             "ground-model-missing-spt-n-values",
             "ground-model-partial-pages-remain",
@@ -250,7 +250,7 @@
           ]
         },
         "recommendedCommand": "geotech fem draft excavation-deformation --input <json> --case-output <analysis_case.json>",
-        "runCommandTemplate": "geotech fem run <analysis_case.json> --experimental",
+        "runCommandTemplate": "geotech fem run <analysis_case.json> --experimental --reviewed",
         "readinessStatus": "needs_engineering_review",
         "readinessScore": 61,
         "requiredEvidence": [
@@ -379,7 +379,7 @@
           "caseOutputAvailable": false,
           "humanRunCommandAvailable": false,
           "draftCommand": "geotech fem draft tunnel-volume-loss-settlement --input <json> --case-output <analysis_case.json>",
-          "humanRunCommandTemplate": "geotech fem run <analysis_case.json> --experimental",
+          "humanRunCommandTemplate": "geotech fem run <analysis_case.json> --experimental --reviewed",
           "blockedReasons": [
             "ground-model-missing-spt-n-values",
             "ground-model-partial-pages-remain",
@@ -394,7 +394,7 @@
           ]
         },
         "recommendedCommand": "geotech fem draft tunnel-volume-loss-settlement --input <json> --case-output <analysis_case.json>",
-        "runCommandTemplate": "geotech fem run <analysis_case.json> --experimental",
+        "runCommandTemplate": "geotech fem run <analysis_case.json> --experimental --reviewed",
         "readinessStatus": "needs_engineering_review",
         "readinessScore": 61,
         "requiredEvidence": [

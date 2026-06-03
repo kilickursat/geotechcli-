@@ -1,6 +1,16 @@
 # Changelog
 
-## Unreleased
+## [0.4.92] - 2026-06-03
+
+### FEM Production-Readiness Guardrails
+
+- Added a deterministic FEM production-readiness contract and agent tool that blocks production-grade claims for nonlinear/plasticity, consolidation, seepage/pore-pressure coupling, advanced staged construction, support design, real project workspace-to-run acceptance, benchmark validation, and licensed-review workflow until explicit solver and evidence gates exist.
+- Added workspace-to-run acceptance validation so report/GroundModel-derived FEM candidates can be accepted only when an implemented preview route has evidence traceability, no missing user inputs, a validated experimental `analysis_case.json`, and a human-reviewed `geotech fem run ... --experimental --reviewed` command.
+- Added fixture-backed FEM scenario validation for raft settlement, staged excavation, and tunnel volume-loss mock datasets, including envelope ranges and monotonic sensitivity checks.
+- Extended FEM draft/run smoke coverage with contract-only route checks, reaction/volume reference checks, and cross-scenario trend assertions for raft, excavation, and tunnel preview datasets.
+- Required scoped FEM agent and swarm prompts to assess production readiness before answering production-grade, nonlinear, consolidation, seepage, support-design, benchmark, or real-project workspace-to-run requests.
+- Required `geotech fem run` to include explicit `--reviewed` acknowledgement in addition to `--experimental` before running a reviewed `analysis_case.json`.
+- Blocked generic agent result persistence from saving forged FEM analysis cases even when the model spoofs a deterministic FEM planning tool name.
 
 ## [0.4.91] - 2026-06-03
 

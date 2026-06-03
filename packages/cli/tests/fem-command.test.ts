@@ -210,6 +210,7 @@ describe('registerFemCommand', () => {
       expect.objectContaining({
         allowedTools: [
           'list_fem_capabilities',
+          'assess_fem_production_readiness',
           'prepare_fem_analysis_case',
           'validate_fem_analysis_case',
         ],
@@ -219,6 +220,7 @@ describe('registerFemCommand', () => {
     expect(payload.kind).toBe('geotech-fem-agent-result');
     expect(payload.allowedTools).toEqual([
       'list_fem_capabilities',
+      'assess_fem_production_readiness',
       'prepare_fem_analysis_case',
       'validate_fem_analysis_case',
     ]);
@@ -523,7 +525,7 @@ describe('registerFemCommand', () => {
     const payload = JSON.parse(collectLogText(logSpy).trim());
     const caseFile = JSON.parse(await readFile(casePath, 'utf-8'));
     expect(payload.draft.recommendedAction).toBe('run-reviewed-case');
-    expect(payload.draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental');
+    expect(payload.draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed');
     expect(payload.draft.analysisCase.geometry.raft.lengthM).toBe(11);
     expect(payload.draft.analysisCase.materials[0].elasticModulusKpa).toBe(25_000);
     expect(payload.draft.analysisCase.groundwater.depthM).toBe(2.1);
@@ -609,7 +611,7 @@ describe('registerFemCommand', () => {
     const caseFile = JSON.parse(await readFile(casePath, 'utf-8'));
     expect(payload.workspace.bridge.objective).toBe('tunnel-volume-loss-settlement');
     expect(payload.draft.recommendedAction).toBe('run-reviewed-case');
-    expect(payload.draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental');
+    expect(payload.draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed');
     expect(payload.draft.analysisCase.geometry.tunnel.diameterM).toBe(6);
     expect(payload.draft.analysisCase.materials[0].elasticModulusKpa).toBe(25_000);
     expect(payload.draft.analysisCase.groundwater.depthM).toBe(2.1);
@@ -655,7 +657,7 @@ describe('registerFemCommand', () => {
     const caseFile = JSON.parse(await readFile(casePath, 'utf-8'));
 
     expect(payload.draft.recommendedAction).toBe('run-reviewed-case');
-    expect(payload.draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental');
+    expect(payload.draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed');
     expect(payload.draft.canAutoProceed).toBe(false);
     expect(payload.draft.analysisCase.geometry.raft.lengthM).toBe(10);
     expect(payload.draft.analysisCase.loads[0].pressureKpa).toBe(160);
@@ -707,7 +709,7 @@ describe('registerFemCommand', () => {
     const payload = JSON.parse(collectLogText(logSpy).trim());
     expect(payload.objective).toBe('excavation-deformation');
     expect(payload.draft.recommendedAction).toBe('run-reviewed-case');
-    expect(payload.draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental');
+    expect(payload.draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed');
     expect(payload.draft.canAutoProceed).toBe(false);
     expect(payload.draft.analysisCase.objective).toBe('excavation_deformation');
     expect(payload.draft.analysisCase.geometry.excavation.finalDepthM).toBe(9);
@@ -743,7 +745,7 @@ describe('registerFemCommand', () => {
     const payload = JSON.parse(collectLogText(logSpy).trim());
     expect(payload.objective).toBe('tunnel-volume-loss-settlement');
     expect(payload.draft.recommendedAction).toBe('run-reviewed-case');
-    expect(payload.draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental');
+    expect(payload.draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed');
     expect(payload.draft.canAutoProceed).toBe(false);
     expect(payload.draft.analysisCase.objective).toBe('tunnel_volume_loss_settlement');
     expect(payload.draft.analysisCase.geometry.tunnel.diameterM).toBe(6.5);
@@ -786,6 +788,7 @@ describe('registerFemCommand', () => {
       'run',
       casePath,
       '--experimental',
+      '--reviewed',
       '--save-html',
       htmlPath,
       '--output',
@@ -834,6 +837,7 @@ describe('registerFemCommand', () => {
         'run',
         casePath,
         '--experimental',
+        '--reviewed',
         '--no-open',
         '--json',
       ], { from: 'user' });
@@ -866,6 +870,7 @@ describe('registerFemCommand', () => {
         'run',
         casePath,
         '--experimental',
+        '--reviewed',
         '--save-html',
         htmlPath,
         '--no-open',
@@ -916,6 +921,7 @@ describe('registerFemCommand', () => {
       expect.objectContaining({
         allowedTools: [
           'list_fem_capabilities',
+          'assess_fem_production_readiness',
           'prepare_fem_analysis_case',
           'validate_fem_analysis_case',
         ],
@@ -928,6 +934,7 @@ describe('registerFemCommand', () => {
     const payload = JSON.parse(collectLogText(logSpy).trim());
     expect(payload.allowedTools).toEqual([
       'list_fem_capabilities',
+      'assess_fem_production_readiness',
       'prepare_fem_analysis_case',
       'validate_fem_analysis_case',
     ]);

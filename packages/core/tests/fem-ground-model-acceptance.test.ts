@@ -5,7 +5,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildFemDraftCandidatesFromGroundModel,
+  prepareFemAnalysisCaseDraft,
   validateFemGroundModelDraftCandidate,
+  validateFemWorkspaceToRunAcceptance,
   type FemGroundModelDraftCandidate,
   type FemRouteObjective,
   type GroundModel,
@@ -395,5 +397,90 @@ describe('FEM GroundModel planned-route acceptance fixtures', () => {
     expect(evidenceSources.every((source) => !/^[A-Za-z]:[\\/]/.test(source))).toBe(true);
     expect(evidenceSources).toEqual(expect.arrayContaining(['site-report.pdf', 'lab-summary.pdf']));
     expect(validateFemGroundModelDraftCandidate(candidate as FemGroundModelDraftCandidate).status).toBe('accepted');
+  });
+
+  it('blocks real workspace-to-run acceptance until explicit user inputs produce a validated case', () => {
+    const [candidate] = buildFemDraftCandidatesFromGroundModel(makeAcceptanceGroundModel())
+      .filter((item) => item.workflow === 'fem-foundation-settlement');
+
+    const acceptance = validateFemWorkspaceToRunAcceptance(candidate as FemGroundModelDraftCandidate);
+
+    expect(acceptance.status).toBe('blocked');
+    expect(acceptance.blockerCodes).toEqual(expect.arrayContaining([
+      'fem_workspace_user_inputs_missing',
+      'fem_workspace_case_output_not_available',
+      'fem_workspace_draft_not_recommended_for_reviewed_run',
+      'fem_workspace_reviewed_run_command_missing',
+    ]));
+    expect(acceptance.humanRunCommand).toBeUndefined();
+  });
+
+  it('accepts workspace-to-run only after evidence traceability, explicit inputs, validation, and reviewed run gate', () => {
+    const [base] = buildFemDraftCandidatesFromGroundModel(makeAcceptanceGroundModel())
+      .filter((item) => item.workflow === 'fem-foundation-settlement');
+    const evidenceRefs = base.bridge.input.evidenceRefs ?? [];
+    const draft = prepareFemAnalysisCaseDraft({
+      objective: 'foundation-settlement',
+      geometry: {
+        raftLengthM: 10,
+        raftWidthM: 8,
+        domainLengthM: 32,
+        domainWidthM: 28,
+        domainDepthM: 14,
+      },
+      load: { pressureKpa: 150 },
+      material: {
+        elasticModulusKpa: 18_000,
+        poissonRatio: 0.3,
+        unitWeightKnM3: 18.5,
+      },
+      groundwater: {
+        condition: 'specified',
+        depthM: 1.8,
+        note: 'Groundwater depth from GroundModel evidence; pore-pressure coupling is not solved in this preview.',
+      },
+      evidenceRefs,
+    });
+    const candidate: FemGroundModelDraftCandidate = {
+      ...base,
+      status: 'ready',
+      missingUserInputs: [],
+      bridge: {
+        ...base.bridge,
+        readiness: {
+          ...base.bridge.readiness,
+          status: 'ready',
+          missingUserInputs: [],
+        },
+      },
+      draft,
+      executionBoundary: {
+        schemaVersion: 'fem-ground-model-execution-boundary.v1',
+        executionMode: 'human-reviewed-preview',
+        agentRunAllowed: false,
+        agentWebglRenderAllowed: false,
+        agentResultManifestAllowed: false,
+        humanReviewRequired: true,
+        caseOutputAvailable: true,
+        draftCommand: 'geotech fem draft foundation-settlement --input <json> --case-output <analysis_case.json>',
+        humanRunCommand: 'geotech fem run <analysis_case.json> --experimental --reviewed',
+        blockedReasons: [],
+      },
+    };
+
+    const acceptance = validateFemWorkspaceToRunAcceptance(candidate);
+
+    expect(draft.validation?.status).toBe('review');
+    expect(acceptance).toMatchObject({
+      schemaVersion: 'fem-workspace-to-run-acceptance.v1',
+      status: 'accepted',
+      objective: 'foundation-settlement',
+      workflow: 'fem-foundation-settlement',
+      caseOutputAvailable: true,
+      humanRunCommand: 'geotech fem run <analysis_case.json> --experimental --reviewed',
+      blockerCodes: [],
+    });
+    expect(acceptance.evidenceIds).toEqual(expect.arrayContaining(['ev-es-1', 'ev-gamma-1', 'ev-gw-1']));
+    expect(acceptance.reviewCodes).toEqual(expect.arrayContaining(['groundwater.review-required', 'not-design-calculation']));
   });
 });

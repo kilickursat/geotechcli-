@@ -235,9 +235,14 @@ describe('Swarm tool policy', () => {
     expect(session.steps).toEqual(expect.arrayContaining([
       expect.objectContaining({
         agent: 'reviewer',
-        type: 'error',
+        type: 'tool_result',
         toolName: 'validate_fem_analysis_case',
-        content: expect.stringContaining('requires human review'),
+        content: expect.stringContaining('FEM validation review'),
+      }),
+      expect.objectContaining({
+        agent: 'reviewer',
+        type: 'correction',
+        content: expect.stringContaining('fem-validation-review-required'),
       }),
     ]));
 

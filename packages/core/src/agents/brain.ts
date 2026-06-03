@@ -47,6 +47,8 @@ export type AgentCallback = (step: AgentStep) => void;
 export interface AgentRunOptions {
   allowedTools?: readonly string[];
   systemPromptSuffix?: string;
+  disableDeterministicPreflight?: boolean;
+  requiredToolsBeforeFinal?: readonly string[];
 }
 
 interface ConversationMessage {
@@ -94,11 +96,51 @@ function isToolAllowedByRunOptions(toolName: string, options: AgentRunOptions = 
   return !options.allowedTools || options.allowedTools.includes(toolName);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function preparedFemCaseFromContext(session: AgentSession): Record<string, unknown> | null {
+  const draft = session.context.prepare_fem_analysis_case;
+  if (!isRecord(draft)) return null;
+
+  const analysisCase = draft.analysisCase;
+  return isRecord(analysisCase) ? analysisCase : null;
+}
+
+function missingRequiredToolsForFinal(session: AgentSession, options: AgentRunOptions): string[] {
+  return (options.requiredToolsBeforeFinal ?? [])
+    .filter((toolName) => session.context[toolName] == null);
+}
+
+function pushRequiredToolsBlockedAnswer(
+  session: AgentSession,
+  onStep: AgentCallback,
+  missingRequiredTools: readonly string[],
+): void {
+  const answerStep: AgentStep = {
+    type: 'answer',
+    content:
+      `Cannot complete this scoped agent task because required tool(s) did not run: ${missingRequiredTools.join(', ')}. ` +
+      'No FEM draft, validation, or result should be treated as complete until the required deterministic tool output appears in the agent trace.',
+    timestamp: Date.now(),
+  };
+  session.steps.push(answerStep);
+  onStep(answerStep);
+}
+
+function formatRequiredToolsPromptRule(options: AgentRunOptions): string {
+  const requiredTools = options.requiredToolsBeforeFinal ?? [];
+  if (requiredTools.length === 0) return '';
+  return `\n- Required scoped tool(s) before final answer: ${requiredTools.join(', ')}. Call these missing required tool(s) before validating, summarizing, or finalizing; do not claim they ran unless they appear in tool results.`;
+}
+
 function buildCompactSystemPrompt(config?: LLMConfig, options: AgentRunOptions = {}): string {
   const tools = visibleTools(config, options)
     .map((tool) => `- ${tool.name}: ${tool.description}`)
     .join('\n');
   const proprietaryRules = getProprietaryInternalsPromptRules();
+  const requiredToolsRule = formatRequiredToolsPromptRule(options);
   const suffix = options.systemPromptSuffix ? `\n${options.systemPromptSuffix}` : '';
 
   return `You are geotechCLI Agent, a geotechnical engineering assistant that must use real tools for calculations.
@@ -118,8 +160,9 @@ ${config ? buildProviderOperatingPrompt(config, { task: 'single-agent', compact:
 - Keep assumptions brief and explicit when inputs are incomplete.
 - Interpret tool outputs in engineering terms with units.
 - If a tool result is blocked, low confidence, or canAutoProceed=false, do not continue blindly.
+- If a draft tool is required for this scoped task, call the draft tool before validation.
 - When finished, provide a concise engineering answer in prose with key results, assumptions, and recommendations.
-- Do not output a tool call in the final answer.${suffix}`;
+- Do not output a tool call in the final answer.${requiredToolsRule}${suffix}`;
 }
 
 function buildSystemPrompt(config?: LLMConfig, options: AgentRunOptions = {}): string {
@@ -141,6 +184,7 @@ function buildSystemPrompt(config?: LLMConfig, options: AgentRunOptions = {}): s
       return `  ${tool.name}: ${tool.description}\n${params}`;
     })
     .join('\n\n');
+  const requiredToolsRule = formatRequiredToolsPromptRule(options);
   const suffix = options.systemPromptSuffix ? `\n${options.systemPromptSuffix}` : '';
 
   return `You are geotechCLI Agent, an expert geotechnical engineering AI that solves problems by EXECUTING real calculations, not just describing them.
@@ -177,8 +221,10 @@ ${proprietaryRules}
 - Reference actual standards: Terzaghi, Meyerhof, Bieniawski, Barton, Boulanger & Idriss, etc.
 - Report tool results with proper units and significant figures.
 - If a tool returns parseStatus/confidence metadata with canAutoProceed=false, treat it as blocked evidence. Do not continue downstream deterministic calculations from it until you retry, request better input, or explain the limitation.
+- If a draft tool is required for this scoped task, call the draft tool before validation.
 - Normalize near-valid natural language inputs into the closest supported engineering enum before calling a tool. Example: "mixed face" should map to the TBM ground type "mixed".
 - When the analysis is complete, provide a clear engineering recommendation with supporting numbers.
+- Do not claim a required scoped tool ran unless it appears in the tool results.${requiredToolsRule}
 
 ## FINAL ANSWER
 When you have completed all necessary calculations and reasoning, provide your final answer as clear prose. Do NOT output a tool call in your final answer. Include:
@@ -271,7 +317,9 @@ export async function runAgent(
     return session;
   }
 
-  const preflightAnswer = buildDeterministicPreflightAnswer(userQuery, config, sessionContext);
+  const preflightAnswer = options.disableDeterministicPreflight
+    ? null
+    : buildDeterministicPreflightAnswer(userQuery, config, sessionContext);
   if (preflightAnswer) {
     const answerStep: AgentStep = {
       type: 'answer',
@@ -349,6 +397,27 @@ export async function runAgent(
 
     const toolCallMatch = llmOutput.match(/```tool\s*\n?([\s\S]*?)\n?```/);
     if (!toolCallMatch) {
+      const missingRequiredTools = missingRequiredToolsForFinal(session, options);
+      if (missingRequiredTools.length > 0) {
+        const requiredStep: AgentStep = {
+          type: 'error',
+          content: `Final answer blocked until required scoped tool(s) run: ${missingRequiredTools.join(', ')}`,
+          timestamp: Date.now(),
+        };
+        session.steps.push(requiredStep);
+        onStep(requiredStep);
+
+        if (iteration >= MAX_ITERATIONS - 1) {
+          pushRequiredToolsBlockedAnswer(session, onStep, missingRequiredTools);
+          break;
+        }
+
+        messages.push({
+          role: 'user',
+          content: `[Required Tool Missing]\nBefore finalizing this scoped agent task, call the required tool(s): ${missingRequiredTools.join(', ')}. Do not claim they ran unless they appear in the tool results.`,
+        });
+        continue;
+      }
       const answerStep: AgentStep = {
         type: 'answer',
         content: llmOutput,
@@ -415,6 +484,38 @@ export async function runAgent(
         content: `[Tool Blocked: ${toolCall.tool}]\nThis scoped agent may only use: ${options.allowedTools?.join(', ') ?? 'the visible tool set'}. Continue with an allowed tool or explain the limitation.`,
       });
       continue;
+    }
+
+    if (toolCall.tool === 'validate_fem_analysis_case') {
+      const missingRequiredTools = missingRequiredToolsForFinal(session, options)
+        .filter((toolName) => toolName !== toolCall.tool);
+      if (missingRequiredTools.length > 0) {
+        const blockedStep: AgentStep = {
+          type: 'error',
+          content: `Tool blocked until required scoped tool(s) run first: ${missingRequiredTools.join(', ')}`,
+          toolName: toolCall.tool,
+          timestamp: Date.now(),
+        };
+        session.steps.push(blockedStep);
+        onStep(blockedStep);
+
+        messages.push({
+          role: 'user',
+          content: `[Required Tool Missing Before Validation]\nBefore calling ${toolCall.tool}, call the required tool(s): ${missingRequiredTools.join(', ')}. Do not validate or summarize a draft that does not appear in tool results.`,
+        });
+        continue;
+      }
+    }
+
+    if (toolCall.tool === 'validate_fem_analysis_case' && !isRecord(toolCall.args.caseFile)) {
+      const preparedCase = preparedFemCaseFromContext(session);
+      if (preparedCase) {
+        toolCall.args = {
+          ...toolCall.args,
+          caseFile: preparedCase,
+        };
+        callStep.toolArgs = toolCall.args;
+      }
     }
 
     if (isAgentSkillToolName(toolCall.tool) && !config.skillsEnabled) {
@@ -525,6 +626,12 @@ export async function runAgent(
   }
 
   if (session.steps.length > 0 && session.steps[session.steps.length - 1].type !== 'answer') {
+    const missingRequiredTools = missingRequiredToolsForFinal(session, options);
+    if (missingRequiredTools.length > 0) {
+      pushRequiredToolsBlockedAnswer(session, onStep, missingRequiredTools);
+      return session;
+    }
+
     messages.push({
       role: 'user',
       content: 'You have used all available iterations. Provide your final engineering answer now based on all tool results gathered so far. Do NOT call any more tools.',

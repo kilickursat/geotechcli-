@@ -24,10 +24,29 @@ export {
   mapGroundModelEvidenceRefs,
   stripPlaceholderFemValues,
   validateFemGroundModelDraftCandidate,
+  validateFemWorkspaceToRunAcceptance,
   type FemGroundModelDraftCandidate,
   type FemGroundModelDraftCandidateValidation,
   type FemGroundModelDraftBridge,
   type FemGroundModelExecutionBoundary,
+  type FemWorkspaceToRunAcceptance,
 } from './ground-model-draft.js';
 export { validateFemAnalysisCase, validateFemResultManifest } from './validation.js';
+export {
+  validateFemScenarioResult,
+  validateFemScenarioSuite,
+  type FemScenarioExpectation,
+  type FemScenarioMetric,
+  type FemScenarioRangeExpectation,
+  type FemScenarioRun,
+  type FemScenarioSuiteValidation,
+  type FemScenarioTrendExpectation,
+  type FemScenarioValidation,
+} from './scenario-validation.js';
+export {
+  assessFemProductionReadiness,
+  type FemProductionFeature,
+  type FemProductionFeatureRequirement,
+  type FemProductionReadinessReport,
+} from './production-readiness.js';
 export { renderFemWebglHtml } from './webgl.js';

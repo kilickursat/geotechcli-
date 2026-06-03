@@ -1421,12 +1421,7 @@ toolRegistry.register(
       result: args.result,
       metadata: args.args,
     });
-    const allowedFemPlanningTool = new Set([
-      'list_fem_capabilities',
-      'prepare_fem_analysis_case',
-      'validate_fem_analysis_case',
-    ]).has(toolName);
-    if (unsafeFemCode && !(allowedFemPlanningTool && unsafeFemCode === 'fem-analysis-case')) {
+    if (unsafeFemCode) {
       return {
         success: false,
         data: null,

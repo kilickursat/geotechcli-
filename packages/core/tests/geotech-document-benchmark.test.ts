@@ -471,7 +471,7 @@ describe('geotech document benchmark', () => {
       caseOutputAvailable: false,
       humanRunCommandAvailable: false,
       draftCommand: 'geotech fem draft foundation-settlement --input <json> --case-output <analysis_case.json>',
-      humanRunCommandTemplate: 'geotech fem run <analysis_case.json> --experimental',
+      humanRunCommandTemplate: 'geotech fem run <analysis_case.json> --experimental --reviewed',
     });
     expect(foundationRoute?.executionBoundary.blockedReasons).toEqual(expect.arrayContaining([
       'human-review-required',

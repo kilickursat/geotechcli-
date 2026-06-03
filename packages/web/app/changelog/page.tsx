@@ -8,6 +8,16 @@ const releases = [
     date: '2026-06-03',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added a deterministic FEM production-readiness assessment for nonlinear/plasticity, consolidation, seepage/pore-pressure coupling, advanced staging, support design, real project workspace-to-run, benchmark, and reviewer gates' },
+      { type: 'fix', text: 'Kept full production-grade FEM claims blocked until solver physics, independent benchmarks, reviewed workspace acceptance, and licensed-review records are implemented' },
+      { type: 'fix', text: 'Required geotech fem run to include --experimental --reviewed and extended FEM smoke coverage with contract-only route checks, reference balances, and cross-scenario trend assertions' },
+    ],
+  },
+  {
+    version: '0.4.91',
+    date: '2026-06-03',
+    tag: '0.4.91 Release',
+    changes: [
       { type: 'feat', text: 'Added production-candidate guardrail contracts for preprocessing, corpus benchmarking, BYOK, standards profiles, calculation drafts, planned FEM routes, and deterministic signal analysis' },
       { type: 'fix', text: 'Added runtime OpenRouter and Hugging Face BYOK aliases so users can bring OPENROUTER_API_KEY, OPENROUTER_MODEL, and HUGGINGFACE_API_KEY into real CLI sessions' },
       { type: 'fix', text: 'Kept AI-assisted and FEM-derived outputs review-gated, path-safe, and free of raw prompt, response, model payload, private path, and token-shaped leakage in persisted artifacts' },

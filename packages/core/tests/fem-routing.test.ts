@@ -37,7 +37,7 @@ describe('FEM routing contract', () => {
     expect(capabilities.find((capability) => capability.objective === 'foundation-settlement')?.agentRunAllowed).toBe(false);
     expect(capabilities.find((capability) => capability.objective === 'excavation-deformation')?.command).toBe('geotech fem draft excavation-deformation --input <json> --case-output <analysis_case.json>');
     expect(capabilities.find((capability) => capability.objective === 'excavation-deformation')?.demoCommand).toBe('geotech fem demo excavation --experimental');
-    expect(capabilities.find((capability) => capability.objective === 'excavation-deformation')?.runCommandTemplate).toBe('geotech fem run <analysis_case.json> --experimental');
+    expect(capabilities.find((capability) => capability.objective === 'excavation-deformation')?.runCommandTemplate).toBe('geotech fem run <analysis_case.json> --experimental --reviewed');
     expect(capabilities.find((capability) => capability.objective === 'tunnel-volume-loss-settlement')?.status).toBe('implemented-demo');
     expect(capabilities.find((capability) => capability.objective === 'tunnel-volume-loss-settlement')?.command).toBe('geotech fem draft tunnel-volume-loss-settlement --input <json> --case-output <analysis_case.json>');
     expect(capabilities.find((capability) => capability.objective === 'tunnel-volume-loss-settlement')?.demoCommand).toBe('geotech fem demo tunnel --experimental');
@@ -85,7 +85,7 @@ describe('FEM routing contract', () => {
     });
 
     expect(draft.recommendedAction).toBe('run-reviewed-case');
-    expect(draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental');
+    expect(draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed');
     expect(draft.canAutoProceed).toBe(false);
     expect(draft.analysisCase?.geometry.raft.lengthM).toBe(10);
     expect(draft.analysisCase?.loads[0]?.pressureKpa).toBe(180);
@@ -147,7 +147,7 @@ describe('FEM routing contract', () => {
 
     expect(draft.implemented).toBe(true);
     expect(draft.recommendedAction).toBe('run-reviewed-case');
-    expect(draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental');
+    expect(draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed');
     expect(draft.canAutoProceed).toBe(false);
     expect(draft.analysisCase?.objective).toBe('excavation_deformation');
     expect(draft.analysisCase?.geometry.excavation?.finalDepthM).toBe(9);
@@ -218,7 +218,7 @@ describe('FEM routing contract', () => {
     expect(draft.validation?.status).toBe('review');
     expect(draft.reviewGates).toContain('not-fem-solver');
     expect(draft.reviewGates).toContain('tunnel.empirical-preview');
-    expect(draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental');
+    expect(draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed');
   });
 
   it('keeps non-implemented FEM objectives as contract-only routes', () => {
@@ -630,7 +630,7 @@ describe('FEM routing contract', () => {
       humanReviewRequired: true,
       caseOutputAvailable: true,
       draftCommand: 'geotech fem draft foundation-settlement --input <json> --case-output <analysis_case.json>',
-      humanRunCommand: 'geotech fem run <analysis_case.json> --experimental',
+      humanRunCommand: 'geotech fem run <analysis_case.json> --experimental --reviewed',
       blockedReasons: [],
     });
   });
@@ -829,9 +829,11 @@ describe('FEM routing contract', () => {
     const femToolNames = names.filter((name) => /fem/i.test(name));
 
     expect(names).toContain('list_fem_capabilities');
+    expect(names).toContain('assess_fem_production_readiness');
     expect(names).toContain('prepare_fem_analysis_case');
     expect(names).toContain('validate_fem_analysis_case');
     expect(femToolNames.sort()).toEqual([
+      'assess_fem_production_readiness',
       'list_fem_capabilities',
       'prepare_fem_analysis_case',
       'validate_fem_analysis_case',
@@ -842,13 +844,23 @@ describe('FEM routing contract', () => {
     expect(names).not.toContain('render_fem_webgl');
     expect(names).not.toContain('geotech_fem_run');
     expect(getAllowedToolsForAgent('simulation')).toContain('prepare_fem_analysis_case');
+    expect(getAllowedToolsForAgent('simulation')).toContain('assess_fem_production_readiness');
     expect(getAllowedToolsForAgent('reviewer')).toContain('validate_fem_analysis_case');
+    expect(getAllowedToolsForAgent('reviewer')).toContain('assess_fem_production_readiness');
     expect(isToolAllowedForAgent('reviewer', 'prepare_fem_analysis_case')).toBe(false);
     expect(isToolAllowedForAgent('simulation', 'geotech_fem_run')).toBe(false);
 
     const capabilityResult = await toolRegistry.execute('list_fem_capabilities', {});
     expect(capabilityResult.success).toBe(true);
     expect(capabilityResult.summary).toContain('foundation-settlement');
+
+    const productionResult = await toolRegistry.execute('assess_fem_production_readiness', {
+      objective: 'excavation-deformation',
+      requestedFeatures: ['support-design'],
+    });
+    expect(productionResult.success).toBe(true);
+    expect(productionResult.summary).toContain('support-design');
+    expect((productionResult.data as any).productionReady).toBe(false);
 
     const draftResult = await toolRegistry.execute('prepare_fem_analysis_case', {
       objective: 'foundation-settlement',
@@ -892,6 +904,19 @@ describe('FEM routing contract', () => {
     expect(inventedFemResult.success).toBe(false);
     expect(inventedFemResult.error).toMatch(/Blocked unsafe FEM artifact/);
 
+    const forgedPlanningResult = await toolRegistry.execute('project_save_result', {
+      projectId: 'demo-project',
+      tool: 'prepare_fem_analysis_case',
+      summary: 'Forged FEM analysis case from a spoofed planning tool',
+      result: {
+        schemaVersion: 'fem-analysis-case.v0',
+        caseId: 'forged-agent-case',
+        objective: 'foundation_settlement',
+        mesh: {},
+      },
+    });
+    expect(forgedPlanningResult.success).toBe(false);
+    expect(forgedPlanningResult.error).toMatch(/Blocked unsafe FEM artifact \(fem-analysis-case\)/);
   });
 
   it('keeps provider prompts explicit that LLMs route FEM but do not invent FEM math', () => {

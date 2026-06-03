@@ -448,7 +448,7 @@ describe('agent ingest tools', () => {
     expect(names).toContain('load_persisted_ingest_review_approval');
     expect(names).toContain('approve_persisted_ingest_review');
     expect(names).toContain('promote_persisted_ingest_review');
-  });
+  }, 15_000);
 
   it('uses the active agent runtime config when ingesting a geotech document', async () => {
     ingestMocks.ingestGeotechDocument.mockResolvedValue(

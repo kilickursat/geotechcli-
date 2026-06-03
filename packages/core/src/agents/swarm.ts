@@ -93,6 +93,7 @@ const ROLE_TOOL_ALLOWLIST = {
     'calculate_slope_stability',
     'calculate_lateral_earth_pressure',
     'list_fem_capabilities',
+    'assess_fem_production_readiness',
     'prepare_fem_analysis_case',
     'validate_fem_analysis_case',
     'write_file',
@@ -112,6 +113,7 @@ const ROLE_TOOL_ALLOWLIST = {
   reviewer: [
     'query_standards',
     'list_fem_capabilities',
+    'assess_fem_production_readiness',
     'validate_fem_analysis_case',
     'project_load',
     'get_geotech_ingest_job',
@@ -348,6 +350,7 @@ function buildSimulationToolContextForReviewer(context: Record<string, unknown>)
 
   const femToolNames = new Set([
     'list_fem_capabilities',
+    'assess_fem_production_readiness',
     'prepare_fem_analysis_case',
     'validate_fem_analysis_case',
   ]);

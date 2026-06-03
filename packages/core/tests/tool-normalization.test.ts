@@ -50,4 +50,29 @@ describe('tool normalization', () => {
       rqd: 70,
     });
   });
+
+  it('normalizes FEM production-readiness model aliases', () => {
+    expect(
+      normalizeToolArgs('assess_fem_production_readiness', {
+        requestType: 'production-grade',
+        femObjectiveHint: 'excavation-deformation',
+        capabilities: [
+          'nonlinear_plasticity',
+          'consolidation',
+          'seepage',
+          'pore_pressure_coupling',
+          'support_design',
+        ],
+      }),
+    ).toMatchObject({
+      objective: 'excavation-deformation',
+      requestedFeatures: [
+        'nonlinear_plasticity',
+        'consolidation',
+        'seepage',
+        'pore_pressure_coupling',
+        'support_design',
+      ],
+    });
+  });
 });

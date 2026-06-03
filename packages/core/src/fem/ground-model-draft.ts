@@ -62,6 +62,18 @@ export interface FemGroundModelDraftCandidateValidation {
   warnings: string[];
 }
 
+export interface FemWorkspaceToRunAcceptance {
+  schemaVersion: 'fem-workspace-to-run-acceptance.v1';
+  status: 'accepted' | 'blocked';
+  objective: FemRouteObjective;
+  workflow: GroundModelCalculationReadiness['workflow'];
+  caseOutputAvailable: boolean;
+  humanRunCommand?: string;
+  blockerCodes: string[];
+  reviewCodes: string[];
+  evidenceIds: string[];
+}
+
 const CONTRACT_ONLY_BLOCKED_UNTIL = [
   'deterministic-analysis-case-schema-accepted',
   'solver-or-preview-backend-implemented',
@@ -512,6 +524,72 @@ export function validateFemGroundModelDraftCandidate(
     status: blockers.length === 0 ? 'accepted' : 'blocked',
     blockerCodes: [...new Set(blockers)],
     warnings,
+  };
+}
+
+export function validateFemWorkspaceToRunAcceptance(
+  candidate: FemGroundModelDraftCandidate,
+): FemWorkspaceToRunAcceptance {
+  const blockers: string[] = [];
+  const draft = candidate.draft;
+  const boundary = candidate.executionBoundary;
+  const evidenceIds = [...new Set([
+    ...candidate.evidenceIds,
+    ...(candidate.bridge.input.evidenceRefs ?? []).map((ref) => ref.id),
+    ...(draft.analysisCase?.evidenceRefs ?? []).map((ref) => ref.id),
+  ])];
+
+  if (draft.capability.executionMode !== 'human-reviewed-preview') {
+    blockers.push('fem_workspace_route_not_runnable_preview');
+  }
+  if (draft.capability.status !== 'implemented-demo') {
+    blockers.push('fem_workspace_route_backend_not_implemented');
+  }
+  if (candidate.status !== 'ready') {
+    blockers.push(`fem_workspace_ground_model_${candidate.status}`);
+  }
+  if (candidate.missingUserInputs.length > 0 || candidate.bridge.readiness.missingUserInputs.length > 0) {
+    blockers.push('fem_workspace_user_inputs_missing');
+  }
+  if (!draft.analysisCase || !boundary.caseOutputAvailable) {
+    blockers.push('fem_workspace_case_output_not_available');
+  }
+  if (draft.recommendedAction !== 'run-reviewed-case') {
+    blockers.push('fem_workspace_draft_not_recommended_for_reviewed_run');
+  }
+  if (!boundary.humanRunCommand?.startsWith('geotech fem run ') || !boundary.humanRunCommand.includes('--experimental') || !boundary.humanRunCommand.includes('--reviewed')) {
+    blockers.push('fem_workspace_reviewed_run_command_missing');
+  }
+  if (boundary.humanReviewRequired !== true) {
+    blockers.push('fem_workspace_human_review_not_required');
+  }
+  if (evidenceIds.length === 0 || (candidate.bridge.input.evidenceRefs?.length ?? 0) === 0) {
+    blockers.push('fem_workspace_evidence_traceability_missing');
+  }
+  if (draft.validation?.status === 'blocked' || (draft.validation?.blockers ?? 0) > 0) {
+    blockers.push('fem_workspace_validation_blocked');
+  }
+  if (draft.analysisCase?.experimental !== true) {
+    blockers.push('fem_workspace_experimental_gate_missing');
+  }
+
+  const reviewCodes = [
+    ...draft.reviewGates,
+    ...(draft.validation?.findings ?? [])
+      .filter((finding) => finding.severity === 'review')
+      .map((finding) => finding.code),
+  ];
+
+  return {
+    schemaVersion: 'fem-workspace-to-run-acceptance.v1',
+    status: blockers.length === 0 ? 'accepted' : 'blocked',
+    objective: candidate.objective,
+    workflow: candidate.workflow,
+    caseOutputAvailable: boundary.caseOutputAvailable,
+    ...(boundary.humanRunCommand ? { humanRunCommand: boundary.humanRunCommand } : {}),
+    blockerCodes: [...new Set(blockers)],
+    reviewCodes: [...new Set(reviewCodes)],
+    evidenceIds,
   };
 }
 

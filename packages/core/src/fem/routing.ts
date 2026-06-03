@@ -138,7 +138,7 @@ const CAPABILITIES: FemCapability[] = [
     command: 'geotech fem draft foundation-settlement --input <json> --case-output <analysis_case.json>',
     demoCommand: 'geotech fem demo raft --experimental',
     draftCommandTemplate: 'geotech fem draft foundation-settlement --input <json> --case-output <analysis_case.json>',
-    runCommandTemplate: 'geotech fem run <analysis_case.json> --experimental',
+    runCommandTemplate: 'geotech fem run <analysis_case.json> --experimental --reviewed',
   },
   {
     objective: 'excavation-deformation',
@@ -157,7 +157,7 @@ const CAPABILITIES: FemCapability[] = [
     command: 'geotech fem draft excavation-deformation --input <json> --case-output <analysis_case.json>',
     demoCommand: 'geotech fem demo excavation --experimental',
     draftCommandTemplate: 'geotech fem draft excavation-deformation --input <json> --case-output <analysis_case.json>',
-    runCommandTemplate: 'geotech fem run <analysis_case.json> --experimental',
+    runCommandTemplate: 'geotech fem run <analysis_case.json> --experimental --reviewed',
   },
   {
     objective: 'shaft-deformation',
@@ -193,7 +193,7 @@ const CAPABILITIES: FemCapability[] = [
     command: 'geotech fem draft tunnel-volume-loss-settlement --input <json> --case-output <analysis_case.json>',
     demoCommand: 'geotech fem demo tunnel --experimental',
     draftCommandTemplate: 'geotech fem draft tunnel-volume-loss-settlement --input <json> --case-output <analysis_case.json>',
-    runCommandTemplate: 'geotech fem run <analysis_case.json> --experimental',
+    runCommandTemplate: 'geotech fem run <analysis_case.json> --experimental --reviewed',
   },
   {
     objective: 'pile-group-elastic-interaction',

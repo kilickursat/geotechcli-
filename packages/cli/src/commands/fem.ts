@@ -43,6 +43,7 @@ const DEFAULT_RUN_HTML = 'geotech-fem-run.html';
 type FemDemoKind = 'raft' | 'excavation' | 'tunnel';
 const FEM_AGENT_TOOLS = [
   'list_fem_capabilities',
+  'assess_fem_production_readiness',
   'prepare_fem_analysis_case',
   'validate_fem_analysis_case',
 ] as const;
@@ -81,6 +82,7 @@ interface FemRunJsonEnvelope {
   kind: 'geotech-fem-run-result';
   schemaVersion: 'fem-run-command.v0';
   experimental: true;
+  reviewed: true;
   casePath: string;
   objective: FemAnalysisCase['objective'];
   manifest: FemResultManifest;
@@ -402,8 +404,26 @@ function buildFemAgentTask(task: string, objective?: string, workspaceSummary?: 
     '',
     'Use only geotechCLI FEM capability, draft, and validation tools.',
     'Do not invent FEM displacement, reaction, mesh, stage, or result-envelope values.',
-    'If deterministic execution is appropriate, recommend a human-reviewed `geotech fem run <analysis_case.json> --experimental` or matching demo command instead of claiming you ran it.',
+    'For production-grade, nonlinear/plasticity, consolidation, seepage, pore-pressure, support design, advanced staging, or real workspace-to-run requests, use the FEM production-readiness assessment before answering.',
+    'A prepared analysisCase in the agent trace is not a saved file; unless a real caseOutput path is present, use `<analysis_case.json>` as the placeholder.',
+    'When recommending commands, quote only command templates returned by FEM tools; do not invent route-specific demo or draft commands.',
+    'If deterministic execution is appropriate, recommend a human-reviewed `geotech fem run <analysis_case.json> --experimental --reviewed` or matching demo command instead of claiming you ran it.',
   ].filter(Boolean).join('\n');
+}
+
+function requiredFemAgentToolsForTask(task: string): readonly string[] {
+  const normalized = task.toLowerCase();
+  const required = new Set<string>();
+  if (/\b(production|production-grade|design-ready|nonlinear|plasticity|consolidation|seepage|pore[- ]?pressure|support design|wall design|anchor design|basal heave|workspace-to-run|real project|benchmark validation)\b/.test(normalized)) {
+    required.add('assess_fem_production_readiness');
+  }
+  if (/\b(draft|prepare|create)\b/.test(normalized) && /\b(case|analysis|fem|settlement|excavation|tunnel|foundation)\b/.test(normalized)) {
+    required.add('prepare_fem_analysis_case');
+  }
+  if (/\b(validate|check)\b/.test(normalized) && /\b(case|analysis_case|json)\b/.test(normalized)) {
+    required.add('validate_fem_analysis_case');
+  }
+  return [...required];
 }
 
 function renderFemAgentStep(step: AgentStep, flags: { json?: boolean; quiet?: boolean; verbose?: boolean }): void {
@@ -581,6 +601,9 @@ async function runFemAnalysisCaseCommand(caseFilePath: string, opts: Record<stri
   if (!opts.experimental) {
     throw new Error('FEM runs are experimental. Re-run with --experimental to acknowledge the limitation.');
   }
+  if (!opts.reviewed) {
+    throw new Error('FEM runs require --reviewed to confirm a human has reviewed the analysis_case.json geometry, loads, staging, assumptions, validation findings, and limitations.');
+  }
 
   const { casePath, analysisCase } = loadFemAnalysisCase(caseFilePath);
   const caseValidation = validateFemAnalysisCase(analysisCase);
@@ -614,6 +637,7 @@ async function runFemAnalysisCaseCommand(caseFilePath: string, opts: Record<stri
     kind: 'geotech-fem-run-result',
     schemaVersion: 'fem-run-command.v0',
     experimental: true,
+    reviewed: true,
     casePath,
     objective: analysisCase.objective,
     manifest,
@@ -622,7 +646,7 @@ async function runFemAnalysisCaseCommand(caseFilePath: string, opts: Record<stri
     opened,
     warnings: [
       'Experimental deterministic FEM run only; not a design calculation.',
-      'Run was invoked by the CLI from a reviewed analysis_case.json file; LLM agents can plan and validate cases but cannot execute this command as a tool.',
+      'Run was invoked by the CLI from a reviewed analysis_case.json file with --reviewed; LLM agents can plan and validate cases but cannot execute this command as a tool.',
       ...buildWarnings(manifest),
     ],
   };
@@ -717,13 +741,15 @@ export function registerFemCommand(program: Command): void {
     .description('Run a reviewed experimental FEM analysis_case.json through deterministic built-in preview backends')
     .argument('<analysisCaseJson>', 'Path to fem-analysis-case.v0 JSON produced by geotech fem draft or manual review')
     .option('--experimental', 'Acknowledge that this FEM run is experimental and not a design calculation')
+    .option('--reviewed', 'Confirm a human reviewed geometry, loads, staging, assumptions, validation findings, and limitations')
     .addHelpText('after', `
   Examples:
     geotech fem draft foundation-settlement --raft-length 10 --raft-width 8 --pressure 150 --case-output analysis_case.json
-    geotech fem run analysis_case.json --experimental --save-html fem-run.html --output fem-run.manifest.json --no-open
-    geotech fem run analysis_case.json --experimental --json
+    geotech fem run analysis_case.json --experimental --reviewed --save-html fem-run.html --output fem-run.manifest.json --no-open
+    geotech fem run analysis_case.json --experimental --reviewed --json
 
   This command executes only deterministic built-in preview backends from a reviewed analysis_case.json.
+  It requires --reviewed as an explicit human-review acknowledgement.
   It is not exposed as an agent tool; LLMs can plan, draft, and validate FEM cases, but users approve runs.
 `)
     .action(async (caseFilePath: string, opts) => {
@@ -846,8 +872,8 @@ export function registerFemCommand(program: Command): void {
     geotech fem agent "review FEM readiness for this site" --workspace ./site-data --objective foundation-settlement
 
   This command gives the LLM a narrow FEM brain. It may call only list_fem_capabilities,
-  prepare_fem_analysis_case, and validate_fem_analysis_case. It does not run FEM solvers,
-  write WebGL artifacts, or produce design-ready FEM results.
+  assess_fem_production_readiness, prepare_fem_analysis_case, and validate_fem_analysis_case.
+  It does not run FEM solvers, write WebGL artifacts, or produce design-ready FEM results.
 `)
     .action(async (taskParts: string[], opts) => {
       const flags = getGlobalFlags(opts);
@@ -871,6 +897,7 @@ export function registerFemCommand(program: Command): void {
       };
 
       const scopedTask = buildFemAgentTask(task, objective, workspaceSummary);
+      const requiredToolsBeforeFinal = requiredFemAgentToolsForTask(task);
       const session = await runAgent(
         scopedTask,
         config,
@@ -878,8 +905,10 @@ export function registerFemCommand(program: Command): void {
         undefined,
         {
           allowedTools: FEM_AGENT_TOOLS,
+          disableDeterministicPreflight: true,
+          requiredToolsBeforeFinal,
           systemPromptSuffix:
-            'FEM scoped-agent rule: use only FEM routing, drafting, and validation tools. Never claim to run a solver or produce FEM numerical results unless they came from a deterministic geotechCLI FEM manifest. Workspace evidence may prefill material, groundwater, and evidenceRefs only; geometry, load, staging, mesh intent, and design approval require explicit user confirmation. Recommend `geotech fem run <analysis_case.json> --experimental` after human review, or `geotech fem demo ... --experimental` for built-in examples, when execution or visualization is needed.',
+            'FEM scoped-agent rule: use only FEM routing, production-readiness, drafting, and validation tools. Never claim to run a solver or produce FEM numerical results unless they came from a deterministic geotechCLI FEM manifest. For production-grade, nonlinear/plasticity, consolidation, seepage, pore-pressure, support design, advanced staging, real workspace-to-run, or benchmark-validation requests, call assess_fem_production_readiness and report its blockers. When recommending commands, quote only command templates returned by FEM tools; do not invent route-specific demo, draft, or run commands. A prepared analysisCase in tool results is not a saved local file; do not invent case file names or paths, and use `<analysis_case.json>` unless a real caseOutput path exists. Workspace evidence may prefill material, groundwater, and evidenceRefs only; geometry, load, staging, mesh intent, and design approval require explicit user confirmation. Recommend `geotech fem run <analysis_case.json> --experimental --reviewed` after human review, or the exact demo command from FEM tool output for built-in examples, when execution or visualization is needed.',
         },
       );
       const answer = session.steps.find((step) => step.type === 'answer')?.content ?? '';

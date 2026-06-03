@@ -1,0 +1,340 @@
+{
+  "schemaVersion": "fem-scenario-contract.v1",
+  "scenarios": [
+    {
+      "id": "raft-stiff-service-load",
+      "input": {
+        "objective": "foundation-settlement",
+        "geometry": {
+          "raftLengthM": 10,
+          "raftWidthM": 8,
+          "domainLengthM": 36,
+          "domainWidthM": 30,
+          "domainDepthM": 16
+        },
+        "load": {
+          "pressureKpa": 150
+        },
+        "material": {
+          "elasticModulusKpa": 50000,
+          "poissonRatio": 0.3,
+          "unitWeightKnM3": 18.5
+        }
+      },
+      "expectation": {
+        "schemaVersion": "fem-scenario-expectation.v1",
+        "scenarioId": "raft-stiff-service-load",
+        "objective": "foundation_settlement",
+        "backendId": "builtin-elastic3d-demo",
+        "validationStatus": "review",
+        "envelope": [
+          { "metric": "maxSettlementMm", "min": 17, "max": 19 },
+          { "metric": "totalLoadKn", "equals": 12000, "tolerance": 0.001 },
+          { "metric": "reactionKn", "equals": 12000, "tolerance": 0.001 },
+          { "metric": "reactionBalanceRatio", "equals": 1, "tolerance": 0.000001 }
+        ],
+        "requiredResultFields": ["vertical_settlement"],
+        "requiredReviewCodes": ["groundwater.review-required", "assumption.linear-elastic-screening"]
+      }
+    },
+    {
+      "id": "raft-soft-service-load",
+      "input": {
+        "objective": "foundation-settlement",
+        "geometry": {
+          "raftLengthM": 10,
+          "raftWidthM": 8,
+          "domainLengthM": 36,
+          "domainWidthM": 30,
+          "domainDepthM": 16
+        },
+        "load": {
+          "pressureKpa": 150
+        },
+        "material": {
+          "elasticModulusKpa": 18000,
+          "poissonRatio": 0.3,
+          "unitWeightKnM3": 18.5
+        }
+      },
+      "expectation": {
+        "schemaVersion": "fem-scenario-expectation.v1",
+        "scenarioId": "raft-soft-service-load",
+        "objective": "foundation_settlement",
+        "backendId": "builtin-elastic3d-demo",
+        "validationStatus": "review",
+        "envelope": [
+          { "metric": "maxSettlementMm", "min": 48, "max": 51 },
+          { "metric": "totalLoadKn", "equals": 12000, "tolerance": 0.001 },
+          { "metric": "reactionKn", "equals": 12000, "tolerance": 0.001 }
+        ],
+        "requiredResultFields": ["vertical_settlement"],
+        "requiredReviewCodes": ["groundwater.review-required", "assumption.linear-elastic-screening"]
+      }
+    },
+    {
+      "id": "raft-high-pressure",
+      "input": {
+        "objective": "foundation-settlement",
+        "geometry": {
+          "raftLengthM": 10,
+          "raftWidthM": 8,
+          "domainLengthM": 36,
+          "domainWidthM": 30,
+          "domainDepthM": 16
+        },
+        "load": {
+          "pressureKpa": 225
+        },
+        "material": {
+          "elasticModulusKpa": 50000,
+          "poissonRatio": 0.3,
+          "unitWeightKnM3": 18.5
+        }
+      },
+      "expectation": {
+        "schemaVersion": "fem-scenario-expectation.v1",
+        "scenarioId": "raft-high-pressure",
+        "objective": "foundation_settlement",
+        "backendId": "builtin-elastic3d-demo",
+        "validationStatus": "review",
+        "envelope": [
+          { "metric": "maxSettlementMm", "min": 26, "max": 28 },
+          { "metric": "totalLoadKn", "equals": 18000, "tolerance": 0.001 },
+          { "metric": "reactionKn", "equals": 18000, "tolerance": 0.001 }
+        ],
+        "requiredResultFields": ["vertical_settlement"],
+        "requiredReviewCodes": ["groundwater.review-required", "assumption.linear-elastic-screening"]
+      }
+    },
+    {
+      "id": "excavation-shallow-stiff",
+      "input": {
+        "objective": "excavation-deformation",
+        "geometry": {
+          "excavationLengthM": 22,
+          "excavationWidthM": 14,
+          "excavationFinalDepthM": 6,
+          "wallToeDepthM": 12,
+          "domainLengthM": 62,
+          "domainWidthM": 42,
+          "domainDepthM": 18
+        },
+        "excavation": {
+          "stageDepthsM": [2, 4, 6],
+          "supportLevelsM": [0, 1.5, 3.5],
+          "wallType": "secant_pile_wall"
+        },
+        "load": {
+          "pressureKpa": 20
+        },
+        "material": {
+          "elasticModulusKpa": 45000,
+          "poissonRatio": 0.31,
+          "unitWeightKnM3": 18.8
+        }
+      },
+      "expectation": {
+        "schemaVersion": "fem-scenario-expectation.v1",
+        "scenarioId": "excavation-shallow-stiff",
+        "objective": "excavation_deformation",
+        "backendId": "builtin-staged-excavation-demo",
+        "validationStatus": "review",
+        "envelope": [
+          { "metric": "maxSettlementMm", "min": 10, "max": 11 },
+          { "metric": "maxHorizontalDisplacementMm", "min": 8.5, "max": 9.5 },
+          { "metric": "maxWallDeflectionMm", "min": 7, "max": 8 },
+          { "metric": "totalExcavatedWeightKn", "equals": 34742.4, "tolerance": 0.01 },
+          { "metric": "stageCount", "equals": 3, "tolerance": 0.000001 }
+        ],
+        "requiredResultFields": ["surface_settlement", "horizontal_displacement", "wall_deflection_proxy", "support_reaction"],
+        "requiredReviewCodes": ["excavation.design-excluded", "groundwater.review-required", "assumption.staged-elastic-screening"]
+      }
+    },
+    {
+      "id": "excavation-deep-soft",
+      "input": {
+        "objective": "excavation-deformation",
+        "geometry": {
+          "excavationLengthM": 22,
+          "excavationWidthM": 14,
+          "excavationFinalDepthM": 10,
+          "wallToeDepthM": 18,
+          "domainLengthM": 66,
+          "domainWidthM": 46,
+          "domainDepthM": 26
+        },
+        "excavation": {
+          "stageDepthsM": [3, 6, 10],
+          "supportLevelsM": [0, 2, 5],
+          "wallType": "diaphragm_wall"
+        },
+        "load": {
+          "pressureKpa": 25
+        },
+        "material": {
+          "elasticModulusKpa": 25000,
+          "poissonRatio": 0.32,
+          "unitWeightKnM3": 18.8
+        }
+      },
+      "expectation": {
+        "schemaVersion": "fem-scenario-expectation.v1",
+        "scenarioId": "excavation-deep-soft",
+        "objective": "excavation_deformation",
+        "backendId": "builtin-staged-excavation-demo",
+        "validationStatus": "review",
+        "envelope": [
+          { "metric": "maxSettlementMm", "min": 30, "max": 32 },
+          { "metric": "maxHorizontalDisplacementMm", "min": 27, "max": 28.5 },
+          { "metric": "maxWallDeflectionMm", "min": 22, "max": 24 },
+          { "metric": "totalExcavatedWeightKn", "equals": 57904, "tolerance": 0.01 },
+          { "metric": "stageCount", "equals": 3, "tolerance": 0.000001 }
+        ],
+        "requiredResultFields": ["surface_settlement", "horizontal_displacement", "wall_deflection_proxy", "support_reaction"],
+        "requiredReviewCodes": ["excavation.design-excluded", "groundwater.review-required", "assumption.staged-elastic-screening"]
+      }
+    },
+    {
+      "id": "tunnel-baseline-volume-loss",
+      "input": {
+        "objective": "tunnel-volume-loss-settlement",
+        "geometry": {
+          "tunnelDiameterM": 6,
+          "tunnelAxisDepthM": 18,
+          "tunnelLengthM": 60,
+          "tunnelVolumeLossPercent": 0.8,
+          "troughWidthParameterK": 0.5
+        },
+        "material": {
+          "elasticModulusKpa": 52000,
+          "poissonRatio": 0.28,
+          "unitWeightKnM3": 19
+        }
+      },
+      "expectation": {
+        "schemaVersion": "fem-scenario-expectation.v1",
+        "scenarioId": "tunnel-baseline-volume-loss",
+        "objective": "tunnel_volume_loss_settlement",
+        "backendId": "builtin-tunnel-volume-loss-demo",
+        "validationStatus": "review",
+        "envelope": [
+          { "metric": "maxSettlementMm", "min": 9.5, "max": 10.5 },
+          { "metric": "volumeLossPercent", "equals": 0.8, "tolerance": 0.000001 },
+          { "metric": "troughWidthM", "equals": 9, "tolerance": 0.001 },
+          { "metric": "settlementVolumePerM", "min": 0.22, "max": 0.23 }
+        ],
+        "requiredResultFields": ["surface_settlement"],
+        "requiredReviewCodes": ["tunnel.empirical-preview", "groundwater.review-required", "assumption.empirical-volume-loss"]
+      }
+    },
+    {
+      "id": "tunnel-high-volume-loss",
+      "input": {
+        "objective": "tunnel-volume-loss-settlement",
+        "geometry": {
+          "tunnelDiameterM": 6,
+          "tunnelAxisDepthM": 18,
+          "tunnelLengthM": 60,
+          "tunnelVolumeLossPercent": 2,
+          "troughWidthParameterK": 0.5
+        },
+        "material": {
+          "elasticModulusKpa": 52000,
+          "poissonRatio": 0.28,
+          "unitWeightKnM3": 19
+        }
+      },
+      "expectation": {
+        "schemaVersion": "fem-scenario-expectation.v1",
+        "scenarioId": "tunnel-high-volume-loss",
+        "objective": "tunnel_volume_loss_settlement",
+        "backendId": "builtin-tunnel-volume-loss-demo",
+        "validationStatus": "review",
+        "envelope": [
+          { "metric": "maxSettlementMm", "min": 24.5, "max": 25.5 },
+          { "metric": "volumeLossPercent", "equals": 2, "tolerance": 0.000001 },
+          { "metric": "troughWidthM", "equals": 9, "tolerance": 0.001 },
+          { "metric": "settlementVolumePerM", "min": 0.56, "max": 0.57 }
+        ],
+        "requiredResultFields": ["surface_settlement"],
+        "requiredReviewCodes": ["tunnel.empirical-preview", "groundwater.review-required", "assumption.empirical-volume-loss"]
+      }
+    },
+    {
+      "id": "tunnel-deeper-wide-trough",
+      "input": {
+        "objective": "tunnel-volume-loss-settlement",
+        "geometry": {
+          "tunnelDiameterM": 6,
+          "tunnelAxisDepthM": 24,
+          "tunnelLengthM": 60,
+          "tunnelVolumeLossPercent": 0.8,
+          "troughWidthParameterK": 0.65
+        },
+        "material": {
+          "elasticModulusKpa": 52000,
+          "poissonRatio": 0.28,
+          "unitWeightKnM3": 19
+        }
+      },
+      "expectation": {
+        "schemaVersion": "fem-scenario-expectation.v1",
+        "scenarioId": "tunnel-deeper-wide-trough",
+        "objective": "tunnel_volume_loss_settlement",
+        "backendId": "builtin-tunnel-volume-loss-demo",
+        "validationStatus": "review",
+        "envelope": [
+          { "metric": "maxSettlementMm", "min": 5.5, "max": 6.5 },
+          { "metric": "volumeLossPercent", "equals": 0.8, "tolerance": 0.000001 },
+          { "metric": "troughWidthM", "equals": 15.6, "tolerance": 0.001 },
+          { "metric": "settlementVolumePerM", "min": 0.22, "max": 0.23 }
+        ],
+        "requiredResultFields": ["surface_settlement"],
+        "requiredReviewCodes": ["tunnel.empirical-preview", "groundwater.review-required", "assumption.empirical-volume-loss"]
+      }
+    }
+  ],
+  "trends": [
+    {
+      "id": "raft-settlement-increases-when-softer",
+      "fromScenarioId": "raft-stiff-service-load",
+      "toScenarioId": "raft-soft-service-load",
+      "metric": "maxSettlementMm",
+      "relation": "increase",
+      "minRatio": 2.6
+    },
+    {
+      "id": "raft-settlement-increases-with-pressure",
+      "fromScenarioId": "raft-stiff-service-load",
+      "toScenarioId": "raft-high-pressure",
+      "metric": "maxSettlementMm",
+      "relation": "increase",
+      "minRatio": 1.45
+    },
+    {
+      "id": "excavation-movement-increases-with-depth-and-softness",
+      "fromScenarioId": "excavation-shallow-stiff",
+      "toScenarioId": "excavation-deep-soft",
+      "metric": "maxWallDeflectionMm",
+      "relation": "increase",
+      "minRatio": 2.8
+    },
+    {
+      "id": "tunnel-settlement-increases-with-volume-loss",
+      "fromScenarioId": "tunnel-baseline-volume-loss",
+      "toScenarioId": "tunnel-high-volume-loss",
+      "metric": "maxSettlementMm",
+      "relation": "increase",
+      "minRatio": 2.4
+    },
+    {
+      "id": "tunnel-settlement-decreases-with-wider-trough",
+      "fromScenarioId": "tunnel-baseline-volume-loss",
+      "toScenarioId": "tunnel-deeper-wide-trough",
+      "metric": "maxSettlementMm",
+      "relation": "decrease",
+      "minRatio": 1.6
+    }
+  ]
+}

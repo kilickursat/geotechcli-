@@ -16,8 +16,46 @@ function extractFindingCodes(value: unknown): string[] {
     .filter(Boolean);
 }
 
+function extractStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => (typeof item === 'string' ? item.trim() : ''))
+    .filter(Boolean);
+}
+
 export function extractToolSafetyIssue(data: unknown): ToolSafetyIssue | null {
   if (!isRecord(data)) return null;
+
+  const agentEvidenceSummary = typeof data.agentEvidenceSummary === 'string'
+    ? data.agentEvidenceSummary
+    : '';
+  const looksLikeFemDraft =
+    data.schemaVersion === 'fem-analysis-case-draft.v1' ||
+    /FEM objective:/i.test(agentEvidenceSummary);
+  if (looksLikeFemDraft) {
+    const missingUserInputs = extractStringArray(data.missingUserInputs);
+    const validation = isRecord(data.validation) ? data.validation : {};
+    const validationStatus = typeof validation.status === 'string' ? validation.status : '';
+    const validationBlockers =
+      typeof validation.blockers === 'number' && Number.isFinite(validation.blockers)
+        ? validation.blockers
+        : 0;
+
+    if (missingUserInputs.length === 0 && validationStatus !== 'blocked' && validationBlockers === 0) {
+      return null;
+    }
+
+    return {
+      parseStatus: validationStatus || undefined,
+      warnings: missingUserInputs.length > 0
+        ? missingUserInputs
+        : [`validation:${validationStatus || 'blocked'}`],
+      message: `FEM draft blocked until required deterministic inputs are resolved (${[
+        ...missingUserInputs,
+        validationStatus && validationStatus !== 'ok' ? `validation:${validationStatus}` : '',
+      ].filter(Boolean).join('; ') || 'blocked'}).`,
+    };
+  }
 
   const status = typeof data.status === 'string' ? data.status : '';
   const blockerCount =
@@ -31,9 +69,9 @@ export function extractToolSafetyIssue(data: unknown): ToolSafetyIssue | null {
   const findingCodes = extractFindingCodes(data.findings);
   const looksLikeFemValidation =
     findingCodes.some((code) => code.includes('.')) ||
-    typeof data.agentEvidenceSummary === 'string' && /FEM validation/i.test(data.agentEvidenceSummary);
+    /FEM validation/i.test(agentEvidenceSummary);
 
-  if (looksLikeFemValidation && (status === 'blocked' || blockerCount > 0 || status === 'review' || reviewItemCount > 0)) {
+  if (looksLikeFemValidation && (status === 'blocked' || blockerCount > 0)) {
     const warnings = findingCodes.length > 0
       ? findingCodes
       : [

@@ -59,6 +59,39 @@ describe('Agent safety helpers', () => {
     expect(issue!.warnings).toContain('Missing RQD');
   });
 
+  it('does not block a review-gated FEM draft that has no missing inputs', () => {
+    const issue = extractToolSafetyIssue({
+      schemaVersion: 'fem-analysis-case-draft.v1',
+      canAutoProceed: false,
+      missingUserInputs: [],
+      validation: {
+        status: 'review',
+        blockers: 0,
+        reviewItems: 4,
+      },
+      agentEvidenceSummary: 'FEM objective: foundation-settlement\ncanAutoProceed: no',
+    });
+
+    expect(issue).toBeNull();
+  });
+
+  it('blocks FEM drafts that still have missing deterministic inputs', () => {
+    const issue = extractToolSafetyIssue({
+      schemaVersion: 'fem-analysis-case-draft.v1',
+      canAutoProceed: false,
+      missingUserInputs: ['raft length'],
+      validation: {
+        status: 'blocked',
+        blockers: 1,
+      },
+      agentEvidenceSummary: 'FEM objective: foundation-settlement\ncanAutoProceed: no',
+    });
+
+    expect(issue).not.toBeNull();
+    expect(issue!.message).toContain('FEM draft blocked');
+    expect(issue!.warnings).toContain('raft length');
+  });
+
   it('serializes and truncates large contexts', () => {
     const text = serializeContextForPrompt({
       veryLarge: 'x'.repeat(200),
