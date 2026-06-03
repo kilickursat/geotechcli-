@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.101] - 2026-06-03
+
+### Ingest Live Progress Hardening
+
+- Fixed foreground live progress for large resumable PDF ingest jobs so transient partial `job.json` reads are skipped and retried instead of aborting the command with a raw `Unterminated string in JSON` error.
+- Added regression coverage for the reported malformed persisted-job read while preserving the completed background job result and progress summary flow.
+- Kept the persisted job recovery path bounded: repeated unreadable job state still fails with resumable `geotech ingest wait` / `geotech ingest resume` guidance instead of silently hanging.
+
 ## [0.4.100] - 2026-06-03
 
 ### FEM Quad4 Seepage Evidence

@@ -1963,6 +1963,32 @@ function isWaitTimeoutError(err: unknown, jobId: string): boolean {
     && err.message.includes(`Timed out while waiting for persisted ingest job "${jobId}"`);
 }
 
+const LIVE_PROGRESS_TRANSIENT_READ_ERROR_LIMIT = 30;
+
+function isTransientPersistedIngestJobReadError(err: unknown): boolean {
+  if (err instanceof SyntaxError) {
+    return true;
+  }
+
+  if (!(err instanceof Error)) {
+    return false;
+  }
+
+  return /(?:unterminated string in json|unexpected end of json|unexpected token .* in json|job\.json is not valid json|partial checkpoint write)/i
+    .test(err.message);
+}
+
+function loadLiveProgressSnapshot(jobId: string): NormalizedIngestJobRecord | null {
+  try {
+    return normalizeIngestJobRecord(loadPersistedIngestJob(jobId));
+  } catch (err) {
+    if (isTransientPersistedIngestJobReadError(err)) {
+      return null;
+    }
+    throw err;
+  }
+}
+
 async function waitForPersistedIngestJobWithLiveProgress(
   jobId: string,
   flags: { json?: boolean; quiet?: boolean },
@@ -1973,10 +1999,24 @@ async function waitForPersistedIngestJobWithLiveProgress(
 
   info(`Waiting for ingest job ${jobId} to finish...`);
   let lastProgress = '';
+  let transientReadErrors = 0;
+
+  const noteTransientReadError = (err: unknown) => {
+    transientReadErrors += 1;
+    if (transientReadErrors > LIVE_PROGRESS_TRANSIENT_READ_ERROR_LIMIT) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `Persisted ingest job "${jobId}" could not be read consistently while streaming progress. `
+        + `The background worker may still be running; retry "geotech ingest wait ${jobId}" or run "geotech ingest resume ${jobId}". `
+        + `Last read error: ${message}`,
+      );
+    }
+  };
 
   while (true) {
     try {
       const record = await waitForPersistedIngestJob(jobId, { pollMs: 250, timeoutMs: 1000 });
+      transientReadErrors = 0;
       const normalized = normalizeIngestJobRecord(record);
       if (normalized) {
         const progress = formatIngestJobProgress(normalized);
@@ -1986,16 +2026,33 @@ async function waitForPersistedIngestJobWithLiveProgress(
       }
       return record;
     } catch (err) {
+      if (isTransientPersistedIngestJobReadError(err)) {
+        noteTransientReadError(err);
+        const normalized = loadLiveProgressSnapshot(jobId);
+        if (!normalized) {
+          continue;
+        }
+
+        transientReadErrors = 0;
+        const progress = formatIngestJobProgress(normalized);
+        if (progress !== lastProgress) {
+          info(progress);
+          lastProgress = progress;
+        }
+        continue;
+      }
+
       if (!isWaitTimeoutError(err, jobId)) {
         throw err;
       }
 
-      const record = loadPersistedIngestJob(jobId);
-      const normalized = normalizeIngestJobRecord(record);
+      const normalized = loadLiveProgressSnapshot(jobId);
       if (!normalized) {
+        noteTransientReadError(err);
         continue;
       }
 
+      transientReadErrors = 0;
       const progress = formatIngestJobProgress(normalized);
       if (progress !== lastProgress) {
         info(progress);

@@ -890,6 +890,86 @@ describe('registerIngestCommand', () => {
     expect(uiMocks.heading).toHaveBeenCalledWith('Geotechnical Ingest Result');
   });
 
+  it('continues live waiting through transient partial job JSON reads', async () => {
+    const registerIngestCommand = await loadRegisterIngestCommand();
+    const program = new Command();
+    const completedResult = {
+      ingestResult: makeBoreholeIngestResult({
+        source: {
+          filePath: 'large.pdf',
+          fileName: 'large.pdf',
+          inputKind: 'pdf',
+          totalPages: 2,
+          successfulPages: 2,
+          failedPages: 0,
+        },
+      }),
+    };
+    const runningJob = makePersistedIngestJobRecord({
+      source: {
+        filePath: 'large.pdf',
+        fileName: 'large.pdf',
+        inputKind: 'pdf',
+        totalPages: 2,
+        weightedPageCost: 2,
+      },
+    });
+    const completedJob = makePersistedIngestJobRecord({
+      status: 'completed',
+      completedAt: '2026-04-22T00:02:00.000Z',
+      result: completedResult,
+      source: {
+        filePath: 'large.pdf',
+        fileName: 'large.pdf',
+        inputKind: 'pdf',
+        totalPages: 2,
+        weightedPageCost: 2,
+      },
+      checkpoints: {
+        pages: [
+          {
+            pageNumber: 1,
+            status: 'completed',
+            classification: 'digital-text',
+            sourceKind: 'pdf-page',
+            weight: 1,
+            attempts: 1,
+            updatedAt: '2026-04-22T00:01:00.000Z',
+          },
+          {
+            pageNumber: 2,
+            status: 'completed',
+            classification: 'digital-text',
+            sourceKind: 'pdf-page',
+            weight: 1,
+            attempts: 1,
+            updatedAt: '2026-04-22T00:01:30.000Z',
+          },
+        ],
+      },
+    });
+
+    coreMocks.loadPersistedIngestJob
+      .mockImplementationOnce(() => {
+        throw new Error('Unterminated string in JSON at position 950269 (line 11319 column 1044)');
+      })
+      .mockReturnValue(runningJob);
+    coreMocks.waitForPersistedIngestJob
+      .mockRejectedValueOnce(new Error('Unterminated string in JSON at position 950269 (line 11319 column 1044)'))
+      .mockRejectedValueOnce(new Error(`Timed out while waiting for persisted ingest job "${runningJob.jobId}".`))
+      .mockResolvedValueOnce(completedJob);
+
+    registerIngestCommand(program);
+
+    await program.parseAsync(['ingest', 'wait', runningJob.jobId], { from: 'user' });
+
+    expect(coreMocks.waitForPersistedIngestJob).toHaveBeenCalledTimes(3);
+    expect(coreMocks.loadPersistedIngestJob).toHaveBeenCalledWith(runningJob.jobId);
+    expect(uiMocks.error).not.toHaveBeenCalled();
+    expect(uiMocks.info).toHaveBeenCalledWith(expect.stringContaining('Ingest progress: 1/2 pages resolved'));
+    expect(uiMocks.heading).toHaveBeenCalledWith('Geotechnical Ingest Result');
+  });
+
   it('writes and opens a compact HTML report when waiting for a completed ingest job', async () => {
     const registerIngestCommand = await loadRegisterIngestCommand();
     const program = new Command();

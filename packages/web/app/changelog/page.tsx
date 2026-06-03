@@ -8,6 +8,16 @@ const releases = [
     date: '2026-06-03',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'fix', text: 'Fixed large resumable PDF ingest live progress so transient partial job.json reads are skipped and retried instead of aborting with a raw Unterminated string in JSON error' },
+      { type: 'fix', text: 'Added regression coverage for foreground ingest wait recovery while the background worker continues to a completed persisted result' },
+      { type: 'fix', text: 'Kept repeated unreadable persisted job state bounded with resume/wait guidance rather than silently hanging' },
+    ],
+  },
+  {
+    version: '0.4.100',
+    date: '2026-06-03',
+    tag: '0.4.100 Release',
+    changes: [
       { type: 'feat', text: 'Added a benchmark-scale Quad4 plane-strain steady Darcy seepage evidence kernel with hydraulic head DOFs, Darcy flux, pore pressure, and effective-stress-reduction metadata' },
       { type: 'feat', text: 'Extended FEM evidence with 2D linear-head flow, boundary mass-balance, and effective-stress-reduction benchmarks visible to readiness tools and default hosted GLM planning' },
       { type: 'fix', text: 'Kept full production FEM blocked until route-backed result manifests, Biot u-p coupling, sparse production solvers, external benchmarks, support design, and enforced approvals are complete' },
