@@ -7,6 +7,7 @@ import {
   runPlaneStrainDruckerPragerLoadSteps,
   runPlaneStrainQuad4Assembly,
   runPlaneStrainSteadySeepage,
+  terzaghiAverageConsolidation,
   type FemPlaneStrainBiotConsolidationModel,
   type FemPlaneStrainModel,
   type FemPlaneStrainSeepageModel,
@@ -398,6 +399,70 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
     expect(biot.elements.flatMap((element) => element.gaussPoints)
       .every((point) => point.biotStressReductionKpa === 0)).toBe(true);
     expect(biot.converged).toBe(true);
+  });
+
+  it('matches Terzaghi pressure dissipation for an alpha-zero Biot drainage column', () => {
+    const initialPorePressureKpa = 100;
+    const timeFactor = 0.197;
+    const hydraulicConductivityMPerS = 1e-6;
+    const specificStorage1PerM = 1e-4;
+    const drainagePathM = 1;
+    const finalTimeSeconds = timeFactor * drainagePathM ** 2 /
+      (hydraulicConductivityMPerS / specificStorage1PerM);
+    const mesh = buildPlaneStrainRectangularMesh({
+      widthM: 1,
+      heightM: 1,
+      divisionsX: 1,
+      divisionsY: 16,
+      materialId: 'soil',
+    });
+    const bottomNodes = mesh.nodes.filter((node) => node.yM === 0);
+    const topNodes = mesh.nodes.filter((node) => node.yM === 1);
+    const result = runPlaneStrainBiotConsolidation({
+      schemaVersion: 'fem-plane-strain-biot-consolidation-model.v1',
+      nodes: mesh.nodes,
+      elements: mesh.elements,
+      materials: [{
+        id: 'soil',
+        elasticModulusKpa: 30_000,
+        poissonRatio: 0.3,
+        hydraulicConductivityXMPerS: hydraulicConductivityMPerS,
+        hydraulicConductivityYMPerS: hydraulicConductivityMPerS,
+        biotCoefficient: 0,
+        specificStorage1PerM,
+      }],
+      boundaryConditions: bottomNodes.flatMap((node) => [
+        { nodeId: node.id, dof: 'ux' as const },
+        { nodeId: node.id, dof: 'uy' as const },
+      ]),
+      porePressureBoundaryConditions: topNodes.map((node) => ({ nodeId: node.id, porePressureKpa: 0 })),
+      initialPorePressureKpa,
+      timeStepsSeconds: Array.from({ length: 80 }, (_, index) => finalTimeSeconds * ((index + 1) / 80)),
+    });
+
+    const totalWeight = result.elements.reduce((sum, element) => sum + element.areaM2 * element.thicknessM, 0);
+    const finalAveragePressureKpa = result.elements.reduce((sum, element) => {
+      const pointWeight = (element.areaM2 * element.thicknessM) / element.gaussPoints.length;
+      return sum + element.gaussPoints.reduce(
+        (pointSum, point) => pointSum + point.porePressureKpa * pointWeight,
+        0,
+      );
+    }, 0) / totalWeight;
+    const degreeOfConsolidation = 1 - (finalAveragePressureKpa / initialPorePressureKpa);
+    const referenceDegreeOfConsolidation = terzaghiAverageConsolidation(timeFactor);
+
+    expect(result.productionReady).toBe(false);
+    expect(result.converged).toBe(true);
+    expect(result.maxBiotCouplingKpa).toBe(0);
+    expect(result.massBalanceErrorRatio).toBeLessThanOrEqual(result.policy.porePressureMassBalanceTolerance);
+    expect(result.minPorePressureKpa).toBe(0);
+    expect(result.maxPorePressureKpa).toBeLessThan(initialPorePressureKpa);
+    expect(result.timeSteps[0].maxPorePressureKpa).toBeGreaterThan(result.timeSteps.at(-1)!.maxPorePressureKpa);
+    expect(degreeOfConsolidation).toBeCloseTo(referenceDegreeOfConsolidation, 2);
+    expect(degreeOfConsolidation).toBeGreaterThan(0.49);
+    expect(degreeOfConsolidation).toBeLessThan(0.51);
+    expect(result.nodes.every((node) => Math.abs(node.uxM) <= 1e-12 && Math.abs(node.uyM) <= 1e-12))
+      .toBe(true);
   });
 
   it('rejects unsafe Biot u-p consolidation inputs before solving', () => {

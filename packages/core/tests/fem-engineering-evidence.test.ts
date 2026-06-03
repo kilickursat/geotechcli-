@@ -279,6 +279,7 @@ describe('FEM engineering evidence kernels', () => {
       'quad4-plane-strain-biot-u-p-mass-residual',
       'quad4-plane-strain-biot-u-p-pressure-gradient-flux-contract',
       'quad4-plane-strain-biot-u-p-alpha-zero-decoupling',
+      'quad4-plane-strain-biot-u-p-terzaghi-pressure-dissipation',
     ]));
     expect(report.verifiedFeatures).toEqual(expect.arrayContaining([
       'global-plane-strain-assembly',

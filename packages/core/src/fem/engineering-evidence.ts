@@ -1742,6 +1742,73 @@ export function runFemEngineeringEvidenceSuite(
     'm',
   ));
 
+  const biotTerzaghiInitialPressureKpa = 100;
+  const biotTerzaghiTimeFactor = 0.197;
+  const biotTerzaghiHydraulicConductivityMPerS = 1e-6;
+  const biotTerzaghiSpecificStorage1PerM = 1e-4;
+  const biotTerzaghiFinalTimeSeconds = biotTerzaghiTimeFactor /
+    (biotTerzaghiHydraulicConductivityMPerS / biotTerzaghiSpecificStorage1PerM);
+  const biotTerzaghiMesh = buildPlaneStrainRectangularMesh({
+    widthM: 1,
+    heightM: 1,
+    divisionsX: 1,
+    divisionsY: 16,
+    materialId: 'soil',
+  });
+  const biotTerzaghiTopNodes = biotTerzaghiMesh.nodes.filter((node) => node.yM === 1);
+  const biotTerzaghiBottomNodes = biotTerzaghiMesh.nodes.filter((node) => node.yM === 0);
+  const biotTerzaghi = runPlaneStrainBiotConsolidation({
+    schemaVersion: 'fem-plane-strain-biot-consolidation-model.v1',
+    nodes: biotTerzaghiMesh.nodes,
+    elements: biotTerzaghiMesh.elements,
+    materials: [{
+      id: 'soil',
+      elasticModulusKpa: 30_000,
+      poissonRatio: 0.3,
+      hydraulicConductivityXMPerS: biotTerzaghiHydraulicConductivityMPerS,
+      hydraulicConductivityYMPerS: biotTerzaghiHydraulicConductivityMPerS,
+      biotCoefficient: 0,
+      specificStorage1PerM: biotTerzaghiSpecificStorage1PerM,
+    }],
+    boundaryConditions: biotTerzaghiBottomNodes.flatMap((node) => [
+      { nodeId: node.id, dof: 'ux' as const },
+      { nodeId: node.id, dof: 'uy' as const },
+    ]),
+    porePressureBoundaryConditions: biotTerzaghiTopNodes.map((node) => ({
+      nodeId: node.id,
+      porePressureKpa: 0,
+    })),
+    initialPorePressureKpa: biotTerzaghiInitialPressureKpa,
+    timeStepsSeconds: Array.from(
+      { length: 80 },
+      (_, index) => biotTerzaghiFinalTimeSeconds * ((index + 1) / 80),
+    ),
+    policy,
+  });
+  const biotTerzaghiVolumeM3 = biotTerzaghi.elements.reduce(
+    (sum, element) => sum + element.areaM2 * element.thicknessM,
+    0,
+  );
+  const biotTerzaghiAveragePressureKpa = biotTerzaghi.elements.reduce((sum, element) => {
+    const pointWeight = (element.areaM2 * element.thicknessM) / element.gaussPoints.length;
+    return sum + element.gaussPoints.reduce(
+      (pointSum, point) => pointSum + point.porePressureKpa * pointWeight,
+      0,
+    );
+  }, 0) / biotTerzaghiVolumeM3;
+  const biotTerzaghiDegreeOfConsolidation =
+    1 - (biotTerzaghiAveragePressureKpa / biotTerzaghiInitialPressureKpa);
+  benchmarks.push(benchmark(
+    'quad4-plane-strain-biot-u-p-terzaghi-pressure-dissipation',
+    'consolidation',
+    'closed-form',
+    'degreeOfConsolidation',
+    biotTerzaghiDegreeOfConsolidation,
+    terzaghiAverageConsolidation(biotTerzaghiTimeFactor),
+    0.005,
+    'Alpha-zero Quad4 Biot pressure diffusion must match Terzaghi average consolidation at Tv = 0.197 for a top-drained column.',
+  ));
+
   const coupling = runHydroMechanicalCoupling1D({
     totalVerticalStressKpa: 200,
     porePressureBeforeKpa: 80,

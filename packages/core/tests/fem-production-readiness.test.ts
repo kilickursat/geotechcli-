@@ -58,6 +58,7 @@ describe('FEM production readiness contract', () => {
       'quad4-plane-strain-biot-u-p-effective-stress-coupling',
       'quad4-plane-strain-biot-u-p-pressure-gradient-flux-contract',
       'quad4-plane-strain-biot-u-p-alpha-zero-decoupling',
+      'quad4-plane-strain-biot-u-p-terzaghi-pressure-dissipation',
     ]));
     expect(report.releasePositioning).toContain('not a full production-grade nonlinear geotechnical FEM solver yet');
   });
@@ -110,6 +111,7 @@ describe('FEM production readiness contract', () => {
     expect(data.agentEvidenceSummary).toContain('quad4-plane-strain-biot-u-p-effective-stress-coupling');
     expect(data.agentEvidenceSummary).toContain('quad4-plane-strain-biot-u-p-pressure-gradient-flux-contract');
     expect(data.agentEvidenceSummary).toContain('quad4-plane-strain-biot-u-p-alpha-zero-decoupling');
+    expect(data.agentEvidenceSummary).toContain('quad4-plane-strain-biot-u-p-terzaghi-pressure-dissipation');
     expect(data.agentEvidenceSummary).toContain(
       'biot-u-p-coupling-evidence-kernel-not-route-backed-result-manifest-or-production-sparse-solver',
     );

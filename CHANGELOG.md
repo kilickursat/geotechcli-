@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.105] - 2026-06-03
+
+### FEM Biot Terzaghi Evidence
+
+- Added an alpha-zero Quad4 Biot u-p drainage-column benchmark that checks transient pore-pressure dissipation against Terzaghi average consolidation at `Tv = 0.197`.
+- Registered the new pressure-dissipation benchmark in the FEM engineering-evidence and production-readiness surfaces so hosted GLM and BYOK-style agents can see the stronger consolidation evidence.
+- Kept full production FEM blocked: the Biot kernel remains benchmark-scale evidence, not a route-backed production sparse solver, nonlinear staged-construction backend, support-design engine, or independently approved benchmark corpus.
+
 ## [0.4.104] - 2026-06-03
 
 ### FEM Biot Evidence Contract

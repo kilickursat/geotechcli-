@@ -8,6 +8,16 @@ const releases = [
     date: '2026-06-03',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added an alpha-zero Quad4 Biot u-p drainage-column benchmark that checks transient pore-pressure dissipation against Terzaghi average consolidation at Tv = 0.197' },
+      { type: 'feat', text: 'Registered the pressure-dissipation benchmark in FEM engineering evidence and production-readiness surfaces so hosted GLM and BYOK-style agents can see the stronger consolidation evidence' },
+      { type: 'fix', text: 'Kept full production FEM blocked: the Biot kernel remains benchmark-scale evidence, not a route-backed production sparse solver, nonlinear staged-construction backend, support-design engine, or independently approved benchmark corpus' },
+    ],
+  },
+  {
+    version: '0.4.104',
+    date: '2026-06-03',
+    tag: '0.4.104 Release',
+    changes: [
       { type: 'feat', text: 'Hardened the benchmark-scale Quad4 Biot u-p evidence kernel with explicit excess-pore-pressure, stress, storage, and Darcy-flux convention metadata plus auditable pressure-equation residual components' },
       { type: 'feat', text: 'Added deterministic Biot pressure-gradient flux and alpha-zero decoupling benchmark coverage and a fail-fast unsupported negative free-pore-pressure policy' },
       { type: 'fix', text: 'Extended production-readiness and mocked default GLM/BYOK agent tests so stronger Biot evidence is visible while full production FEM remains blocked behind route, sparse-solver, nonlinear-coupling, benchmark, support-design, and approval gates' },

@@ -403,6 +403,7 @@ describe('AI fallback behavior', () => {
         'quad4-plane-strain-biot-u-p-mass-residual',
         'quad4-plane-strain-biot-u-p-pressure-gradient-flux-contract',
         'quad4-plane-strain-biot-u-p-alpha-zero-decoupling',
+        'quad4-plane-strain-biot-u-p-terzaghi-pressure-dissipation',
       ]));
     expect(readinessData.blockers).toEqual(expect.arrayContaining([
       'biot-u-p-coupling-evidence-kernel-not-route-backed-result-manifest-or-production-sparse-solver',
@@ -426,6 +427,8 @@ describe('AI fallback behavior', () => {
     expect(readinessData.agentEvidenceSummary)
       .toContain('quad4-plane-strain-biot-u-p-alpha-zero-decoupling');
     expect(readinessData.agentEvidenceSummary)
+      .toContain('quad4-plane-strain-biot-u-p-terzaghi-pressure-dissipation');
+    expect(readinessData.agentEvidenceSummary)
       .toContain('seepage-pore-pressure-coupling');
     expect(readinessData.agentEvidenceSummary)
       .toContain('biot-u-p-coupling-evidence-kernel-not-route-backed-result-manifest-or-production-sparse-solver');
@@ -448,6 +451,7 @@ describe('AI fallback behavior', () => {
     expect(secondPrompt).toContain('quad4-plane-strain-biot-u-p-mass-residual');
     expect(secondPrompt).toContain('quad4-plane-strain-biot-u-p-pressure-gradient-flux-contract');
     expect(secondPrompt).toContain('quad4-plane-strain-biot-u-p-alpha-zero-decoupling');
+    expect(secondPrompt).toContain('quad4-plane-strain-biot-u-p-terzaghi-pressure-dissipation');
     expect(secondPrompt).toContain('seepage-pore-pressure-coupling');
     expect(secondPrompt)
       .toContain('biot-u-p-coupling-evidence-kernel-not-route-backed-result-manifest-or-production-sparse-solver');
