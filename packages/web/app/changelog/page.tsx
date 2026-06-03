@@ -8,6 +8,16 @@ const releases = [
     date: '2026-06-04',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'fix', text: 'Hardened borehole-log async ingest finalization so failed page checkpoints are recorded as review findings instead of replayed through the final merge' },
+      { type: 'fix', text: 'Preserved successful checkpoint data on large PDFs when a later visual page returns malformed provider JSON after retry' },
+      { type: 'fix', text: 'Added regression coverage for mixed successful/failed borehole checkpoints with accurate successful and failed page counts' },
+    ],
+  },
+  {
+    version: '0.4.114',
+    date: '2026-06-04',
+    tag: '0.4.114 Release',
+    changes: [
       { type: 'feat', text: 'Added generated published-source FEM benchmark comparison records for Terzaghi consolidation and alpha-zero Biot pressure dissipation with deterministic SHA-256 evidence/result hashes' },
       { type: 'feat', text: 'Added sequential one-way Biot-pressure replay into the benchmark-scale Drucker-Prager effective-stress solve with explicit no-pressure-DOF audit metadata' },
       { type: 'fix', text: 'Added geotech fem run --require-approval-record and workspace acceptance metadata for strict reviewer approval persistence while full production FEM remains blocked' },

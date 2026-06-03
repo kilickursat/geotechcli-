@@ -1523,6 +1523,92 @@ function buildSyntheticGeotechDocumentResult(
   }, job.checkpoints.pages);
 }
 
+function appendBoreholeCheckpointFailures(
+  result: BoreholeDocumentIngestResult,
+  job: PersistedIngestJobRecord,
+): BoreholeDocumentIngestResult {
+  const completedPages = job.checkpoints.pages.filter((page) => page.status === 'completed');
+  const failedPages = job.checkpoints.pages.filter((page) => page.status === 'failed');
+  if (failedPages.length === 0) {
+    return {
+      ...result,
+      source: buildJobResultSource(job, {
+        successfulPages: completedPages.length,
+        failedPages: 0,
+      }),
+    };
+  }
+
+  const pageFailures = failedPages.map((page) =>
+    page.error ?? `Page ${page.pageNumber} failed during async ingest.`
+  );
+  const downgradedFailureCount = failedPages.filter((page) => page.downgraded).length;
+  const nonDowngradedFailureCount = failedPages.length - downgradedFailureCount;
+  const checkpointReviewFindings: BoreholeIngestFinding[] = [
+    ...failedPages.map((page) => ({
+      code: page.downgraded ? 'page_visual_ingest_downgraded' : 'page_ingest_failed',
+      severity: page.downgraded ? 'review' as const : 'blocking' as const,
+      scope: 'page' as const,
+      message: page.downgraded
+        ? `Page ${page.pageNumber} exceeded the slow visual budget and was downgraded to manual review.`
+        : page.error ?? `Page ${page.pageNumber} failed during ingest.`,
+      pageNumber: page.pageNumber,
+    })),
+  ];
+
+  if (downgradedFailureCount > 0) {
+    checkpointReviewFindings.push({
+      code: 'slow_visual_pages_present',
+      severity: 'review',
+      scope: 'document',
+      message: `${downgradedFailureCount} slow visual page(s) were downgraded to manual review.`,
+    });
+  }
+
+  if (nonDowngradedFailureCount > 0) {
+    checkpointReviewFindings.push({
+      code: 'page_failures_present',
+      severity: 'blocking',
+      scope: 'document',
+      message: `${nonDowngradedFailureCount} page(s) failed during ingest and should be reviewed.`,
+    });
+  }
+
+  const reviewFindings = dedupeReviewFindings([
+    ...result.reviewFindings,
+    ...checkpointReviewFindings,
+  ]);
+  const reviewReasons = summarizeReviewReasons(reviewFindings);
+
+  return {
+    ...result,
+    source: buildJobResultSource(job, {
+      successfulPages: completedPages.length,
+      failedPages: failedPages.length,
+    }),
+    pageAudits: [
+      ...result.pageAudits,
+      ...failedPages.map((page) => ({
+        pageNumber: page.pageNumber,
+        detectedBoreholeId: null,
+        assignedGroup: 'unassigned',
+        classification: page.classification,
+        textHintSource: page.ocrSource ?? 'none',
+        parseStatus: 'failed' as const,
+        confidence: 0,
+        continuationDepth: null,
+        warnings: page.error ? [page.error] : [],
+      })),
+    ].sort((left, right) => left.pageNumber - right.pageNumber),
+    pageFailures: uniqueStrings([...result.pageFailures, ...pageFailures]),
+    warnings: uniqueStrings([...result.warnings, ...pageFailures]),
+    reviewFindings,
+    reviewReasons,
+    reviewRequired: reviewReasons.length > 0,
+    canAutoProceed: false,
+  };
+}
+
 function dedupeReviewFindings<T extends { code: string; severity: string; scope: string; message: string; pageNumber?: number }>(
   reviewFindings: T[],
 ): T[] {
@@ -1992,6 +2078,7 @@ async function finalizeJobResult(
         overrideBoreholeId: job.request.overrideBoreholeId,
         inspection: job.inspection,
         pages: job.checkpoints.pages
+          .filter((checkpoint) => checkpoint.status === 'completed' && checkpoint.result)
           .map((checkpoint) => pageInputMap.get(checkpoint.pageNumber))
           .filter((page): page is PreparedBoreholePageInput => Boolean(page)),
         recoverTextHint: buildCheckpointTextRecovery(job, pageInputs),
@@ -2021,7 +2108,7 @@ async function finalizeJobResult(
         now: dependencies.now,
       });
       return applyCheckpointOcrRecoveredSummary(
-        applyBoreholeFailureDowngrades(result, job.checkpoints.pages),
+        applyBoreholeFailureDowngrades(appendBoreholeCheckpointFailures(result, job), job.checkpoints.pages),
         job.checkpoints.pages,
       );
     } catch (error) {

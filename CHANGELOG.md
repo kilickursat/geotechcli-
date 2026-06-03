@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.115] - 2026-06-04
+
+### Large PDF Ingest Finalization Hotfix
+
+- Hardened borehole-log async ingest finalization so failed page checkpoints are recorded as review findings instead of being replayed through the final merge and risking a whole-job failure.
+- Preserved successful checkpoint data on large PDFs when a later visual page returns malformed provider JSON such as an unterminated JSON response after retry.
+- Added regression coverage for mixed successful/failed borehole checkpoints so reviewable partial results keep accurate successful/failed page counts.
+
 ## [0.4.114] - 2026-06-04
 
 ### FEM Benchmark Evidence, Pressure Replay, and Approval Gates

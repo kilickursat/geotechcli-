@@ -1047,6 +1047,78 @@ describe('persisted ingest jobs', () => {
     expect(completed.result?.ingestResult.canAutoProceed).toBe(false);
   });
 
+  it('finalizes borehole jobs from successful checkpoints without replaying failed malformed-json pages', async () => {
+    const filePath = join(configDir, 'checkpoint-finalize-with-failed-page-source.pdf');
+    await writeBlankPdf(filePath, 3);
+
+    const job = createPersistedIngestJob({
+      documentType: 'borehole-log',
+      filePath,
+      inspection: makeInspection(3, () => 'image-only'),
+      config: makeConfig(),
+    });
+
+    const interpretBoreholeLogWithContext = vi.fn(async (
+      _base64: string,
+      _mimeType: string,
+      _config: LLMConfig,
+      context?: { pageNumber?: number; totalPages?: number },
+    ) => {
+      if (context?.pageNumber === 2) {
+        throw new Error('Zhipu API returned malformed JSON response: Unterminated string in JSON at position 950269.');
+      }
+      return makeBoreholeInterpretation(context?.pageNumber ?? 1, context?.totalPages ?? 3);
+    });
+
+    const completed = await runPersistedIngestJobWorker(job.jobId, {
+      buildLLMConfig: makeConfig,
+      readDocumentPdfPageInputs: async () => [1, 2, 3].map((pageNumber) => ({
+        base64: `checkpoint-finalize-page-${pageNumber}`,
+        mimeType: 'image/png',
+        fileBytes: 120,
+        filePath,
+        ext: 'png',
+        kind: 'image',
+        pageNumber,
+        totalPages: 3,
+        sourceKind: 'raster-image',
+        normalizedArtifact: {
+          kind: 'image',
+          source: 'full-page-raster',
+          mimeType: 'image/png',
+          fileBytes: 120,
+          textSource: 'none',
+          textQuality: null,
+          warnings: [],
+        },
+      })),
+      recoverDocumentTextHint: async ({ pdfPageNumber }) => ({
+        textHint: `Recovered OCR text for page ${pdfPageNumber ?? 0}.`,
+        source: 'vision-ocr' as const,
+        warnings: [],
+      }),
+      interpretBoreholeLogWithContext,
+    });
+
+    expect(completed.status).toBe('completed');
+    expect(interpretBoreholeLogWithContext).toHaveBeenCalledTimes(4);
+    expect(completed.checkpoints.pages.map((page) => page.status)).toEqual([
+      'completed',
+      'failed',
+      'completed',
+    ]);
+    expect(completed.result?.ingestResult.source.successfulPages).toBe(2);
+    expect(completed.result?.ingestResult.source.failedPages).toBe(1);
+    expect(completed.result?.ingestResult.pageFailures.join('\n')).toMatch(/Unterminated string in JSON/i);
+    expect(completed.result?.ingestResult.pageAudits.find((audit) => audit.pageNumber === 2)).toEqual(
+      expect.objectContaining({ parseStatus: 'failed' }),
+    );
+    expect(completed.result?.ingestResult.boreholes[0]?.layers.map((layer) => layer.description)).toEqual([
+      'Layer 1',
+      'Layer 3',
+    ]);
+  });
+
   it('retries 524 upstream timeouts with backoff and carries OCR checkpoint counts into the final summary', async () => {
     const filePath = join(configDir, 'retry-524-ocr-source.pdf');
     await writeBlankPdf(filePath, 1);
