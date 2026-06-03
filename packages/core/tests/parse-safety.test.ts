@@ -6,6 +6,7 @@ import {
   parseJsonObject,
 } from '../src/vision/parse.js';
 import {
+  buildBlockedFemProductionOverclaimAnswer,
   extractToolSafetyIssue,
   serializeContextForPrompt,
   serializeToolDataForPrompt,
@@ -122,5 +123,46 @@ describe('Agent safety helpers', () => {
     expect(text).toContain('Boreholes: BH1; max depth 10 m');
     expect(text.indexOf('Agent evidence summary')).toBeLessThan(text.indexOf('Compact tool data JSON'));
     expect(text).toContain('truncated');
+  });
+
+  it('blocks FEM production overclaim paraphrases after readiness says productionReady no', () => {
+    const context = {
+      assess_fem_production_readiness: {
+        productionReady: false,
+        blockers: ['published-commercial-cross-solver-benchmark-corpus-not-approved'],
+        safeUserActions: ['Use implemented routes only as experimental, human-reviewed previews.'],
+        engineeringEvidence: {
+          externalBenchmarkAcceptance: {
+            blockerCodes: ['external-benchmark-comparison-results-missing'],
+          },
+        },
+      },
+    };
+
+    for (const phrase of [
+      'The FEM path is production design ready.',
+      'This is design-approved.',
+      'The workflow is ready to use on production projects.',
+      'Verified kernels prove production approval.',
+    ]) {
+      const blocked = buildBlockedFemProductionOverclaimAnswer(phrase, context);
+      expect(blocked).toContain('Blocked FEM production overclaim');
+      expect(blocked).toContain('productionReady: no');
+      expect(blocked).toContain('external-benchmark-comparison-results-missing');
+    }
+  });
+
+  it('allows negated FEM production wording after blocked readiness', () => {
+    const context = {
+      assess_fem_production_readiness: {
+        productionReady: false,
+        blockers: ['published-commercial-cross-solver-benchmark-corpus-not-approved'],
+      },
+    };
+
+    expect(buildBlockedFemProductionOverclaimAnswer(
+      'The FEM path is not design-approved and is not ready for production design.',
+      context,
+    )).toBeNull();
   });
 });

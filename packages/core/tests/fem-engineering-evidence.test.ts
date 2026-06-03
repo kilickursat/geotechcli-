@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildFemExternalBenchmarkAcceptanceContract,
+  evaluateFemTolerance,
   mapMohrCoulombToDruckerPragerTriaxialCompression,
   runDarcySeepage1D,
   runDruckerPragerMaterialPoint,
@@ -293,16 +294,44 @@ describe('FEM engineering evidence kernels', () => {
     expect(productionDesign.blockerCodes).toContain('scope.production-design-blocked');
   });
 
-  it('records external benchmark acceptance metadata and blocks missing references', () => {
+  it('registers source-backed benchmark references and blocks missing commercial comparison results', () => {
     const report = runFemEngineeringEvidenceSuite();
 
     expect(report.externalBenchmarkAcceptance).toMatchObject({
-      schemaVersion: 'fem-external-benchmark-acceptance-metadata.v1',
+      schemaVersion: 'fem-external-benchmark-acceptance.v2',
       status: 'blocked',
       productionReadinessBlocked: true,
       requiredSourceTypes: ['published-source', 'commercial-solver'],
-      references: [],
     });
+    expect(report.externalBenchmarkAcceptance.references.map((reference) => reference.id)).toEqual(expect.arrayContaining([
+      'terzaghi-1943-theoretical-soil-mechanics',
+      'biot-1941-three-dimensional-consolidation',
+      'opensees-drucker-prager-material',
+      'opengeosys-hydro-mechanics-benchmarks',
+      'opengeosys-richards-flow-benchmarks',
+    ]));
+    expect(report.externalBenchmarkAcceptance.references).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        sourceType: 'published-source',
+        publishedSource: expect.objectContaining({
+          doi: '10.1002/9780470172766',
+        }),
+      }),
+      expect.objectContaining({
+        sourceType: 'open-source-solver',
+        referenceSolver: expect.objectContaining({
+          name: 'OpenSees',
+          analysisProcedure: expect.stringContaining('Drucker-Prager'),
+        }),
+      }),
+      expect.objectContaining({
+        sourceType: 'open-source-solver',
+        referenceSolver: expect.objectContaining({
+          name: 'OpenGeoSys',
+        }),
+      }),
+    ]));
+    expect(report.externalBenchmarkAcceptance.comparisonResults).toEqual([]);
     expect(report.externalBenchmarkAcceptance.requiredQuantities).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: 'consolidation-settlement-time-curve',
@@ -321,15 +350,16 @@ describe('FEM engineering evidence kernels', () => {
       }),
     ]));
     expect(report.externalBenchmarkAcceptance.blockerCodes).toEqual(expect.arrayContaining([
-      'external-benchmark-reference-corpus-missing',
-      'external-benchmark-published-source-citation-missing',
-      'external-benchmark-reference-solver-citation-missing',
+      'external-benchmark-commercial-solver-citation-missing',
+      'external-benchmark-comparison-results-missing',
+      'external-benchmark.required-quantities.nonlinear-plane-strain-displacement-envelope.reference-source-types-missing',
+      'external-benchmark.required-quantities.nonlinear-plane-strain-displacement-envelope.accepted-comparison-missing.published-source',
+      'external-benchmark.required-quantities.nonlinear-plane-strain-displacement-envelope.accepted-comparison-missing.commercial-solver',
     ]));
     expect(report.remainingProductionBlockers).toEqual(expect.arrayContaining([
       'published-commercial-cross-solver-benchmark-corpus-not-approved',
-      'external-benchmark-reference-corpus-missing',
-      'external-benchmark-published-source-citation-missing',
-      'external-benchmark-reference-solver-citation-missing',
+      'external-benchmark-commercial-solver-citation-missing',
+      'external-benchmark-comparison-results-missing',
     ]));
   });
 
@@ -374,9 +404,39 @@ describe('FEM engineering evidence kernels', () => {
           requiredReferenceSourceTypes: ['published-source', 'commercial-solver'],
         },
       ],
+      comparisonResults: [
+        {
+          id: 'published-settlement-time-curve',
+          quantityRequirementId: 'settlement-time',
+          referenceId: 'published-benchmark-1',
+          caseId: 'plane-strain-consolidation-fixture',
+          quantity: 'settlement-time curve',
+          unit: 'mm',
+          actual: 49.7,
+          expected: 50,
+          tolerance: 0.02,
+          toleranceType: 'relative',
+          accepted: true,
+          evidenceHashSha256: 'a'.repeat(64),
+        },
+        {
+          id: 'commercial-settlement-time-curve',
+          quantityRequirementId: 'settlement-time',
+          referenceId: 'commercial-solver-1',
+          caseId: 'plane-strain-consolidation-fixture',
+          quantity: 'settlement-time curve',
+          unit: 'mm',
+          actual: 50.4,
+          expected: 50,
+          tolerance: 0.02,
+          toleranceType: 'relative',
+          accepted: true,
+          evidenceHashSha256: 'b'.repeat(64),
+        },
+      ],
     });
 
-    expect(contract.status).toBe('metadata-ready');
+    expect(contract.status).toBe('accepted-comparisons-ready');
     expect(contract.productionReadinessBlocked).toBe(false);
     expect(contract.references).toEqual([
       expect.objectContaining({
@@ -397,6 +457,8 @@ describe('FEM engineering evidence kernels', () => {
         }),
       }),
     ]);
+    expect(contract.comparisonResults).toHaveLength(2);
+    expect(contract.comparisonResults.every((result) => result.accepted)).toBe(true);
     expect(contract.requiredQuantities).toEqual([
       expect.objectContaining({
         quantity: 'settlement-time curve',
@@ -405,7 +467,94 @@ describe('FEM engineering evidence kernels', () => {
         requiredReferenceSourceTypes: ['published-source', 'commercial-solver'],
       }),
     ]);
-    expect(contract.acceptanceStatement).toContain('does not approve production FEM design use');
+    expect(contract.acceptanceStatement).toContain('does not approve production design');
+  });
+
+  it('does not accept absolute-only tolerances through an implicit relative pass', () => {
+    const check = evaluateFemTolerance('absolute-only displacement', 12, 10, 0.5, {
+      unit: 'mm',
+    });
+
+    expect(check.error).toBe(2);
+    expect(check.relativeTolerance).toBeUndefined();
+    expect(check.accepted).toBe(false);
+  });
+
+  it('blocks external comparison results that use looser tolerances than the requirement', () => {
+    const contract = buildFemExternalBenchmarkAcceptanceContract({
+      references: [
+        {
+          id: 'published-benchmark-1',
+          sourceType: 'published-source',
+          label: 'Published benchmark',
+          citation: 'Example Author (2024), benchmark.',
+          publishedSource: {
+            title: 'Benchmark',
+            authors: ['Example Author'],
+            year: 2024,
+            publication: 'Example Journal',
+          },
+        },
+        {
+          id: 'commercial-solver-1',
+          sourceType: 'commercial-solver',
+          label: 'Commercial solver archive',
+          citation: 'Commercial solver result archive.',
+          referenceSolver: {
+            name: 'Reference FEM Solver',
+            version: '2024.1',
+          },
+        },
+      ],
+      requiredQuantities: [
+        {
+          id: 'settlement-time',
+          feature: 'consolidation',
+          quantity: 'settlement-time curve',
+          unit: 'mm',
+          tolerance: 0.02,
+          toleranceType: 'relative',
+          requiredReferenceSourceTypes: ['published-source', 'commercial-solver'],
+        },
+      ],
+      comparisonResults: [
+        {
+          id: 'published-too-loose',
+          quantityRequirementId: 'settlement-time',
+          referenceId: 'published-benchmark-1',
+          caseId: 'case-1',
+          quantity: 'settlement-time curve',
+          unit: 'mm',
+          actual: 54,
+          expected: 50,
+          tolerance: 0.10,
+          toleranceType: 'relative',
+          accepted: true,
+          evidenceHashSha256: 'c'.repeat(64),
+        },
+        {
+          id: 'commercial-accepted',
+          quantityRequirementId: 'settlement-time',
+          referenceId: 'commercial-solver-1',
+          caseId: 'case-1',
+          quantity: 'settlement-time curve',
+          unit: 'mm',
+          actual: 50.1,
+          expected: 50,
+          tolerance: 0.02,
+          toleranceType: 'relative',
+          accepted: true,
+          evidenceHashSha256: 'd'.repeat(64),
+        },
+      ],
+    });
+
+    expect(contract.status).toBe('blocked');
+    expect(contract.blockerCodes).toEqual(expect.arrayContaining([
+      'external-benchmark.comparison-results.published-too-loose.tolerance-too-loose',
+      'external-benchmark.comparison-results.published-too-loose.not-accepted',
+      'external-benchmark.required-quantities.settlement-time.accepted-comparison-missing.published-source',
+    ]));
   });
 
   it('records Gauss-point plasticity and path-state evidence without clearing production blockers', () => {
@@ -430,6 +579,16 @@ describe('FEM engineering evidence kernels', () => {
       tolerance: 0,
       status: 'accepted',
       evidence: expect.stringContaining('monotonic plastic-strain evidence'),
+    });
+    expect(benchmarks.get('quad4-plane-strain-dp-adaptive-cutback-rollback-recovery')).toMatchObject({
+      feature: 'solver-convergence-and-tolerance',
+      referenceType: 'internal-balance',
+      quantity: 'adaptiveCutbackRollbackAccepted',
+      actual: 1,
+      expected: 1,
+      tolerance: 0,
+      status: 'accepted',
+      evidence: expect.stringContaining('rejected attempts leave committed Gauss-point state unchanged'),
     });
     expect(report.productionReady).toBe(false);
     expect(report.remainingProductionBlockers).toEqual(expect.arrayContaining([
@@ -501,6 +660,7 @@ describe('FEM engineering evidence kernels', () => {
       'quad4-plane-strain-dp-global-newton-residual',
       'quad4-plane-strain-dp-stage-state-carryover',
       'quad4-plane-strain-dp-collapse-detection',
+      'quad4-plane-strain-dp-adaptive-cutback-rollback-recovery',
       'quad4-plane-strain-seepage-linear-head-flow',
       'quad4-plane-strain-seepage-boundary-mass-balance',
       'quad4-plane-strain-seepage-effective-stress-reduction',

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildExcavationDemoAnalysisCase,
+  buildPlaneStrainDruckerPragerAdaptiveExcavationDemoAnalysisCase,
   buildRaftDemoAnalysisCase,
   buildSeepageBiotPlaneStrainDemoAnalysisCase,
   buildStagedSettlementConsolidationDemoAnalysisCase,
@@ -9,12 +10,15 @@ import {
   runBuiltinBiotUpPlaneStrainPreview,
   runBuiltinElasticExcavationDemo,
   runBuiltinElasticRaftDemo,
+  runBuiltinPlaneStrainDruckerPragerAdaptivePreview,
   runBuiltinStagedSettlementConsolidationDemo,
   runBuiltinTunnelVolumeLossDemo,
   validateFemAnalysisCase,
   validateFemResultManifest,
   type FemResultManifest,
 } from '../src/fem/index.js';
+
+const PLANE_STRAIN_DP_ADAPTIVE_BACKEND_ID = 'builtin-plane-strain-dp-adaptive-v0';
 
 describe('experimental FEM raft demo', () => {
   it('builds a review-gated deterministic raft analysis case', () => {
@@ -206,6 +210,90 @@ describe('experimental FEM raft demo', () => {
     expect(manifest.datasets?.filter((dataset) => dataset.source === 'visualization.frame')).toHaveLength(3);
     expect(validation.status).toBe('review');
     expect(validation.blockers).toBe(0);
+  });
+
+  it('returns a reviewed plane-strain Drucker-Prager adaptive manifest without production approval', () => {
+    const analysisCase = buildPlaneStrainDruckerPragerAdaptiveExcavationDemoAnalysisCase(
+      buildExcavationDemoAnalysisCase(),
+    );
+    const manifest = runBuiltinPlaneStrainDruckerPragerAdaptivePreview(analysisCase);
+    const validation = validateFemResultManifest(manifest);
+
+    expect(String(manifest.backend.id)).toBe(PLANE_STRAIN_DP_ADAPTIVE_BACKEND_ID);
+    expect(manifest.backend.deterministic).toBe(true);
+    expect(manifest.analysisCase.experimental).toBe(true);
+    expect(manifest.analysisCase.analysisType).toBe('static_2d_plane_strain_drucker_prager');
+    expect(manifest.mesh.elementType).toBe('quad4_plane_strain');
+    expect((manifest as { productionReady?: unknown }).productionReady).not.toBe(true);
+    expect(manifest.backend.productionReady).toBe(false);
+    expect(manifest.solverConvergence?.status).toBe('converged');
+    expect(manifest.solverConvergence?.loadSteps.length).toBeGreaterThan(0);
+    expect(manifest.adaptiveLoadStepping).toMatchObject({
+      schemaVersion: 'fem-plane-strain-dp-adaptive-load-stepping.v1',
+      enabled: true,
+      strategy: 'cutback-bisection',
+      acceptedStepCount: manifest.solverConvergence?.loadSteps.length,
+      blockerCodes: [],
+    });
+    expect(manifest.adaptiveLoadStepping?.acceptedLoadFactors.at(-1)).toBe(1);
+    expect(manifest.envelope.plasticGaussPointCount).toBeGreaterThan(0);
+    expect(manifest.envelope.maxEquivalentPlasticStrain).toBeGreaterThan(0);
+    expect(manifest.envelope.adaptiveRejectedAttemptCount).toBeGreaterThan(0);
+    expect(manifest.envelope.adaptiveCutbackCount).toBeGreaterThan(0);
+    expect(manifest.adaptiveLoadStepping?.attempts.filter((attempt) => !attempt.accepted).every((attempt) =>
+      attempt.rollbackApplied &&
+      attempt.committedStateSignatureAfter === attempt.committedStateSignatureBefore,
+    )).toBe(true);
+    expect(manifest.envelope.solverLoadSteps).toBe(manifest.adaptiveLoadStepping?.acceptedStepCount);
+    expect(manifest.envelope.adaptiveAttemptCount).toBe(manifest.adaptiveLoadStepping?.attemptedStepCount);
+    expect(manifest.envelope.maxSolverResidualRatio).toBeLessThanOrEqual(manifest.solverConvergence!.policy.forceBalanceTolerance);
+    expect(manifest.envelope.maxYieldResidualRatio).toBeLessThanOrEqual(manifest.solverConvergence!.policy.residualTolerance);
+    expect(manifest.limitations.join(' ')).toMatch(/experimental|not.*production/i);
+    expect(validation.status).toBe('review');
+    expect(validation.blockers).toBe(0);
+  });
+
+  it('blocks stale plane-strain Drucker-Prager adaptive acceptance metadata before rendering', () => {
+    const manifest = runBuiltinPlaneStrainDruckerPragerAdaptivePreview(
+      buildPlaneStrainDruckerPragerAdaptiveExcavationDemoAnalysisCase(buildExcavationDemoAnalysisCase()),
+    );
+    const staleFinalLoad: FemResultManifest = {
+      ...manifest,
+      adaptiveLoadStepping: {
+        ...manifest.adaptiveLoadStepping!,
+        acceptedLoadFactors: manifest.adaptiveLoadStepping!.acceptedLoadFactors.map((factor, index, factors) =>
+          index === factors.length - 1 ? 0.95 : factor),
+      },
+    };
+    const firstRejectedAttemptIndex = manifest.adaptiveLoadStepping!.attempts.findIndex((attempt) => !attempt.accepted);
+    const staleRollback: FemResultManifest = {
+      ...manifest,
+      adaptiveLoadStepping: {
+        ...manifest.adaptiveLoadStepping!,
+        attempts: manifest.adaptiveLoadStepping!.attempts.map((attempt, index) =>
+          index === firstRejectedAttemptIndex
+            ? { ...attempt, rollbackApplied: false }
+            : attempt),
+      },
+    };
+    const overclaimed: FemResultManifest = {
+      ...manifest,
+      productionReady: true,
+    } as FemResultManifest;
+
+    expect(validateFemResultManifest({
+      ...manifest,
+      adaptiveLoadStepping: undefined,
+    }).findings.map((finding) => finding.code)).toContain('result.dp-adaptive.missing');
+    expect(validateFemResultManifest(staleFinalLoad).findings.map((finding) => finding.code))
+      .toContain('result.dp-adaptive.accepted-load-factors.final-load-mismatch');
+    if (firstRejectedAttemptIndex >= 0) {
+      expect(validateFemResultManifest(staleRollback).findings.map((finding) => finding.code))
+        .toContain(`result.dp-adaptive.attempts.${firstRejectedAttemptIndex}.rollback-required`);
+    }
+    expect(validateFemResultManifest(overclaimed).findings.map((finding) => finding.code))
+      .toContain('result.production-ready.overclaim');
+    expect(() => renderFemWebglHtml(staleFinalLoad)).toThrow(/final-load-mismatch/i);
   });
 
   it('returns a finite Biot u-p preview manifest with pressure diagnostics', () => {

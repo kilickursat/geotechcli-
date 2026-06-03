@@ -2,7 +2,12 @@ import type { LLMConfig, CompletionResponse } from '../llm/types.js';
 import { generateChat } from '../llm/router.js';
 import { toolRegistry, type ToolResult } from './tools.js';
 import { validateToolArgs, formatViolations } from './guardrails.js';
-import { extractToolSafetyIssue, serializeContextForPrompt, serializeToolDataForPrompt } from './safety.js';
+import {
+  buildBlockedFemProductionOverclaimAnswer,
+  extractToolSafetyIssue,
+  serializeContextForPrompt,
+  serializeToolDataForPrompt,
+} from './safety.js';
 import { normalizeToolArgs } from './tool-normalization.js';
 import { runWithToolRuntimeContext } from './tool-runtime.js';
 import {
@@ -418,6 +423,26 @@ export async function runAgent(
         });
         continue;
       }
+      const blockedFemOverclaimAnswer = buildBlockedFemProductionOverclaimAnswer(llmOutput, session.context);
+      if (blockedFemOverclaimAnswer) {
+        const blockedStep: AgentStep = {
+          type: 'error',
+          content: 'Final answer blocked because it contradicted deterministic FEM production-readiness evidence.',
+          timestamp: Date.now(),
+        };
+        session.steps.push(blockedStep);
+        onStep(blockedStep);
+
+        const answerStep: AgentStep = {
+          type: 'answer',
+          content: blockedFemOverclaimAnswer,
+          timestamp: Date.now(),
+        };
+        session.steps.push(answerStep);
+        onStep(answerStep);
+        break;
+      }
+
       const answerStep: AgentStep = {
         type: 'answer',
         content: llmOutput,
@@ -646,11 +671,22 @@ export async function runAgent(
       session.totalTokens += finalResponse.usage.totalTokens;
       session.totalLatencyMs += finalResponse.latencyMs;
 
+      const finalContent = buildBlockedFemProductionOverclaimAnswer(finalResponse.text, session.context) ??
+        finalResponse.text;
       const finalStep: AgentStep = {
         type: 'answer',
-        content: finalResponse.text,
+        content: finalContent,
         timestamp: Date.now(),
       };
+      if (finalContent !== finalResponse.text) {
+        const blockedStep: AgentStep = {
+          type: 'error',
+          content: 'Final answer blocked because it contradicted deterministic FEM production-readiness evidence.',
+          timestamp: Date.now(),
+        };
+        session.steps.push(blockedStep);
+        onStep(blockedStep);
+      }
       session.steps.push(finalStep);
       onStep(finalStep);
     } catch {

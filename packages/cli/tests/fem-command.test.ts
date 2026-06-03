@@ -922,6 +922,30 @@ describe('registerFemCommand', () => {
     ).rejects.toThrow(/--experimental/i);
   });
 
+  it('requires reviewed acknowledgement before dispatching the plane-strain DP adaptive backend', async () => {
+    const { buildExcavationDemoAnalysisCase } = await import('../../core/src/fem/index.js');
+    const registerFemCommand = await loadRegisterFemCommand();
+    const program = new Command();
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-fem-dp-review-'));
+    tempDirs.push(dir);
+    const casePath = join(dir, 'analysis_case.json');
+    await writeFile(casePath, JSON.stringify(buildExcavationDemoAnalysisCase(), null, 2), 'utf-8');
+    program.exitOverride();
+    registerFemCommand(program);
+
+    await expect(
+      program.parseAsync([
+        'fem',
+        'run',
+        casePath,
+        '--experimental',
+        '--backend',
+        'plane-strain-dp-adaptive',
+        '--json',
+      ], { from: 'user' }),
+    ).rejects.toThrow(/--reviewed/i);
+  });
+
   it('runs a reviewed foundation FEM analysis case and writes WebGL artifacts', async () => {
     const { buildRaftDemoAnalysisCase } = await import('../../core/src/fem/index.js');
     const registerFemCommand = await loadRegisterFemCommand();
@@ -1163,6 +1187,63 @@ describe('registerFemCommand', () => {
     expect(payload.manifest.envelope.solverLoadSteps).toBe(3);
     expect(payload.manifest.envelope.maxSolverResidualRatio).toBeLessThanOrEqual(1e-3);
     expect(payload.warnings.join(' ')).toMatch(/nonlinear-column backend/i);
+    logSpy.mockRestore();
+  });
+
+  it('dispatches reviewed cases through the plane-strain DP adaptive backend alias with experimental warnings', async () => {
+    const {
+      buildExcavationDemoAnalysisCase,
+      buildPlaneStrainDruckerPragerAdaptiveExcavationDemoAnalysisCase,
+      validateFemResultManifest,
+    } = await import('../../core/src/fem/index.js');
+    const registerFemCommand = await loadRegisterFemCommand();
+    const program = new Command();
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-fem-dp-adaptive-run-'));
+    tempDirs.push(dir);
+    const analysisCase = buildPlaneStrainDruckerPragerAdaptiveExcavationDemoAnalysisCase(
+      buildExcavationDemoAnalysisCase(),
+    );
+    const casePath = join(dir, 'excavation.analysis_case.json');
+    const resultPath = join(dir, 'dp-adaptive.manifest.json');
+    await writeFile(casePath, JSON.stringify(analysisCase, null, 2), 'utf-8');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    program.exitOverride();
+    registerFemCommand(program);
+
+    await program.parseAsync([
+      'fem',
+      'run',
+      casePath,
+      '--experimental',
+      '--reviewed',
+      '--backend',
+      'plane-strain-dp-adaptive',
+      '--output',
+      resultPath,
+      '--no-open',
+      '--json',
+    ], { from: 'user' });
+
+    const payload = JSON.parse(collectLogText(logSpy).trim());
+    const writtenManifestText = await readFile(resultPath, 'utf-8');
+    const writtenManifest = JSON.parse(writtenManifestText);
+    expect(payload.manifest.backend.id).toBe('builtin-plane-strain-dp-adaptive-v0');
+    expect(writtenManifest.backend.id).toBe('builtin-plane-strain-dp-adaptive-v0');
+    expect(payload.manifest.analysisCase.analysisType).toBe('static_2d_plane_strain_drucker_prager');
+    expect(payload.manifest.adaptiveLoadStepping.enabled).toBe(true);
+    expect(payload.manifest.adaptiveLoadStepping.acceptedLoadFactors.at(-1)).toBe(1);
+    expect(payload.manifest.envelope.plasticGaussPointCount).toBeGreaterThan(0);
+    expect(payload.manifest.envelope.adaptiveRejectedAttemptCount).toBeGreaterThan(0);
+    expect(payload.manifest.solverConvergence.status).toBe('converged');
+    expect(validateFemResultManifest(writtenManifest).blockers).toBe(0);
+    expect(payload.manifest.productionReady).toBeUndefined();
+    expect(writtenManifest.productionReady).toBeUndefined();
+    expect(payload.manifest.backend.productionReady).toBe(false);
+    expect(JSON.stringify(payload)).not.toContain('"productionReady":true');
+    expect(writtenManifestText).not.toContain('"productionReady": true');
+    expect(payload.warnings.join(' ')).toMatch(/plane-strain-dp-adaptive backend/i);
+    expect(payload.warnings.join(' ')).toMatch(/builtin-plane-strain-dp-adaptive-v0/i);
+    expect(payload.warnings.join(' ')).toMatch(/not production-ready/i);
     logSpy.mockRestore();
   });
 

@@ -1005,6 +1005,106 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
       .toBeLessThanOrEqual(plasticStrainEnvelope);
   });
 
+  it('adaptive nonlinear load stepping cutbacks rejected increments and preserves rollback state', () => {
+    const { model, topNodeIds } = druckerPragerSettlementPatch();
+    const limitedIterationModel: FemPlaneStrainModel = {
+      ...model,
+      policy: {
+        schemaVersion: 'fem-convergence-policy.v1',
+        residualTolerance: 1e-6,
+        forceBalanceTolerance: 1e-3,
+        porePressureMassBalanceTolerance: 1e-3,
+        maxIterations: 8,
+        minAcceptedSteps: 1,
+      },
+    };
+    const direct = runPlaneStrainDruckerPragerLoadSteps(limitedIterationModel, {
+      loadStepFractions: [1],
+    });
+    const adaptive = runPlaneStrainDruckerPragerLoadSteps(limitedIterationModel, {
+      loadStepFractions: [1],
+      adaptiveLoadStepping: {
+        minLoadFactorIncrement: 1 / 64,
+        maxCutbacks: 20,
+      },
+    });
+    const manualEquivalent = runPlaneStrainDruckerPragerLoadSteps(limitedIterationModel, {
+      loadStepFractions: adaptive.adaptiveLoadStepping.acceptedLoadFactors,
+    });
+    const adaptiveSettlementM = maxTopSettlementMagnitude(adaptive, topNodeIds);
+    const manualSettlementM = maxTopSettlementMagnitude(manualEquivalent, topNodeIds);
+    const rejectedAttempts = adaptive.adaptiveLoadStepping.attempts.filter((attempt) => !attempt.accepted);
+    const acceptedAttempts = adaptive.adaptiveLoadStepping.attempts.filter((attempt) => attempt.accepted);
+
+    expect(direct.converged).toBe(false);
+    expect(direct.failure?.terminationReason).toBe('max_iterations');
+    expect(adaptive.converged).toBe(true);
+    expect(adaptive.status).toBe('converged');
+    expect(adaptive.adaptiveLoadStepping).toMatchObject({
+      schemaVersion: 'fem-plane-strain-dp-adaptive-load-stepping.v1',
+      enabled: true,
+      strategy: 'cutback-bisection',
+      requestedStepCount: 1,
+      acceptedStepCount: adaptive.loadSteps.length,
+      blockerCodes: [],
+    });
+    expect(adaptive.adaptiveLoadStepping.attemptedStepCount)
+      .toBe(adaptive.adaptiveLoadStepping.attempts.length);
+    expect(adaptive.adaptiveLoadStepping.cutbackCount).toBeGreaterThan(0);
+    expect(adaptive.adaptiveLoadStepping.maxCutbackDepth).toBeGreaterThan(0);
+    expect(adaptive.adaptiveLoadStepping.acceptedLoadFactors.at(-1)).toBe(1);
+    expect(adaptive.loadSteps.length).toBeGreaterThan(1);
+    expect(adaptive.loadSteps.some((step) => step.adaptiveCutback)).toBe(true);
+    expect(adaptive.loadSteps.at(-1)?.loadFactor).toBe(1);
+    expect(adaptive.residualNormRatio).toBeLessThanOrEqual(adaptive.policy.forceBalanceTolerance);
+    expect(adaptive.maxYieldResidualRatio).toBeLessThanOrEqual(adaptive.policy.residualTolerance);
+    expect(rejectedAttempts.length).toBeGreaterThan(0);
+    expect(acceptedAttempts.length).toBe(adaptive.loadSteps.length);
+    for (const attempt of rejectedAttempts) {
+      expect(attempt.rollbackApplied).toBe(true);
+      expect(attempt.committedStateSignatureAfter).toBe(attempt.committedStateSignatureBefore);
+      expect(attempt.terminationReason).not.toBe('converged');
+    }
+    expect(manualEquivalent.converged).toBe(true);
+    expect(Math.abs(adaptiveSettlementM - manualSettlementM)).toBeLessThanOrEqual(1e-9);
+    expect(Math.abs(adaptive.maxEquivalentPlasticStrain - manualEquivalent.maxEquivalentPlasticStrain))
+      .toBeLessThanOrEqual(1e-9);
+    expect(adaptive.limitations.join(' ')).toMatch(/Adaptive cutback-bisection load stepping/i);
+    expect(adaptive).not.toHaveProperty('productionReady');
+  });
+
+  it('adaptive nonlinear load stepping still fails closed at the cutback limit', () => {
+    const { model } = druckerPragerSettlementPatch();
+    const limitedIterationModel: FemPlaneStrainModel = {
+      ...model,
+      policy: {
+        schemaVersion: 'fem-convergence-policy.v1',
+        residualTolerance: 1e-8,
+        forceBalanceTolerance: 1e-6,
+        porePressureMassBalanceTolerance: 1e-3,
+        maxIterations: 1,
+        minAcceptedSteps: 1,
+      },
+    };
+    const result = runPlaneStrainDruckerPragerLoadSteps(limitedIterationModel, {
+      loadStepFractions: [1],
+      adaptiveLoadStepping: {
+        minLoadFactorIncrement: 1 / 64,
+        maxCutbacks: 2,
+      },
+    });
+
+    expect(result.converged).toBe(false);
+    expect(result.status).toBe('nonconverged');
+    expect(result.failure?.terminationReason).toBe('max_iterations');
+    expect(result.adaptiveLoadStepping.enabled).toBe(true);
+    expect(result.adaptiveLoadStepping.cutbackCount).toBe(2);
+    expect(result.adaptiveLoadStepping.blockerCodes).toContain('adaptive-load-step-max-cutbacks-exhausted');
+    expect(result.adaptiveLoadStepping.attempts.some((attempt) => !attempt.accepted && attempt.rollbackApplied))
+      .toBe(true);
+    expect(result.limitations.join(' ')).toMatch(/fail-closed/i);
+  });
+
   it('retains committed Drucker-Prager plastic strain history through unload and reload steps', () => {
     const unloadLoadFactor = 0.1;
     const { model } = druckerPragerSettlementPatch();

@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.111] - 2026-06-04
+
+### FEM Adaptive DP Route and Guardrails
+
+- Added a reviewed experimental `geotech fem run --backend plane-strain-dp-adaptive` route for explicit `static_2d_plane_strain_drucker_prager` excavation cases, backed by the Quad4 Drucker-Prager kernel, adaptive cutback-bisection rollback audit, solver residual history, and WebGL manifest output.
+- Hardened FEM result validation so plane-strain Drucker-Prager manifests fail closed when adaptive metadata is missing or stale, rejected attempts do not roll back, accepted load factors do not reach full load, residuals exceed policy, or any manifest claims `productionReady: true`.
+- Added deterministic route tests and mocked default hosted GLM guardrails so nonlinear/plasticity evidence is visible while full production FEM remains blocked behind coupled production solvers, independent published/commercial benchmarks, support-design approval, and licensed project acceptance.
+
 ## [0.4.110] - 2026-06-04
 
 ### FEM Biot Acceptance, Support Evidence, and Ingest Recovery

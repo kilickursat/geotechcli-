@@ -135,6 +135,12 @@ export interface FemPlaneStrainDruckerPragerSolverOptions {
   linearSolver?: FemPlaneStrainLinearSolverKind;
   linearSolverTolerance?: number;
   linearSolverMaxIterations?: number;
+  adaptiveLoadStepping?: boolean | {
+    enabled?: boolean;
+    strategy?: 'cutback-bisection';
+    minLoadFactorIncrement?: number;
+    maxCutbacks?: number;
+  };
 }
 
 export interface FemPlaneStrainDruckerPragerResidualHistoryEntry {
@@ -160,6 +166,9 @@ export interface FemPlaneStrainDruckerPragerFailure {
 export interface FemPlaneStrainDruckerPragerStepResult {
   step: number;
   loadFactor: number;
+  requestedLoadFactor?: number;
+  cutbackDepth?: number;
+  adaptiveCutback?: boolean;
   iterations: number;
   maxFreeResidualKn: number;
   residualNormRatio: number;
@@ -177,6 +186,35 @@ export interface FemPlaneStrainDruckerPragerStepResult {
   terminationReason: FemPlaneStrainDruckerPragerTerminationReason;
   failureReason?: string;
   residualHistory: FemPlaneStrainDruckerPragerResidualHistoryEntry[];
+}
+
+export interface FemPlaneStrainDruckerPragerAdaptiveLoadSteppingAudit {
+  schemaVersion: 'fem-plane-strain-dp-adaptive-load-stepping.v1';
+  enabled: boolean;
+  strategy: 'explicit-only' | 'cutback-bisection';
+  requestedStepCount: number;
+  attemptedStepCount: number;
+  acceptedStepCount: number;
+  cutbackCount: number;
+  maxCutbackDepth: number;
+  minLoadFactorIncrement: number;
+  requestedLoadFactors: number[];
+  acceptedLoadFactors: number[];
+  attempts: FemPlaneStrainDruckerPragerAdaptiveLoadStepAttemptAudit[];
+  blockerCodes: string[];
+}
+
+export interface FemPlaneStrainDruckerPragerAdaptiveLoadStepAttemptAudit {
+  attempt: number;
+  startLoadFactor: number;
+  targetLoadFactor: number;
+  requestedLoadFactor: number;
+  cutbackDepth: number;
+  accepted: boolean;
+  rollbackApplied: boolean;
+  terminationReason: FemPlaneStrainDruckerPragerTerminationReason;
+  committedStateSignatureBefore: string;
+  committedStateSignatureAfter: string;
 }
 
 export interface FemPlaneStrainDruckerPragerResult {
@@ -197,6 +235,7 @@ export interface FemPlaneStrainDruckerPragerResult {
   globalTangent: 'elastic';
   materialIntegration: 'incremental-committed-drucker-prager-return-mapping';
   stateStorage: 'committed-gauss-point-history';
+  adaptiveLoadStepping: FemPlaneStrainDruckerPragerAdaptiveLoadSteppingAudit;
   loadSteps: FemPlaneStrainDruckerPragerStepResult[];
   maxFreeResidualKn: number;
   residualNormRatio: number;
@@ -2468,6 +2507,50 @@ function normalizeLoadStepFractions(options: {
   return fractions;
 }
 
+function normalizeAdaptiveDruckerPragerLoadStepping(
+  value: FemPlaneStrainDruckerPragerSolverOptions['adaptiveLoadStepping'],
+): {
+  enabled: boolean;
+  strategy: 'explicit-only' | 'cutback-bisection';
+  minLoadFactorIncrement: number;
+  maxCutbacks: number;
+} {
+  if (value == null || value === false) {
+    return {
+      enabled: false,
+      strategy: 'explicit-only',
+      minLoadFactorIncrement: 0,
+      maxCutbacks: 0,
+    };
+  }
+  const options = value === true ? {} : value;
+  const enabled = options.enabled ?? true;
+  if (!enabled) {
+    return {
+      enabled: false,
+      strategy: 'explicit-only',
+      minLoadFactorIncrement: 0,
+      maxCutbacks: 0,
+    };
+  }
+  const strategy = options.strategy ?? 'cutback-bisection';
+  if (strategy !== 'cutback-bisection') {
+    throw new Error('adaptiveLoadStepping.strategy must be cutback-bisection.');
+  }
+  const minLoadFactorIncrement = options.minLoadFactorIncrement ?? 1 / 64;
+  if (!Number.isFinite(minLoadFactorIncrement) || minLoadFactorIncrement <= 0 || minLoadFactorIncrement >= 1) {
+    throw new Error('adaptiveLoadStepping.minLoadFactorIncrement must be finite and between 0 and 1.');
+  }
+  const maxCutbacks = Math.floor(options.maxCutbacks ?? 24);
+  assertPositiveInteger(maxCutbacks, 'adaptiveLoadStepping.maxCutbacks');
+  return {
+    enabled: true,
+    strategy,
+    minLoadFactorIncrement,
+    maxCutbacks,
+  };
+}
+
 function isDruckerPragerStepConverged(
   evaluation: ReturnType<typeof evaluatePlaneStrainDruckerPragerState>,
   policy: FemConvergencePolicy,
@@ -2478,6 +2561,20 @@ function isDruckerPragerStepConverged(
 
 function createInitialDruckerPragerStateGrid(system: PlaneStrainAssemblySystem): PlaneStrainDruckerPragerStateGrid {
   return system.elementGaussCache.map((entry) => entry.gauss.map(() => initialDruckerPragerState()));
+}
+
+function druckerPragerStateSignature(states: PlaneStrainDruckerPragerStateGrid): string {
+  return states
+    .flatMap((elementStates) => elementStates)
+    .map((state) => [
+      ...state.strain,
+      ...state.stressKpa,
+      state.sigmaZKpa,
+      state.equivalentPlasticStrain,
+      ...state.plasticStrainPrincipal,
+      state.volumetricPlasticStrain,
+    ].map((value) => round(value, 12)).join(','))
+    .join('|');
 }
 
 function druckerPragerResidualHistoryEntry(
@@ -2629,6 +2726,7 @@ export function runPlaneStrainDruckerPragerLoadSteps(
   }
   const linearSolverMaxIterations = options.linearSolverMaxIterations ?? Math.max(100, system.freeDofs.length * 10);
   assertPositiveInteger(linearSolverMaxIterations, 'linearSolverMaxIterations');
+  const adaptiveOptions = normalizeAdaptiveDruckerPragerLoadStepping(options.adaptiveLoadStepping);
   const reducedDenseK = linearSolver === 'dense-gaussian'
     ? system.freeDofs.map((row) => system.freeDofs.map((col) => system.stiffness![row][col]))
     : undefined;
@@ -2642,14 +2740,34 @@ export function runPlaneStrainDruckerPragerLoadSteps(
   let committedStates = createInitialDruckerPragerStateGrid(system);
   let finalEvaluation: ReturnType<typeof evaluatePlaneStrainDruckerPragerState> | undefined;
   const loadSteps: FemPlaneStrainDruckerPragerStepResult[] = [];
+  let currentLoadFactor = 0;
+  let attemptedStepCount = 0;
+  let cutbackCount = 0;
+  let maxCutbackDepth = 0;
+  const acceptedLoadFactors: number[] = [];
+  const adaptiveAttemptAudits: FemPlaneStrainDruckerPragerAdaptiveLoadStepAttemptAudit[] = [];
+  const adaptiveBlockerCodes: string[] = [];
 
-  for (const [stepIndex, loadFactor] of loadStepFractions.entries()) {
-    for (const [index, value] of system.prescribed) displacement[index] = value * loadFactor;
+  function solveDruckerPragerStepAttempt(input: {
+    step: number;
+    loadFactor: number;
+    requestedLoadFactor: number;
+    cutbackDepth: number;
+    startingDisplacement: readonly number[];
+    startingCommittedStates: PlaneStrainDruckerPragerStateGrid;
+  }): {
+    step: FemPlaneStrainDruckerPragerStepResult;
+    evaluation: ReturnType<typeof evaluatePlaneStrainDruckerPragerState>;
+    displacement: number[];
+    converged: boolean;
+  } {
+    const trialDisplacement = [...input.startingDisplacement];
+    for (const [index, value] of system.prescribed) trialDisplacement[index] = value * input.loadFactor;
     let evaluation = evaluatePlaneStrainDruckerPragerState({
       system,
-      displacement,
-      loadFactor,
-      committedStates,
+      displacement: trialDisplacement,
+      loadFactor: input.loadFactor,
+      committedStates: input.startingCommittedStates,
     });
     let iterations = 0;
     let converged = isDruckerPragerStepConverged(evaluation, system.policy);
@@ -2663,7 +2781,7 @@ export function runPlaneStrainDruckerPragerLoadSteps(
       iterations += 1;
       if (system.freeDofs.length === 0) break;
       const correctionRhs = system.freeDofs.map((index) => -evaluation.residual[index]);
-      const currentFreeDisplacement = system.freeDofs.map((index) => displacement[index]);
+      const currentFreeDisplacement = system.freeDofs.map((index) => trialDisplacement[index]);
       const solved = linearSolver === 'sparse-csr-cg'
         ? solveSparseDruckerPragerCorrection({
           reducedK: reducedSparseK!,
@@ -2686,21 +2804,19 @@ export function runPlaneStrainDruckerPragerLoadSteps(
       }
       const correction = solved.correction;
       for (const [correctionIndex, dof] of system.freeDofs.entries()) {
-        displacement[dof] += correction[correctionIndex];
+        trialDisplacement[dof] += correction[correctionIndex];
       }
-      for (const [index, value] of system.prescribed) displacement[index] = value * loadFactor;
+      for (const [index, value] of system.prescribed) trialDisplacement[index] = value * input.loadFactor;
       evaluation = evaluatePlaneStrainDruckerPragerState({
         system,
-        displacement,
-        loadFactor,
-        committedStates,
+        displacement: trialDisplacement,
+        loadFactor: input.loadFactor,
+        committedStates: input.startingCommittedStates,
       });
       converged = isDruckerPragerStepConverged(evaluation, system.policy);
       residualHistory.push(druckerPragerResidualHistoryEntry(iterations, evaluation, system.policy));
     }
 
-    finalEvaluation = evaluation;
-    if (converged) committedStates = evaluation.trialStates;
     const terminationReason = druckerPragerTerminationReason(
       evaluation,
       system.policy,
@@ -2709,34 +2825,142 @@ export function runPlaneStrainDruckerPragerLoadSteps(
       linearSolverFailure,
     );
     const lastLinearAudit = linearSolverAudits.at(-1);
-    loadSteps.push({
-      step: stepIndex + 1,
-      loadFactor: round(loadFactor, 8),
-      iterations,
-      maxFreeResidualKn: round(evaluation.maxFreeResidualKn, 12),
-      residualNormRatio: round(evaluation.residualNormRatio, 12),
-      reactionBalanceRatio: round(evaluation.reactionBalanceRatio, 12),
-      maxYieldResidualRatio: round(evaluation.maxYieldResidualRatio, 12),
-      maxEquivalentPlasticStrain: round(evaluation.maxEquivalentPlasticStrain, 12),
-      maxEquivalentPlasticStrainIncrement: round(evaluation.maxEquivalentPlasticStrainIncrement, 12),
-      plasticGaussPointCount: evaluation.plasticGaussPointCount,
-      linearSolver,
-      linearIterations: linearSolverAudits.reduce((sum, audit) => sum + audit.iterations, 0),
-      linearResidualNormRatio: round(lastLinearAudit?.residualNormRatio ?? 0, 12),
-      correctionNormRatio: round(lastLinearAudit?.correctionNormRatio ?? 0, 12),
-      linearSolverAudits,
+    return {
+      evaluation,
+      displacement: trialDisplacement,
       converged,
-      terminationReason,
-      ...(linearSolverFailure?.failureReason ? { failureReason: linearSolverFailure.failureReason } : {}),
-      residualHistory,
+      step: {
+        step: input.step,
+        loadFactor: round(input.loadFactor, 8),
+        ...(Math.abs(input.requestedLoadFactor - input.loadFactor) > 1e-12
+          ? { requestedLoadFactor: round(input.requestedLoadFactor, 8) }
+          : {}),
+        ...(input.cutbackDepth > 0 ? { cutbackDepth: input.cutbackDepth, adaptiveCutback: true } : {}),
+        iterations,
+        maxFreeResidualKn: round(evaluation.maxFreeResidualKn, 12),
+        residualNormRatio: round(evaluation.residualNormRatio, 12),
+        reactionBalanceRatio: round(evaluation.reactionBalanceRatio, 12),
+        maxYieldResidualRatio: round(evaluation.maxYieldResidualRatio, 12),
+        maxEquivalentPlasticStrain: round(evaluation.maxEquivalentPlasticStrain, 12),
+        maxEquivalentPlasticStrainIncrement: round(evaluation.maxEquivalentPlasticStrainIncrement, 12),
+        plasticGaussPointCount: evaluation.plasticGaussPointCount,
+        linearSolver,
+        linearIterations: linearSolverAudits.reduce((sum, audit) => sum + audit.iterations, 0),
+        linearResidualNormRatio: round(lastLinearAudit?.residualNormRatio ?? 0, 12),
+        correctionNormRatio: round(lastLinearAudit?.correctionNormRatio ?? 0, 12),
+        linearSolverAudits,
+        converged,
+        terminationReason,
+        ...(linearSolverFailure?.failureReason ? { failureReason: linearSolverFailure.failureReason } : {}),
+        residualHistory,
+      },
+    };
+  }
+
+  function solveToLoadFactor(targetLoadFactor: number, requestedLoadFactor: number, cutbackDepth: number): boolean {
+    const startLoadFactor = currentLoadFactor;
+    const committedStateSignatureBefore = druckerPragerStateSignature(committedStates);
+    const attempt = solveDruckerPragerStepAttempt({
+      step: loadSteps.length + 1,
+      loadFactor: targetLoadFactor,
+      requestedLoadFactor,
+      cutbackDepth,
+      startingDisplacement: displacement,
+      startingCommittedStates: committedStates,
     });
+    attemptedStepCount += 1;
+    maxCutbackDepth = Math.max(maxCutbackDepth, cutbackDepth);
+
+    if (attempt.converged) {
+      adaptiveAttemptAudits.push({
+        attempt: adaptiveAttemptAudits.length + 1,
+        startLoadFactor: round(startLoadFactor, 8),
+        targetLoadFactor: round(targetLoadFactor, 8),
+        requestedLoadFactor: round(requestedLoadFactor, 8),
+        cutbackDepth,
+        accepted: true,
+        rollbackApplied: false,
+        terminationReason: attempt.step.terminationReason,
+        committedStateSignatureBefore,
+        committedStateSignatureAfter: druckerPragerStateSignature(attempt.evaluation.trialStates),
+      });
+      displacement.splice(0, displacement.length, ...attempt.displacement);
+      committedStates = attempt.evaluation.trialStates;
+      finalEvaluation = attempt.evaluation;
+      currentLoadFactor = targetLoadFactor;
+      acceptedLoadFactors.push(round(targetLoadFactor, 8));
+      loadSteps.push({
+        ...attempt.step,
+        step: loadSteps.length + 1,
+      });
+      return true;
+    }
+
+    adaptiveAttemptAudits.push({
+      attempt: adaptiveAttemptAudits.length + 1,
+      startLoadFactor: round(startLoadFactor, 8),
+      targetLoadFactor: round(targetLoadFactor, 8),
+      requestedLoadFactor: round(requestedLoadFactor, 8),
+      cutbackDepth,
+      accepted: false,
+      rollbackApplied: adaptiveOptions.enabled,
+      terminationReason: attempt.step.terminationReason,
+      committedStateSignatureBefore,
+      committedStateSignatureAfter: committedStateSignatureBefore,
+    });
+
+    if (adaptiveOptions.enabled) {
+      const increment = targetLoadFactor - startLoadFactor;
+      const midpoint = startLoadFactor + increment / 2;
+      if (cutbackCount >= adaptiveOptions.maxCutbacks) {
+        adaptiveBlockerCodes.push('adaptive-load-step-max-cutbacks-exhausted');
+      } else if (Math.abs(midpoint - startLoadFactor) < adaptiveOptions.minLoadFactorIncrement) {
+        adaptiveBlockerCodes.push('adaptive-load-step-min-increment-reached');
+      } else if (Math.abs(midpoint - targetLoadFactor) < 1e-12) {
+        adaptiveBlockerCodes.push('adaptive-load-step-cutback-stalled');
+      } else {
+        cutbackCount += 1;
+        const firstHalfAccepted = solveToLoadFactor(midpoint, requestedLoadFactor, cutbackDepth + 1);
+        if (!firstHalfAccepted) return false;
+        return solveToLoadFactor(targetLoadFactor, requestedLoadFactor, cutbackDepth + 1);
+      }
+    }
+
+    displacement.splice(0, displacement.length, ...attempt.displacement);
+    finalEvaluation = attempt.evaluation;
+    loadSteps.push({
+      ...attempt.step,
+      step: loadSteps.length + 1,
+    });
+    return false;
+  }
+
+  for (const loadFactor of loadStepFractions) {
+    const accepted = solveToLoadFactor(loadFactor, loadFactor, 0);
+    if (!accepted && adaptiveOptions.enabled) break;
   }
 
   if (!finalEvaluation) {
     throw new Error('Plane-strain nonlinear load-step solver requires at least one load step.');
   }
+  const acceptedFinalEvaluation = finalEvaluation;
   const failedStep = loadSteps.find((step) => !step.converged);
   const status = failedStep ? 'nonconverged' : 'converged';
+  const adaptiveLoadStepping: FemPlaneStrainDruckerPragerAdaptiveLoadSteppingAudit = {
+    schemaVersion: 'fem-plane-strain-dp-adaptive-load-stepping.v1',
+    enabled: adaptiveOptions.enabled,
+    strategy: adaptiveOptions.strategy,
+    requestedStepCount: loadStepFractions.length,
+    attemptedStepCount,
+    acceptedStepCount: loadSteps.filter((step) => step.converged).length,
+    cutbackCount,
+    maxCutbackDepth,
+    minLoadFactorIncrement: round(adaptiveOptions.minLoadFactorIncrement, 12),
+    requestedLoadFactors: loadStepFractions.map((factor) => round(factor, 8)),
+    acceptedLoadFactors,
+    attempts: adaptiveAttemptAudits,
+    blockerCodes: [...new Set(adaptiveBlockerCodes)],
+  };
 
   return {
     schemaVersion: 'fem-plane-strain-drucker-prager-result.v1',
@@ -2745,10 +2969,10 @@ export function runPlaneStrainDruckerPragerLoadSteps(
       ...node,
       uxM: round(displacement[dofIndex(index, 'ux')], 12),
       uyM: round(displacement[dofIndex(index, 'uy')], 12),
-      rxnXKn: round(finalEvaluation.residual[dofIndex(index, 'ux')], 8),
-      rxnYKn: round(finalEvaluation.residual[dofIndex(index, 'uy')], 8),
+      rxnXKn: round(acceptedFinalEvaluation.residual[dofIndex(index, 'ux')], 8),
+      rxnYKn: round(acceptedFinalEvaluation.residual[dofIndex(index, 'uy')], 8),
     })),
-    elements: finalEvaluation.elements,
+    elements: acceptedFinalEvaluation.elements,
     dofCount: system.dofCount,
     freeDofCount: system.freeDofs.length,
     constrainedDofCount: system.prescribed.size,
@@ -2757,14 +2981,15 @@ export function runPlaneStrainDruckerPragerLoadSteps(
     globalTangent: 'elastic',
     materialIntegration: 'incremental-committed-drucker-prager-return-mapping',
     stateStorage: 'committed-gauss-point-history',
+    adaptiveLoadStepping,
     loadSteps,
-    maxFreeResidualKn: round(finalEvaluation.maxFreeResidualKn, 12),
-    residualNormRatio: round(finalEvaluation.residualNormRatio, 12),
-    reactionBalanceRatio: round(finalEvaluation.reactionBalanceRatio, 12),
-    maxYieldResidualRatio: round(finalEvaluation.maxYieldResidualRatio, 12),
-    maxEquivalentPlasticStrain: round(finalEvaluation.maxEquivalentPlasticStrain, 12),
-    maxEquivalentPlasticStrainIncrement: round(finalEvaluation.maxEquivalentPlasticStrainIncrement, 12),
-    plasticGaussPointCount: finalEvaluation.plasticGaussPointCount,
+    maxFreeResidualKn: round(acceptedFinalEvaluation.maxFreeResidualKn, 12),
+    residualNormRatio: round(acceptedFinalEvaluation.residualNormRatio, 12),
+    reactionBalanceRatio: round(acceptedFinalEvaluation.reactionBalanceRatio, 12),
+    maxYieldResidualRatio: round(acceptedFinalEvaluation.maxYieldResidualRatio, 12),
+    maxEquivalentPlasticStrain: round(acceptedFinalEvaluation.maxEquivalentPlasticStrain, 12),
+    maxEquivalentPlasticStrainIncrement: round(acceptedFinalEvaluation.maxEquivalentPlasticStrainIncrement, 12),
+    plasticGaussPointCount: acceptedFinalEvaluation.plasticGaussPointCount,
     converged: status === 'converged',
     status,
     ...(failedStep ? {
@@ -2781,6 +3006,9 @@ export function runPlaneStrainDruckerPragerLoadSteps(
     limitations: [
       'Benchmark-scale modified-Newton plane-strain plasticity evidence kernel only.',
       ...(failedStep ? ['Nonconverged load-step result is reported fail-closed and must not be treated as an accepted engineering solve.'] : []),
+      ...(adaptiveOptions.enabled
+        ? ['Adaptive cutback-bisection load stepping can subdivide rejected nonlinear increments with rollback audit, but it is still not an arc-length or production consistent-tangent strategy.']
+        : []),
       linearSolver === 'sparse-csr-cg'
         ? 'Uses an experimental CSR Conjugate Gradient linear solve audit, elastic global tangent, and committed Gauss-point Drucker-Prager return mapping; no production consistent tangent, hardening calibration, staged activation, pore-pressure DOF, or route-backed result manifest is provided.'
         : 'Uses elastic global tangent with committed Gauss-point Drucker-Prager return mapping; no production consistent tangent, production sparse solver, hardening calibration, staged activation, pore-pressure DOF, or route-backed result manifest is provided.',

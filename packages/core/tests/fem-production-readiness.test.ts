@@ -38,9 +38,8 @@ describe('FEM production readiness contract', () => {
       'jurisdiction-specific-wall-strut-anchor-structural-design-not-implemented',
       'workspace-to-run-acceptance-validator-enforced',
       'published-benchmark-corpus-approved',
-      'external-benchmark-reference-corpus-missing',
-      'external-benchmark-published-source-citation-missing',
-      'external-benchmark-reference-solver-citation-missing',
+      'external-benchmark-commercial-solver-citation-missing',
+      'external-benchmark-comparison-results-missing',
       'production-design-approval-scope-fails-closed-until-production-acceptance',
       'reviewer-approval-record-enforced-by-cli-run',
     ]));
@@ -50,13 +49,12 @@ describe('FEM production readiness contract', () => {
       productionReady: false,
     });
     expect(report.engineeringEvidence.externalBenchmarkAcceptance).toMatchObject({
-      schemaVersion: 'fem-external-benchmark-acceptance-metadata.v1',
+      schemaVersion: 'fem-external-benchmark-acceptance.v2',
       status: 'blocked',
       productionReadinessBlocked: true,
       blockerCodes: expect.arrayContaining([
-        'external-benchmark-reference-corpus-missing',
-        'external-benchmark-published-source-citation-missing',
-        'external-benchmark-reference-solver-citation-missing',
+        'external-benchmark-commercial-solver-citation-missing',
+        'external-benchmark-comparison-results-missing',
       ]),
     });
     expect(report.engineeringEvidence.verifiedFeatures).toEqual(expect.arrayContaining([
@@ -74,6 +72,7 @@ describe('FEM production readiness contract', () => {
       'quad4-plane-strain-biot-u-p-pressure-gradient-flux-contract',
       'quad4-plane-strain-biot-u-p-alpha-zero-decoupling',
       'quad4-plane-strain-biot-u-p-terzaghi-pressure-dissipation',
+      'quad4-plane-strain-dp-adaptive-cutback-rollback-recovery',
       'excavation-support-staged-reaction-sequence',
     ]));
     expect(report.releasePositioning).toContain('not a full production-grade nonlinear geotechnical FEM solver yet');
@@ -147,6 +146,7 @@ describe('FEM production readiness contract', () => {
     expect(report.engineeringEvidence.benchmarks.map((item) => item.id)).toEqual(expect.arrayContaining([
       'quad4-plane-strain-dp-affine-plastic-patch',
       'quad4-plane-strain-dp-stage-state-carryover',
+      'quad4-plane-strain-dp-adaptive-cutback-rollback-recovery',
     ]));
     expect(report.blockers).toEqual(expect.arrayContaining([
       'production-nonlinear-global-fem-solver-route-and-consistent-tangent-not-approved',
@@ -181,6 +181,10 @@ describe('FEM production readiness contract', () => {
     expect(data.agentEvidenceSummary).toContain('quad4-plane-strain-biot-u-p-pressure-gradient-flux-contract');
     expect(data.agentEvidenceSummary).toContain('quad4-plane-strain-biot-u-p-alpha-zero-decoupling');
     expect(data.agentEvidenceSummary).toContain('quad4-plane-strain-biot-u-p-terzaghi-pressure-dissipation');
+    expect(data.agentEvidenceSummary).toContain('quad4-plane-strain-dp-adaptive-cutback-rollback-recovery');
+    expect(data.agentEvidenceSummary).toContain('external benchmark references:');
+    expect(data.agentEvidenceSummary).toContain('external benchmark comparison results: 0');
+    expect(data.agentEvidenceSummary).toContain('external-benchmark-commercial-solver-citation-missing');
     expect(data.agentEvidenceSummary).toContain(
       'biot-u-p-route-backed-preview-is-not-production-sparse-solver',
     );

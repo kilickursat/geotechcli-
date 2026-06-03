@@ -37,6 +37,8 @@ const FEM_WEBGL_UINT16_INDEX_LIMIT = 65_535;
 const FEM_MAX_PREVIEW_MESH_NODES = FEM_WEBGL_UINT16_INDEX_LIMIT + 1;
 const FEM_MIN_BIOT_TRANSIENT_STEPS = 3;
 const FEM_MAX_BIOT_TIME_STEP_GROWTH_RATIO = 8;
+const FEM_PLANE_STRAIN_DP_ADAPTIVE_BACKEND_ID = 'builtin-plane-strain-dp-adaptive-v0';
+const FEM_PLANE_STRAIN_DP_ANALYSIS_TYPE = 'static_2d_plane_strain_drucker_prager';
 
 function expectedMeshCounts(mesh: FemAnalysisCase['mesh']): { nodes: number; elements: number } {
   if (mesh.elementType === 'quad4_plane_strain') {
@@ -298,6 +300,22 @@ function validateOptionalResultMetadata(
     ['max_mobilized_strength_ratio', manifest.envelope.maxMobilizedStrengthRatio],
     ['drainage_path', manifest.envelope.drainagePathM],
     ['consolidation_duration', manifest.envelope.consolidationDurationYears],
+    ['solver_load_steps', manifest.envelope.solverLoadSteps],
+    ['solver_iterations', manifest.envelope.solverIterations],
+    ['max_solver_residual_ratio', manifest.envelope.maxSolverResidualRatio],
+    ['max_yield_residual_ratio', manifest.envelope.maxYieldResidualRatio],
+    ['nonlinear_plastic_strain', manifest.envelope.nonlinearPlasticStrain],
+    ['plane_strain_dof_count', manifest.envelope.planeStrainDofCount],
+    ['plane_strain_free_dof_count', manifest.envelope.planeStrainFreeDofCount],
+    ['plane_strain_constrained_dof_count', manifest.envelope.planeStrainConstrainedDofCount],
+    ['plastic_gauss_point_count', manifest.envelope.plasticGaussPointCount],
+    ['max_equivalent_plastic_strain', manifest.envelope.maxEquivalentPlasticStrain],
+    ['max_equivalent_plastic_strain_increment', manifest.envelope.maxEquivalentPlasticStrainIncrement],
+    ['adaptive_attempt_count', manifest.envelope.adaptiveAttemptCount],
+    ['adaptive_accepted_step_count', manifest.envelope.adaptiveAcceptedStepCount],
+    ['adaptive_rejected_attempt_count', manifest.envelope.adaptiveRejectedAttemptCount],
+    ['adaptive_cutback_count', manifest.envelope.adaptiveCutbackCount],
+    ['adaptive_max_cutback_depth', manifest.envelope.adaptiveMaxCutbackDepth],
     ['time_step_count', manifest.envelope.timeStepCount],
     ['min_pore_pressure', manifest.envelope.minPorePressureKpa],
     ['max_pore_pressure', manifest.envelope.maxPorePressureKpa],
@@ -638,6 +656,7 @@ export function validateFemAnalysisCase(caseFile: FemAnalysisCase): FemValidatio
   }
 
   const { domain, raft, excavation, tunnel, consolidation, biot } = caseFile.geometry;
+  const isPlaneStrainDruckerPragerAnalysis = caseFile.analysisType === FEM_PLANE_STRAIN_DP_ANALYSIS_TYPE;
 
   if (caseFile.schemaVersion !== 'fem-analysis-case.v0') {
     findings.push(finding('blocker', 'schema.unsupported', 'Only fem-analysis-case.v0 is supported.'));
@@ -663,7 +682,11 @@ export function validateFemAnalysisCase(caseFile: FemAnalysisCase): FemValidatio
   if (caseFile.objective === 'foundation_settlement' && caseFile.analysisType !== 'static_3d_small_strain') {
     findings.push(finding('blocker', 'analysis.unsupported', `Unsupported analysis type: ${caseFile.analysisType}.`));
   }
-  if (caseFile.objective === 'excavation_deformation' && caseFile.analysisType !== 'static_3d_staged_elastic') {
+  if (
+    caseFile.objective === 'excavation_deformation' &&
+    caseFile.analysisType !== 'static_3d_staged_elastic' &&
+    !isPlaneStrainDruckerPragerAnalysis
+  ) {
     findings.push(finding('blocker', 'analysis.unsupported', `Unsupported analysis type: ${caseFile.analysisType}.`));
   }
   if (caseFile.objective === 'tunnel_volume_loss_settlement' && caseFile.analysisType !== 'empirical_3d_settlement_surface') {
@@ -791,11 +814,17 @@ export function validateFemAnalysisCase(caseFile: FemAnalysisCase): FemValidatio
       if (previousDepth !== excavation.finalDepthM) {
         findings.push(finding('review', 'stages.final-depth-review', 'Last excavation stage does not exactly match the final depth; staging requires review.'));
       }
-      findings.push(finding(
-        'review',
-        'excavation.design-excluded',
-        'Excavation preview excludes retaining wall design, basal heave, seepage, consolidation, and nonlinear soil response.',
-      ));
+      findings.push(isPlaneStrainDruckerPragerAnalysis
+        ? finding(
+          'review',
+          'excavation.plane-strain-dp-preview',
+          'Excavation preview uses experimental plane-strain Drucker-Prager plasticity and still excludes retaining wall design, basal heave, seepage, consolidation, and production design acceptance.',
+        )
+        : finding(
+          'review',
+          'excavation.design-excluded',
+          'Excavation preview excludes retaining wall design, basal heave, seepage, consolidation, and nonlinear soil response.',
+        ));
     }
   }
   if (caseFile.objective === 'tunnel_volume_loss_settlement') {
@@ -1019,6 +1048,16 @@ export function validateFemAnalysisCase(caseFile: FemAnalysisCase): FemValidatio
           pushFiniteNumberFinding(findings, material.hydraulicConductivityMPerS, `${prefix}.hydraulic-conductivity`, 'Hydraulic conductivity', { positive: true });
         }
       }
+      if (isPlaneStrainDruckerPragerAnalysis) {
+        if (material.model !== 'mohr_coulomb') {
+          findings.push(finding('blocker', `${prefix}.plane-strain-dp-model-required`, 'Plane-strain Drucker-Prager previews require mohr_coulomb material strength parameters for Drucker-Prager mapping.'));
+        }
+        const frictionAngleDeg = material.frictionAngleDeg;
+        if (!isFiniteNumber(frictionAngleDeg) || frictionAngleDeg <= 0 || frictionAngleDeg >= 50) {
+          findings.push(finding('blocker', `${prefix}.plane-strain-dp-friction-angle-invalid`, 'Plane-strain Drucker-Prager previews require a finite Mohr-Coulomb friction angle between 0 and 50 degrees.'));
+        }
+        pushFiniteNumberFinding(findings, material.cohesionKpa, `${prefix}.plane-strain-dp-cohesion`, 'Plane-strain Drucker-Prager cohesion', { nonNegative: true });
+      }
       if (caseFile.objective === 'seepage_groundwater_coupling') {
         if (material.model !== 'linear_elastic') {
           findings.push(finding('blocker', `${prefix}.biot-model-required`, 'Biot u-p preview requires a linear_elastic material with hydraulic coupling parameters.'));
@@ -1109,10 +1148,17 @@ export function validateFemAnalysisCase(caseFile: FemAnalysisCase): FemValidatio
   if (caseFile.mesh.elementType !== 'hex8' && caseFile.mesh.elementType !== 'quad4_plane_strain') {
     findings.push(finding('blocker', 'mesh.element-type-invalid', `Unsupported mesh element type: ${String(caseFile.mesh.elementType)}.`));
   }
-  if (caseFile.objective === 'seepage_groundwater_coupling' && caseFile.mesh.elementType !== 'quad4_plane_strain') {
-    findings.push(finding('blocker', 'mesh.element-type-biot-required', 'Biot u-p seepage previews require quad4_plane_strain mesh elements.'));
+  const requiresQuad4PlaneStrainMesh = caseFile.objective === 'seepage_groundwater_coupling' || isPlaneStrainDruckerPragerAnalysis;
+  if (requiresQuad4PlaneStrainMesh && caseFile.mesh.elementType !== 'quad4_plane_strain') {
+    findings.push(finding(
+      'blocker',
+      isPlaneStrainDruckerPragerAnalysis ? 'mesh.element-type-plane-strain-dp-required' : 'mesh.element-type-biot-required',
+      isPlaneStrainDruckerPragerAnalysis
+        ? 'Plane-strain Drucker-Prager previews require quad4_plane_strain mesh elements.'
+        : 'Biot u-p seepage previews require quad4_plane_strain mesh elements.',
+    ));
   }
-  if (caseFile.objective !== 'seepage_groundwater_coupling' && caseFile.mesh.elementType !== 'hex8') {
+  if (!requiresQuad4PlaneStrainMesh && caseFile.mesh.elementType !== 'hex8') {
     findings.push(finding('blocker', 'mesh.element-type-hex8-required', 'Non-Biot FEM preview cases require hex8 mesh elements.'));
   }
   if (
@@ -1327,7 +1373,7 @@ function pushApproximateMatchFinding(
 function validateNonlinearSolverConvergenceReport(
   findings: FemValidationFinding[],
   manifest: FemResultManifest,
-  expectedLoadSteps: number,
+  expectedLoadSteps?: number,
 ): { forceBalanceTolerance: number; residualTolerance: number } {
   const fallback = { forceBalanceTolerance: 1e-3, residualTolerance: 1e-6 };
   const report = manifest.solverConvergence;
@@ -1335,7 +1381,7 @@ function validateNonlinearSolverConvergenceReport(
     findings.push(finding(
       'blocker',
       'result.solver-convergence.missing',
-      'Nonlinear column solver manifests must include explicit convergence policy and load-step residual history.',
+      'Nonlinear solver manifests must include explicit convergence policy and load-step residual history.',
     ));
     return fallback;
   }
@@ -1347,7 +1393,7 @@ function validateNonlinearSolverConvergenceReport(
     findings.push(finding('blocker', 'result.solver-convergence.status-invalid', 'Solver convergence status must be converged or nonconverged.'));
   }
   if (report.status === 'nonconverged') {
-    findings.push(finding('blocker', 'result.solver-convergence.nonconverged', 'Nonlinear column solver did not satisfy its configured convergence policy.'));
+    findings.push(finding('blocker', 'result.solver-convergence.nonconverged', 'Nonlinear solver did not satisfy its configured convergence policy.'));
   }
 
   const policy = report.policy;
@@ -1378,13 +1424,14 @@ function validateNonlinearSolverConvergenceReport(
     findings.push(finding('blocker', 'result.solver-convergence.load-steps.invalid', 'Solver convergence loadSteps must be an array.'));
     return { forceBalanceTolerance, residualTolerance };
   }
-  if (report.loadSteps.length !== expectedLoadSteps) {
-    findings.push(finding('blocker', 'result.solver-convergence.load-steps.count-mismatch', 'Solver convergence load steps must match consolidation stages.'));
+  if (expectedLoadSteps != null && report.loadSteps.length !== expectedLoadSteps) {
+    findings.push(finding('blocker', 'result.solver-convergence.load-steps.count-mismatch', 'Solver convergence load steps must match the expected accepted load-step count.'));
   }
 
   const validTerminationReasons = new Set([
     'converged',
     'max_iterations',
+    'linear_solver_nonconverged',
     'force_residual_exceeded',
     'yield_residual_exceeded',
     'material_nonconvergence',
@@ -1402,6 +1449,24 @@ function validateNonlinearSolverConvergenceReport(
     }
     if (step.stageId != null && !isNonEmptyString(step.stageId)) {
       findings.push(finding('blocker', `${prefix}.stage-id.invalid`, 'Solver convergence stageId must be a non-empty string when present.'));
+    }
+    if (step.loadFactor != null) {
+      const loadFactorOk = pushFiniteNumberFinding(findings, step.loadFactor, `${prefix}.load-factor`, 'Solver convergence load factor', { positive: true });
+      if (loadFactorOk && step.loadFactor > 1 + 1e-9) {
+        findings.push(finding('blocker', `${prefix}.load-factor.range-invalid`, 'Solver convergence load factor must not exceed 1.0.'));
+      }
+    }
+    if (step.requestedLoadFactor != null) {
+      const requestedOk = pushFiniteNumberFinding(findings, step.requestedLoadFactor, `${prefix}.requested-load-factor`, 'Solver convergence requested load factor', { positive: true });
+      if (requestedOk && step.requestedLoadFactor > 1 + 1e-9) {
+        findings.push(finding('blocker', `${prefix}.requested-load-factor.range-invalid`, 'Solver convergence requested load factor must not exceed 1.0.'));
+      }
+    }
+    if (step.cutbackDepth != null && (!Number.isInteger(step.cutbackDepth) || step.cutbackDepth < 0)) {
+      findings.push(finding('blocker', `${prefix}.cutback-depth.invalid`, 'Solver convergence cutback depth must be a non-negative integer when present.'));
+    }
+    if (step.adaptiveCutback != null && typeof step.adaptiveCutback !== 'boolean') {
+      findings.push(finding('blocker', `${prefix}.adaptive-cutback.invalid`, 'Solver convergence adaptiveCutback must be boolean when present.'));
     }
     if (!Number.isInteger(step.iterations) || step.iterations < 0) {
       findings.push(finding('blocker', `${prefix}.iterations.invalid`, 'Solver convergence iterations must be a non-negative integer.'));
@@ -1466,6 +1531,206 @@ function validateNonlinearSolverConvergenceReport(
   return { forceBalanceTolerance, residualTolerance };
 }
 
+function validatePlaneStrainDpAdaptiveAcceptance(
+  findings: FemValidationFinding[],
+  manifest: FemResultManifest,
+  solverTolerances: { forceBalanceTolerance: number; residualTolerance: number },
+): void {
+  const { envelope } = manifest;
+  const adaptive = manifest.adaptiveLoadStepping;
+  if (!isRecord(adaptive)) {
+    findings.push(finding('blocker', 'result.dp-adaptive.missing', 'Plane-strain Drucker-Prager manifests must include adaptive load-stepping metadata.'));
+    return;
+  }
+  if (adaptive.schemaVersion !== 'fem-plane-strain-dp-adaptive-load-stepping.v1') {
+    findings.push(finding('blocker', 'result.dp-adaptive.schema.unsupported', 'Unsupported plane-strain Drucker-Prager adaptive load-stepping schema.'));
+  }
+  if (adaptive.enabled !== true) {
+    findings.push(finding('blocker', 'result.dp-adaptive.enabled-required', 'Plane-strain Drucker-Prager adaptive load stepping must be enabled for this backend.'));
+  }
+  if (adaptive.strategy !== 'cutback-bisection') {
+    findings.push(finding('blocker', 'result.dp-adaptive.strategy.invalid', 'Plane-strain Drucker-Prager adaptive load stepping must use cutback-bisection strategy.'));
+  }
+
+  const requestedStepCountOk = pushFiniteNumberFinding(findings, adaptive.requestedStepCount, 'result.dp-adaptive.requested-step-count', 'DP adaptive requested step count', { positive: true });
+  const attemptedStepCountOk = pushFiniteNumberFinding(findings, adaptive.attemptedStepCount, 'result.dp-adaptive.attempted-step-count', 'DP adaptive attempted step count', { positive: true });
+  const acceptedStepCountOk = pushFiniteNumberFinding(findings, adaptive.acceptedStepCount, 'result.dp-adaptive.accepted-step-count', 'DP adaptive accepted step count', { positive: true });
+  const cutbackCountOk = pushFiniteNumberFinding(findings, adaptive.cutbackCount, 'result.dp-adaptive.cutback-count', 'DP adaptive cutback count', { nonNegative: true });
+  const maxCutbackDepthOk = pushFiniteNumberFinding(findings, adaptive.maxCutbackDepth, 'result.dp-adaptive.max-cutback-depth', 'DP adaptive max cutback depth', { nonNegative: true });
+  pushFiniteNumberFinding(findings, adaptive.minLoadFactorIncrement, 'result.dp-adaptive.min-load-factor-increment', 'DP adaptive minimum load-factor increment', { positive: true });
+  for (const [ok, value, code, label] of [
+    [requestedStepCountOk, adaptive.requestedStepCount, 'requested-step-count', 'requested step count'],
+    [attemptedStepCountOk, adaptive.attemptedStepCount, 'attempted-step-count', 'attempted step count'],
+    [acceptedStepCountOk, adaptive.acceptedStepCount, 'accepted-step-count', 'accepted step count'],
+    [cutbackCountOk, adaptive.cutbackCount, 'cutback-count', 'cutback count'],
+    [maxCutbackDepthOk, adaptive.maxCutbackDepth, 'max-cutback-depth', 'max cutback depth'],
+  ] as const) {
+    if (ok && !Number.isInteger(value)) {
+      findings.push(finding('blocker', `result.dp-adaptive.${code}.integer`, `DP adaptive ${label} must be an integer.`));
+    }
+  }
+
+  if (!Array.isArray(adaptive.requestedLoadFactors) || adaptive.requestedLoadFactors.length === 0) {
+    findings.push(finding('blocker', 'result.dp-adaptive.requested-load-factors.invalid', 'DP adaptive requestedLoadFactors must be a non-empty array.'));
+  } else {
+    if (requestedStepCountOk && adaptive.requestedLoadFactors.length !== adaptive.requestedStepCount) {
+      findings.push(finding('blocker', 'result.dp-adaptive.requested-load-factors.count-mismatch', 'DP adaptive requested load factors must match requestedStepCount.'));
+    }
+    for (const [index, loadFactor] of adaptive.requestedLoadFactors.entries()) {
+      const ok = pushFiniteNumberFinding(findings, loadFactor, `result.dp-adaptive.requestedLoadFactors.${index}`, 'DP adaptive requested load factor', { positive: true });
+      if (ok && loadFactor > 1 + 1e-9) {
+        findings.push(finding('blocker', `result.dp-adaptive.requestedLoadFactors.${index}.range-invalid`, 'DP adaptive requested load factors must not exceed 1.0.'));
+      }
+    }
+  }
+
+  if (!Array.isArray(adaptive.acceptedLoadFactors) || adaptive.acceptedLoadFactors.length === 0) {
+    findings.push(finding('blocker', 'result.dp-adaptive.accepted-load-factors.invalid', 'DP adaptive acceptedLoadFactors must be a non-empty array.'));
+  } else {
+    if (acceptedStepCountOk && adaptive.acceptedLoadFactors.length !== adaptive.acceptedStepCount) {
+      findings.push(finding('blocker', 'result.dp-adaptive.accepted-load-factors.count-mismatch', 'DP adaptive accepted load factors must match acceptedStepCount.'));
+    }
+    let previous = 0;
+    for (const [index, loadFactor] of adaptive.acceptedLoadFactors.entries()) {
+      const ok = pushFiniteNumberFinding(findings, loadFactor, `result.dp-adaptive.acceptedLoadFactors.${index}`, 'DP adaptive accepted load factor', { positive: true });
+      if (ok) {
+        if (loadFactor <= previous + 1e-12) {
+          findings.push(finding('blocker', `result.dp-adaptive.acceptedLoadFactors.${index}.not-increasing`, 'DP adaptive accepted load factors must be strictly increasing.'));
+        }
+        if (loadFactor > 1 + 1e-9) {
+          findings.push(finding('blocker', `result.dp-adaptive.acceptedLoadFactors.${index}.range-invalid`, 'DP adaptive accepted load factors must not exceed 1.0.'));
+        }
+        previous = loadFactor;
+      }
+    }
+    const finalLoadFactor = adaptive.acceptedLoadFactors.at(-1);
+    if (isFiniteNumber(finalLoadFactor) && Math.abs(finalLoadFactor - 1) > 1e-9) {
+      findings.push(finding('blocker', 'result.dp-adaptive.accepted-load-factors.final-load-mismatch', 'DP adaptive accepted load factors must reach full load factor 1.0.'));
+    }
+  }
+
+  if (!Array.isArray(adaptive.attempts) || adaptive.attempts.length === 0) {
+    findings.push(finding('blocker', 'result.dp-adaptive.attempts.invalid', 'DP adaptive attempts must be a non-empty array.'));
+  } else {
+    if (attemptedStepCountOk && adaptive.attempts.length !== adaptive.attemptedStepCount) {
+      findings.push(finding('blocker', 'result.dp-adaptive.attempts.count-mismatch', 'DP adaptive attempts must match attemptedStepCount.'));
+    }
+    const acceptedAttempts = adaptive.attempts.filter((attempt) => isRecord(attempt) && attempt.accepted === true);
+    const rejectedAttempts = adaptive.attempts.filter((attempt) => isRecord(attempt) && attempt.accepted === false);
+    if (acceptedStepCountOk && acceptedAttempts.length !== adaptive.acceptedStepCount) {
+      findings.push(finding('blocker', 'result.dp-adaptive.attempts.accepted-count-mismatch', 'DP adaptive accepted attempt count must match acceptedStepCount.'));
+    }
+    if (isFiniteNumber(envelope.adaptiveRejectedAttemptCount) && rejectedAttempts.length !== envelope.adaptiveRejectedAttemptCount) {
+      findings.push(finding('blocker', 'result.dp-adaptive.attempts.rejected-count-mismatch', 'DP adaptive rejected attempt count must match the envelope.'));
+    }
+    for (const [index, attempt] of adaptive.attempts.entries()) {
+      const prefix = `result.dp-adaptive.attempts.${index}`;
+      if (!isRecord(attempt)) {
+        findings.push(finding('blocker', `${prefix}.shape-invalid`, 'DP adaptive attempt must be an object.'));
+        continue;
+      }
+      if (!Number.isInteger(attempt.attempt) || attempt.attempt !== index + 1) {
+        findings.push(finding('blocker', `${prefix}.attempt.sequence-invalid`, 'DP adaptive attempts must be sequentially numbered.'));
+      }
+      pushFiniteNumberFinding(findings, attempt.startLoadFactor, `${prefix}.start-load-factor`, 'DP adaptive attempt start load factor', { nonNegative: true });
+      pushFiniteNumberFinding(findings, attempt.targetLoadFactor, `${prefix}.target-load-factor`, 'DP adaptive attempt target load factor', { positive: true });
+      pushFiniteNumberFinding(findings, attempt.requestedLoadFactor, `${prefix}.requested-load-factor`, 'DP adaptive attempt requested load factor', { positive: true });
+      if (!Number.isInteger(attempt.cutbackDepth) || attempt.cutbackDepth < 0) {
+        findings.push(finding('blocker', `${prefix}.cutback-depth.invalid`, 'DP adaptive attempt cutbackDepth must be a non-negative integer.'));
+      }
+      if (typeof attempt.accepted !== 'boolean') {
+        findings.push(finding('blocker', `${prefix}.accepted.invalid`, 'DP adaptive attempt accepted must be boolean.'));
+      }
+      if (typeof attempt.rollbackApplied !== 'boolean') {
+        findings.push(finding('blocker', `${prefix}.rollback-applied.invalid`, 'DP adaptive attempt rollbackApplied must be boolean.'));
+      }
+      if (!isNonEmptyString(attempt.committedStateSignatureBefore) || !isNonEmptyString(attempt.committedStateSignatureAfter)) {
+        findings.push(finding('blocker', `${prefix}.state-signature.missing`, 'DP adaptive attempts must include committed state signatures before and after.'));
+      }
+      if (attempt.accepted === false) {
+        if (attempt.rollbackApplied !== true) {
+          findings.push(finding('blocker', `${prefix}.rollback-required`, 'Rejected DP adaptive attempts must apply rollback.'));
+        }
+        if (
+          isNonEmptyString(attempt.committedStateSignatureBefore) &&
+          isNonEmptyString(attempt.committedStateSignatureAfter) &&
+          attempt.committedStateSignatureAfter !== attempt.committedStateSignatureBefore
+        ) {
+          findings.push(finding('blocker', `${prefix}.rollback-state-mutated`, 'Rejected DP adaptive attempts must preserve the committed state signature.'));
+        }
+      }
+      if (attempt.accepted === true && attempt.terminationReason !== 'converged') {
+        findings.push(finding('blocker', `${prefix}.accepted-not-converged`, 'Accepted DP adaptive attempts must terminate with converged.'));
+      }
+    }
+  }
+
+  if (!Array.isArray(adaptive.blockerCodes)) {
+    findings.push(finding('blocker', 'result.dp-adaptive.blocker-codes.invalid', 'DP adaptive blockerCodes must be an array.'));
+  } else if (adaptive.blockerCodes.length > 0) {
+    findings.push(finding('blocker', 'result.dp-adaptive.blocker-codes-not-empty', 'Accepted DP adaptive metadata must not include blocker codes.'));
+  }
+
+  const solverLoadStepsOk = pushFiniteNumberFinding(findings, envelope.solverLoadSteps, 'result.envelope.dp.solver-load-steps', 'DP envelope solver load steps', { positive: true });
+  const solverIterationsOk = pushFiniteNumberFinding(findings, envelope.solverIterations, 'result.envelope.dp.solver-iterations', 'DP envelope solver iterations', { nonNegative: true });
+  const solverResidualOk = pushFiniteNumberFinding(findings, envelope.maxSolverResidualRatio, 'result.envelope.dp.max-solver-residual-ratio', 'DP envelope max solver residual ratio', { nonNegative: true });
+  const yieldResidualOk = pushFiniteNumberFinding(findings, envelope.maxYieldResidualRatio, 'result.envelope.dp.max-yield-residual-ratio', 'DP envelope max yield residual ratio', { nonNegative: true });
+  pushFiniteNumberFinding(findings, envelope.nonlinearPlasticStrain, 'result.envelope.dp.nonlinear-plastic-strain', 'DP envelope nonlinear plastic strain', { nonNegative: true });
+  const dofCountOk = pushFiniteNumberFinding(findings, envelope.planeStrainDofCount, 'result.envelope.dp.dof-count', 'DP envelope DOF count', { positive: true });
+  const freeDofCountOk = pushFiniteNumberFinding(findings, envelope.planeStrainFreeDofCount, 'result.envelope.dp.free-dof-count', 'DP envelope free DOF count', { positive: true });
+  const constrainedDofCountOk = pushFiniteNumberFinding(findings, envelope.planeStrainConstrainedDofCount, 'result.envelope.dp.constrained-dof-count', 'DP envelope constrained DOF count', { positive: true });
+  const plasticGaussPointCountOk = pushFiniteNumberFinding(findings, envelope.plasticGaussPointCount, 'result.envelope.dp.plastic-gauss-point-count', 'DP envelope plastic Gauss-point count', { nonNegative: true });
+  pushFiniteNumberFinding(findings, envelope.maxEquivalentPlasticStrain, 'result.envelope.dp.max-equivalent-plastic-strain', 'DP envelope max equivalent plastic strain', { nonNegative: true });
+  pushFiniteNumberFinding(findings, envelope.maxEquivalentPlasticStrainIncrement, 'result.envelope.dp.max-equivalent-plastic-strain-increment', 'DP envelope max equivalent plastic strain increment', { nonNegative: true });
+  const adaptiveAttemptCountOk = pushFiniteNumberFinding(findings, envelope.adaptiveAttemptCount, 'result.envelope.dp.adaptive-attempt-count', 'DP envelope adaptive attempt count', { positive: true });
+  const adaptiveAcceptedStepCountOk = pushFiniteNumberFinding(findings, envelope.adaptiveAcceptedStepCount, 'result.envelope.dp.adaptive-accepted-step-count', 'DP envelope adaptive accepted step count', { positive: true });
+  const adaptiveRejectedAttemptCountOk = pushFiniteNumberFinding(findings, envelope.adaptiveRejectedAttemptCount, 'result.envelope.dp.adaptive-rejected-attempt-count', 'DP envelope adaptive rejected attempt count', { nonNegative: true });
+  const adaptiveCutbackCountOk = pushFiniteNumberFinding(findings, envelope.adaptiveCutbackCount, 'result.envelope.dp.adaptive-cutback-count', 'DP envelope adaptive cutback count', { nonNegative: true });
+  const adaptiveMaxCutbackDepthOk = pushFiniteNumberFinding(findings, envelope.adaptiveMaxCutbackDepth, 'result.envelope.dp.adaptive-max-cutback-depth', 'DP envelope adaptive max cutback depth', { nonNegative: true });
+
+  for (const [ok, value, code, label] of [
+    [solverLoadStepsOk, envelope.solverLoadSteps, 'solver-load-steps', 'solver load steps'],
+    [solverIterationsOk, envelope.solverIterations, 'solver-iterations', 'solver iterations'],
+    [dofCountOk, envelope.planeStrainDofCount, 'dof-count', 'DOF count'],
+    [freeDofCountOk, envelope.planeStrainFreeDofCount, 'free-dof-count', 'free DOF count'],
+    [constrainedDofCountOk, envelope.planeStrainConstrainedDofCount, 'constrained-dof-count', 'constrained DOF count'],
+    [plasticGaussPointCountOk, envelope.plasticGaussPointCount, 'plastic-gauss-point-count', 'plastic Gauss-point count'],
+    [adaptiveAttemptCountOk, envelope.adaptiveAttemptCount, 'adaptive-attempt-count', 'adaptive attempt count'],
+    [adaptiveAcceptedStepCountOk, envelope.adaptiveAcceptedStepCount, 'adaptive-accepted-step-count', 'adaptive accepted step count'],
+    [adaptiveRejectedAttemptCountOk, envelope.adaptiveRejectedAttemptCount, 'adaptive-rejected-attempt-count', 'adaptive rejected attempt count'],
+    [adaptiveCutbackCountOk, envelope.adaptiveCutbackCount, 'adaptive-cutback-count', 'adaptive cutback count'],
+    [adaptiveMaxCutbackDepthOk, envelope.adaptiveMaxCutbackDepth, 'adaptive-max-cutback-depth', 'adaptive max cutback depth'],
+  ] as const) {
+    if (ok && !Number.isInteger(value)) {
+      findings.push(finding('blocker', `result.envelope.dp.${code}.integer`, `DP envelope ${label} must be an integer.`));
+    }
+  }
+  if (solverLoadStepsOk && acceptedStepCountOk && envelope.solverLoadSteps !== adaptive.acceptedStepCount) {
+    findings.push(finding('blocker', 'result.envelope.dp.solver-load-steps-adaptive-mismatch', 'DP envelope solver load steps must match adaptive acceptedStepCount.'));
+  }
+  if (adaptiveAttemptCountOk && attemptedStepCountOk && envelope.adaptiveAttemptCount !== adaptive.attemptedStepCount) {
+    findings.push(finding('blocker', 'result.envelope.dp.adaptive-attempt-count-mismatch', 'DP envelope adaptive attempt count must match adaptive metadata.'));
+  }
+  if (adaptiveAcceptedStepCountOk && acceptedStepCountOk && envelope.adaptiveAcceptedStepCount !== adaptive.acceptedStepCount) {
+    findings.push(finding('blocker', 'result.envelope.dp.adaptive-accepted-step-count-mismatch', 'DP envelope adaptive accepted step count must match adaptive metadata.'));
+  }
+  if (adaptiveCutbackCountOk && cutbackCountOk && envelope.adaptiveCutbackCount !== adaptive.cutbackCount) {
+    findings.push(finding('blocker', 'result.envelope.dp.adaptive-cutback-count-mismatch', 'DP envelope adaptive cutback count must match adaptive metadata.'));
+  }
+  if (adaptiveMaxCutbackDepthOk && maxCutbackDepthOk && envelope.adaptiveMaxCutbackDepth !== adaptive.maxCutbackDepth) {
+    findings.push(finding('blocker', 'result.envelope.dp.adaptive-max-cutback-depth-mismatch', 'DP envelope adaptive max cutback depth must match adaptive metadata.'));
+  }
+  if (dofCountOk && freeDofCountOk && constrainedDofCountOk && envelope.planeStrainFreeDofCount! + envelope.planeStrainConstrainedDofCount! !== envelope.planeStrainDofCount) {
+    findings.push(finding('blocker', 'result.envelope.dp.dof-count-mismatch', 'DP free and constrained DOF counts must sum to the total DOF count.'));
+  }
+  if (solverResidualOk && envelope.maxSolverResidualRatio! > solverTolerances.forceBalanceTolerance) {
+    findings.push(finding('blocker', 'result.envelope.dp.solver-residual-too-large', 'DP solver residual exceeds the force-balance tolerance.'));
+  }
+  if (yieldResidualOk && envelope.maxYieldResidualRatio! > solverTolerances.residualTolerance) {
+    findings.push(finding('blocker', 'result.envelope.dp.yield-residual-too-large', 'DP yield residual exceeds the material return-map tolerance.'));
+  }
+}
+
 function validateResultEnvelopeSemantics(
   findings: FemValidationFinding[],
   manifest: FemResultManifest,
@@ -1483,7 +1748,7 @@ function validateResultEnvelopeSemantics(
 
   const expectedBackendByObjective = new Map([
     ['foundation_settlement', ['builtin-elastic3d-demo']],
-    ['excavation_deformation', ['builtin-staged-excavation-demo']],
+    ['excavation_deformation', ['builtin-staged-excavation-demo', FEM_PLANE_STRAIN_DP_ADAPTIVE_BACKEND_ID]],
     ['tunnel_volume_loss_settlement', ['builtin-tunnel-volume-loss-demo']],
     ['staged_settlement_consolidation', ['builtin-staged-consolidation-1d', 'builtin-nonlinear-column-v0']],
     ['seepage_groundwater_coupling', ['builtin-biot-up-plane-strain-v0']],
@@ -1499,6 +1764,18 @@ function validateResultEnvelopeSemantics(
     }
     if (manifest.biotTransientAcceptance != null) {
       findings.push(finding('blocker', 'result.biot-transient-acceptance.unexpected', 'Biot transient acceptance metadata is only valid for Biot u-p seepage result manifests.'));
+    }
+  }
+  const isPlaneStrainDpAdaptiveManifest = manifest.backend.id === FEM_PLANE_STRAIN_DP_ADAPTIVE_BACKEND_ID;
+  if (!isPlaneStrainDpAdaptiveManifest && manifest.adaptiveLoadStepping != null) {
+    findings.push(finding('blocker', 'result.dp-adaptive.unexpected', 'Drucker-Prager adaptive metadata is only valid for plane-strain DP adaptive result manifests.'));
+  }
+  if (isPlaneStrainDpAdaptiveManifest) {
+    if (analysisCase.analysisType !== FEM_PLANE_STRAIN_DP_ANALYSIS_TYPE) {
+      findings.push(finding('blocker', 'result.dp-adaptive.analysis-type-mismatch', 'Plane-strain DP adaptive manifests require static_2d_plane_strain_drucker_prager analysis cases.'));
+    }
+    if (analysisCase.mesh.elementType !== 'quad4_plane_strain') {
+      findings.push(finding('blocker', 'result.dp-adaptive.mesh-type-mismatch', 'Plane-strain DP adaptive manifests require quad4_plane_strain mesh cases.'));
     }
   }
 
@@ -1556,6 +1833,13 @@ function validateResultEnvelopeSemantics(
     }
     if (maxSettlementOk && maxSurfaceOk) {
       pushApproximateMatchFinding(findings, envelope.maxSettlementMm, maxSurfaceSettlementMm, 'result.envelope.excavation-max-settlement-mismatch', 'Excavation max settlement', 0.001);
+    }
+    if (isPlaneStrainDpAdaptiveManifest) {
+      const expectedDpLoadSteps = Number.isInteger(envelope.solverLoadSteps) && envelope.solverLoadSteps! > 0
+        ? envelope.solverLoadSteps
+        : undefined;
+      const solverTolerances = validateNonlinearSolverConvergenceReport(findings, manifest, expectedDpLoadSteps);
+      validatePlaneStrainDpAdaptiveAcceptance(findings, manifest, solverTolerances);
     }
     return;
   }
@@ -1888,6 +2172,7 @@ export function validateFemResultManifest(manifest: FemResultManifest): FemValid
     'builtin-staged-consolidation-1d',
     'builtin-nonlinear-column-v0',
     'builtin-biot-up-plane-strain-v0',
+    FEM_PLANE_STRAIN_DP_ADAPTIVE_BACKEND_ID,
   ]);
   if (!validBackendIds.has(manifest.backend.id)) {
     findings.push(finding('blocker', 'result.backend.id-invalid', `Unsupported FEM result backend: ${String(manifest.backend.id)}.`));
@@ -1900,6 +2185,12 @@ export function validateFemResultManifest(manifest: FemResultManifest): FemValid
   }
   if (!isNonEmptyString(manifest.backend.version)) {
     findings.push(finding('blocker', 'result.backend.version.missing', 'Result backend version must be a non-empty string.'));
+  }
+  if ((manifest as unknown as { productionReady?: unknown }).productionReady === true) {
+    findings.push(finding('blocker', 'result.production-ready.overclaim', 'FEM result manifests must not claim productionReady true in strong-beta preview mode.'));
+  }
+  if ((manifest.backend as unknown as { productionReady?: unknown }).productionReady === true) {
+    findings.push(finding('blocker', 'result.backend.production-ready.overclaim', 'FEM result backends must not claim productionReady true in strong-beta preview mode.'));
   }
 
   for (const [key, value] of Object.entries(manifest.envelope)) {

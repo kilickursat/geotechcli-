@@ -13,6 +13,13 @@ export {
 } from './demo.js';
 export { runBuiltinNonlinearConsolidationColumnSolver } from './nonlinear-column-solver.js';
 export {
+  buildPlaneStrainDruckerPragerAdaptiveExcavationDemoAnalysisCase,
+  runBuiltinPlaneStrainDpAdaptivePreview,
+  runBuiltinPlaneStrainDpAdaptiveSolver,
+  runBuiltinPlaneStrainDruckerPragerAdaptivePreview,
+  runBuiltinPlaneStrainDruckerPragerAdaptiveSolver,
+} from './nonlinear-plane-strain-solver.js';
+export {
   getFemCapability,
   listFemCapabilities,
   prepareFemAnalysisCaseDraft,
@@ -81,6 +88,7 @@ export {
   type FemEngineeringEvidenceReport,
   type FemEngineeringKernelFeature,
   type FemExternalBenchmarkAcceptanceContract,
+  type FemExternalBenchmarkComparisonResult,
   type FemExternalBenchmarkPublishedCitation,
   type FemExternalBenchmarkQuantityRequirement,
   type FemExternalBenchmarkReference,
@@ -149,6 +157,8 @@ export {
   type FemPlaneStrainBiotStepResult,
   type FemPlaneStrainBiotTransientAcceptance,
   type FemPlaneStrainBoundaryCondition,
+  type FemPlaneStrainDruckerPragerAdaptiveLoadStepAttemptAudit,
+  type FemPlaneStrainDruckerPragerAdaptiveLoadSteppingAudit,
   type FemPlaneStrainDruckerPragerFailure,
   type FemPlaneStrainDruckerPragerGaussPointResult,
   type FemPlaneStrainDruckerPragerResidualHistoryEntry,

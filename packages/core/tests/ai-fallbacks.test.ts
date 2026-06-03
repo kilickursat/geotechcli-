@@ -670,6 +670,83 @@ describe('AI fallback behavior', () => {
     expect(fetchMock).toHaveBeenCalledTimes(5);
   });
 
+  it('rejects default hosted GLM post-readiness FEM production overclaims', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        hostedBetaSuccessResponse([
+          'I will check deterministic FEM production readiness first.',
+          '```tool',
+          JSON.stringify({
+            tool: 'assess_fem_production_readiness',
+            args: {
+              objective: 'staged-settlement-consolidation',
+              requestedFeatures: [
+                'nonlinear-plasticity',
+                'consolidation',
+                'seepage-pore-pressure-coupling',
+                'support-design',
+                'independent-benchmark-validation',
+              ],
+            },
+          }),
+          '```',
+        ].join('\n')),
+      )
+      .mockResolvedValueOnce(
+        hostedBetaSuccessResponse(
+          'The verified kernels mean production approval, so the FEM solver is ready for production design.',
+        ),
+      );
+    global.fetch = fetchMock as typeof fetch;
+
+    const session = await runAgent(
+      'Use the default hosted GLM to decide whether staged consolidation FEM is production design ready.',
+      {
+        provider: 'hosted-beta',
+        apiKey: '',
+        timeout: 1000,
+      },
+      () => {},
+      undefined,
+      {
+        allowedTools: ['assess_fem_production_readiness'],
+        disableDeterministicPreflight: true,
+        requiredToolsBeforeFinal: ['assess_fem_production_readiness'],
+      },
+    );
+
+    const requests = fetchMock.mock.calls.map((call) => (
+      JSON.parse(String(call[1]?.body ?? '{}')) as { model?: string; messages?: Array<{ content?: unknown }> }
+    ));
+    expect(requests.map((request) => request.model)).toEqual(['glm-5.1', 'glm-5.1']);
+
+    const readinessResult = session.steps.find(
+      (step) => step.type === 'tool_result' && step.toolName === 'assess_fem_production_readiness',
+    );
+    const readinessData = readinessResult?.toolResult?.data as any;
+    expect(readinessData.productionReady).toBe(false);
+    expect(readinessData.agentEvidenceSummary).toContain('productionReady: no');
+    expect(readinessData.agentEvidenceSummary).toContain('external benchmark comparison results: 0');
+    expect(readinessData.blockers).toEqual(expect.arrayContaining([
+      'external-benchmark-commercial-solver-citation-missing',
+      'external-benchmark-comparison-results-missing',
+    ]));
+
+    expect(session.steps).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'error',
+        content: expect.stringContaining('Final answer blocked because it contradicted deterministic FEM production-readiness evidence'),
+      }),
+    ]));
+    const answer = session.steps.find((step) => step.type === 'answer');
+    expect(answer?.content).toContain('Blocked FEM production overclaim');
+    expect(answer?.content).toContain('productionReady: no');
+    expect(answer?.content).toContain('external-benchmark-commercial-solver-citation-missing');
+    expect(answer?.content).toMatch(/experimental previews and evidence\/approval gates/i);
+    expect(answer?.content).not.toContain('ready for production design');
+    expect(answer?.content).not.toMatch(/\bis production[- ]?(?:ready|grade)\b/i);
+  });
+
   it('returns a deterministic fallback answer in runSwarm when the first hosted-beta turn cannot reach the provider', async () => {
     global.fetch = vi.fn().mockResolvedValue(
       new Response(

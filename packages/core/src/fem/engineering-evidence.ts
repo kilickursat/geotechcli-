@@ -344,6 +344,8 @@ export interface FemExternalBenchmarkReferenceSolverCitation {
   vendor?: string;
   analysisProcedure?: string;
   elementType?: string;
+  url?: string;
+  retrievedAt?: string;
 }
 
 export interface FemExternalBenchmarkReference {
@@ -365,13 +367,30 @@ export interface FemExternalBenchmarkQuantityRequirement {
   requiredReferenceSourceTypes: FemExternalBenchmarkSourceType[];
 }
 
+export interface FemExternalBenchmarkComparisonResult {
+  id: string;
+  quantityRequirementId: string;
+  referenceId: string;
+  caseId: string;
+  quantity: string;
+  unit: string;
+  actual: number;
+  expected: number;
+  tolerance: number;
+  toleranceType: FemExternalBenchmarkToleranceType;
+  accepted: boolean;
+  evidenceHashSha256?: string;
+  notes?: string[];
+}
+
 export interface FemExternalBenchmarkAcceptanceContract {
-  schemaVersion: 'fem-external-benchmark-acceptance-metadata.v1';
-  status: 'metadata-ready' | 'blocked';
+  schemaVersion: 'fem-external-benchmark-acceptance.v2';
+  status: 'accepted-comparisons-ready' | 'blocked';
   productionReadinessBlocked: boolean;
   requiredSourceTypes: FemExternalBenchmarkSourceType[];
   references: FemExternalBenchmarkReference[];
   requiredQuantities: FemExternalBenchmarkQuantityRequirement[];
+  comparisonResults: FemExternalBenchmarkComparisonResult[];
   blockerCodes: string[];
   acceptanceStatement: string;
 }
@@ -463,6 +482,82 @@ const DEFAULT_EXTERNAL_BENCHMARK_REQUIRED_QUANTITIES: FemExternalBenchmarkQuanti
   },
 ];
 
+const DEFAULT_EXTERNAL_BENCHMARK_REFERENCES: FemExternalBenchmarkReference[] = [
+  {
+    id: 'terzaghi-1943-theoretical-soil-mechanics',
+    sourceType: 'published-source',
+    label: 'Terzaghi 1D consolidation and effective-stress source reference',
+    citation: 'Terzaghi, K. (1943). Theoretical Soil Mechanics. John Wiley & Sons. doi:10.1002/9780470172766.',
+    publishedSource: {
+      title: 'Theoretical Soil Mechanics',
+      authors: ['Karl Terzaghi'],
+      year: 1943,
+      publication: 'John Wiley & Sons',
+      doi: '10.1002/9780470172766',
+      url: 'https://doi.org/10.1002/9780470172766',
+    },
+  },
+  {
+    id: 'biot-1941-three-dimensional-consolidation',
+    sourceType: 'published-source',
+    label: 'Biot three-dimensional consolidation theory source reference',
+    citation: 'Biot, M. A. (1941). General Theory of Three-Dimensional Consolidation. Journal of Applied Physics, 12(2), 155-164. doi:10.1063/1.1712886.',
+    publishedSource: {
+      title: 'General Theory of Three-Dimensional Consolidation',
+      authors: ['Maurice A. Biot'],
+      year: 1941,
+      publication: 'Journal of Applied Physics',
+      doi: '10.1063/1.1712886',
+      url: 'https://doi.org/10.1063/1.1712886',
+    },
+  },
+  {
+    id: 'opensees-drucker-prager-material',
+    sourceType: 'open-source-solver',
+    label: 'OpenSees Drucker-Prager material and triaxial example reference',
+    citation: 'OpenSees Documentation, Drucker Prager Material, nDMaterial DruckerPrager plane-strain/3D formulation and confined triaxial compression example.',
+    referenceSolver: {
+      name: 'OpenSees',
+      version: 'documentation-current',
+      vendor: 'OpenSees project',
+      analysisProcedure: 'Drucker-Prager material point and confined triaxial compression example',
+      elementType: 'nDMaterial DruckerPrager',
+      url: 'https://opensees.github.io/OpenSeesDocumentation/user/manual/material/ndMaterials/DruckerPrager.html',
+      retrievedAt: '2026-06-04',
+    },
+  },
+  {
+    id: 'opengeosys-hydro-mechanics-benchmarks',
+    sourceType: 'open-source-solver',
+    label: 'OpenGeoSys hydro-mechanics benchmark suite reference',
+    citation: 'OpenGeoSys stable documentation, Hydro Mechanics benchmark suite including consolidation, Mandel-Cryer, injection/production, and HM drainage excavation examples.',
+    referenceSolver: {
+      name: 'OpenGeoSys',
+      version: 'stable documentation',
+      vendor: 'OpenGeoSys project',
+      analysisProcedure: 'hydro-mechanics benchmark suite',
+      elementType: 'HM and LIE/HM finite elements',
+      url: 'https://www.opengeosys.org/docs/benchmarks/hydro-mechanics/',
+      retrievedAt: '2026-06-04',
+    },
+  },
+  {
+    id: 'opengeosys-richards-flow-benchmarks',
+    sourceType: 'open-source-solver',
+    label: 'OpenGeoSys Richards flow benchmark reference',
+    citation: 'OpenGeoSys documentation, Richards Flow benchmark suite for saturated/unsaturated transient flow verification.',
+    referenceSolver: {
+      name: 'OpenGeoSys',
+      version: '6.x documentation',
+      vendor: 'OpenGeoSys project',
+      analysisProcedure: 'Richards flow benchmark',
+      elementType: 'Richards flow finite elements',
+      url: 'https://www.opengeosys.org/docs/benchmarks/richards-flow/',
+      retrievedAt: '2026-06-04',
+    },
+  },
+];
+
 function degToRad(degrees: number): number {
   return (degrees * Math.PI) / 180;
 }
@@ -510,6 +605,10 @@ function hasReferenceSolverCitation(
     isNonEmptyString(citation.version);
 }
 
+function hasValidSha256(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-f0-9]{64}$/i.test(value);
+}
+
 function copyExternalBenchmarkReference(
   reference: FemExternalBenchmarkReference,
 ): FemExternalBenchmarkReference {
@@ -540,14 +639,29 @@ function copyExternalBenchmarkQuantityRequirement(
   };
 }
 
+function copyExternalBenchmarkComparisonResult(
+  result: FemExternalBenchmarkComparisonResult,
+): FemExternalBenchmarkComparisonResult {
+  return {
+    ...result,
+    ...(result.notes ? { notes: [...result.notes] } : {}),
+  };
+}
+
 export function buildFemExternalBenchmarkAcceptanceContract(options: {
   references?: readonly FemExternalBenchmarkReference[];
   requiredQuantities?: readonly FemExternalBenchmarkQuantityRequirement[];
+  comparisonResults?: readonly FemExternalBenchmarkComparisonResult[];
 } = {}): FemExternalBenchmarkAcceptanceContract {
-  const references = (options.references ?? []).map(copyExternalBenchmarkReference);
+  const references = (options.references ?? DEFAULT_EXTERNAL_BENCHMARK_REFERENCES)
+    .map(copyExternalBenchmarkReference);
   const requiredQuantities = (options.requiredQuantities ?? DEFAULT_EXTERNAL_BENCHMARK_REQUIRED_QUANTITIES)
     .map(copyExternalBenchmarkQuantityRequirement);
+  const comparisonResults = (options.comparisonResults ?? [])
+    .map(copyExternalBenchmarkComparisonResult);
   const blockerCodes: string[] = [];
+  const referenceById = new Map(references.map((reference) => [reference.id, reference]));
+  const quantityById = new Map(requiredQuantities.map((requirement) => [requirement.id, requirement]));
 
   if (references.length === 0) {
     blockerCodes.push('external-benchmark-reference-corpus-missing');
@@ -585,6 +699,10 @@ export function buildFemExternalBenchmarkAcceptanceContract(options: {
     reference.sourceType === 'published-source' &&
     isNonEmptyString(reference.citation) &&
     hasPublishedCitation(reference.publishedSource));
+  const hasCommercialReference = references.some((reference) =>
+    reference.sourceType === 'commercial-solver' &&
+    isNonEmptyString(reference.citation) &&
+    hasReferenceSolverCitation(reference.referenceSolver));
   const hasReferenceSolver = references.some((reference) =>
     (reference.sourceType === 'commercial-solver' || reference.sourceType === 'open-source-solver') &&
     isNonEmptyString(reference.citation) &&
@@ -596,8 +714,14 @@ export function buildFemExternalBenchmarkAcceptanceContract(options: {
   if (!hasReferenceSolver) {
     blockerCodes.push('external-benchmark-reference-solver-citation-missing');
   }
+  if (!hasCommercialReference) {
+    blockerCodes.push('external-benchmark-commercial-solver-citation-missing');
+  }
   if (requiredQuantities.length === 0) {
     blockerCodes.push('external-benchmark-required-quantities-missing');
+  }
+  if (comparisonResults.length === 0) {
+    blockerCodes.push('external-benchmark-comparison-results-missing');
   }
 
   for (const [index, requirement] of requiredQuantities.entries()) {
@@ -635,20 +759,128 @@ export function buildFemExternalBenchmarkAcceptanceContract(options: {
     }
   }
 
+  for (const [index, result] of comparisonResults.entries()) {
+    const resultCode = isNonEmptyString(result.id) ? result.id : String(index);
+    if (!isNonEmptyString(result.id)) {
+      blockerCodes.push(`external-benchmark.comparison-results.${index}.id-missing`);
+    }
+    if (!isNonEmptyString(result.quantityRequirementId) || !quantityById.has(result.quantityRequirementId)) {
+      blockerCodes.push(`external-benchmark.comparison-results.${resultCode}.quantity-requirement-missing`);
+    }
+    if (!isNonEmptyString(result.referenceId) || !referenceById.has(result.referenceId)) {
+      blockerCodes.push(`external-benchmark.comparison-results.${resultCode}.reference-missing`);
+    }
+    if (!isNonEmptyString(result.caseId)) {
+      blockerCodes.push(`external-benchmark.comparison-results.${resultCode}.case-id-missing`);
+    }
+    if (!isNonEmptyString(result.quantity)) {
+      blockerCodes.push(`external-benchmark.comparison-results.${resultCode}.quantity-missing`);
+    }
+    if (!isNonEmptyString(result.unit)) {
+      blockerCodes.push(`external-benchmark.comparison-results.${resultCode}.unit-missing`);
+    }
+    if (!Number.isFinite(result.actual) || !Number.isFinite(result.expected)) {
+      blockerCodes.push(`external-benchmark.comparison-results.${resultCode}.value-invalid`);
+    }
+    if (!Number.isFinite(result.tolerance) || result.tolerance < 0) {
+      blockerCodes.push(`external-benchmark.comparison-results.${resultCode}.tolerance-invalid`);
+    }
+    if (
+      result.toleranceType !== 'absolute' &&
+      result.toleranceType !== 'relative' &&
+      result.toleranceType !== 'absolute-or-relative'
+    ) {
+      blockerCodes.push(`external-benchmark.comparison-results.${resultCode}.tolerance-type-invalid`);
+    }
+    if (!hasValidSha256(result.evidenceHashSha256)) {
+      blockerCodes.push(`external-benchmark.comparison-results.${resultCode}.evidence-hash-missing`);
+    }
+    const requirement = quantityById.get(result.quantityRequirementId);
+    if (requirement) {
+      if (result.quantity !== requirement.quantity) {
+        blockerCodes.push(`external-benchmark.comparison-results.${resultCode}.quantity-mismatch`);
+      }
+      if (result.unit !== requirement.unit) {
+        blockerCodes.push(`external-benchmark.comparison-results.${resultCode}.unit-mismatch`);
+      }
+      if (result.toleranceType !== requirement.toleranceType) {
+        blockerCodes.push(`external-benchmark.comparison-results.${resultCode}.tolerance-type-mismatch`);
+      }
+      if (result.tolerance > requirement.tolerance) {
+        blockerCodes.push(`external-benchmark.comparison-results.${resultCode}.tolerance-too-loose`);
+      }
+    }
+    if (
+      Number.isFinite(result.actual) &&
+      Number.isFinite(result.expected) &&
+      Number.isFinite(result.tolerance) &&
+      result.tolerance >= 0
+    ) {
+      const acceptanceTolerance = requirement?.tolerance ?? result.tolerance;
+      const acceptanceToleranceType = requirement?.toleranceType ?? result.toleranceType;
+      const acceptanceUnit = requirement?.unit ?? result.unit;
+      const tolerance = evaluateFemTolerance(
+        requirement?.quantity ?? result.quantity,
+        result.actual,
+        result.expected,
+        acceptanceToleranceType === 'relative' ? 0 : acceptanceTolerance,
+        acceptanceToleranceType === 'absolute'
+          ? { unit: acceptanceUnit }
+          : { relativeTolerance: acceptanceTolerance, unit: acceptanceUnit },
+      );
+      if (!result.accepted || !tolerance.accepted) {
+        blockerCodes.push(`external-benchmark.comparison-results.${resultCode}.not-accepted`);
+      }
+    }
+  }
+
+  for (const requirement of requiredQuantities) {
+    if (!isNonEmptyString(requirement.id)) continue;
+    for (const sourceType of requirement.requiredReferenceSourceTypes) {
+      const hasAcceptedComparison = comparisonResults.some((result) => {
+        const reference = referenceById.get(result.referenceId);
+        if (!reference || reference.sourceType !== sourceType) return false;
+        if (result.quantityRequirementId !== requirement.id || !result.accepted) return false;
+        if (!Number.isFinite(result.actual) || !Number.isFinite(result.expected)) return false;
+        if (!hasValidSha256(result.evidenceHashSha256)) return false;
+        if (result.quantity !== requirement.quantity || result.unit !== requirement.unit) return false;
+        if (result.toleranceType !== requirement.toleranceType || result.tolerance > requirement.tolerance) {
+          return false;
+        }
+        const tolerance = evaluateFemTolerance(
+          requirement.quantity,
+          result.actual,
+          result.expected,
+          requirement.toleranceType === 'relative' ? 0 : requirement.tolerance,
+          requirement.toleranceType === 'absolute'
+            ? { unit: requirement.unit }
+            : { relativeTolerance: requirement.tolerance, unit: requirement.unit },
+        );
+        return tolerance.accepted;
+      });
+      if (!hasAcceptedComparison) {
+        blockerCodes.push(
+          `external-benchmark.required-quantities.${requirement.id}.accepted-comparison-missing.${sourceType}`,
+        );
+      }
+    }
+  }
+
   const uniqueBlockerCodes = [...new Set(blockerCodes)];
   const productionReadinessBlocked = uniqueBlockerCodes.length > 0;
 
   return {
-    schemaVersion: 'fem-external-benchmark-acceptance-metadata.v1',
-    status: productionReadinessBlocked ? 'blocked' : 'metadata-ready',
+    schemaVersion: 'fem-external-benchmark-acceptance.v2',
+    status: productionReadinessBlocked ? 'blocked' : 'accepted-comparisons-ready',
     productionReadinessBlocked,
     requiredSourceTypes: [...REQUIRED_EXTERNAL_BENCHMARK_SOURCE_TYPES],
     references,
     requiredQuantities,
+    comparisonResults,
     blockerCodes: uniqueBlockerCodes,
     acceptanceStatement: productionReadinessBlocked
-      ? 'External benchmark metadata is incomplete; production readiness remains blocked until published source citations, reference-solver citations, and required quantity tolerances are registered.'
-      : 'External benchmark metadata is ready for independent result comparison; this does not approve production FEM design use.',
+      ? 'External benchmark acceptance is incomplete; production readiness remains blocked until source citations, commercial solver references, and accepted comparison results cover every required FEM quantity.'
+      : 'External benchmark references and comparison results cover the required FEM quantities; this still does not approve production design without solver-route and reviewer-workflow acceptance.',
   };
 }
 
@@ -661,7 +893,7 @@ export function evaluateFemTolerance(
 ): FemToleranceCheck {
   const error = Math.abs(actual - expected);
   const relativeError = Math.abs(expected) > 0 ? error / Math.abs(expected) : error;
-  const relativeAccepted = options.relativeTolerance == null || relativeError <= options.relativeTolerance;
+  const relativeAccepted = options.relativeTolerance != null && relativeError <= options.relativeTolerance;
   const accepted = error <= absoluteTolerance || relativeAccepted;
   return {
     quantity,
@@ -1818,6 +2050,76 @@ export function runFemEngineeringEvidenceSuite(
     1,
     0,
     'Low-strength/high-load plane-strain fixture must report nonconvergence instead of a clean accepted nonlinear solve.',
+  ));
+
+  const adaptiveCutbackPolicy: FemConvergencePolicy = {
+    ...policy,
+    maxIterations: Math.min(policy.maxIterations, 8),
+    minAcceptedSteps: 1,
+  };
+  const dpAdaptiveDirect = runPlaneStrainDruckerPragerLoadSteps({
+    schemaVersion: 'fem-plane-strain-model.v1',
+    nodes: dpElasticMesh.nodes,
+    elements: dpElasticMesh.elements,
+    materials: [{
+      id: 'soil',
+      elasticModulusKpa: 25_000,
+      poissonRatio: 0.28,
+      frictionAngleDeg: 32,
+      cohesionKpa: 5,
+      dilationAngleDeg: 0,
+    }],
+    boundaryConditions: dpElasticBottomNodes.flatMap((node) => [
+      { nodeId: node.id, dof: 'ux' as const },
+      { nodeId: node.id, dof: 'uy' as const },
+    ]),
+    nodalLoads: dpElasticTopNodes.map((node) => ({ nodeId: node.id, fyKn: -30 })),
+    policy: adaptiveCutbackPolicy,
+  }, {
+    loadStepFractions: [1],
+  });
+  const dpAdaptiveRecovered = runPlaneStrainDruckerPragerLoadSteps({
+    schemaVersion: 'fem-plane-strain-model.v1',
+    nodes: dpElasticMesh.nodes,
+    elements: dpElasticMesh.elements,
+    materials: [{
+      id: 'soil',
+      elasticModulusKpa: 25_000,
+      poissonRatio: 0.28,
+      frictionAngleDeg: 32,
+      cohesionKpa: 5,
+      dilationAngleDeg: 0,
+    }],
+    boundaryConditions: dpElasticBottomNodes.flatMap((node) => [
+      { nodeId: node.id, dof: 'ux' as const },
+      { nodeId: node.id, dof: 'uy' as const },
+    ]),
+    nodalLoads: dpElasticTopNodes.map((node) => ({ nodeId: node.id, fyKn: -30 })),
+    policy: adaptiveCutbackPolicy,
+  }, {
+    loadStepFractions: [1],
+    adaptiveLoadStepping: {
+      minLoadFactorIncrement: 1 / 64,
+      maxCutbacks: 20,
+    },
+  });
+  const adaptiveRollbackAccepted = dpAdaptiveRecovered.converged &&
+    !dpAdaptiveDirect.converged &&
+    dpAdaptiveRecovered.adaptiveLoadStepping.cutbackCount > 0 &&
+    dpAdaptiveRecovered.adaptiveLoadStepping.attempts.some((attempt) =>
+      !attempt.accepted &&
+      attempt.rollbackApplied &&
+      attempt.committedStateSignatureAfter === attempt.committedStateSignatureBefore) &&
+    dpAdaptiveRecovered.adaptiveLoadStepping.acceptedLoadFactors.at(-1) === 1;
+  benchmarks.push(benchmark(
+    'quad4-plane-strain-dp-adaptive-cutback-rollback-recovery',
+    'solver-convergence-and-tolerance',
+    'internal-balance',
+    'adaptiveCutbackRollbackAccepted',
+    adaptiveRollbackAccepted ? 1 : 0,
+    1,
+    0,
+    'Adaptive cutback-bisection load stepping must recover a nonlinear Drucker-Prager plane-strain solve that fails as one full increment, while rejected attempts leave committed Gauss-point state unchanged.',
   ));
 
   const finalTimeYears = 0.197 * 25;

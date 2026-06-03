@@ -8,6 +8,16 @@ const releases = [
     date: '2026-06-04',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added reviewed experimental geotech fem run --backend plane-strain-dp-adaptive for explicit 2D Drucker-Prager excavation cases with adaptive cutback rollback audit' },
+      { type: 'feat', text: 'Hardened result validation for adaptive DP metadata, solver residuals, full-load acceptance, rollback signatures, and productionReady overclaims' },
+      { type: 'fix', text: 'Extended FEM readiness and default hosted GLM guardrails so nonlinear evidence is visible while full production FEM remains blocked' },
+    ],
+  },
+  {
+    version: '0.4.110',
+    date: '2026-06-04',
+    tag: '0.4.110 Release',
+    changes: [
       { type: 'feat', text: 'Promoted Biot transient acceptance metadata into result manifests, validation, CLI output, draft/run smoke, and WebGL smoke coverage' },
       { type: 'feat', text: 'Added deterministic support member yield, buckling, flexure, slenderness, and combined utilization evidence with reviewer/license metadata validation' },
       { type: 'fix', text: 'Downgraded repeated malformed provider JSON on long visual PDF ingest pages to manual review after retry instead of failing the whole async job' },

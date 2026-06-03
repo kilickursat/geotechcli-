@@ -231,8 +231,13 @@ toolRegistry.register(
             .filter((benchmark) => benchmark.status === 'accepted')
             .map((benchmark) => benchmark.id)
             .join(', ') || 'none'}`,
+          `external benchmark gate: ${report.engineeringEvidence.externalBenchmarkAcceptance.status}`,
+          `external benchmark references: ${report.engineeringEvidence.externalBenchmarkAcceptance.references.length}`,
+          `external benchmark comparison results: ${report.engineeringEvidence.externalBenchmarkAcceptance.comparisonResults.length}`,
+          `external benchmark blockers: ${report.engineeringEvidence.externalBenchmarkAcceptance.blockerCodes.join(', ') || 'none'}`,
           `production blockers: ${report.blockers.join(', ') || 'none'}`,
           `blocked features: ${report.blockedFeatures.map((feature) => feature.feature).join(', ')}`,
+          `release positioning: ${report.releasePositioning}`,
           `safe actions: ${report.safeUserActions.join(' | ')}`,
         ].join('\n'),
       },

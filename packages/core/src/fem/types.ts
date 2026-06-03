@@ -10,6 +10,7 @@ export type FemObjective =
 export type FemAnalysisType =
   | 'static_3d_small_strain'
   | 'static_3d_staged_elastic'
+  | 'static_2d_plane_strain_drucker_prager'
   | 'empirical_3d_settlement_surface'
   | 'time_dependent_1d_consolidation'
   | 'time_dependent_2d_biot_consolidation';
@@ -287,6 +288,17 @@ export interface FemResultEnvelope {
   maxSolverResidualRatio?: number;
   maxYieldResidualRatio?: number;
   nonlinearPlasticStrain?: number;
+  planeStrainDofCount?: number;
+  planeStrainFreeDofCount?: number;
+  planeStrainConstrainedDofCount?: number;
+  plasticGaussPointCount?: number;
+  maxEquivalentPlasticStrain?: number;
+  maxEquivalentPlasticStrainIncrement?: number;
+  adaptiveAttemptCount?: number;
+  adaptiveAcceptedStepCount?: number;
+  adaptiveRejectedAttemptCount?: number;
+  adaptiveCutbackCount?: number;
+  adaptiveMaxCutbackDepth?: number;
   timeStepCount?: number;
   minPorePressureKpa?: number;
   maxPorePressureKpa?: number;
@@ -342,6 +354,7 @@ export type FemSolverConvergenceStatus = 'converged' | 'nonconverged';
 export type FemSolverTerminationReason =
   | 'converged'
   | 'max_iterations'
+  | 'linear_solver_nonconverged'
   | 'force_residual_exceeded'
   | 'yield_residual_exceeded'
   | 'material_nonconvergence'
@@ -354,6 +367,11 @@ export interface FemSolverResidualHistoryEntry {
   yieldResidualRatio?: number;
   residualTolerance?: number;
   maxFreeResidualKn?: number;
+  reactionBalanceRatio?: number;
+  maxYieldResidualRatio?: number;
+  yieldResidualTolerance?: number;
+  maxEquivalentPlasticStrain?: number;
+  maxEquivalentPlasticStrainIncrement?: number;
   axialStrain?: number;
   verticalStressKpa?: number;
   converged: boolean;
@@ -364,6 +382,9 @@ export interface FemSolverLoadStepConvergence {
   stageId?: string;
   stageLabel?: string;
   loadFactor?: number;
+  requestedLoadFactor?: number;
+  cutbackDepth?: number;
+  adaptiveCutback?: boolean;
   cumulativeLoadKpa?: number;
   iterations: number;
   residualRatio: number;
@@ -392,16 +413,55 @@ export interface FemSolverConvergenceReport {
   failure?: FemSolverConvergenceFailure;
 }
 
+export interface FemResultDruckerPragerAdaptiveLoadStepAttemptAudit {
+  attempt: number;
+  startLoadFactor: number;
+  targetLoadFactor: number;
+  requestedLoadFactor: number;
+  cutbackDepth: number;
+  accepted: boolean;
+  rollbackApplied: boolean;
+  terminationReason: FemSolverTerminationReason;
+  committedStateSignatureBefore: string;
+  committedStateSignatureAfter: string;
+}
+
+export interface FemResultDruckerPragerAdaptiveLoadSteppingAudit {
+  schemaVersion: 'fem-plane-strain-dp-adaptive-load-stepping.v1';
+  enabled: boolean;
+  strategy: 'explicit-only' | 'cutback-bisection';
+  requestedStepCount: number;
+  attemptedStepCount: number;
+  acceptedStepCount: number;
+  cutbackCount: number;
+  maxCutbackDepth: number;
+  minLoadFactorIncrement: number;
+  requestedLoadFactors: number[];
+  acceptedLoadFactors: number[];
+  attempts: FemResultDruckerPragerAdaptiveLoadStepAttemptAudit[];
+  blockerCodes: string[];
+}
+
+export type FemResultBackendId =
+  | 'builtin-elastic3d-demo'
+  | 'builtin-staged-excavation-demo'
+  | 'builtin-tunnel-volume-loss-demo'
+  | 'builtin-staged-consolidation-1d'
+  | 'builtin-nonlinear-column-v0'
+  | 'builtin-biot-up-plane-strain-v0'
+  | 'builtin-plane-strain-dp-adaptive-v0';
+
 export interface FemResultManifest {
   schemaVersion: 'fem-result-manifest.v0';
   caseId: string;
   title: string;
   generatedAt: string;
   backend: {
-    id: 'builtin-elastic3d-demo' | 'builtin-staged-excavation-demo' | 'builtin-tunnel-volume-loss-demo' | 'builtin-staged-consolidation-1d' | 'builtin-nonlinear-column-v0' | 'builtin-biot-up-plane-strain-v0';
+    id: FemResultBackendId;
     label: string;
     deterministic: true;
     version: string;
+    productionReady?: false;
   };
   analysisCase: FemAnalysisCase;
   validation: FemValidationSummary;
@@ -417,6 +477,7 @@ export interface FemResultManifest {
   envelope: FemResultEnvelope;
   pressureAudit?: FemResultPressureAudit;
   biotTransientAcceptance?: FemResultBiotTransientAcceptance;
+  adaptiveLoadStepping?: FemResultDruckerPragerAdaptiveLoadSteppingAudit;
   solverConvergence?: FemSolverConvergenceReport;
   visualization: FemVisualizationMesh;
   resultFields?: FemResultField[];

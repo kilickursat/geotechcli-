@@ -145,6 +145,72 @@ export function serializeToolDataForPrompt(data: unknown, maxChars = 3000): stri
   return `${prefix}${compactData}`;
 }
 
+function hasBlockedFemProductionReadiness(context: Record<string, unknown> | undefined): Record<string, unknown> | null {
+  if (!context) return null;
+  const readiness = context.assess_fem_production_readiness;
+  if (!isRecord(readiness)) return null;
+  return readiness.productionReady === false ? readiness : null;
+}
+
+function isNegatedOverclaim(text: string, index: number): boolean {
+  const prefix = text.slice(Math.max(0, index - 42), index).toLowerCase();
+  return /\b(no|not|never|blocked|cannot|can't|does not|do not|must not|without)\b/.test(prefix);
+}
+
+function findFemProductionOverclaim(text: string): string | null {
+  const patterns = [
+    /\b(?:is|are|now|fully)\s+production[- ]?(?:ready|grade)\b/gi,
+    /\b(?:is|are|now|fully)\s+ready for production(?: design| use)?\b/gi,
+    /\bready for production(?: design| use)?\b/gi,
+    /\bproduction\s+design\s+ready\b/gi,
+    /\bdesign[- ]approved\b/gi,
+    /\bproduction[- ]approved\b/gi,
+    /\bapproved for (?:production|design|production design)\b/gi,
+    /\b(?:accepted|validated) for production(?: design| use)?\b/gi,
+    /\b(?:full|complete)\s+production(?:-grade)?\s+nonlinear\s+fem\s+(?:solver|design solver)\b/gi,
+    /\bcan\s+(?:be\s+)?(?:used|released)\s+for\s+production(?: design)?\b/gi,
+    /\bready to use on production projects\b/gi,
+    /\bsafe for production projects\b/gi,
+    /\bverified kernels?\s+(?:mean|make|prove)\s+(?:production|design)\s+(?:approval|readiness|use)\b/gi,
+  ];
+
+  for (const pattern of patterns) {
+    pattern.lastIndex = 0;
+    let match = pattern.exec(text);
+    while (match) {
+      if (!isNegatedOverclaim(text, match.index)) return match[0];
+      match = pattern.exec(text);
+    }
+  }
+  return null;
+}
+
+export function buildBlockedFemProductionOverclaimAnswer(
+  answer: string,
+  context: Record<string, unknown> | undefined,
+): string | null {
+  const readiness = hasBlockedFemProductionReadiness(context);
+  if (!readiness) return null;
+  const overclaim = findFemProductionOverclaim(answer);
+  if (!overclaim) return null;
+
+  const blockers = extractStringArray(readiness.blockers).slice(0, 8);
+  const engineeringEvidence = isRecord(readiness.engineeringEvidence) ? readiness.engineeringEvidence : {};
+  const externalBenchmarkAcceptance = isRecord(engineeringEvidence.externalBenchmarkAcceptance)
+    ? engineeringEvidence.externalBenchmarkAcceptance
+    : {};
+  const benchmarkBlockers = extractStringArray(externalBenchmarkAcceptance.blockerCodes).slice(0, 8);
+  const safeActions = extractStringArray(readiness.safeUserActions).slice(0, 4);
+  return [
+    'Blocked FEM production overclaim detected.',
+    'Deterministic FEM readiness says productionReady: no.',
+    blockers.length > 0 ? `Production blockers: ${blockers.join(', ')}.` : '',
+    benchmarkBlockers.length > 0 ? `External benchmark blockers: ${benchmarkBlockers.join(', ')}.` : '',
+    safeActions.length > 0 ? `Safe actions: ${safeActions.join(' | ')}` : '',
+    'The FEM paths may be used only as experimental previews and evidence/approval gates until the production solver, benchmark, and approval requirements are accepted.',
+  ].filter(Boolean).join('\n');
+}
+
 function extractAgentEvidenceSummary(data: unknown): string | null {
   if (!isRecord(data)) {
     return null;
