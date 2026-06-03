@@ -134,7 +134,7 @@ const ROLE_SEEDS: RoleSeed[] = [
     legacyAgent: 'simulation',
     objective: 'Run deterministic calculations only when evidence and user-declared inputs make the workflow ready.',
     evidenceInputs: ['calculation input drafts', 'GroundModel parameters', 'loads/geometry/seismic user inputs', 'workflow readiness'],
-    toolStrategy: ['calculate_bearing_capacity', 'calculate_consolidation', 'calculate_pile_capacity', 'calculate_liquefaction', 'calculate_slope_stability', 'list_fem_capabilities', 'assess_fem_production_readiness', 'prepare_fem_analysis_case', 'validate_fem_analysis_case', 'run_skill'],
+    toolStrategy: ['calculate_bearing_capacity', 'calculate_consolidation', 'calculate_pile_capacity', 'calculate_liquefaction', 'calculate_slope_stability', 'list_fem_capabilities', 'assess_fem_production_readiness', 'prepare_fem_analysis_case', 'validate_fem_analysis_case', 'check_fem_support_member_design', 'run_skill'],
     preferredSkills: [
       'shallow-foundation-option-screening',
       'bearing-capacity-and-settlement-audit',

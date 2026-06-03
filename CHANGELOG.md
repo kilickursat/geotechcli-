@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.121] - 2026-06-04
+
+### FEM Agent Support-Check Tooling
+
+- Added `check_fem_support_member_design` as a deterministic agent-callable FEM support-member limit-state tool for reviewed strut/brace axial, buckling, slenderness, flexure, and combined-utilization checks.
+- Required explicit support demand provenance plus reviewer identity, license, jurisdiction, assumptions, and limitations before the tool computes capacities.
+- Added default hosted GLM and swarm/registry regressions so agents can use the deterministic support check without inventing support capacity or claiming FEM production approval.
+
 ## [0.4.120] - 2026-06-04
 
 ### FEM OpenGeoSys Benchmark Evidence

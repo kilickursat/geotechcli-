@@ -759,6 +759,116 @@ describe('AI fallback behavior', () => {
     expect(answer?.content).not.toMatch(/\bis production[- ]?(?:ready|grade)\b/i);
   });
 
+  it('lets default hosted GLM use deterministic FEM support member checks without production overclaiming', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        hostedBetaSuccessResponse([
+          'I will run the deterministic support member check with the reviewed demand and metadata.',
+          '```tool',
+          JSON.stringify({
+            tool: 'check_fem_support_member_design',
+            args: {
+              member: {
+                id: 'strut-l1-bay-03',
+                kind: 'strut',
+                unbracedLengthM: 4,
+                effectiveLengthFactor: 1,
+                areaM2: 0.015,
+                weakAxisMomentOfInertiaM4: 1.2e-4,
+                sectionModulusM3: 0.0012,
+                yieldStrengthMpa: 250,
+                elasticModulusMpa: 200000,
+              },
+              demand: {
+                axialCompressionDemandKn: 900,
+                bendingMomentDemandKnM: 40,
+                source: {
+                  source: 'fem-result-envelope',
+                  caseId: 'excavation-case-017',
+                  stageId: 'stage-2',
+                  loadCombination: 'temporary-support-envelope',
+                  description: 'Reviewed FEM support reaction envelope at level 1.',
+                  resultHashSha256: 'c'.repeat(64),
+                },
+              },
+              factors: {
+                demandFactor: 1.2,
+                resistanceFactorCompression: 0.9,
+                resistanceFactorFlexure: 0.9,
+                maximumSlendernessRatio: 160,
+              },
+              review: {
+                reviewer: {
+                  name: 'Jane Engineer',
+                  licenseId: 'PE-98765',
+                  jurisdiction: 'US-NY',
+                },
+                reviewedAt: '2026-06-04T00:00:00.000Z',
+                assumptions: [
+                  {
+                    id: 'assume-effective-length',
+                    parameter: 'effective length factor',
+                    value: 1,
+                    unit: 'ratio',
+                    basis: 'Pinned end restraint assumed by reviewer for temporary strut layout.',
+                    confidence: 'review',
+                    reviewRequired: true,
+                  },
+                ],
+                limitations: ['Connection design and local buckling checks are outside this slice.'],
+              },
+            },
+          }),
+          '```',
+        ].join('\n')),
+      )
+      .mockResolvedValueOnce(
+        hostedBetaSuccessResponse(
+          'The deterministic support member check is accepted for this reviewed member input, but it is not a FEM production approval.',
+        ),
+      );
+    global.fetch = fetchMock as typeof fetch;
+
+    const session = await runAgent(
+      'Use the default hosted GLM to check this FEM excavation strut member and do not invent support capacity.',
+      {
+        provider: 'hosted-beta',
+        apiKey: '',
+        timeout: 1000,
+      },
+      () => {},
+      undefined,
+      {
+        allowedTools: ['check_fem_support_member_design'],
+        disableDeterministicPreflight: true,
+        requiredToolsBeforeFinal: ['check_fem_support_member_design'],
+      },
+    );
+
+    const requests = fetchMock.mock.calls.map((call) => (
+      JSON.parse(String(call[1]?.body ?? '{}')) as { model?: string; messages?: Array<{ content?: unknown }> }
+    ));
+    expect(requests.map((request) => request.model)).toEqual(['glm-5.1', 'glm-5.1']);
+
+    const supportResult = session.steps.find(
+      (step) => step.type === 'tool_result' && step.toolName === 'check_fem_support_member_design',
+    );
+    expect(supportResult?.content).toContain('FEM support member design check accepted');
+    expect((supportResult?.toolResult?.data as any).productionClaim).toBe(false);
+    expect((supportResult?.toolResult?.data as any).controllingLimitState.id).toBe('combined-axial-flexure');
+
+    const promptAfterTool = (requests[1]?.messages ?? [])
+      .map((message) => typeof message.content === 'string' ? message.content : JSON.stringify(message.content))
+      .join('\n');
+    expect(promptAfterTool).toContain('[Tool Result: check_fem_support_member_design]');
+    expect(promptAfterTool).toContain('productionClaim: no');
+    expect(promptAfterTool).toContain('controlling limit state: combined-axial-flexure');
+
+    const answer = session.steps.find((step) => step.type === 'answer');
+    expect(answer?.content).toMatch(/not a FEM production approval/i);
+    expect(answer?.content).not.toMatch(/\bis production[- ]?(?:ready|grade)\b/i);
+  });
+
   it('returns a deterministic fallback answer in runSwarm when the first hosted-beta turn cannot reach the provider', async () => {
     global.fetch = vi.fn().mockResolvedValue(
       new Response(

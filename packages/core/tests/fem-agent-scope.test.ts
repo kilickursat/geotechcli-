@@ -50,6 +50,7 @@ describe('FEM scoped agent', () => {
           'assess_fem_production_readiness',
           'prepare_fem_analysis_case',
           'validate_fem_analysis_case',
+          'check_fem_support_member_design',
         ],
         systemPromptSuffix: 'FEM scoped-agent rule.',
       },
@@ -60,6 +61,7 @@ describe('FEM scoped agent', () => {
     expect(systemPrompt).toContain('assess_fem_production_readiness');
     expect(systemPrompt).toContain('prepare_fem_analysis_case');
     expect(systemPrompt).toContain('validate_fem_analysis_case');
+    expect(systemPrompt).toContain('check_fem_support_member_design');
     expect(systemPrompt).not.toContain('calculate_bearing_capacity');
     expect(session.steps.some((step) => step.type === 'error' && /scoped agent/i.test(step.content))).toBe(true);
     expect(session.steps.find((step) => step.type === 'answer')?.content).toContain('FEM planning');

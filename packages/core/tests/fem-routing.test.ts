@@ -954,8 +954,10 @@ describe('FEM routing contract', () => {
     expect(names).toContain('assess_fem_production_readiness');
     expect(names).toContain('prepare_fem_analysis_case');
     expect(names).toContain('validate_fem_analysis_case');
+    expect(names).toContain('check_fem_support_member_design');
     expect(femToolNames.sort()).toEqual([
       'assess_fem_production_readiness',
+      'check_fem_support_member_design',
       'list_fem_capabilities',
       'prepare_fem_analysis_case',
       'validate_fem_analysis_case',
@@ -967,9 +969,11 @@ describe('FEM routing contract', () => {
     expect(names).not.toContain('geotech_fem_run');
     expect(getAllowedToolsForAgent('simulation')).toContain('prepare_fem_analysis_case');
     expect(getAllowedToolsForAgent('simulation')).toContain('assess_fem_production_readiness');
+    expect(getAllowedToolsForAgent('simulation')).toContain('check_fem_support_member_design');
     expect(getAllowedToolsForAgent('reviewer')).toContain('validate_fem_analysis_case');
     expect(getAllowedToolsForAgent('reviewer')).toContain('assess_fem_production_readiness');
     expect(isToolAllowedForAgent('reviewer', 'prepare_fem_analysis_case')).toBe(false);
+    expect(isToolAllowedForAgent('reviewer', 'check_fem_support_member_design')).toBe(false);
     expect(isToolAllowedForAgent('simulation', 'geotech_fem_run')).toBe(false);
 
     const capabilityResult = await toolRegistry.execute('list_fem_capabilities', {});
@@ -1006,6 +1010,100 @@ describe('FEM routing contract', () => {
     expect(validationResult.success).toBe(true);
     expect((validationResult.data as any).status).toBe('blocked');
     expect((validationResult.data as any).agentEvidenceSummary).toContain('FEM validation: blocked');
+
+    const supportCheckResult = await toolRegistry.execute('check_fem_support_member_design', {
+      member: {
+        id: 'strut-l1-bay-03',
+        kind: 'strut',
+        unbracedLengthM: 4,
+        effectiveLengthFactor: 1,
+        areaM2: 0.015,
+        weakAxisMomentOfInertiaM4: 1.2e-4,
+        sectionModulusM3: 0.0012,
+        yieldStrengthMpa: 250,
+        elasticModulusMpa: 200_000,
+      },
+      demand: {
+        axialCompressionDemandKn: 900,
+        bendingMomentDemandKnM: 40,
+        source: {
+          source: 'fem-result-envelope',
+          caseId: 'excavation-case-017',
+          stageId: 'stage-2',
+          loadCombination: 'temporary-support-envelope',
+          description: 'Reviewed FEM support reaction envelope at level 1.',
+          resultHashSha256: 'b'.repeat(64),
+        },
+      },
+      factors: {
+        demandFactor: 1.2,
+        resistanceFactorCompression: 0.9,
+        resistanceFactorFlexure: 0.9,
+        maximumSlendernessRatio: 160,
+      },
+      review: {
+        reviewer: {
+          name: 'Jane Engineer',
+          licenseId: 'PE-98765',
+          jurisdiction: 'US-NY',
+        },
+        reviewedAt: '2026-06-04T00:00:00.000Z',
+        assumptions: [
+          {
+            id: 'assume-effective-length',
+            parameter: 'effective length factor',
+            value: 1,
+            unit: 'ratio',
+            basis: 'Pinned end restraint assumed by reviewer for temporary strut layout.',
+            confidence: 'review',
+            reviewRequired: true,
+          },
+        ],
+        limitations: ['Connection design and local buckling checks are outside this slice.'],
+      },
+    });
+    expect(supportCheckResult.success).toBe(true);
+    expect(supportCheckResult.summary).toContain('production approval: no');
+    expect((supportCheckResult.data as any).status).toBe('accepted');
+    expect((supportCheckResult.data as any).productionClaim).toBe(false);
+    expect((supportCheckResult.data as any).controllingLimitState.id).toBe('combined-axial-flexure');
+    expect((supportCheckResult.data as any).agentEvidenceSummary).toContain('reviewer: Jane Engineer');
+    expect((supportCheckResult.data as any).agentEvidenceSummary).toContain('productionClaim: no');
+
+    const blockedSupportCheck = await toolRegistry.execute('check_fem_support_member_design', {
+      member: {
+        id: 'strut-l1',
+        kind: 'strut',
+        unbracedLengthM: 4,
+        effectiveLengthFactor: 1,
+        areaM2: 0.015,
+        weakAxisMomentOfInertiaM4: 1.2e-4,
+        yieldStrengthMpa: 250,
+        elasticModulusMpa: 200_000,
+      },
+      demand: {
+        axialCompressionDemandKn: 900,
+        source: {
+          source: 'support-reaction-screening',
+          loadCombination: 'temporary-support-envelope',
+          description: 'Screening reaction demand.',
+        },
+      },
+      review: {
+        reviewer: {
+          name: '',
+          licenseId: '',
+          jurisdiction: '',
+        },
+        reviewedAt: 'not-a-date',
+        assumptions: [],
+        limitations: [],
+      },
+    });
+    expect(blockedSupportCheck.success).toBe(false);
+    expect(blockedSupportCheck.error).toContain('review.reviewer.name.missing');
+    expect((blockedSupportCheck.data as any).inputValidation.blockerCodes)
+      .toContain('review.assumptions.missing');
 
     const manifestWrite = await toolRegistry.execute('write_file', {
       path: '__tmp-fem-result-manifest.json',

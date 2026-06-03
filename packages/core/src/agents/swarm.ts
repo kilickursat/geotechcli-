@@ -96,6 +96,7 @@ const ROLE_TOOL_ALLOWLIST = {
     'assess_fem_production_readiness',
     'prepare_fem_analysis_case',
     'validate_fem_analysis_case',
+    'check_fem_support_member_design',
     'write_file',
     'project_save_result',
     'project_save_parameter',

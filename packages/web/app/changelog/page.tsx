@@ -8,6 +8,16 @@ const releases = [
     date: '2026-06-04',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added check_fem_support_member_design as a deterministic agent-callable FEM support-member limit-state tool' },
+      { type: 'feat', text: 'Required explicit support demand provenance plus reviewer identity, license, jurisdiction, assumptions, and limitations before support capacities are computed' },
+      { type: 'fix', text: 'Added default hosted GLM and swarm regressions so agents use deterministic support checks without claiming FEM production approval' },
+    ],
+  },
+  {
+    version: '0.4.120',
+    date: '2026-06-04',
+    tag: '0.4.120 Release',
+    changes: [
       { type: 'feat', text: 'Added an OpenGeoSys staggered hydro-mechanics consolidation benchmark reference and open-source comparison record for Biot u-p pressure-profile evidence' },
       { type: 'feat', text: 'Compared the benchmark-scale Quad4 Biot pressure profile against the OpenGeoSys analytical p_D solution with deterministic hashes and series tolerances' },
       { type: 'fix', text: 'Exposed accepted external comparison IDs in FEM agent evidence summaries while keeping commercial-solver blockers active' },
