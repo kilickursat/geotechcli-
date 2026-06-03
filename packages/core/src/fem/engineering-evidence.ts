@@ -1631,6 +1631,117 @@ export function runFemEngineeringEvidenceSuite(
     'Biot u-p evidence kernel must satisfy the free pore-pressure residual policy for the backward-Euler pressure equation.',
   ));
 
+  const biotPatchMesh = buildPlaneStrainRectangularMesh({
+    widthM: 2,
+    heightM: 1,
+    divisionsX: 1,
+    divisionsY: 1,
+    materialId: 'soil',
+  });
+  const biotPatchBottomNodes = biotPatchMesh.nodes.filter((node) => node.yM === 0);
+  const biotPatchTopNodes = biotPatchMesh.nodes.filter((node) => node.yM === 1);
+  const biotPressurePatch = runPlaneStrainBiotConsolidation({
+    schemaVersion: 'fem-plane-strain-biot-consolidation-model.v1',
+    nodes: biotPatchMesh.nodes,
+    elements: biotPatchMesh.elements,
+    materials: [{
+      id: 'soil',
+      elasticModulusKpa: 30_000,
+      poissonRatio: 0.3,
+      hydraulicConductivityXMPerS: 1e-6,
+      hydraulicConductivityYMPerS: 1e-6,
+      biotCoefficient: 0.75,
+      specificStorage1PerM: 1e-4,
+    }],
+    boundaryConditions: biotPatchBottomNodes.flatMap((node) => [
+      { nodeId: node.id, dof: 'ux' as const },
+      { nodeId: node.id, dof: 'uy' as const },
+    ]),
+    porePressureBoundaryConditions: [
+      ...biotPatchBottomNodes.map((node) => ({ nodeId: node.id, porePressureKpa: 100 })),
+      ...biotPatchTopNodes.map((node) => ({ nodeId: node.id, porePressureKpa: 0 })),
+    ],
+    initialPorePressureKpa: 100,
+    timeStepsSeconds: [1_000],
+    policy,
+  });
+  const biotPatchGauss = biotPressurePatch.elements[0].gaussPoints[0];
+  const biotPatchFluxError = Math.max(
+    Math.abs(biotPatchGauss.hydraulicGradientKpaPerM[0]),
+    Math.abs(biotPatchGauss.hydraulicGradientKpaPerM[1] + 100),
+    Math.abs(biotPatchGauss.darcyFluxMPerS[0]),
+    Math.abs(biotPatchGauss.darcyFluxMPerS[1] - (1e-6 / 9.81) * 100),
+  );
+  benchmarks.push(benchmark(
+    'quad4-plane-strain-biot-u-p-pressure-gradient-flux-contract',
+    'coupled-biot-plane-strain',
+    'closed-form',
+    'pressureGradientFluxError',
+    biotPatchFluxError,
+    0,
+    1e-10,
+    'Biot u-p evidence kernel must report q = -k/gamma_water * grad(p) for a prescribed linear excess-pore-pressure patch.',
+  ));
+
+  const biotAlphaZeroMaterials = [{
+    id: 'soil',
+    elasticModulusKpa: 25_000,
+    poissonRatio: 0.28,
+    hydraulicConductivityXMPerS: 1e-6,
+    hydraulicConductivityYMPerS: 1e-6,
+    biotCoefficient: 0,
+    specificStorage1PerM: 1e-4,
+  }];
+  const biotAlphaZeroBoundaryConditions = biotBottomNodes.flatMap((node) => [
+    { nodeId: node.id, dof: 'ux' as const },
+    { nodeId: node.id, dof: 'uy' as const },
+  ]);
+  const biotAlphaZeroLoads = biotTopNodes.map((node) => ({ nodeId: node.id, fyKn: -10 }));
+  const drainedAlphaZero = runPlaneStrainQuad4Assembly({
+    schemaVersion: 'fem-plane-strain-model.v1',
+    nodes: biotMesh.nodes,
+    elements: biotMesh.elements,
+    materials: biotAlphaZeroMaterials,
+    boundaryConditions: biotAlphaZeroBoundaryConditions,
+    nodalLoads: biotAlphaZeroLoads,
+    policy,
+  });
+  const biotAlphaZero = runPlaneStrainBiotConsolidation({
+    schemaVersion: 'fem-plane-strain-biot-consolidation-model.v1',
+    nodes: biotMesh.nodes,
+    elements: biotMesh.elements,
+    materials: biotAlphaZeroMaterials,
+    boundaryConditions: biotAlphaZeroBoundaryConditions,
+    porePressureBoundaryConditions: [
+      ...biotBottomNodes.map((node) => ({ nodeId: node.id, porePressureKpa: 100 })),
+      ...biotTopNodes.map((node) => ({ nodeId: node.id, porePressureKpa: 0 })),
+    ],
+    nodalLoads: biotAlphaZeroLoads,
+    initialPorePressureKpa: 100,
+    timeStepsSeconds: [3_600, 7_200],
+    policy,
+  });
+  const alphaZeroDisplacementError = Math.max(
+    ...drainedAlphaZero.nodes.map((drainedNode) => {
+      const biotNode = biotAlphaZero.nodes.find((node) => node.id === drainedNode.id)!;
+      return Math.max(
+        Math.abs(drainedNode.uxM - biotNode.uxM),
+        Math.abs(drainedNode.uyM - biotNode.uyM),
+      );
+    }),
+  );
+  benchmarks.push(benchmark(
+    'quad4-plane-strain-biot-u-p-alpha-zero-decoupling',
+    'coupled-biot-plane-strain',
+    'closed-form',
+    'alphaZeroDisplacementError',
+    alphaZeroDisplacementError,
+    0,
+    1e-10,
+    'Biot u-p evidence kernel must reduce to the drained elastic displacement solution when alpha_B is zero.',
+    'm',
+  ));
+
   const coupling = runHydroMechanicalCoupling1D({
     totalVerticalStressKpa: 200,
     porePressureBeforeKpa: 80,

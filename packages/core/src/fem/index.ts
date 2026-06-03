@@ -104,6 +104,8 @@ export {
   type FemPlaneStrainBiotConsolidationModel,
   type FemPlaneStrainBiotConsolidationResult,
   type FemPlaneStrainBiotGaussPointResult,
+  type FemPlaneStrainBiotNumericalContract,
+  type FemPlaneStrainBiotPressureAudit,
   type FemPlaneStrainBiotStepResult,
   type FemPlaneStrainBoundaryCondition,
   type FemPlaneStrainDruckerPragerGaussPointResult,

@@ -247,15 +247,41 @@ export interface FemPlaneStrainBiotStepResult {
   maxFreeResidualKn: number;
   residualNormRatio: number;
   maxFreePorePressureResidualM3PerS: number;
+  freePorePressureResidualL1M3PerS: number;
   massBalanceErrorRatio: number;
+  pressureAudit: FemPlaneStrainBiotPressureAudit;
+  minPorePressureKpa: number;
   maxPorePressureKpa: number;
   maxVerticalSettlementM: number;
   converged: boolean;
 }
 
+export interface FemPlaneStrainBiotNumericalContract {
+  pressureKind: 'excess-pore-pressure';
+  pressureUnit: 'kPa';
+  pressureSignConvention: 'positive-compression-pore-pressure-only';
+  unsupportedNegativePressurePolicy: 'reject-negative-free-pressure-solve';
+  stressConvention: 'tension-positive-plane-strain-output';
+  totalStressRelation: 'sigma_total_xx_yy = sigma_effective_xx_yy - alpha_B * p; shear unchanged';
+  darcyFluxRelation: 'q = -k/gamma_water * grad(p)';
+  storageConvention: 'specificStorage1PerM is head-based; pressure storage uses Ss / gamma_water';
+  gammaWaterKpaPerM: number;
+}
+
+export interface FemPlaneStrainBiotPressureAudit {
+  freePorePressureResidualL1M3PerS: number;
+  prescribedPorePressureResidualL1M3PerS: number;
+  netPrescribedPressureBoundaryFlowM3PerS: number;
+  appliedNodalFluxSumM3PerS: number;
+  storageRateSumM3PerS: number;
+  couplingRateSumM3PerS: number;
+  darcyFlowRateSumM3PerS: number;
+}
+
 export interface FemPlaneStrainBiotConsolidationResult {
   schemaVersion: 'fem-plane-strain-biot-consolidation-result.v1';
   method: 'quad4-plane-strain-biot-u-p-backward-euler-evidence';
+  numericalContract: FemPlaneStrainBiotNumericalContract;
   nodes: Array<FemPlaneStrainNode & {
     uxM: number;
     uyM: number;
@@ -282,7 +308,11 @@ export interface FemPlaneStrainBiotConsolidationResult {
   maxFreeResidualKn: number;
   residualNormRatio: number;
   maxFreePorePressureResidualM3PerS: number;
+  freePorePressureResidualL1M3PerS: number;
+  pressureAudit: FemPlaneStrainBiotPressureAudit;
   massBalanceErrorRatio: number;
+  minPorePressureKpa: number;
+  maxPorePressureKpa: number;
   converged: boolean;
   productionReady: false;
   policy: FemConvergencePolicy;
@@ -307,6 +337,14 @@ function assertFinitePositive(value: number, label: string): void {
 
 function assertFiniteNonNegative(value: number, label: string): void {
   if (!Number.isFinite(value) || value < 0) throw new Error(`${label} must be a finite non-negative number.`);
+}
+
+function normalizeBiotPorePressure(value: number, label: string): number {
+  assertFinite(value, label);
+  if (value < -1e-9) {
+    throw new Error(`${label} solved negative pore pressure ${value} kPa, which is unsupported by this saturated excess-pressure Biot evidence kernel.`);
+  }
+  return value < 0 ? 0 : value;
 }
 
 function assertPositiveInteger(value: number, label: string): number {
@@ -1234,6 +1272,18 @@ export function runPlaneStrainBiotConsolidation(
   let lastMassBalanceErrorRatio = 0;
   let lastMaxFreeResidualKn = 0;
   let lastMaxFreePorePressureResidualM3PerS = 0;
+  let lastFreePorePressureResidualL1M3PerS = 0;
+  let lastPressureAudit: FemPlaneStrainBiotPressureAudit = {
+    freePorePressureResidualL1M3PerS: 0,
+    prescribedPorePressureResidualL1M3PerS: 0,
+    netPrescribedPressureBoundaryFlowM3PerS: 0,
+    appliedNodalFluxSumM3PerS: 0,
+    storageRateSumM3PerS: 0,
+    couplingRateSumM3PerS: 0,
+    darcyFlowRateSumM3PerS: 0,
+  };
+  let lastMinPorePressureKpa = Math.min(...porePressure);
+  let lastMaxPorePressureKpa = Math.max(...porePressure);
 
   const timeSteps: FemPlaneStrainBiotStepResult[] = [];
   let previousStepTime = 0;
@@ -1299,7 +1349,10 @@ export function runPlaneStrainBiotConsolidation(
       const solved = solveDenseLinearSystem(matrix, rhs);
       for (const [index, dof] of freeDisplacementDofs.entries()) displacement[dof] = solved[index];
       for (const [index, dof] of freePressureDofs.entries()) {
-        porePressure[dof] = Math.max(0, solved[pressureUnknownOffset + index]);
+        porePressure[dof] = normalizeBiotPorePressure(
+          solved[pressureUnknownOffset + index],
+          `free pore-pressure DOF ${model.nodes[dof].id}`,
+        );
       }
       for (const [index, value] of prescribedDisplacements) displacement[index] = value;
       for (const [index, value] of prescribedPressures) porePressure[index] = value;
@@ -1310,20 +1363,25 @@ export function runPlaneStrainBiotConsolidation(
     const mechanicalInternal = elasticInternal.map((value, index) => value - couplingLoad[index]);
     const mechanicalResidual = mechanicalInternal.map((value, index) => value - loads[index]);
     const pressureResidual = new Array<number>(porePressureDofCount).fill(0);
+    const pressureCouplingRate = new Array<number>(porePressureDofCount).fill(0);
+    const pressureStorageRate = new Array<number>(porePressureDofCount).fill(0);
+    const pressureDarcyFlow = new Array<number>(porePressureDofCount).fill(0);
     for (let row = 0; row < porePressureDofCount; row += 1) {
-      let value = -fluxes[row];
       for (let displacementDof = 0; displacementDof < displacementDofCount; displacementDof += 1) {
-        value += coupling[displacementDof][row] *
+        pressureCouplingRate[row] += coupling[displacementDof][row] *
           (displacement[displacementDof] - previousDisplacement[displacementDof]) /
           deltaTimeSeconds;
       }
       for (let pressureDof = 0; pressureDof < porePressureDofCount; pressureDof += 1) {
-        value += pressureStorage[row][pressureDof] *
+        pressureStorageRate[row] += pressureStorage[row][pressureDof] *
           (porePressure[pressureDof] - previousPorePressure[pressureDof]) /
           deltaTimeSeconds;
-        value += pressureConductivity[row][pressureDof] * porePressure[pressureDof];
+        pressureDarcyFlow[row] += pressureConductivity[row][pressureDof] * porePressure[pressureDof];
       }
-      pressureResidual[row] = value;
+      pressureResidual[row] = pressureCouplingRate[row] +
+        pressureStorageRate[row] +
+        pressureDarcyFlow[row] -
+        fluxes[row];
     }
 
     const maxFreeResidualKn = freeDisplacementDofs.length > 0
@@ -1342,6 +1400,20 @@ export function runPlaneStrainBiotConsolidation(
       : 0;
     const freePressureResidualSum = freePressureDofs
       .reduce((sum, index) => sum + Math.abs(pressureResidual[index]), 0);
+    const prescribedPressureDofs = Array.from(prescribedPressures.keys());
+    const prescribedPressureResidualL1 = prescribedPressureDofs
+      .reduce((sum, index) => sum + Math.abs(pressureResidual[index]), 0);
+    const pressureAudit: FemPlaneStrainBiotPressureAudit = {
+      freePorePressureResidualL1M3PerS: Number(freePressureResidualSum.toExponential(12)),
+      prescribedPorePressureResidualL1M3PerS: Number(prescribedPressureResidualL1.toExponential(12)),
+      netPrescribedPressureBoundaryFlowM3PerS: Number(
+        prescribedPressureDofs.reduce((sum, index) => sum + pressureResidual[index], 0).toExponential(12),
+      ),
+      appliedNodalFluxSumM3PerS: Number(fluxes.reduce((sum, value) => sum + value, 0).toExponential(12)),
+      storageRateSumM3PerS: Number(pressureStorageRate.reduce((sum, value) => sum + value, 0).toExponential(12)),
+      couplingRateSumM3PerS: Number(pressureCouplingRate.reduce((sum, value) => sum + value, 0).toExponential(12)),
+      darcyFlowRateSumM3PerS: Number(pressureDarcyFlow.reduce((sum, value) => sum + value, 0).toExponential(12)),
+    };
     const pressureScale = Math.max(
       Math.hypot(...fluxes),
       Math.hypot(...pressureResidual),
@@ -1349,6 +1421,7 @@ export function runPlaneStrainBiotConsolidation(
       1e-12,
     );
     const massBalanceErrorRatio = freePressureResidualSum / pressureScale;
+    const minPorePressureKpa = Math.min(...porePressure);
     const maxPorePressureKpa = Math.max(...porePressure);
     const maxVerticalSettlementM = Math.max(0, -Math.min(...model.nodes.map((_, index) => displacement[dofIndex(index, 'uy')])));
     const converged = residualNormRatio <= policy.forceBalanceTolerance &&
@@ -1361,7 +1434,10 @@ export function runPlaneStrainBiotConsolidation(
       maxFreeResidualKn: round(maxFreeResidualKn, 12),
       residualNormRatio: round(residualNormRatio, 12),
       maxFreePorePressureResidualM3PerS: Number(maxFreePorePressureResidualM3PerS.toExponential(12)),
+      freePorePressureResidualL1M3PerS: Number(freePressureResidualSum.toExponential(12)),
       massBalanceErrorRatio: round(massBalanceErrorRatio, 12),
+      pressureAudit,
+      minPorePressureKpa: round(minPorePressureKpa, 8),
       maxPorePressureKpa: round(maxPorePressureKpa, 8),
       maxVerticalSettlementM: round(maxVerticalSettlementM, 12),
       converged,
@@ -1375,6 +1451,10 @@ export function runPlaneStrainBiotConsolidation(
     lastMassBalanceErrorRatio = massBalanceErrorRatio;
     lastMaxFreeResidualKn = maxFreeResidualKn;
     lastMaxFreePorePressureResidualM3PerS = maxFreePorePressureResidualM3PerS;
+    lastFreePorePressureResidualL1M3PerS = freePressureResidualSum;
+    lastPressureAudit = pressureAudit;
+    lastMinPorePressureKpa = minPorePressureKpa;
+    lastMaxPorePressureKpa = maxPorePressureKpa;
   }
 
   let maxBiotCouplingKpa = 0;
@@ -1387,7 +1467,10 @@ export function runPlaneStrainBiotConsolidation(
       const hydraulicPoint = entry.hydraulicGauss[index];
       const strain = point.b.map((row) => row.reduce((sum, value, col) => sum + value * elementDisplacement[col], 0)) as [number, number, number];
       const effectiveStress = d.map((row) => row.reduce((sum, value, col) => sum + value * strain[col], 0)) as [number, number, number];
-      const porePressureKpa = Math.max(0, hydraulicPoint.shape.reduce((sum, shape, node) => sum + shape * localPressures[node], 0));
+      const porePressureKpa = normalizeBiotPorePressure(
+        hydraulicPoint.shape.reduce((sum, shape, node) => sum + shape * localPressures[node], 0),
+        `element ${entry.element.id} gauss point ${index + 1} porePressureKpa`,
+      );
       const biotStressReductionKpa = hydraulicPoint.biotCoefficient * porePressureKpa;
       const totalStress = [
         effectiveStress[0] - biotStressReductionKpa,
@@ -1435,6 +1518,17 @@ export function runPlaneStrainBiotConsolidation(
   return {
     schemaVersion: 'fem-plane-strain-biot-consolidation-result.v1',
     method: 'quad4-plane-strain-biot-u-p-backward-euler-evidence',
+    numericalContract: {
+      pressureKind: 'excess-pore-pressure',
+      pressureUnit: 'kPa',
+      pressureSignConvention: 'positive-compression-pore-pressure-only',
+      unsupportedNegativePressurePolicy: 'reject-negative-free-pressure-solve',
+      stressConvention: 'tension-positive-plane-strain-output',
+      totalStressRelation: 'sigma_total_xx_yy = sigma_effective_xx_yy - alpha_B * p; shear unchanged',
+      darcyFluxRelation: 'q = -k/gamma_water * grad(p)',
+      storageConvention: 'specificStorage1PerM is head-based; pressure storage uses Ss / gamma_water',
+      gammaWaterKpaPerM: round(gammaWaterKpaPerM, 8),
+    },
     nodes: model.nodes.map((node, index) => ({
       ...node,
       uxM: round(displacement[dofIndex(index, 'ux')], 12),
@@ -1457,7 +1551,11 @@ export function runPlaneStrainBiotConsolidation(
     maxFreeResidualKn: round(lastMaxFreeResidualKn, 12),
     residualNormRatio: round(lastResidualNormRatio, 12),
     maxFreePorePressureResidualM3PerS: Number(lastMaxFreePorePressureResidualM3PerS.toExponential(12)),
+    freePorePressureResidualL1M3PerS: Number(lastFreePorePressureResidualL1M3PerS.toExponential(12)),
+    pressureAudit: lastPressureAudit,
     massBalanceErrorRatio: round(lastMassBalanceErrorRatio, 12),
+    minPorePressureKpa: round(lastMinPorePressureKpa, 8),
+    maxPorePressureKpa: round(lastMaxPorePressureKpa, 8),
     converged: timeSteps.every((step) => step.converged),
     productionReady: false,
     policy,

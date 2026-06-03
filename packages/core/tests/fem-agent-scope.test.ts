@@ -126,10 +126,41 @@ describe('FEM scoped agent', () => {
     const readinessResult = session.steps.find(
       (step) => step.type === 'tool_result' && step.toolName === 'assess_fem_production_readiness',
     );
-    expect((readinessResult?.toolResult?.data as any).productionReady).toBe(false);
-    expect((readinessResult?.toolResult?.data as any).agentEvidenceSummary)
+    const readinessData = readinessResult?.toolResult?.data as any;
+    expect(readinessData.productionReady).toBe(false);
+    expect(readinessData.engineeringEvidence.productionReady).toBe(false);
+    expect(readinessData.engineeringEvidence.benchmarks.map((item: any) => item.id))
+      .toEqual(expect.arrayContaining([
+        'quad4-plane-strain-biot-u-p-dof-coupling',
+        'quad4-plane-strain-biot-u-p-mass-residual',
+        'quad4-plane-strain-biot-u-p-pressure-gradient-flux-contract',
+        'quad4-plane-strain-biot-u-p-alpha-zero-decoupling',
+      ]));
+    expect(readinessData.blockers).toEqual(expect.arrayContaining([
+      'biot-u-p-coupling-evidence-kernel-not-route-backed-result-manifest-or-production-sparse-solver',
+    ]));
+    expect(readinessData.agentEvidenceSummary)
       .toContain('quad4-plane-strain-biot-u-p-effective-stress-coupling');
-    expect(session.steps.find((step) => step.type === 'answer')?.content).toContain('Production-grade FEM is blocked');
+    expect(readinessData.agentEvidenceSummary)
+      .toContain('quad4-plane-strain-biot-u-p-pressure-gradient-flux-contract');
+    expect(readinessData.agentEvidenceSummary)
+      .toContain('quad4-plane-strain-biot-u-p-alpha-zero-decoupling');
+
+    const followupMessages = mockedGenerateChat.mock.calls[2]?.[0] ?? [];
+    const followupConfig = mockedGenerateChat.mock.calls[2]?.[1];
+    const followupPrompt = followupMessages.map((message) => message.content).join('\n');
+    expect(followupConfig?.provider).toBe('openai-compatible');
+    expect(followupPrompt).toContain('[Tool Result: assess_fem_production_readiness]');
+    expect(followupPrompt).toContain('productionReady: no');
+    expect(followupPrompt).toContain('quad4-plane-strain-biot-u-p-dof-coupling');
+    expect(followupPrompt).toContain('quad4-plane-strain-biot-u-p-mass-residual');
+    expect(followupPrompt).toContain('quad4-plane-strain-biot-u-p-pressure-gradient-flux-contract');
+    expect(followupPrompt).toContain('quad4-plane-strain-biot-u-p-alpha-zero-decoupling');
+
+    const answer = session.steps.find((step) => step.type === 'answer')?.content;
+    expect(answer).toContain('Production-grade FEM is blocked');
+    expect(answer).toMatch(/blocked|not production/i);
+    expect(answer).not.toMatch(/\bis production[- ]?ready\b/i);
   });
 
   it('allows deterministic FEM planning tools inside the scoped agent', async () => {

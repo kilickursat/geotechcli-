@@ -378,26 +378,56 @@ describe('AI fallback behavior', () => {
       (step) => step.type === 'tool_result' && step.toolName === 'assess_fem_production_readiness',
     );
     expect(readinessResult?.content).toContain('FEM production readiness blocked');
-    expect((readinessResult?.toolResult?.data as any).productionReady).toBe(false);
-    expect((readinessResult?.toolResult?.data as any).engineeringEvidence.verifiedFeatures)
+    const readinessData = readinessResult?.toolResult?.data as any;
+    expect(readinessData).toMatchObject({
+      productionReady: false,
+      status: 'blocked',
+    });
+    expect(readinessData.engineeringEvidence).toMatchObject({
+      productionReady: false,
+      status: 'kernel-verified',
+    });
+    expect(readinessData.engineeringEvidence.verifiedFeatures)
       .toContain('global-plane-strain-assembly');
-    expect((readinessResult?.toolResult?.data as any).engineeringEvidence.verifiedFeatures)
+    expect(readinessData.engineeringEvidence.verifiedFeatures)
       .toContain('coupled-nonlinear-plane-strain');
-    expect((readinessResult?.toolResult?.data as any).engineeringEvidence.verifiedFeatures)
+    expect(readinessData.engineeringEvidence.verifiedFeatures)
       .toContain('coupled-biot-plane-strain');
-    expect((readinessResult?.toolResult?.data as any).engineeringEvidence.verifiedFeatures)
+    expect(readinessData.engineeringEvidence.verifiedFeatures)
       .toContain('seepage-pore-pressure-coupling');
-    expect((readinessResult?.toolResult?.data as any).engineeringEvidence.benchmarks.map((item: any) => item.id))
-      .toContain('quad4-plane-strain-biot-u-p-effective-stress-coupling');
-    expect((readinessResult?.toolResult?.data as any).agentEvidenceSummary)
+    expect(readinessData.engineeringEvidence.benchmarks.map((item: any) => item.id))
+      .toEqual(expect.arrayContaining([
+        'quad4-plane-strain-biot-u-p-dof-coupling',
+        'quad4-plane-strain-biot-u-p-effective-stress-coupling',
+        'quad4-plane-strain-biot-u-p-free-residual',
+        'quad4-plane-strain-biot-u-p-mass-residual',
+        'quad4-plane-strain-biot-u-p-pressure-gradient-flux-contract',
+        'quad4-plane-strain-biot-u-p-alpha-zero-decoupling',
+      ]));
+    expect(readinessData.blockers).toEqual(expect.arrayContaining([
+      'biot-u-p-coupling-evidence-kernel-not-route-backed-result-manifest-or-production-sparse-solver',
+      'production-sparse-fem-solver-and-2d-3d-result-route-not-integrated-with-these-kernels',
+      'published-commercial-cross-solver-benchmark-corpus-not-approved',
+    ]));
+    expect(readinessData.agentEvidenceSummary)
       .toContain('global-plane-strain-assembly');
-    expect((readinessResult?.toolResult?.data as any).agentEvidenceSummary)
+    expect(readinessData.agentEvidenceSummary)
       .toContain('coupled-nonlinear-plane-strain');
-    expect((readinessResult?.toolResult?.data as any).agentEvidenceSummary)
+    expect(readinessData.agentEvidenceSummary)
+      .toContain('quad4-plane-strain-biot-u-p-dof-coupling');
+    expect(readinessData.agentEvidenceSummary)
       .toContain('quad4-plane-strain-biot-u-p-effective-stress-coupling');
-    expect((readinessResult?.toolResult?.data as any).agentEvidenceSummary)
+    expect(readinessData.agentEvidenceSummary)
+      .toContain('quad4-plane-strain-biot-u-p-free-residual');
+    expect(readinessData.agentEvidenceSummary)
+      .toContain('quad4-plane-strain-biot-u-p-mass-residual');
+    expect(readinessData.agentEvidenceSummary)
+      .toContain('quad4-plane-strain-biot-u-p-pressure-gradient-flux-contract');
+    expect(readinessData.agentEvidenceSummary)
+      .toContain('quad4-plane-strain-biot-u-p-alpha-zero-decoupling');
+    expect(readinessData.agentEvidenceSummary)
       .toContain('seepage-pore-pressure-coupling');
-    expect((readinessResult?.toolResult?.data as any).agentEvidenceSummary)
+    expect(readinessData.agentEvidenceSummary)
       .toContain('biot-u-p-coupling-evidence-kernel-not-route-backed-result-manifest-or-production-sparse-solver');
     const secondRequest = JSON.parse(
       String(fetchMock.mock.calls[1]?.[1]?.body ?? '{}'),
@@ -411,8 +441,16 @@ describe('AI fallback behavior', () => {
     expect(secondPrompt).toContain('[Tool Result: assess_fem_production_readiness]');
     expect(secondPrompt).toContain('productionReady: no');
     expect(secondPrompt).toContain('coupled-nonlinear-plane-strain');
+    expect(secondPrompt).toContain('coupled-biot-plane-strain');
+    expect(secondPrompt).toContain('quad4-plane-strain-biot-u-p-dof-coupling');
     expect(secondPrompt).toContain('quad4-plane-strain-biot-u-p-effective-stress-coupling');
+    expect(secondPrompt).toContain('quad4-plane-strain-biot-u-p-free-residual');
+    expect(secondPrompt).toContain('quad4-plane-strain-biot-u-p-mass-residual');
+    expect(secondPrompt).toContain('quad4-plane-strain-biot-u-p-pressure-gradient-flux-contract');
+    expect(secondPrompt).toContain('quad4-plane-strain-biot-u-p-alpha-zero-decoupling');
     expect(secondPrompt).toContain('seepage-pore-pressure-coupling');
+    expect(secondPrompt)
+      .toContain('biot-u-p-coupling-evidence-kernel-not-route-backed-result-manifest-or-production-sparse-solver');
 
     const draftResult = session.steps.find(
       (step) => step.type === 'tool_result' && step.toolName === 'prepare_fem_analysis_case',
@@ -434,6 +472,11 @@ describe('AI fallback behavior', () => {
     const answer = session.steps.find((step) => step.type === 'answer');
     expect(answer?.content).toMatch(/draft-prepared/i);
     expect(answer?.content).toMatch(/no solver/i);
+    expect(answer?.content).toMatch(/production readiness is blocked|not production[- ]ready|not production[- ]grade/i);
+    expect(answer?.content).not.toMatch(/\bis production[- ]?(?:ready|grade)\b/i);
+    expect(answer?.content).not.toMatch(/\bready for production\b/i);
+    expect(answer?.content).not.toMatch(/\bapproved for (?:production|design)\b/i);
+    expect(answer?.content).not.toMatch(/\bI ran (?:the )?solver\b/i);
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 

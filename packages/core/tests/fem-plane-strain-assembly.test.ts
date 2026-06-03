@@ -253,6 +253,15 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
     expect(result.schemaVersion).toBe('fem-plane-strain-biot-consolidation-result.v1');
     expect(result.method).toBe('quad4-plane-strain-biot-u-p-backward-euler-evidence');
     expect(result.productionReady).toBe(false);
+    expect(result.numericalContract).toMatchObject({
+      pressureKind: 'excess-pore-pressure',
+      pressureUnit: 'kPa',
+      pressureSignConvention: 'positive-compression-pore-pressure-only',
+      unsupportedNegativePressurePolicy: 'reject-negative-free-pressure-solve',
+      stressConvention: 'tension-positive-plane-strain-output',
+      darcyFluxRelation: 'q = -k/gamma_water * grad(p)',
+      gammaWaterKpaPerM: 9.81,
+    });
     expect(result.displacementDofCount).toBe(mesh.nodes.length * 2);
     expect(result.porePressureDofCount).toBe(mesh.nodes.length);
     expect(result.freeDisplacementDofCount).toBeGreaterThan(0);
@@ -262,6 +271,15 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
     expect(result.converged).toBe(true);
     expect(result.maxFreeResidualKn).toBeLessThanOrEqual(result.policy.forceBalanceTolerance);
     expect(result.massBalanceErrorRatio).toBeLessThanOrEqual(result.policy.porePressureMassBalanceTolerance);
+    expect(result.minPorePressureKpa).toBeGreaterThanOrEqual(0);
+    expect(result.maxPorePressureKpa).toBeCloseTo(100, 8);
+    expect(result.freePorePressureResidualL1M3PerS).toBeLessThanOrEqual(
+      result.timeSteps.at(-1)?.freePorePressureResidualL1M3PerS ?? Number.POSITIVE_INFINITY,
+    );
+    expect(result.pressureAudit.freePorePressureResidualL1M3PerS).toBe(
+      result.timeSteps.at(-1)?.pressureAudit.freePorePressureResidualL1M3PerS,
+    );
+    expect(result.pressureAudit.prescribedPorePressureResidualL1M3PerS).toBeGreaterThan(0);
     expect(result.maxBiotCouplingKpa).toBeGreaterThan(0);
     expect(coupledTopSettlement).not.toBeCloseTo(drainedTopSettlement, 12);
     expect(firstGauss.porePressureKpa).toBeGreaterThan(0);
@@ -271,6 +289,115 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
     expect(result.limitations.join(' ')).toMatch(/Benchmark-scale/i);
     expect(result.limitations.join(' ')).toMatch(/not a production sparse solver/i);
     expect(result.limitations.join(' ')).toMatch(/nonlinear plasticity coupling/i);
+  });
+
+  it('reports Biot pressure-gradient flux, sign, and storage contract metadata', () => {
+    const mesh = buildPlaneStrainRectangularMesh({
+      widthM: 2,
+      heightM: 1,
+      divisionsX: 1,
+      divisionsY: 1,
+      materialId: 'soil',
+    });
+    const bottomNodes = mesh.nodes.filter((node) => node.yM === 0);
+    const topNodes = mesh.nodes.filter((node) => node.yM === 1);
+    const result = runPlaneStrainBiotConsolidation({
+      schemaVersion: 'fem-plane-strain-biot-consolidation-model.v1',
+      nodes: mesh.nodes,
+      elements: mesh.elements,
+      materials: [{
+        id: 'soil',
+        elasticModulusKpa: 30_000,
+        poissonRatio: 0.3,
+        hydraulicConductivityXMPerS: 1e-6,
+        hydraulicConductivityYMPerS: 1e-6,
+        biotCoefficient: 0.75,
+        specificStorage1PerM: 1e-4,
+      }],
+      boundaryConditions: bottomNodes.flatMap((node) => [
+        { nodeId: node.id, dof: 'ux' as const },
+        { nodeId: node.id, dof: 'uy' as const },
+      ]),
+      porePressureBoundaryConditions: [
+        ...bottomNodes.map((node) => ({ nodeId: node.id, porePressureKpa: 100 })),
+        ...topNodes.map((node) => ({ nodeId: node.id, porePressureKpa: 0 })),
+      ],
+      initialPorePressureKpa: 100,
+      timeStepsSeconds: [1_000],
+    });
+
+    const firstGauss = result.elements[0].gaussPoints[0];
+    const expectedFluxY = (1e-6 / 9.81) * 100;
+
+    expect(result.numericalContract.totalStressRelation)
+      .toBe('sigma_total_xx_yy = sigma_effective_xx_yy - alpha_B * p; shear unchanged');
+    expect(result.numericalContract.storageConvention)
+      .toBe('specificStorage1PerM is head-based; pressure storage uses Ss / gamma_water');
+    expect(firstGauss.hydraulicGradientKpaPerM[0]).toBeCloseTo(0, 12);
+    expect(firstGauss.hydraulicGradientKpaPerM[1]).toBeCloseTo(-100, 12);
+    expect(firstGauss.darcyFluxMPerS[0]).toBeCloseTo(0, 12);
+    expect(firstGauss.darcyFluxMPerS[1]).toBeCloseTo(expectedFluxY, 12);
+    expect(firstGauss.biotStressReductionKpa).toBeCloseTo(firstGauss.porePressureKpa * 0.75, 8);
+    expect(result.pressureAudit.prescribedPorePressureResidualL1M3PerS).toBeGreaterThan(0);
+    expect(result.pressureAudit.freePorePressureResidualL1M3PerS).toBe(0);
+  });
+
+  it('decouples Biot pressure from deformation when alpha is zero', () => {
+    const mesh = buildPlaneStrainRectangularMesh({
+      widthM: 2,
+      heightM: 1,
+      divisionsX: 2,
+      divisionsY: 1,
+      materialId: 'soil',
+    });
+    const bottomNodes = mesh.nodes.filter((node) => node.yM === 0);
+    const topNodes = mesh.nodes.filter((node) => node.yM === 1);
+    const materials = [{
+      id: 'soil',
+      elasticModulusKpa: 22_000,
+      poissonRatio: 0.27,
+      hydraulicConductivityXMPerS: 5e-7,
+      hydraulicConductivityYMPerS: 5e-7,
+      biotCoefficient: 0,
+      specificStorage1PerM: 2e-4,
+    }];
+    const boundaryConditions = bottomNodes.flatMap((node) => [
+      { nodeId: node.id, dof: 'ux' as const },
+      { nodeId: node.id, dof: 'uy' as const },
+    ]);
+    const nodalLoads = topNodes.map((node) => ({ nodeId: node.id, fyKn: -6 }));
+    const drained = runPlaneStrainQuad4Assembly({
+      schemaVersion: 'fem-plane-strain-model.v1',
+      nodes: mesh.nodes,
+      elements: mesh.elements,
+      materials,
+      boundaryConditions,
+      nodalLoads,
+    });
+    const biot = runPlaneStrainBiotConsolidation({
+      schemaVersion: 'fem-plane-strain-biot-consolidation-model.v1',
+      nodes: mesh.nodes,
+      elements: mesh.elements,
+      materials,
+      boundaryConditions,
+      porePressureBoundaryConditions: [
+        ...bottomNodes.map((node) => ({ nodeId: node.id, porePressureKpa: 80 })),
+        ...topNodes.map((node) => ({ nodeId: node.id, porePressureKpa: 0 })),
+      ],
+      nodalLoads,
+      initialPorePressureKpa: 80,
+      timeStepsSeconds: [600, 1_200],
+    });
+
+    for (const drainedNode of drained.nodes) {
+      const biotNode = biot.nodes.find((node) => node.id === drainedNode.id)!;
+      expect(biotNode.uxM).toBeCloseTo(drainedNode.uxM, 10);
+      expect(biotNode.uyM).toBeCloseTo(drainedNode.uyM, 10);
+    }
+    expect(biot.maxBiotCouplingKpa).toBe(0);
+    expect(biot.elements.flatMap((element) => element.gaussPoints)
+      .every((point) => point.biotStressReductionKpa === 0)).toBe(true);
+    expect(biot.converged).toBe(true);
   });
 
   it('rejects unsafe Biot u-p consolidation inputs before solving', () => {
@@ -321,6 +448,14 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
         { nodeId: 'n-0-0', porePressureKpa: 1 },
       ],
     })).toThrow(/Conflicting pore-pressure boundary condition/);
+    expect(() => runPlaneStrainBiotConsolidation({
+      ...model,
+      initialPorePressureKpa: -1,
+    })).toThrow(/initialPorePressureKpa must be a finite non-negative number/);
+    expect(() => runPlaneStrainBiotConsolidation({
+      ...model,
+      nodalFluxes: [{ nodeId: 'n-1-1', flowM3PerS: -1e-3 }],
+    })).toThrow(/solved negative pore pressure/i);
   });
 
   it('reproduces a prescribed affine displacement patch at every Gauss point', () => {

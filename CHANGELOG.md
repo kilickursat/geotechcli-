@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.104] - 2026-06-03
+
+### FEM Biot Evidence Contract
+
+- Hardened the benchmark-scale Quad4 Biot u-p evidence kernel with explicit excess-pore-pressure, stress, storage, and Darcy-flux convention metadata plus auditable pressure-equation residual components.
+- Replaced silent negative free-pore-pressure clamping with a fail-fast unsupported-pressure policy and added deterministic pressure-gradient flux and alpha-zero decoupling benchmarks.
+- Extended production-readiness and mocked/default GLM/BYOK agent tests so stronger Biot evidence is visible while full production FEM remains blocked until route-backed manifests, production sparse solvers, nonlinear coupling, independent benchmarks, support design, and enforced approvals are complete.
+
 ## [0.4.103] - 2026-06-03
 
 ### Ingest Foreground Progress Regression

@@ -8,6 +8,16 @@ const releases = [
     date: '2026-06-03',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Hardened the benchmark-scale Quad4 Biot u-p evidence kernel with explicit excess-pore-pressure, stress, storage, and Darcy-flux convention metadata plus auditable pressure-equation residual components' },
+      { type: 'feat', text: 'Added deterministic Biot pressure-gradient flux and alpha-zero decoupling benchmark coverage and a fail-fast unsupported negative free-pore-pressure policy' },
+      { type: 'fix', text: 'Extended production-readiness and mocked default GLM/BYOK agent tests so stronger Biot evidence is visible while full production FEM remains blocked behind route, sparse-solver, nonlinear-coupling, benchmark, support-design, and approval gates' },
+    ],
+  },
+  {
+    version: '0.4.103',
+    date: '2026-06-03',
+    tag: '0.4.103 Release',
+    changes: [
       { type: 'fix', text: 'Added foreground geotech ingest <pdf> regression coverage for transient partial job.json reads so the initial command path keeps polling instead of aborting with a raw Unterminated string in JSON error' },
       { type: 'fix', text: 'Confirmed the reported ingest failure was from an older global geotech 0.4.99 binary; the published latest CLI includes the live-progress hardening' },
       { type: 'fix', text: 'Kept FEM production readiness unchanged while the next solver work remains evidence-hardening and validation, not a production claim' },
