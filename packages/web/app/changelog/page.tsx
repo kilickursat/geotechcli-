@@ -8,6 +8,16 @@ const releases = [
     date: '2026-06-03',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'fix', text: 'Added foreground geotech ingest <pdf> regression coverage for transient partial job.json reads so the initial command path keeps polling instead of aborting with a raw Unterminated string in JSON error' },
+      { type: 'fix', text: 'Confirmed the reported ingest failure was from an older global geotech 0.4.99 binary; the published latest CLI includes the live-progress hardening' },
+      { type: 'fix', text: 'Kept FEM production readiness unchanged while the next solver work remains evidence-hardening and validation, not a production claim' },
+    ],
+  },
+  {
+    version: '0.4.102',
+    date: '2026-06-03',
+    tag: '0.4.102 Release',
+    changes: [
       { type: 'feat', text: 'Added a benchmark-scale Quad4 plane-strain Biot u-p backward-Euler evidence kernel with coupled displacement and pore-pressure DOFs, pressure storage, Darcy pressure-gradient flow, and Biot stress reduction' },
       { type: 'feat', text: 'Extended FEM evidence and mocked default GLM planning summaries with Biot u-p benchmark IDs, residual/mass-balance metrics, and stress sign-convention coverage' },
       { type: 'fix', text: 'Kept full production FEM blocked until route-backed manifests, production sparse solvers, nonlinear plasticity coupling, independent benchmarks, support design, and enforced approvals are complete' },

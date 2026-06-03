@@ -711,6 +711,117 @@ describe('registerIngestCommand', () => {
     expect(uiMocks.renderJSON).not.toHaveBeenCalled();
   });
 
+  it('continues foreground ingest through transient partial job JSON reads', async () => {
+    const registerIngestCommand = await loadRegisterIngestCommand();
+    const program = new Command();
+    const inspection = {
+      totalPages: 6,
+      pages: Array.from({ length: 6 }, (_, index) => ({
+        pageNumber: index + 1,
+        classification: 'digital-text',
+      })),
+    };
+    const startedJob = makePersistedIngestJobRecord();
+    const runningSnapshot = makePersistedIngestJobRecord({
+      checkpoints: {
+        pages: [
+          {
+            pageNumber: 1,
+            status: 'completed',
+            classification: 'digital-text',
+            sourceKind: 'pdf-page',
+            weight: 1,
+            attempts: 1,
+            updatedAt: '2026-04-22T00:00:30.000Z',
+          },
+          {
+            pageNumber: 2,
+            status: 'completed',
+            classification: 'digital-text',
+            sourceKind: 'pdf-page',
+            weight: 1,
+            attempts: 1,
+            updatedAt: '2026-04-22T00:00:45.000Z',
+          },
+          {
+            pageNumber: 3,
+            status: 'pending',
+            classification: 'image-only',
+            sourceKind: 'raster-image',
+            weight: 2,
+            attempts: 0,
+            updatedAt: '2026-04-22T00:00:10.000Z',
+          },
+        ],
+      },
+    });
+    const completedJob = makePersistedIngestJobRecord({
+      status: 'completed',
+      completedAt: '2026-04-22T00:02:00.000Z',
+      result: {
+        ingestResult: makeBoreholeIngestResult({
+          source: {
+            filePath: 'large.pdf',
+            fileName: 'large.pdf',
+            inputKind: 'pdf',
+            totalPages: 6,
+            successfulPages: 6,
+            failedPages: 0,
+          },
+        }),
+      },
+      checkpoints: {
+        pages: Array.from({ length: 6 }, (_, index) => ({
+          pageNumber: index + 1,
+          status: 'completed',
+          classification: 'digital-text',
+          sourceKind: 'pdf-page',
+          weight: 1,
+          attempts: 1,
+          updatedAt: '2026-04-22T00:01:00.000Z',
+        })),
+      },
+    });
+
+    visionMocks.readVisionInput.mockReturnValue({
+      base64: 'pdf-base64',
+      mimeType: 'application/pdf',
+      fileBytes: 2048,
+      filePath: 'large.pdf',
+      ext: 'pdf',
+      kind: 'pdf',
+    });
+    coreMocks.inspectPdfDocument.mockReturnValue(inspection);
+    coreMocks.computeWeightedPdfPageCost.mockReturnValue(6);
+    coreMocks.shouldUseAsyncIngestJob.mockReturnValue(true);
+    coreMocks.createAndStartPersistedIngestJob.mockReturnValue(startedJob);
+    coreMocks.loadPersistedIngestJob
+      .mockImplementationOnce(() => {
+        throw new Error('Unterminated string in JSON at position 950269 (line 11319 column 1044)');
+      })
+      .mockReturnValue(runningSnapshot);
+    coreMocks.waitForPersistedIngestJob
+      .mockRejectedValueOnce(new Error('Unterminated string in JSON at position 950269 (line 11319 column 1044)'))
+      .mockRejectedValueOnce(new Error(`Timed out while waiting for persisted ingest job "${startedJob.jobId}".`))
+      .mockResolvedValueOnce(completedJob);
+
+    registerIngestCommand(program);
+
+    await program.parseAsync(['ingest', 'large.pdf'], { from: 'user' });
+
+    expect(coreMocks.createAndStartPersistedIngestJob).toHaveBeenCalledWith(expect.objectContaining({
+      documentType: 'borehole-log',
+      filePath: 'large.pdf',
+      inspection,
+    }));
+    expect(coreMocks.waitForPersistedIngestJob).toHaveBeenCalledTimes(3);
+    expect(coreMocks.loadPersistedIngestJob).toHaveBeenCalledWith(startedJob.jobId);
+    expect(uiMocks.error).not.toHaveBeenCalled();
+    expect(uiMocks.info).toHaveBeenCalledWith(`Waiting for ingest job ${startedJob.jobId} to finish...`);
+    expect(uiMocks.info).toHaveBeenCalledWith(expect.stringContaining('Ingest progress: 2/6 pages resolved'));
+    expect(uiMocks.heading).toHaveBeenCalledWith('Geotechnical Ingest Result');
+  });
+
   it('keeps large PDF ingest jobs detached when --background is used', async () => {
     const registerIngestCommand = await loadRegisterIngestCommand();
     const program = new Command();

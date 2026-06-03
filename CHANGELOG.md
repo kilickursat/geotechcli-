@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.103] - 2026-06-03
+
+### Ingest Foreground Progress Regression
+
+- Added foreground `geotech ingest <pdf>` regression coverage for the reported transient partial `job.json` read so the initial command path keeps polling instead of aborting on a raw `Unterminated string in JSON` parser error.
+- Confirmed the reported failure was caused by an older global `geotech` binary (`0.4.99`); the live-progress hardening shipped in `0.4.101` and is included in the current published CLI.
+- Kept the fix scoped to ingest reliability and left FEM production readiness unchanged: Biot/FEM remains evidence-level until the solver benchmark and route-hardening work is completed separately.
+
 ## [0.4.102] - 2026-06-03
 
 ### FEM Biot u-p Evidence
