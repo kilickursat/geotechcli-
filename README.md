@@ -462,10 +462,12 @@ geotech config set llm.api_key sk-ant-...
 geotech config set llm.provider openai-compatible
 geotech config set llm.base_url http://localhost:11434/v1
 geotech config set llm.model local-model-id
+# Localhost/private OpenAI-compatible endpoints may run without an API key.
 
 # Optional advanced override: OpenRouter through the OpenAI-compatible adapter
 geotech config set llm.provider openai-compatible
 geotech config set llm.base_url https://openrouter.ai/api/v1
+geotech config set llm.api_key sk-or-...
 geotech config set llm.model provider/model-id
 # Or set OPENROUTER_API_KEY plus optional OPENROUTER_MODEL.
 ```

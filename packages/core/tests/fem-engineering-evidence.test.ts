@@ -319,6 +319,29 @@ describe('FEM engineering evidence kernels', () => {
       approvalStatement: 'Reviewed and approved for production design.',
     });
 
+    const malformedPersistedRecord = validateFemReviewerApprovalRecord({
+      schemaVersion: 'fem-reviewer-approval.v1',
+      recordId: 'fem-approval-malformed',
+      caseId: 'raft-settlement-demo',
+      caseHashSha256: 'd'.repeat(64),
+      validationSummary: {
+        status: 'ready',
+        blockers: undefined as never,
+        reviewItems: 'two' as never,
+        findingCodes: ['experimental-only', '', 'experimental-only'],
+      },
+      reviewer: {
+        name: 'Jane Engineer',
+        licenseId: 'PE-98765',
+        jurisdiction: 'US-NY',
+      },
+      approvedAt: '2026-06-01T00:00:00.000Z',
+      scope: 'experimental-preview',
+      assumptions: [' ', 'Geometry reviewed.', 'Geometry reviewed.'],
+      limitations: ['Experimental preview only.', ''],
+      approvalStatement: 'Reviewed and approved for production design use.',
+    });
+
     expect(accepted.status).toBe('accepted');
     expect(blocked.status).toBe('blocked');
     expect(blocked.blockerCodes).toEqual(expect.arrayContaining([
@@ -331,6 +354,17 @@ describe('FEM engineering evidence kernels', () => {
     ]));
     expect(productionDesign.status).toBe('blocked');
     expect(productionDesign.blockerCodes).toContain('scope.production-design-blocked');
+    expect(malformedPersistedRecord.status).toBe('blocked');
+    expect(malformedPersistedRecord.blockerCodes).toEqual(expect.arrayContaining([
+      'validation-summary.blockers.invalid',
+      'validation-summary.review-items.invalid',
+      'validation-summary.finding-codes.1.missing',
+      'validation-summary.finding-codes.2.duplicate',
+      'assumptions.0.missing',
+      'assumptions.2.duplicate',
+      'limitations.1.missing',
+      'approval-statement.production-scope-overclaim',
+    ]));
   });
 
   it('registers source-backed benchmark references and blocks missing commercial comparison results', () => {

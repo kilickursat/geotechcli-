@@ -8,6 +8,16 @@ const releases = [
     date: '2026-06-04',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added per-step dense direct linear-solve residual audits to the plane-strain Biot u-p consolidation evidence kernel and transient acceptance metadata' },
+      { type: 'fix', text: 'Hardened FEM reviewer approval validation for malformed validation summaries, duplicate assumptions or limitations, duplicate finding codes, and production-scope overclaims' },
+      { type: 'fix', text: 'Fixed OpenAI-compatible BYOK support for localhost and private self-hosted endpoints while keeping remote endpoints fail-closed without an API key' },
+    ],
+  },
+  {
+    version: '0.4.115',
+    date: '2026-06-04',
+    tag: '0.4.115 Release',
+    changes: [
       { type: 'fix', text: 'Hardened borehole-log async ingest finalization so failed page checkpoints are recorded as review findings instead of replayed through the final merge' },
       { type: 'fix', text: 'Preserved successful checkpoint data on large PDFs when a later visual page returns malformed provider JSON after retry' },
       { type: 'fix', text: 'Added regression coverage for mixed successful/failed borehole checkpoints with accurate successful and failed page counts' },

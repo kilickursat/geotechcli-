@@ -152,6 +152,7 @@ export {
   type FemPlaneStrainBiotConsolidationModel,
   type FemPlaneStrainBiotConsolidationResult,
   type FemPlaneStrainBiotGaussPointResult,
+  type FemPlaneStrainBiotLinearSolveAudit,
   type FemPlaneStrainBiotNumericalContract,
   type FemPlaneStrainBiotPressureAudit,
   type FemPlaneStrainBiotPressureDiagnostics,

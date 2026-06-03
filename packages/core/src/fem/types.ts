@@ -339,6 +339,7 @@ export interface FemResultBiotTransientAcceptance {
   dissipationCheckMode: 'drained-dissipation' | 'prescribed-gradient-relaxation';
   acceptedStepCount: number;
   requiredStepCount: number;
+  maxLinearSolveResidualNormRatio: number;
   maxResidualNormRatio: number;
   maxMassBalanceErrorRatio: number;
   maxPressureOvershootKpa: number;

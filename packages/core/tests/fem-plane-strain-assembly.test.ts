@@ -346,6 +346,8 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
     });
     expect(result.transientAcceptance.maxResidualNormRatio)
       .toBeLessThanOrEqual(result.policy.forceBalanceTolerance);
+    expect(result.transientAcceptance.maxLinearSolveResidualNormRatio)
+      .toBeLessThanOrEqual(result.timeSteps[0].linearSolveAudit.tolerance);
     expect(result.transientAcceptance.maxMassBalanceErrorRatio)
       .toBeLessThanOrEqual(result.policy.porePressureMassBalanceTolerance);
     expect(result.minPorePressureKpa).toBeGreaterThanOrEqual(0);
@@ -356,6 +358,10 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
     expect(result.pressureAudit.freePorePressureResidualL1M3PerS).toBe(
       result.timeSteps.at(-1)?.pressureAudit.freePorePressureResidualL1M3PerS,
     );
+    expect(result.linearSolveAudit).toEqual(result.timeSteps.at(-1)?.linearSolveAudit);
+    expect(result.timeSteps.every((step) => step.linearSolveAudit.converged)).toBe(true);
+    expect(result.timeSteps.every((step) => step.linearSolveAudit.unknownCount === result.coupledUnknownCount))
+      .toBe(true);
     expect(result.pressureDiagnostics).toEqual(result.timeSteps.at(-1)?.pressureDiagnostics);
     expect(result.pressureDiagnostics.averagePorePressureKpa).toBeGreaterThanOrEqual(0);
     expect(result.pressureDiagnostics.porePressureDissipationRatio).toBeGreaterThanOrEqual(0);
@@ -531,6 +537,9 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
     }, 0) / totalWeight;
     const degreeOfConsolidation = 1 - (finalAveragePressureKpa / initialPorePressureKpa);
     const referenceDegreeOfConsolidation = terzaghiAverageConsolidation(timeFactor);
+    const maxLinearSolveResidualNormRatio = Math.max(
+      ...result.timeSteps.map((step) => step.linearSolveAudit.residualNormRatio),
+    );
 
     expect(result.productionReady).toBe(false);
     expect(result.converged).toBe(true);
@@ -545,6 +554,15 @@ describe('plane-strain Quad4 global assembly evidence kernel', () => {
       result.pressureDiagnostics.porePressureDissipationRatio,
       10,
     );
+    expect(result.transientAcceptance.maxLinearSolveResidualNormRatio)
+      .toBeCloseTo(maxLinearSolveResidualNormRatio, 12);
+    expect(maxLinearSolveResidualNormRatio).toBeLessThanOrEqual(result.timeSteps[0].linearSolveAudit.tolerance);
+    expect(result.timeSteps.every((step) =>
+      step.linearSolveAudit.schemaVersion === 'fem-plane-strain-biot-linear-solve-audit.v1' &&
+      step.linearSolveAudit.solver === 'dense-gaussian-direct' &&
+      step.linearSolveAudit.unknownCount === result.coupledUnknownCount &&
+      step.linearSolveAudit.converged)).toBe(true);
+    expect(result.linearSolveAudit).toEqual(result.timeSteps.at(-1)?.linearSolveAudit);
     expect(result.massBalanceErrorRatio).toBeLessThanOrEqual(result.policy.porePressureMassBalanceTolerance);
     expect(result.minPorePressureKpa).toBe(0);
     expect(result.maxPorePressureKpa).toBeLessThan(initialPorePressureKpa);

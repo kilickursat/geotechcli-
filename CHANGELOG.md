@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.116] - 2026-06-04
+
+### FEM Evidence Audits and BYOK Local Provider Fixes
+
+- Added per-step dense direct linear-solve residual audits to the plane-strain Biot u-p consolidation evidence kernel, including final-step audit metadata and aggregate transient acceptance thresholds.
+- Hardened persisted FEM reviewer approval validation so malformed validation summaries, duplicate or blank assumptions/limitations, duplicate finding codes, and experimental approvals that overclaim production scope fail closed.
+- Fixed OpenAI-compatible BYOK support for localhost/private self-hosted endpoints by allowing no-auth local servers, normalizing trailing base URL slashes, and keeping remote endpoints fail-closed without an API key.
+- Full production FEM remains blocked behind production sparse/coupled nonlinear solvers, external commercial benchmark acceptance, support-design code checks, and project approval enforcement.
+
 ## [0.4.115] - 2026-06-04
 
 ### Large PDF Ingest Finalization Hotfix

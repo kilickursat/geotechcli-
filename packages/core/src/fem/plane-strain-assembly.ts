@@ -401,6 +401,7 @@ export interface FemPlaneStrainBiotStepResult {
   step: number;
   timeSeconds: number;
   deltaTimeSeconds: number;
+  linearSolveAudit: FemPlaneStrainBiotLinearSolveAudit;
   maxFreeResidualKn: number;
   residualNormRatio: number;
   maxFreePorePressureResidualM3PerS: number;
@@ -421,6 +422,7 @@ export interface FemPlaneStrainBiotTransientAcceptance {
   dissipationCheckMode: 'drained-dissipation' | 'prescribed-gradient-relaxation';
   acceptedStepCount: number;
   requiredStepCount: number;
+  maxLinearSolveResidualNormRatio: number;
   maxResidualNormRatio: number;
   maxMassBalanceErrorRatio: number;
   maxPressureOvershootKpa: number;
@@ -429,6 +431,16 @@ export interface FemPlaneStrainBiotTransientAcceptance {
   monotonicMaxPressureEnvelope: boolean;
   finalPorePressureDissipationRatio: number;
   blockerCodes: string[];
+}
+
+export interface FemPlaneStrainBiotLinearSolveAudit {
+  schemaVersion: 'fem-plane-strain-biot-linear-solve-audit.v1';
+  solver: 'dense-gaussian-direct';
+  unknownCount: number;
+  residualInfinityNorm: number;
+  residualNormRatio: number;
+  tolerance: number;
+  converged: boolean;
 }
 
 export interface FemPlaneStrainBiotNumericalContract {
@@ -493,6 +505,7 @@ export interface FemPlaneStrainBiotConsolidationResult {
   maxBiotCouplingKpa: number;
   maxFreeResidualKn: number;
   residualNormRatio: number;
+  linearSolveAudit: FemPlaneStrainBiotLinearSolveAudit;
   maxFreePorePressureResidualM3PerS: number;
   freePorePressureResidualL1M3PerS: number;
   pressureAudit: FemPlaneStrainBiotPressureAudit;
@@ -954,6 +967,33 @@ function solveDenseLinearSystem(matrix: number[][], rhs: number[]): number[] {
 
 function matVec(matrix: number[][], vector: number[]): number[] {
   return matrix.map((row) => row.reduce((sum, value, index) => sum + value * vector[index], 0));
+}
+
+function auditDenseBiotLinearSolve(input: {
+  matrix: number[][];
+  rhs: number[];
+  solution: number[];
+  tolerance: number;
+}): FemPlaneStrainBiotLinearSolveAudit {
+  const product = input.matrix.length > 0 ? matVec(input.matrix, input.solution) : [];
+  const residual = product.map((value, index) => value - input.rhs[index]);
+  const residualInfinityNorm = Math.max(0, ...residual.map((value) => Math.abs(value)));
+  const scale = Math.max(
+    1,
+    ...input.rhs.map((value) => Math.abs(value)),
+    ...product.map((value) => Math.abs(value)),
+  );
+  const residualNormRatio = residualInfinityNorm / scale;
+
+  return {
+    schemaVersion: 'fem-plane-strain-biot-linear-solve-audit.v1',
+    solver: 'dense-gaussian-direct',
+    unknownCount: input.rhs.length,
+    residualInfinityNorm: Number(residualInfinityNorm.toExponential(12)),
+    residualNormRatio: Number(residualNormRatio.toExponential(12)),
+    tolerance: Number(input.tolerance.toExponential(12)),
+    converged: residualNormRatio <= input.tolerance,
+  };
 }
 
 function dot(a: number[], b: number[]): number {
@@ -1432,6 +1472,11 @@ export function runPlaneStrainBiotConsolidation(
   const policy = model.policy ?? DEFAULT_FEM_CONVERGENCE_POLICY;
   validateConvergencePolicy(policy);
   validateBiotTransientStepPolicy(model.timeStepsSeconds, policy);
+  const linearSolveTolerance = Math.min(
+    policy.residualTolerance,
+    policy.forceBalanceTolerance,
+    policy.porePressureMassBalanceTolerance,
+  );
   const nodeIndexById = new Map(model.nodes.map((node, index) => [node.id, index]));
   const materialById = new Map(model.materials.map((material) => [material.id, material]));
   const displacementDofCount = model.nodes.length * 2;
@@ -1624,6 +1669,12 @@ export function runPlaneStrainBiotConsolidation(
   let lastMaxFreeResidualKn = 0;
   let lastMaxFreePorePressureResidualM3PerS = 0;
   let lastFreePorePressureResidualL1M3PerS = 0;
+  let lastLinearSolveAudit = auditDenseBiotLinearSolve({
+    matrix: [],
+    rhs: [],
+    solution: [],
+    tolerance: linearSolveTolerance,
+  });
   let lastPressureAudit: FemPlaneStrainBiotPressureAudit = {
     freePorePressureResidualL1M3PerS: 0,
     prescribedPorePressureResidualL1M3PerS: 0,
@@ -1653,6 +1704,12 @@ export function runPlaneStrainBiotConsolidation(
     for (const [index, value] of prescribedDisplacements) displacement[index] = value;
     for (const [index, value] of prescribedPressures) porePressure[index] = value;
 
+    let linearSolveAudit = auditDenseBiotLinearSolve({
+      matrix: [],
+      rhs: [],
+      solution: [],
+      tolerance: linearSolveTolerance,
+    });
     if (coupledUnknownCount > 0) {
       const matrix = Array.from({ length: coupledUnknownCount }, () => new Array<number>(coupledUnknownCount).fill(0));
       const rhs = new Array<number>(coupledUnknownCount).fill(0);
@@ -1706,6 +1763,12 @@ export function runPlaneStrainBiotConsolidation(
       }
 
       const solved = solveDenseLinearSystem(matrix, rhs);
+      linearSolveAudit = auditDenseBiotLinearSolve({
+        matrix,
+        rhs,
+        solution: solved,
+        tolerance: linearSolveTolerance,
+      });
       for (const [index, dof] of freeDisplacementDofs.entries()) displacement[dof] = solved[index];
       for (const [index, dof] of freePressureDofs.entries()) {
         porePressure[dof] = normalizeBiotPorePressure(
@@ -1806,12 +1869,14 @@ export function runPlaneStrainBiotConsolidation(
     };
     const maxVerticalSettlementM = Math.max(0, -Math.min(...model.nodes.map((_, index) => displacement[dofIndex(index, 'uy')])));
     const acceptedByPolicy = residualNormRatio <= policy.forceBalanceTolerance &&
-      massBalanceErrorRatio <= policy.porePressureMassBalanceTolerance;
+      massBalanceErrorRatio <= policy.porePressureMassBalanceTolerance &&
+      linearSolveAudit.converged;
 
     timeSteps.push({
       step: stepIndex + 1,
       timeSeconds: round(timeSeconds, 8),
       deltaTimeSeconds: round(deltaTimeSeconds, 8),
+      linearSolveAudit,
       maxFreeResidualKn: round(maxFreeResidualKn, 12),
       residualNormRatio: round(residualNormRatio, 12),
       maxFreePorePressureResidualM3PerS: Number(maxFreePorePressureResidualM3PerS.toExponential(12)),
@@ -1835,6 +1900,7 @@ export function runPlaneStrainBiotConsolidation(
     lastMaxFreeResidualKn = maxFreeResidualKn;
     lastMaxFreePorePressureResidualM3PerS = maxFreePorePressureResidualM3PerS;
     lastFreePorePressureResidualL1M3PerS = freePressureResidualSum;
+    lastLinearSolveAudit = linearSolveAudit;
     lastPressureAudit = pressureAudit;
     lastPressureDiagnostics = pressureDiagnostics;
     lastMinPorePressureKpa = minPorePressureKpa;
@@ -1847,10 +1913,15 @@ export function runPlaneStrainBiotConsolidation(
   let previousMaxPressure = pressureUpperBoundKpa;
   let maxPressureOvershootKpa = 0;
   let maxResidualNormRatio = 0;
+  let maxLinearSolveResidualNormRatio = 0;
   let maxMassBalanceErrorRatio = 0;
   const pressureMonotonicToleranceKpa = 1e-8;
   for (const step of timeSteps) {
     maxResidualNormRatio = Math.max(maxResidualNormRatio, step.residualNormRatio);
+    maxLinearSolveResidualNormRatio = Math.max(
+      maxLinearSolveResidualNormRatio,
+      step.linearSolveAudit.residualNormRatio,
+    );
     maxMassBalanceErrorRatio = Math.max(maxMassBalanceErrorRatio, step.massBalanceErrorRatio);
     maxPressureOvershootKpa = Math.max(maxPressureOvershootKpa, step.pressureDiagnostics.pressureOvershootKpa);
     if (
@@ -1879,6 +1950,9 @@ export function runPlaneStrainBiotConsolidation(
     ...(maxResidualNormRatio > policy.forceBalanceTolerance
       ? ['force-residual-tolerance-exceeded']
       : []),
+    ...(maxLinearSolveResidualNormRatio > linearSolveTolerance
+      ? ['linear-solve-residual-tolerance-exceeded']
+      : []),
     ...(maxMassBalanceErrorRatio > policy.porePressureMassBalanceTolerance
       ? ['pore-pressure-mass-balance-tolerance-exceeded']
       : []),
@@ -1898,6 +1972,7 @@ export function runPlaneStrainBiotConsolidation(
     dissipationCheckMode,
     acceptedStepCount,
     requiredStepCount: policy.minAcceptedSteps,
+    maxLinearSolveResidualNormRatio: Number(maxLinearSolveResidualNormRatio.toExponential(12)),
     maxResidualNormRatio: round(maxResidualNormRatio, 12),
     maxMassBalanceErrorRatio: round(maxMassBalanceErrorRatio, 12),
     maxPressureOvershootKpa: round(maxPressureOvershootKpa, 8),
@@ -2003,6 +2078,7 @@ export function runPlaneStrainBiotConsolidation(
     maxBiotCouplingKpa: round(maxBiotCouplingKpa, 8),
     maxFreeResidualKn: round(lastMaxFreeResidualKn, 12),
     residualNormRatio: round(lastResidualNormRatio, 12),
+    linearSolveAudit: lastLinearSolveAudit,
     maxFreePorePressureResidualM3PerS: Number(lastMaxFreePorePressureResidualM3PerS.toExponential(12)),
     freePorePressureResidualL1M3PerS: Number(lastFreePorePressureResidualL1M3PerS.toExponential(12)),
     pressureAudit: lastPressureAudit,

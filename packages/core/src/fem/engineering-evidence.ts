@@ -665,6 +665,36 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+}
+
+function validateNonEmptyStringArray(
+  blockers: string[],
+  value: unknown,
+  field: string,
+  options: { requireOne?: boolean } = {},
+): void {
+  if (!Array.isArray(value) || (options.requireOne === true && value.length === 0)) {
+    blockers.push(`${field}.missing`);
+    return;
+  }
+  if (value.length === 0) return;
+
+  const seen = new Set<string>();
+  for (const [index, item] of value.entries()) {
+    if (!isNonEmptyString(item)) {
+      blockers.push(`${field}.${index}.missing`);
+      continue;
+    }
+    const normalized = item.trim().toLowerCase();
+    if (seen.has(normalized)) {
+      blockers.push(`${field}.${index}.duplicate`);
+    }
+    seen.add(normalized);
+  }
+}
+
 function hasPublishedCitation(citation: FemExternalBenchmarkPublishedCitation | undefined): boolean {
   return citation != null &&
     isNonEmptyString(citation.title) &&
@@ -2153,19 +2183,29 @@ export function validateFemReviewerApprovalRecord(
   if (!record.recordId || record.recordId.trim().length < 6) blockers.push('record-id.missing');
   if (!record.caseId || record.caseId.trim().length < 3) blockers.push('case-id.missing');
   if (!record.caseHashSha256 || !/^[a-f0-9]{64}$/i.test(record.caseHashSha256)) blockers.push('case-hash.invalid');
+  const validationSummary = record.validationSummary;
   if (
-    !record.validationSummary ||
-    (record.validationSummary.status !== 'ready' &&
-      record.validationSummary.status !== 'review' &&
-      record.validationSummary.status !== 'blocked')
+    !validationSummary ||
+    (validationSummary.status !== 'ready' &&
+      validationSummary.status !== 'review' &&
+      validationSummary.status !== 'blocked')
   ) {
     blockers.push('validation-summary.status.invalid');
   }
-  if (record.validationSummary && record.validationSummary.blockers > 0) {
-    blockers.push('validation-summary.blocked');
-  }
-  if (!Array.isArray(record.validationSummary?.findingCodes)) {
-    blockers.push('validation-summary.finding-codes.missing');
+  if (validationSummary) {
+    if (!isNonNegativeInteger(validationSummary.blockers)) {
+      blockers.push('validation-summary.blockers.invalid');
+    } else if (validationSummary.blockers > 0 || validationSummary.status === 'blocked') {
+      blockers.push('validation-summary.blocked');
+    }
+    if (!isNonNegativeInteger(validationSummary.reviewItems)) {
+      blockers.push('validation-summary.review-items.invalid');
+    } else if (validationSummary.status === 'ready' && validationSummary.reviewItems > 0) {
+      blockers.push('validation-summary.ready-with-review-items');
+    } else if (validationSummary.status === 'review' && validationSummary.reviewItems === 0) {
+      blockers.push('validation-summary.review-items.missing');
+    }
+    validateNonEmptyStringArray(blockers, validationSummary.findingCodes, 'validation-summary.finding-codes');
   }
   if (!record.reviewer?.name || record.reviewer.name.trim().length < 3) blockers.push('reviewer.name.missing');
   if (!record.reviewer?.licenseId || record.reviewer.licenseId.trim().length < 3) blockers.push('reviewer.license-id.missing');
@@ -2175,10 +2215,15 @@ export function validateFemReviewerApprovalRecord(
   } else if (record.scope === 'production-design') {
     blockers.push('scope.production-design-blocked');
   }
-  if (!Array.isArray(record.assumptions) || record.assumptions.length === 0) blockers.push('assumptions.missing');
-  if (!Array.isArray(record.limitations) || record.limitations.length === 0) blockers.push('limitations.missing');
+  validateNonEmptyStringArray(blockers, record.assumptions, 'assumptions', { requireOne: true });
+  validateNonEmptyStringArray(blockers, record.limitations, 'limitations', { requireOne: true });
   if (!record.approvalStatement || !/\b(reviewed|approved|accepted)\b/i.test(record.approvalStatement)) {
     blockers.push('approval-statement.missing-review-language');
+  } else if (
+    record.scope === 'experimental-preview' &&
+    /\bproduction(?:\s|-)?(?:design|ready|use|calculation)\b/i.test(record.approvalStatement)
+  ) {
+    blockers.push('approval-statement.production-scope-overclaim');
   }
 
   const approvedAt = record.approvedAt ? Date.parse(record.approvedAt) : NaN;

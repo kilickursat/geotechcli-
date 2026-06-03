@@ -25,6 +25,38 @@ interface OpenAIChatResponse {
   };
 }
 
+function normalizeBaseUrl(baseUrl: string): string {
+  return baseUrl.replace(/\/+$/, '');
+}
+
+function isPrivateIpv4(hostname: string): boolean {
+  const parts = hostname.split('.').map((part) => Number(part));
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
+    return false;
+  }
+  const [a, b] = parts;
+  return a === 10 ||
+    (a === 127) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168);
+}
+
+function allowsUnauthenticatedLocalEndpoint(baseUrl: string): boolean {
+  try {
+    const url = new URL(baseUrl);
+    const hostname = url.hostname.toLowerCase();
+    return hostname === 'localhost' ||
+      hostname === '0.0.0.0' ||
+      hostname === '::1' ||
+      hostname === '[::1]' ||
+      hostname === 'host.docker.internal' ||
+      hostname.endsWith('.local') ||
+      isPrivateIpv4(hostname);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * OpenAI-compatible adapter.
  *
@@ -66,13 +98,15 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
     request: CompletionRequest,
     config: LLMConfig,
   ): Promise<CompletionResponse> {
-    if (!config.apiKey) {
+    const effectiveBaseUrl = normalizeBaseUrl(config.baseUrl ?? this.baseUrl);
+    const apiKey = config.apiKey?.trim() ?? '';
+    const hasApiKey = apiKey.length > 0;
+    if (!hasApiKey && !allowsUnauthenticatedLocalEndpoint(effectiveBaseUrl)) {
       throw new Error(
-        `API key is required for ${this.name}. Set it via config or environment variable.`,
+        `API key is required for ${this.name} remote endpoints. Set it via config or environment variable, or use a localhost/private OpenAI-compatible base URL for no-auth local servers.`,
       );
     }
 
-    const effectiveBaseUrl = config.baseUrl ?? this.baseUrl;
     const model =
       request.model ?? config.modelId ?? this.defaultModel;
     const capabilities = resolveProviderCapabilities(config, { model });
@@ -136,7 +170,7 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.apiKey}`,
+        ...(hasApiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
       },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(config.timeout ?? 60_000),
