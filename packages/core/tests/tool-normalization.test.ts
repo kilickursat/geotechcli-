@@ -75,4 +75,25 @@ describe('tool normalization', () => {
       ],
     });
   });
+
+  it('normalizes route-backed Drucker-Prager FEM draft aliases and material strength inputs', () => {
+    expect(
+      normalizeToolArgs('prepare_fem_analysis_case', {
+        objective: 'Drucker Prager excavation',
+        excavationLength: 22,
+        excavationWidth: 14,
+        excavationDepth: 9,
+        frictionAngle: 32,
+        cohesion: 10,
+        hardeningModulus: 5000,
+      }),
+    ).toMatchObject({
+      objective: 'excavation-plane-strain-dp-adaptive',
+      material: {
+        frictionAngleDeg: 32,
+        cohesionKpa: 10,
+        hardeningModulusKpa: 5000,
+      },
+    });
+  });
 });

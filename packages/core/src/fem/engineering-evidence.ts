@@ -628,6 +628,21 @@ const DEFAULT_EXTERNAL_BENCHMARK_REFERENCES: FemExternalBenchmarkReference[] = [
       retrievedAt: '2026-06-04',
     },
   },
+  {
+    id: 'opengeosys-liquid-flow-vogel-massmann-benchmarks',
+    sourceType: 'open-source-solver',
+    label: 'OpenGeoSys Liquid Flow Vogel/Massmann verification benchmark reference',
+    citation: 'OpenGeoSys Documentation, Liquid Flow verification examples by Vogel and Maßmann, including the h1_1Dsteady saturated groundwater-flow benchmark against analytical solutions.',
+    referenceSolver: {
+      name: 'OpenGeoSys',
+      version: '6.5.7 documentation',
+      vendor: 'OpenGeoSys project',
+      analysisProcedure: 'LIQUID_FLOW saturated single-phase Darcy flow verification',
+      elementType: 'Liquid Flow finite elements',
+      url: 'https://www.opengeosys.org/6.5.7/docs/benchmarks/liquid-flow/liquid_flow-bgr/',
+      retrievedAt: '2026-06-04',
+    },
+  },
 ];
 
 function degToRad(degrees: number): number {
@@ -1292,12 +1307,19 @@ function buildDefaultExternalBenchmarkComparisonResults(input: {
   openGeoSysConsolidation: ReturnType<typeof runPlaneStrainBiotConsolidation>;
   openGeoSysConsolidationDimensionlessTime: number;
   openGeoSysConsolidationLoadKpa: number;
+  openGeoSysLiquidFlowSeepage: ReturnType<typeof runPlaneStrainSteadySeepage>;
+  openGeoSysLiquidFlowDomainLengthM: number;
+  openGeoSysLiquidFlowUpstreamHeadM: number;
+  openGeoSysLiquidFlowDownstreamHeadM: number;
+  openGeoSysLiquidFlowExpectedBoundaryFluxM3PerS: number;
 }): FemExternalBenchmarkComparisonResult[] {
   const consolidationRequirement = DEFAULT_EXTERNAL_BENCHMARK_REQUIRED_QUANTITIES
     .find((requirement) => requirement.id === 'consolidation-settlement-time-curve');
   const biotRequirement = DEFAULT_EXTERNAL_BENCHMARK_REQUIRED_QUANTITIES
     .find((requirement) => requirement.id === 'biot-pore-pressure-dissipation');
-  if (!consolidationRequirement || !biotRequirement) {
+  const seepageRequirement = DEFAULT_EXTERNAL_BENCHMARK_REQUIRED_QUANTITIES
+    .find((requirement) => requirement.id === 'seepage-head-flux-gradient');
+  if (!consolidationRequirement || !biotRequirement || !seepageRequirement) {
     throw new Error('Default FEM external benchmark quantity requirements are missing.');
   }
 
@@ -1458,6 +1480,61 @@ function buildDefaultExternalBenchmarkComparisonResults(input: {
     }) &&
     seriesSummarySatisfiesRequirementTolerance(ogsSeries, biotRequirement);
 
+  const seepageDeltaHeadM = input.openGeoSysLiquidFlowUpstreamHeadM - input.openGeoSysLiquidFlowDownstreamHeadM;
+  const seepagePoints = input.openGeoSysLiquidFlowSeepage.nodes
+    .map((node) => ({
+      x: node.xM,
+      actual: node.headM,
+      expected: input.openGeoSysLiquidFlowUpstreamHeadM -
+        seepageDeltaHeadM * (node.xM / input.openGeoSysLiquidFlowDomainLengthM),
+    }))
+    .sort((left, right) => left.x - right.x || left.actual - right.actual);
+  const seepageSeries = buildFemExternalBenchmarkSeriesSummary({
+    xQuantity: 'horizontal coordinate',
+    xUnit: 'm',
+    yQuantity: 'hydraulic head',
+    yUnit: 'm',
+    points: seepagePoints,
+    notes: [
+      'Quad4 plane-strain steady Darcy seepage head profile compared with the OpenGeoSys Liquid Flow h1_1Dsteady analytical verification class.',
+      'Boundary flux, hydraulic gradient, and head profile are checked together; commercial solver comparison remains missing.',
+    ],
+  });
+  const seepageActual = input.openGeoSysLiquidFlowSeepage.totalPositiveBoundaryFluxM3PerS;
+  const seepageExpected = input.openGeoSysLiquidFlowExpectedBoundaryFluxM3PerS;
+  const seepageEvidencePayload = {
+    schemaVersion: 'fem-external-benchmark-evidence.v1',
+    caseId: 'opengeosys-liquid-flow-h1-1dsteady-head-flux-gradient',
+    sourceId: 'opengeosys-liquid-flow-vogel-massmann-benchmarks',
+    method: input.openGeoSysLiquidFlowSeepage.method,
+    headDofCount: input.openGeoSysLiquidFlowSeepage.headDofCount,
+    freeHeadDofCount: input.openGeoSysLiquidFlowSeepage.freeHeadDofCount,
+    constrainedHeadDofCount: input.openGeoSysLiquidFlowSeepage.constrainedHeadDofCount,
+    massBalanceErrorRatio: input.openGeoSysLiquidFlowSeepage.massBalanceErrorRatio,
+    upstreamHeadM: input.openGeoSysLiquidFlowUpstreamHeadM,
+    downstreamHeadM: input.openGeoSysLiquidFlowDownstreamHeadM,
+    expectedBoundaryFluxM3PerS: seepageExpected,
+    seriesHashSha256: seepageSeries.seriesHashSha256,
+  };
+  const seepageResultPayload = {
+    actual: seepageActual,
+    expected: seepageExpected,
+    massBalanceErrorRatio: input.openGeoSysLiquidFlowSeepage.massBalanceErrorRatio,
+    maxAbsoluteError: seepageSeries.maxAbsoluteError,
+    maxRelativeError: seepageSeries.maxRelativeError,
+    resultSeriesHashSha256: seepageSeries.seriesHashSha256,
+  };
+  const seepageAccepted = input.openGeoSysLiquidFlowSeepage.converged &&
+    externalBenchmarkFinalAccepted({
+      actual: seepageActual,
+      expected: seepageExpected,
+      tolerance: seepageRequirement.tolerance,
+      toleranceType: seepageRequirement.toleranceType,
+      unit: seepageRequirement.unit,
+      quantity: seepageRequirement.quantity,
+    }) &&
+    seriesSummarySatisfiesRequirementTolerance(seepageSeries, seepageRequirement);
+
   return [
     {
       id: 'published-terzaghi-1d-consolidation-tv-0-197',
@@ -1554,6 +1631,45 @@ function buildDefaultExternalBenchmarkComparisonResults(input: {
       notes: [
         'Generated open-source solver comparison record against the OpenGeoSys staggered consolidation benchmark analytical pressure profile.',
         'This adds open-source cross-solver evidence but does not satisfy the required commercial-solver production benchmark gate.',
+      ],
+    },
+    {
+      id: 'opengeosys-liquid-flow-h1-1dsteady-head-flux-gradient',
+      quantityRequirementId: seepageRequirement.id,
+      referenceId: 'opengeosys-liquid-flow-vogel-massmann-benchmarks',
+      caseId: 'opengeosys-liquid-flow-h1-1dsteady-head-flux-gradient',
+      comparisonKind: 'series-summary',
+      metricName: 'steadyDarcyHeadFluxGradient',
+      quantity: seepageRequirement.quantity,
+      unit: seepageRequirement.unit,
+      actual: round(seepageActual, 12),
+      expected: round(seepageExpected, 12),
+      tolerance: seepageRequirement.tolerance,
+      toleranceType: seepageRequirement.toleranceType,
+      accepted: seepageAccepted,
+      candidateSolver: {
+        name: 'geotechCLI FEM evidence suite',
+        version: 'strong-beta',
+        solverType: 'geotechcli-kernel',
+        analysisProcedure: 'Quad4 plane-strain steady Darcy seepage head solve',
+        elementType: 'Quad4 plane-strain hydraulic-head evidence mesh',
+        runId: 'opengeosys-liquid-flow-h1-1dsteady-head-flux-gradient',
+      },
+      referenceSolver: {
+        name: 'OpenGeoSys',
+        version: '6.5.7 documentation',
+        vendor: 'OpenGeoSys project',
+        solverType: 'open-source-solver',
+        analysisProcedure: 'LIQUID_FLOW h1_1Dsteady analytical verification benchmark',
+        elementType: 'Liquid Flow finite elements',
+        runId: 'LiquidFlow/Vogel-Massmann/h1_1Dsteady',
+      },
+      evidenceHashSha256: hashFemBenchmarkPayload(seepageEvidencePayload),
+      resultHashSha256: hashFemBenchmarkPayload(seepageResultPayload),
+      seriesSummary: seepageSeries,
+      notes: [
+        'Generated open-source solver comparison record against the OpenGeoSys Liquid Flow saturated Darcy verification class.',
+        'This partially covers seepage head/flux/gradient evidence but does not satisfy the required published-source or commercial-solver production benchmark gates.',
       ],
     },
   ];
@@ -2935,8 +3051,8 @@ export function runFemEngineeringEvidenceSuite(
   const seepage2dMesh = buildPlaneStrainRectangularMesh({
     widthM: 20,
     heightM: 5,
-    divisionsX: 2,
-    divisionsY: 1,
+    divisionsX: 8,
+    divisionsY: 2,
     materialId: 'soil',
   });
   const seepage2d = runPlaneStrainSteadySeepage({
@@ -3649,6 +3765,11 @@ export function runFemEngineeringEvidenceSuite(
       openGeoSysConsolidation,
       openGeoSysConsolidationDimensionlessTime,
       openGeoSysConsolidationLoadKpa,
+      openGeoSysLiquidFlowSeepage: seepage2d,
+      openGeoSysLiquidFlowDomainLengthM: 20,
+      openGeoSysLiquidFlowUpstreamHeadM: 10,
+      openGeoSysLiquidFlowDownstreamHeadM: 6,
+      openGeoSysLiquidFlowExpectedBoundaryFluxM3PerS: seepage2dExpectedFlow,
     }),
   });
 

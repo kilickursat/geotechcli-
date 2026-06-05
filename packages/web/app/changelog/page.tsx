@@ -8,6 +8,16 @@ const releases = [
     date: '2026-06-04',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added an OpenGeoSys Liquid Flow h1_1Dsteady open-source comparison for steady Darcy seepage head, flux, and gradient evidence' },
+      { type: 'feat', text: 'Added a route-backed excavation-plane-strain-dp-adaptive draft path with hardening-modulus parsing and approval-bearing run templates' },
+      { type: 'fix', text: 'Extended default hosted GLM, agent normalization, CLI, routing, and draft-run smoke coverage for reviewed DP adaptive FEM execution' },
+    ],
+  },
+  {
+    version: '0.4.122',
+    date: '2026-06-04',
+    tag: '0.4.122 Release',
+    changes: [
       { type: 'fix', text: 'Made persisted fem-reviewer-approval.v1 metadata mandatory for every reviewed experimental geotech fem run' },
       { type: 'fix', text: 'Updated FEM route, GroundModel workspace acceptance, docs, and agent command templates to include approval persistence metadata' },
       { type: 'fix', text: 'Extended CLI and draft-run smoke coverage across raft, excavation, tunnel, consolidation, nonlinear-column, and Biot u-p scenarios' },

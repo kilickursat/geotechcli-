@@ -23,6 +23,7 @@ describe('FEM routing contract', () => {
     expect(capabilities.map((capability) => capability.objective)).toEqual([
       'foundation-settlement',
       'excavation-deformation',
+      'excavation-plane-strain-dp-adaptive',
       'shaft-deformation',
       'tunnel-volume-loss-settlement',
       'pile-group-elastic-interaction',
@@ -40,6 +41,12 @@ describe('FEM routing contract', () => {
     expect(capabilities.find((capability) => capability.objective === 'excavation-deformation')?.runCommandTemplate).toBe('geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction>');
     expect(capabilities.find((capability) => capability.objective === 'excavation-deformation')?.requiredEvidence).toContain('support reaction screening check');
     expect(capabilities.find((capability) => capability.objective === 'excavation-deformation')?.reviewGates).toContain('not-jurisdiction-specific-structural-design');
+    expect(capabilities.find((capability) => capability.objective === 'excavation-plane-strain-dp-adaptive')?.status).toBe('implemented-demo');
+    expect(capabilities.find((capability) => capability.objective === 'excavation-plane-strain-dp-adaptive')?.executionMode).toBe('human-reviewed-preview');
+    expect(capabilities.find((capability) => capability.objective === 'excavation-plane-strain-dp-adaptive')?.deterministicBackend).toBe('builtin-plane-strain-dp-adaptive-v0');
+    expect(capabilities.find((capability) => capability.objective === 'excavation-plane-strain-dp-adaptive')?.runCommandTemplate).toBe('geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction> --backend plane-strain-dp-adaptive');
+    expect(capabilities.find((capability) => capability.objective === 'excavation-plane-strain-dp-adaptive')?.reviewGates).toContain('plane-strain-idealization');
+    expect(capabilities.find((capability) => capability.objective === 'excavation-plane-strain-dp-adaptive')?.reviewGates).toContain('nonlinear-preview-only');
     expect(capabilities.find((capability) => capability.objective === 'tunnel-volume-loss-settlement')?.status).toBe('implemented-demo');
     expect(capabilities.find((capability) => capability.objective === 'tunnel-volume-loss-settlement')?.command).toBe('geotech fem draft tunnel-volume-loss-settlement --input <json> --case-output <analysis_case.json>');
     expect(capabilities.find((capability) => capability.objective === 'tunnel-volume-loss-settlement')?.demoCommand).toBe('geotech fem demo tunnel --experimental');
@@ -192,6 +199,51 @@ describe('FEM routing contract', () => {
     expect(draft.analysisCase).toBeUndefined();
     expect(draft.missingUserInputs).toContain('valid excavation stage depths');
     expect(draft.recommendedCommand).toBe('geotech fem draft excavation-deformation --input <json> --case-output <analysis_case.json>');
+  });
+
+  it('prepares route-backed plane-strain Drucker-Prager excavation drafts with hardening metadata', () => {
+    const draft = prepareFemAnalysisCaseDraft({
+      objective: 'excavation-plane-strain-dp-adaptive',
+      geometry: {
+        excavationLengthM: 22,
+        excavationWidthM: 14,
+        excavationFinalDepthM: 9,
+        wallToeDepthM: 15,
+      },
+      excavation: {
+        stageDepthsM: [3, 6, 9],
+        supportLevelsM: [0, 2, 5],
+        wallType: 'secant_pile_wall',
+      },
+      load: { pressureKpa: 25 },
+      material: {
+        elasticModulusKpa: 36_000,
+        poissonRatio: 0.31,
+        unitWeightKnM3: 18.8,
+        frictionAngleDeg: 32,
+        cohesionKpa: 10,
+        hardeningModulusKpa: 5_000,
+      },
+      evidenceRefs: [{ id: 'ev-dp-1', source: 'GroundModel', page: 21 }],
+    });
+
+    expect(draft.implemented).toBe(true);
+    expect(draft.recommendedAction).toBe('run-reviewed-case');
+    expect(draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction> --backend plane-strain-dp-adaptive');
+    expect(draft.canAutoProceed).toBe(false);
+    expect(draft.analysisCase?.caseId).toBe('excavation-plane-strain-dp-adaptive-draft');
+    expect(draft.analysisCase?.objective).toBe('excavation_deformation');
+    expect(draft.analysisCase?.analysisType).toBe('static_2d_plane_strain_drucker_prager');
+    expect(draft.analysisCase?.mesh.elementType).toBe('quad4_plane_strain');
+    expect(draft.analysisCase?.materials[0]?.model).toBe('mohr_coulomb');
+    expect(draft.analysisCase?.materials[0]?.frictionAngleDeg).toBe(32);
+    expect(draft.analysisCase?.materials[0]?.cohesionKpa).toBe(10);
+    expect(draft.analysisCase?.materials[0]?.hardeningModulusKpa).toBe(5_000);
+    expect(draft.analysisCase?.materials[0]?.evidenceRefs).toEqual([{ id: 'ev-dp-1', source: 'GroundModel', page: 21 }]);
+    expect(draft.validation?.status).toBe('review');
+    expect(draft.reviewGates).toContain('plane-strain-idealization');
+    expect(draft.reviewGates).toContain('no-monolithic-seepage-or-consolidation-coupling');
+    expect(draft.reviewGates).toContain('not-design-calculation');
   });
 
   it('prepares tunnel volume-loss settlement drafts without pretending it is production FEM', () => {
@@ -990,9 +1042,11 @@ describe('FEM routing contract', () => {
     expect((productionResult.data as any).agentEvidenceSummary).toContain(
       'quad4-plane-strain-biot-u-p-effective-stress-coupling',
     );
-    expect((productionResult.data as any).agentEvidenceSummary).toContain('external benchmark comparison results: 3');
+    expect((productionResult.data as any).agentEvidenceSummary).toContain('external benchmark comparison results: 4');
     expect((productionResult.data as any).agentEvidenceSummary)
       .toContain('opengeosys-consolidation-staggered-biot-pressure-profile-t10');
+    expect((productionResult.data as any).agentEvidenceSummary)
+      .toContain('opengeosys-liquid-flow-h1-1dsteady-head-flux-gradient');
     expect((productionResult.data as any).agentEvidenceSummary).toContain('biot-u-p-route-backed-preview-is-not-production-sparse-solver');
 
     const draftResult = await toolRegistry.execute('prepare_fem_analysis_case', {

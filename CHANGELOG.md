@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.123] - 2026-06-04
+
+### FEM Benchmark And DP Route Evidence
+
+- Added an OpenGeoSys Liquid Flow `h1_1Dsteady` open-source comparison for steady Darcy seepage head, flux, and gradient evidence while keeping commercial benchmark blockers active.
+- Added a route-backed `excavation-plane-strain-dp-adaptive` draft path for reviewed plane-strain Drucker-Prager excavation cases, including `--hardening-modulus` CLI parsing and approval-bearing run templates.
+- Extended default hosted GLM, agent normalization, CLI, routing, and draft-run smoke coverage so the DP adaptive route drafts and runs only through human-reviewed experimental FEM approval records.
+
 ## [0.4.122] - 2026-06-04
 
 ### FEM Reviewed Run Approval Enforcement

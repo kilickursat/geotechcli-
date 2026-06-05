@@ -949,6 +949,102 @@ describe('registerFemCommand', () => {
     ]);
   });
 
+  it('prepares and runs a route-backed plane-strain DP adaptive excavation draft', async () => {
+    const { validateFemResultManifest } = await import('../../core/src/fem/index.js');
+    const registerFemCommand = await loadRegisterFemCommand();
+    const program = new Command();
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-fem-dp-route-'));
+    tempDirs.push(dir);
+    const casePath = join(dir, 'dp-route.analysis_case.json');
+    const resultPath = join(dir, 'dp-route.manifest.json');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    program.exitOverride();
+    registerFemCommand(program);
+
+    await program.parseAsync([
+      'fem',
+      'draft',
+      'excavation-dp-adaptive',
+      '--excavation-length',
+      '22',
+      '--excavation-width',
+      '14',
+      '--excavation-depth',
+      '9',
+      '--wall-toe-depth',
+      '15',
+      '--stage-depths',
+      '3,6,9',
+      '--support-levels',
+      '0,2,5',
+      '--pressure',
+      '25',
+      '--elastic-modulus',
+      '36000',
+      '--poisson-ratio',
+      '0.31',
+      '--unit-weight',
+      '18.8',
+      '--friction-angle',
+      '10',
+      '--cohesion',
+      '2',
+      '--hardening-modulus',
+      '5000',
+      '--case-output',
+      casePath,
+      '--json',
+    ], { from: 'user' });
+
+    const draftPayload = JSON.parse(collectLogText(logSpy).trim());
+    const caseFile = JSON.parse(await readFile(casePath, 'utf-8'));
+    expect(draftPayload.objective).toBe('excavation-plane-strain-dp-adaptive');
+    expect(draftPayload.draft.recommendedAction).toBe('run-reviewed-case');
+    expect(draftPayload.draft.recommendedCommand).toContain('--backend plane-strain-dp-adaptive');
+    expect(draftPayload.draft.canAutoProceed).toBe(false);
+    expect(caseFile.caseId).toBe('excavation-plane-strain-dp-adaptive-draft');
+    expect(caseFile.objective).toBe('excavation_deformation');
+    expect(caseFile.analysisType).toBe('static_2d_plane_strain_drucker_prager');
+    expect(caseFile.materials[0].model).toBe('mohr_coulomb');
+    expect(caseFile.materials[0].frictionAngleDeg).toBe(10);
+    expect(caseFile.materials[0].cohesionKpa).toBe(2);
+    expect(caseFile.materials[0].hardeningModulusKpa).toBe(5_000);
+    expect(draftPayload.draft.reviewGates).toContain('plane-strain-idealization');
+
+    logSpy.mockClear();
+    await program.parseAsync([
+      'fem',
+      'run',
+      casePath,
+      '--experimental',
+      '--reviewed',
+      ...femApprovalArgs(join(dir, 'dp-route-approval.json')),
+      '--backend',
+      'dp-adaptive',
+      '--output',
+      resultPath,
+      '--no-open',
+      '--json',
+    ], { from: 'user' });
+
+    const runPayload = JSON.parse(collectLogText(logSpy).trim());
+    const writtenManifest = JSON.parse(await readFile(resultPath, 'utf-8'));
+    expect(runPayload.kind).toBe('geotech-fem-run-result');
+    expect(runPayload.objective).toBe('excavation_deformation');
+    expect(runPayload.manifest.backend.id).toBe('builtin-plane-strain-dp-adaptive-v0');
+    expect(writtenManifest.backend.id).toBe('builtin-plane-strain-dp-adaptive-v0');
+    expect(runPayload.manifest.analysisCase.analysisType).toBe('static_2d_plane_strain_drucker_prager');
+    expect(runPayload.manifest.adaptiveLoadStepping.enabled).toBe(true);
+    expect(runPayload.manifest.envelope.maxSolverResidualRatio).toBeLessThanOrEqual(1e-3);
+    expect(runPayload.manifest.envelope.plasticGaussPointCount).toBeGreaterThan(0);
+    expect(runPayload.manifest.envelope.maxHardeningStressKpa).toBeGreaterThan(0);
+    expect(runPayload.manifest.backend.productionReady).toBe(false);
+    expect(JSON.stringify(runPayload)).not.toContain('"productionReady":true');
+    expect(validateFemResultManifest(writtenManifest).blockers).toBe(0);
+    expect(runPayload.warnings.join(' ')).toMatch(/plane-strain-dp-adaptive backend/i);
+    logSpy.mockRestore();
+  });
+
   it('requires explicit experimental acknowledgement for running FEM case files', async () => {
     const { buildRaftDemoAnalysisCase } = await import('../../core/src/fem/index.js');
     const registerFemCommand = await loadRegisterFemCommand();

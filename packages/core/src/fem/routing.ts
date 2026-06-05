@@ -5,6 +5,7 @@ import {
   buildStagedSettlementConsolidationDemoAnalysisCase,
   buildTunnelVolumeLossDemoAnalysisCase,
 } from './demo.js';
+import { buildPlaneStrainDruckerPragerAdaptiveExcavationDemoAnalysisCase } from './nonlinear-plane-strain-solver.js';
 import type {
   FemAnalysisCase,
   FemAssumption,
@@ -16,6 +17,7 @@ import { validateFemAnalysisCase } from './validation.js';
 export type FemRouteObjective =
   | 'foundation-settlement'
   | 'excavation-deformation'
+  | 'excavation-plane-strain-dp-adaptive'
   | 'shaft-deformation'
   | 'tunnel-volume-loss-settlement'
   | 'pile-group-elastic-interaction'
@@ -191,6 +193,24 @@ const CAPABILITIES: FemCapability[] = [
     demoCommand: 'geotech fem demo excavation --experimental',
     draftCommandTemplate: 'geotech fem draft excavation-deformation --input <json> --case-output <analysis_case.json>',
     runCommandTemplate: `geotech fem run <analysis_case.json> --experimental --reviewed ${FEM_REVIEWED_RUN_APPROVAL_TEMPLATE}`,
+  },
+  {
+    objective: 'excavation-plane-strain-dp-adaptive',
+    label: 'Plane-strain Drucker-Prager excavation preview',
+    status: 'implemented-demo',
+    executionMode: 'human-reviewed-preview',
+    agentRunAllowed: false,
+    analysisType: 'static_2d_plane_strain_drucker_prager',
+    deterministicBackend: 'builtin-plane-strain-dp-adaptive-v0',
+    description: 'Experimental reviewed nonlinear Quad4 plane-strain Drucker-Prager excavation preview with adaptive load stepping, convergence audit, and plasticity metadata.',
+    requiredEvidence: ['stratigraphy', 'groundwater condition', 'wall geometry', 'support levels', 'excavation stage depths', 'elastic stiffness basis', 'Mohr-Coulomb friction angle', 'Mohr-Coulomb cohesion', 'reviewed hardening modulus when used', 'support reaction screening check'],
+    requiredUserInputs: ['excavation length', 'excavation width', 'final depth', 'stage depths', 'wall/support assumptions', 'surcharge pressure', 'friction angle', 'cohesion', 'reviewed hardening modulus when used'],
+    visualizationFields: ['surface settlement', 'horizontal displacement', 'wall deflection proxy', 'plastic Gauss point count', 'adaptive load-step audit'],
+    reviewGates: ['experimental-only', 'nonlinear-preview-only', 'plane-strain-idealization', 'adaptive-load-stepping-audit-required', 'no-monolithic-seepage-or-consolidation-coupling', 'support-reaction-screening-only', 'not-jurisdiction-specific-structural-design', 'not-design-calculation'],
+    limitations: ['No production consistent tangent approval, calibrated hardening soil model, 2D/3D staged activation, seepage/consolidation DOFs, retaining wall member design, basal heave design, or independent commercial benchmark approval.'],
+    command: 'geotech fem draft excavation-plane-strain-dp-adaptive --input <json> --case-output <analysis_case.json>',
+    draftCommandTemplate: 'geotech fem draft excavation-plane-strain-dp-adaptive --input <json> --case-output <analysis_case.json>',
+    runCommandTemplate: `geotech fem run <analysis_case.json> --experimental --reviewed ${FEM_REVIEWED_RUN_APPROVAL_TEMPLATE} --backend plane-strain-dp-adaptive`,
   },
   {
     objective: 'shaft-deformation',
@@ -488,6 +508,7 @@ export function prepareFemAnalysisCaseDraft(input: PrepareFemAnalysisCaseDraftIn
   if (
     capability.objective !== 'foundation-settlement' &&
     capability.objective !== 'excavation-deformation' &&
+    capability.objective !== 'excavation-plane-strain-dp-adaptive' &&
     capability.objective !== 'tunnel-volume-loss-settlement' &&
     capability.objective !== 'staged-settlement-consolidation' &&
     capability.objective !== 'seepage-groundwater-coupling'
@@ -869,7 +890,7 @@ export function prepareFemAnalysisCaseDraft(input: PrepareFemAnalysisCaseDraftIn
     };
   }
 
-  if (capability.objective === 'excavation-deformation') {
+  if (capability.objective === 'excavation-deformation' || capability.objective === 'excavation-plane-strain-dp-adaptive') {
     const missing: string[] = [];
     const useDemoDefaults = input.useDemoDefaults === true;
     const lengthM = input.geometry?.excavationLengthM ?? (useDemoDefaults ? 18 : undefined);
@@ -972,7 +993,20 @@ export function prepareFemAnalysisCaseDraft(input: PrepareFemAnalysisCaseDraftIn
       analysisCase.groundwater.note = input.groundwater.note;
     }
 
-    const validation = validateFemAnalysisCase(analysisCase);
+    const routedAnalysisCase = capability.objective === 'excavation-plane-strain-dp-adaptive'
+      ? buildPlaneStrainDruckerPragerAdaptiveExcavationDemoAnalysisCase(analysisCase)
+      : analysisCase;
+    if (capability.objective === 'excavation-plane-strain-dp-adaptive') {
+      routedAnalysisCase.caseId = 'excavation-plane-strain-dp-adaptive-draft';
+      routedAnalysisCase.title = 'Experimental plane-strain Drucker-Prager excavation draft';
+      routedAnalysisCase.createdBy = 'geotechcli-fem-routing';
+      routedAnalysisCase.evidenceRefs = input.evidenceRefs ?? [];
+      routedAnalysisCase.materials.forEach((material) => {
+        material.evidenceRefs = input.evidenceRefs ?? [];
+      });
+    }
+
+    const validation = validateFemAnalysisCase(routedAnalysisCase);
     const reviewGates = [
       ...capability.reviewGates,
       ...validation.findings
@@ -990,10 +1024,10 @@ export function prepareFemAnalysisCaseDraft(input: PrepareFemAnalysisCaseDraftIn
       missingUserInputs: validation.status === 'blocked' ? validation.findings
         .filter((finding) => finding.severity === 'blocker')
         .map((finding) => finding.code) : [],
-      assumptions: analysisCase.assumptions,
+      assumptions: routedAnalysisCase.assumptions,
       reviewGates: [...new Set(reviewGates)],
-      evidenceRefs: analysisCase.evidenceRefs,
-      analysisCase,
+      evidenceRefs: routedAnalysisCase.evidenceRefs,
+      analysisCase: routedAnalysisCase,
       validation,
       recommendedCommand: commandForValidation(capability, validation),
     };

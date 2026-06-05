@@ -259,6 +259,9 @@ assert(runHelp.includes('--reviewed'), 'FEM run help must expose the human-revie
 assert(runHelp.includes('--approval-output'), 'FEM run help must expose approval persistence');
 assert(runHelp.includes('--reviewer-license'), 'FEM run help must expose reviewer license metadata');
 assert(runHelp.includes('--backend'), 'FEM run help must expose deterministic backend selection');
+const draftHelp = await runCli(['fem', 'draft', '--help']);
+assert(draftHelp.includes('excavation-plane-strain-dp-adaptive'), 'FEM draft help must expose the DP adaptive excavation objective');
+assert(draftHelp.includes('--hardening-modulus'), 'FEM draft help must expose reviewed hardening modulus input');
 
 const contractOnlyRoutes = [
   'shaft-deformation',
@@ -377,6 +380,42 @@ const cases = [
       '--elastic-modulus', '25000',
       '--poisson-ratio', '0.32',
       '--unit-weight', '18.8',
+    ],
+  },
+  {
+    name: 'excavation-dp-adaptive',
+    objective: 'excavation-plane-strain-dp-adaptive',
+    runArgs: ['--backend', 'plane-strain-dp-adaptive'],
+    expectedObjective: 'excavation_deformation',
+    expectedBackend: 'builtin-plane-strain-dp-adaptive-v0',
+    expectedEnvelope: {
+      maxSettlementMm: { min: 0, max: 1000 },
+      maxHorizontalDisplacementMm: { min: 0, max: 1000 },
+      maxWallDeflectionMm: { min: 0, max: 1000 },
+      totalExcavatedWeightKn: { equals: 52113.6, tolerance: 0.01 },
+      reactionKn: { equals: 52113.6, tolerance: 0.01 },
+      maxSolverResidualRatio: { min: 0, max: 0.001 },
+      maxYieldResidualRatio: { min: 0, max: 0.000001 },
+      plasticGaussPointCount: { min: 1, max: 10000 },
+      maxHardeningStressKpa: { min: 0, max: 100000 },
+      stageCount: { equals: 3, tolerance: 0.000001 },
+      adaptiveAcceptedStepCount: { min: 1, max: 64 },
+      adaptiveRejectedAttemptCount: { min: 0, max: 64 },
+    },
+    draftArgs: [
+      '--excavation-length', '22',
+      '--excavation-width', '14',
+      '--excavation-depth', '9',
+      '--wall-toe-depth', '15',
+      '--stage-depths', '3,6,9',
+      '--support-levels', '0,2,5',
+      '--pressure', '25',
+      '--elastic-modulus', '36000',
+      '--poisson-ratio', '0.31',
+      '--unit-weight', '18.8',
+      '--friction-angle', '10',
+      '--cohesion', '2',
+      '--hardening-modulus', '5000',
     ],
   },
   {
@@ -559,11 +598,12 @@ console.log(JSON.stringify({
   ok: true,
   outDir,
   agentBoundary: 'FEM agents plan, draft, and validate only; deterministic CLI runs require human-invoked geotech fem run --experimental --reviewed with persisted fem-reviewer-approval.v1 metadata.',
-  scenarioContract: 'Envelope ranges and cross-scenario trends passed for raft, excavation, tunnel, consolidation, and Biot seepage mock datasets.',
+  scenarioContract: 'Envelope ranges and cross-scenario trends passed for raft, elastic excavation, DP adaptive excavation, tunnel, consolidation, and Biot seepage mock datasets.',
   contractOnlyRoutes,
   referenceChecks: [
     'raft reaction balance',
     'excavation reaction partition',
+    'Drucker-Prager adaptive convergence and plasticity envelope',
     'tunnel prescribed-volume conservation',
     'Biot pore-pressure mass balance',
   ],

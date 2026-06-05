@@ -405,10 +405,11 @@ describe('geotech document benchmark', () => {
       schemaVersion: 1,
       providerNeutral: true,
       canAutoProceed: false,
-      candidateRoutes: 9,
+      candidateRoutes: 10,
       implementedPreviewRoutes: [
         'foundation-settlement',
         'excavation-deformation',
+        'excavation-plane-strain-dp-adaptive',
         'tunnel-volume-loss-settlement',
         'seepage-groundwater-coupling',
         'staged-settlement-consolidation',
@@ -427,6 +428,7 @@ describe('geotech document benchmark', () => {
       draftCommandRoutes: [
         'foundation-settlement',
         'excavation-deformation',
+        'excavation-plane-strain-dp-adaptive',
         'shaft-deformation',
         'tunnel-volume-loss-settlement',
         'pile-group-elastic-interaction',
@@ -438,6 +440,7 @@ describe('geotech document benchmark', () => {
       runCommandRoutes: [
         'foundation-settlement',
         'excavation-deformation',
+        'excavation-plane-strain-dp-adaptive',
         'tunnel-volume-loss-settlement',
         'seepage-groundwater-coupling',
         'staged-settlement-consolidation',

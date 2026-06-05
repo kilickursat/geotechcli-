@@ -737,8 +737,9 @@ describe('AI fallback behavior', () => {
     const readinessData = readinessResult?.toolResult?.data as any;
     expect(readinessData.productionReady).toBe(false);
     expect(readinessData.agentEvidenceSummary).toContain('productionReady: no');
-    expect(readinessData.agentEvidenceSummary).toContain('external benchmark comparison results: 3');
+    expect(readinessData.agentEvidenceSummary).toContain('external benchmark comparison results: 4');
     expect(readinessData.agentEvidenceSummary).toContain('opengeosys-consolidation-staggered-biot-pressure-profile-t10');
+    expect(readinessData.agentEvidenceSummary).toContain('opengeosys-liquid-flow-h1-1dsteady-head-flux-gradient');
     expect(readinessData.blockers).toEqual(expect.arrayContaining([
       'external-benchmark-commercial-solver-citation-missing',
       'external-benchmark-comparison-results-missing',

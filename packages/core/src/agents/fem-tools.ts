@@ -40,6 +40,11 @@ function normalizeObjective(value: unknown): FemRouteObjective | undefined {
     case 'excavation':
     case 'retaining-excavation':
       return 'excavation-deformation';
+    case 'excavation-plane-strain-dp-adaptive':
+    case 'excavation-dp-adaptive':
+    case 'plane-strain-dp-adaptive':
+    case 'drucker-prager-excavation':
+      return 'excavation-plane-strain-dp-adaptive';
     case 'shaft-deformation':
     case 'shaft':
     case 'pit-deformation':
@@ -208,6 +213,7 @@ toolRegistry.register(
           enum: [
             'foundation-settlement',
             'excavation-deformation',
+            'excavation-plane-strain-dp-adaptive',
             'shaft-deformation',
             'tunnel-volume-loss-settlement',
             'pile-group-elastic-interaction',
@@ -229,7 +235,7 @@ toolRegistry.register(
       data: {
         schemaVersion: 'fem-capability-list.v1',
         capabilities,
-        operatingRule: 'LLMs may plan and review FEM routes, but FEM math must come from geotechCLI deterministic contracts, validators, and approved solvers. Agent tool calls cannot run FEM; only a human-reviewed CLI run with --experimental --reviewed can execute implemented preview routes.',
+        operatingRule: 'LLMs may plan and review FEM routes, but FEM math must come from geotechCLI deterministic contracts, validators, and approved solvers. Agent tool calls cannot run FEM; only a human-reviewed CLI run with --experimental --reviewed plus persisted fem-reviewer-approval.v1 metadata can execute implemented preview routes.',
       },
       summary: `FEM capabilities: ${capabilities.map((item) => `${item.objective} (${item.status})`).join(', ') || 'none'}.`,
     };
@@ -249,6 +255,7 @@ toolRegistry.register(
           enum: [
             'foundation-settlement',
             'excavation-deformation',
+            'excavation-plane-strain-dp-adaptive',
             'shaft-deformation',
             'tunnel-volume-loss-settlement',
             'pile-group-elastic-interaction',
@@ -326,6 +333,7 @@ toolRegistry.register(
           enum: [
             'foundation-settlement',
             'excavation-deformation',
+            'excavation-plane-strain-dp-adaptive',
             'shaft-deformation',
             'tunnel-volume-loss-settlement',
             'pile-group-elastic-interaction',
@@ -338,12 +346,12 @@ toolRegistry.register(
         },
         useDemoDefaults: {
           type: 'boolean',
-          description: 'Use built-in demo defaults for implemented foundation-settlement, excavation-deformation, and tunnel-volume-loss-settlement previews. Keep false for user/project evidence routing.',
+          description: 'Use built-in demo defaults for implemented foundation-settlement, excavation-deformation, excavation-plane-strain-dp-adaptive, tunnel-volume-loss-settlement, seepage-groundwater-coupling, and staged-settlement-consolidation previews. Keep false for user/project evidence routing.',
           default: false,
         },
         geometry: {
           type: 'object',
-          description: 'Explicit geometry inputs. For foundation-settlement: raftLengthM, raftWidthM, raftThicknessM, domainLengthM, domainWidthM, domainDepthM. For excavation-deformation: excavationLengthM, excavationWidthM, excavationFinalDepthM, wallToeDepthM, plus optional domain dimensions. For tunnel-volume-loss-settlement: tunnelDiameterM, tunnelAxisDepthM, tunnelLengthM, tunnelVolumeLossPercent, troughWidthParameterK, optional tunnelCenterXM/tunnelCenterYM, plus optional domain dimensions.',
+          description: 'Explicit geometry inputs. For foundation-settlement: raftLengthM, raftWidthM, raftThicknessM, domainLengthM, domainWidthM, domainDepthM. For excavation-deformation and excavation-plane-strain-dp-adaptive: excavationLengthM, excavationWidthM, excavationFinalDepthM, wallToeDepthM, plus optional domain dimensions. For tunnel-volume-loss-settlement: tunnelDiameterM, tunnelAxisDepthM, tunnelLengthM, tunnelVolumeLossPercent, troughWidthParameterK, optional tunnelCenterXM/tunnelCenterYM, plus optional domain dimensions.',
           additionalProperties: false,
           properties: {
             raftLengthM: { type: 'number' },
@@ -367,7 +375,7 @@ toolRegistry.register(
         },
         load: {
           type: 'object',
-          description: 'Explicit load inputs. For foundation-settlement: raft pressureKpa. For excavation-deformation: surcharge pressureKpa.',
+          description: 'Explicit load inputs. For foundation-settlement: raft pressureKpa. For excavation-deformation and excavation-plane-strain-dp-adaptive: surcharge pressureKpa.',
           additionalProperties: false,
           properties: {
             pressureKpa: { type: 'number' },
@@ -394,12 +402,15 @@ toolRegistry.register(
         },
         material: {
           type: 'object',
-          description: 'Explicit material inputs: elasticModulusKpa, poissonRatio, unitWeightKnM3.',
+          description: 'Explicit material inputs: elasticModulusKpa, poissonRatio, unitWeightKnM3, and optional frictionAngleDeg, cohesionKpa, hardeningModulusKpa for nonlinear Drucker-Prager drafts.',
           additionalProperties: false,
           properties: {
             elasticModulusKpa: { type: 'number' },
             poissonRatio: { type: 'number' },
             unitWeightKnM3: { type: 'number' },
+            frictionAngleDeg: { type: 'number' },
+            cohesionKpa: { type: 'number' },
+            hardeningModulusKpa: { type: 'number' },
           },
         },
         groundwater: {

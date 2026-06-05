@@ -137,6 +137,11 @@ function normalizeFemObjective(value: string): FemRouteObjective {
     case 'excavation':
     case 'retaining-excavation':
       return 'excavation-deformation';
+    case 'excavation-plane-strain-dp-adaptive':
+    case 'excavation-dp-adaptive':
+    case 'plane-strain-dp-adaptive':
+    case 'drucker-prager-excavation':
+      return 'excavation-plane-strain-dp-adaptive';
     case 'shaft-deformation':
     case 'shaft':
     case 'pit-deformation':
@@ -464,6 +469,7 @@ function buildFemDraftInput(
     constrainedModulusKpa: parseNumberOption(opts.constrainedModulus, '--constrained-modulus') ?? parsed.material?.constrainedModulusKpa,
     frictionAngleDeg: parseNumberOption(opts.frictionAngle, '--friction-angle') ?? parsed.material?.frictionAngleDeg,
     cohesionKpa: parseNumberOption(opts.cohesion, '--cohesion') ?? parsed.material?.cohesionKpa,
+    hardeningModulusKpa: parseNumberOption(opts.hardeningModulus, '--hardening-modulus') ?? parsed.material?.hardeningModulusKpa,
     coefficientOfConsolidationM2PerYear: parseNumberOption(opts.cv, '--cv') ?? parsed.material?.coefficientOfConsolidationM2PerYear,
     hydraulicConductivityMPerS: parseNumberOption(opts.hydraulicConductivity, '--hydraulic-conductivity') ?? parsed.material?.hydraulicConductivityMPerS,
     hydraulicConductivityXMPerS: parseNumberOption(opts.hydraulicConductivityX, '--hydraulic-conductivity-x') ?? parsed.material?.hydraulicConductivityXMPerS,
@@ -1181,7 +1187,7 @@ export function registerFemCommand(program: Command): void {
 
   const draft = new Command('draft')
     .description('Prepare a validated experimental FEM analysis-case draft without running a solver')
-    .argument('<objective>', 'FEM objective, such as foundation-settlement or excavation-deformation')
+    .argument('<objective>', 'FEM objective, such as foundation-settlement, excavation-deformation, or excavation-plane-strain-dp-adaptive')
     .option('--input <jsonOrFile>', 'JSON object string or path containing prepare_fem_analysis_case-style inputs')
     .option('--workspace <dir>', 'Analyze a workspace and prefill FEM draft inputs from GroundModel readiness evidence')
     .option('--demo-defaults', 'Use built-in demo defaults for implemented demo routes')
@@ -1225,8 +1231,9 @@ export function registerFemCommand(program: Command): void {
     .option('--poisson-ratio <ratio>', 'Representative Poisson ratio')
     .option('--unit-weight <kN/m3>', 'Representative unit weight in kN/m3')
     .option('--constrained-modulus <kPa>', 'Representative constrained modulus for 1D consolidation settlement')
-    .option('--friction-angle <deg>', 'Mohr-Coulomb friction angle for consolidation strength gate')
-    .option('--cohesion <kPa>', 'Mohr-Coulomb cohesion for consolidation strength gate')
+    .option('--friction-angle <deg>', 'Mohr-Coulomb friction angle for consolidation or Drucker-Prager strength gates')
+    .option('--cohesion <kPa>', 'Mohr-Coulomb cohesion for consolidation or Drucker-Prager strength gates')
+    .option('--hardening-modulus <kPa>', 'Reviewed isotropic hardening modulus in kPa for nonlinear Drucker-Prager drafts')
     .option('--cv <m2/year>', 'Coefficient of consolidation in square metres per year')
     .option('--hydraulic-conductivity <m/s>', 'Reviewed hydraulic conductivity used for traceability')
     .option('--hydraulic-conductivity-x <m/s>', 'Horizontal hydraulic conductivity for Biot/seepage previews')
@@ -1240,6 +1247,7 @@ export function registerFemCommand(program: Command): void {
   Examples:
     geotech fem draft foundation-settlement --raft-length 10 --raft-width 8 --pressure 150 --json
     geotech fem draft excavation-deformation --excavation-length 22 --excavation-width 14 --excavation-depth 9 --stage-depths 3,6,9 --support-levels 0,2,5 --json
+    geotech fem draft excavation-plane-strain-dp-adaptive --excavation-length 22 --excavation-width 14 --excavation-depth 9 --stage-depths 3,6,9 --support-levels 0,2,5 --friction-angle 32 --cohesion 10 --hardening-modulus 5000 --case-output dp_case.json --json
     geotech fem draft excavation-deformation --input fem-input.json --case-output analysis_case.json
     geotech fem draft foundation-settlement --workspace ./site-data --raft-length 10 --raft-width 8 --pressure 150 --json
     geotech fem draft tunnel-volume-loss-settlement --tunnel-diameter 6 --tunnel-depth 18 --tunnel-length 60 --volume-loss 1.2 --trough-width 0.5 --json

@@ -403,6 +403,7 @@ describe('FEM engineering evidence kernels', () => {
       'opengeosys-consolidation-staggered-benchmark',
       'opengeosys-hydro-mechanics-benchmarks',
       'opengeosys-richards-flow-benchmarks',
+      'opengeosys-liquid-flow-vogel-massmann-benchmarks',
     ]));
     expect(report.externalBenchmarkAcceptance.references).toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -425,7 +426,7 @@ describe('FEM engineering evidence kernels', () => {
         }),
       }),
     ]));
-    expect(report.externalBenchmarkAcceptance.comparisonResults).toHaveLength(3);
+    expect(report.externalBenchmarkAcceptance.comparisonResults).toHaveLength(4);
     expect(report.externalBenchmarkAcceptance.comparisonResults).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: 'published-terzaghi-1d-consolidation-tv-0-197',
@@ -453,6 +454,18 @@ describe('FEM engineering evidence kernels', () => {
           solverType: 'open-source-solver',
         }),
       }),
+      expect.objectContaining({
+        id: 'opengeosys-liquid-flow-h1-1dsteady-head-flux-gradient',
+        quantityRequirementId: 'seepage-head-flux-gradient',
+        referenceId: 'opengeosys-liquid-flow-vogel-massmann-benchmarks',
+        comparisonKind: 'series-summary',
+        metricName: 'steadyDarcyHeadFluxGradient',
+        accepted: true,
+        referenceSolver: expect.objectContaining({
+          name: 'OpenGeoSys',
+          solverType: 'open-source-solver',
+        }),
+      }),
     ]));
     const ogsComparison = report.externalBenchmarkAcceptance.comparisonResults.find((result) =>
       result.id === 'opengeosys-consolidation-staggered-biot-pressure-profile-t10');
@@ -462,16 +475,25 @@ describe('FEM engineering evidence kernels', () => {
       maxAbsoluteError: expect.any(Number),
     });
     expect(ogsComparison?.seriesSummary?.maxRelativeError).toBeLessThanOrEqual(0.05);
+    const liquidFlowComparison = report.externalBenchmarkAcceptance.comparisonResults.find((result) =>
+      result.id === 'opengeosys-liquid-flow-h1-1dsteady-head-flux-gradient');
+    expect(liquidFlowComparison?.seriesSummary).toMatchObject({
+      pointCount: 27,
+      maxRelativeError: 0,
+      maxAbsoluteError: 0,
+    });
+    expect(liquidFlowComparison?.actual).toBeCloseTo(liquidFlowComparison?.expected ?? 0, 12);
     expect(report.externalBenchmarkAcceptance.coverageSummary).toMatchObject({
       schemaVersion: 'fem-external-benchmark-coverage.v1',
-      acceptedComparisonCount: 3,
+      acceptedComparisonCount: 4,
       acceptedPublishedComparisonCount: 2,
       acceptedCommercialComparisonCount: 0,
-      acceptedOpenSourceComparisonCount: 1,
+      acceptedOpenSourceComparisonCount: 2,
       fullyCoveredRequiredQuantityIds: [],
       partiallyCoveredRequiredQuantityIds: [
         'consolidation-settlement-time-curve',
         'biot-pore-pressure-dissipation',
+        'seepage-head-flux-gradient',
       ],
       missingRequiredSourceTypes: ['commercial-solver'],
     });
@@ -512,13 +534,14 @@ describe('FEM engineering evidence kernels', () => {
     const second = runFemEngineeringEvidenceSuite().externalBenchmarkAcceptance;
     const sourceTypeById = new Map(first.references.map((reference) => [reference.id, reference.sourceType]));
 
-    expect(first.comparisonResults).toHaveLength(3);
+    expect(first.comparisonResults).toHaveLength(4);
     expect(first.comparisonResults.map((result) => sourceTypeById.get(result.referenceId)))
-      .toEqual(['published-source', 'published-source', 'open-source-solver']);
+      .toEqual(['published-source', 'published-source', 'open-source-solver', 'open-source-solver']);
     expect(first.comparisonResults.map((result) => result.id)).toEqual([
       'published-terzaghi-1d-consolidation-tv-0-197',
       'published-biot-alpha-zero-terzaghi-pressure-dissipation-tv-0-197',
       'opengeosys-consolidation-staggered-biot-pressure-profile-t10',
+      'opengeosys-liquid-flow-h1-1dsteady-head-flux-gradient',
     ]);
     expect(first.comparisonResults.map((result) => result.evidenceHashSha256))
       .toEqual(second.comparisonResults.map((result) => result.evidenceHashSha256));
@@ -539,7 +562,7 @@ describe('FEM engineering evidence kernels', () => {
     expect(first.coverageSummary).toMatchObject({
       acceptedPublishedComparisonCount: 2,
       acceptedCommercialComparisonCount: 0,
-      acceptedOpenSourceComparisonCount: 1,
+      acceptedOpenSourceComparisonCount: 2,
       missingRequiredSourceTypes: ['commercial-solver'],
     });
     expect(first.blockerCodes).toEqual(expect.arrayContaining([
