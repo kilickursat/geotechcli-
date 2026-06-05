@@ -16,6 +16,9 @@ export {
   buildPlaneStrainDruckerPragerAdaptiveExcavationDemoAnalysisCase,
   runBuiltinPlaneStrainDpAdaptivePreview,
   runBuiltinPlaneStrainDpAdaptiveSolver,
+  runBuiltinPlaneStrainDpBiotReplayPreview,
+  runBuiltinPlaneStrainDpBiotReplaySolver,
+  runBuiltinPlaneStrainDruckerPragerBiotPressureReplayPreview,
   runBuiltinPlaneStrainDruckerPragerAdaptivePreview,
   runBuiltinPlaneStrainDruckerPragerAdaptiveSolver,
 } from './nonlinear-plane-strain-solver.js';

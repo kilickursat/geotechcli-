@@ -10,6 +10,7 @@ import {
   runBuiltinBiotUpPlaneStrainPreview,
   runBuiltinElasticExcavationDemo,
   runBuiltinElasticRaftDemo,
+  runBuiltinPlaneStrainDruckerPragerBiotPressureReplayPreview,
   runBuiltinPlaneStrainDruckerPragerAdaptivePreview,
   runBuiltinStagedSettlementConsolidationDemo,
   runBuiltinTunnelVolumeLossDemo,
@@ -19,6 +20,7 @@ import {
 } from '../src/fem/index.js';
 
 const PLANE_STRAIN_DP_ADAPTIVE_BACKEND_ID = 'builtin-plane-strain-dp-adaptive-v0';
+const PLANE_STRAIN_DP_BIOT_REPLAY_BACKEND_ID = 'builtin-plane-strain-dp-biot-replay-v0';
 
 describe('experimental FEM raft demo', () => {
   it('builds a review-gated deterministic raft analysis case', () => {
@@ -249,6 +251,68 @@ describe('experimental FEM raft demo', () => {
     expect(manifest.envelope.maxSolverResidualRatio).toBeLessThanOrEqual(manifest.solverConvergence!.policy.forceBalanceTolerance);
     expect(manifest.envelope.maxYieldResidualRatio).toBeLessThanOrEqual(manifest.solverConvergence!.policy.residualTolerance);
     expect(manifest.limitations.join(' ')).toMatch(/experimental|not.*production/i);
+    expect(validation.status).toBe('review');
+    expect(validation.blockers).toBe(0);
+  });
+
+  it('returns a reviewed plane-strain Drucker-Prager Biot pressure-replay manifest without production approval', () => {
+    const analysisCase = buildPlaneStrainDruckerPragerAdaptiveExcavationDemoAnalysisCase(
+      buildExcavationDemoAnalysisCase(),
+    );
+    analysisCase.caseId = 'excavation-plane-strain-dp-biot-replay-test';
+    analysisCase.title = 'Experimental DP Biot pressure replay test case';
+    analysisCase.mesh.divisionsX = 3;
+    analysisCase.mesh.divisionsY = 2;
+    analysisCase.geometry.biot = {
+      type: 'plane_strain_biot_column',
+      widthM: analysisCase.geometry.domain.lengthM,
+      heightM: analysisCase.geometry.domain.depthM,
+      thicknessM: analysisCase.geometry.domain.widthM,
+      initialPorePressureKpa: 100,
+      timeStepsSeconds: [1, 2, 4, 8],
+      porePressureBoundaries: [
+        { id: 'top-drained', boundary: 'top', porePressureKpa: 0 },
+      ],
+    };
+    analysisCase.materials[0].hydraulicConductivityMPerS = 1e-6;
+    analysisCase.materials[0].hydraulicConductivityXMPerS = 1e-6;
+    analysisCase.materials[0].hydraulicConductivityYMPerS = 1e-6;
+    analysisCase.materials[0].specificStorage1PerM = 1e-4;
+    analysisCase.materials[0].biotCoefficient = 0.8;
+
+    const drained = runBuiltinPlaneStrainDruckerPragerAdaptivePreview(analysisCase);
+    const zeroScaleReplay = runBuiltinPlaneStrainDruckerPragerBiotPressureReplayPreview(analysisCase, {
+      pressureScale: 0,
+    });
+    const replay = runBuiltinPlaneStrainDruckerPragerBiotPressureReplayPreview(analysisCase);
+    const validation = validateFemResultManifest(replay);
+
+    expect(String(replay.backend.id)).toBe(PLANE_STRAIN_DP_BIOT_REPLAY_BACKEND_ID);
+    expect(replay.backend.productionReady).toBe(false);
+    expect((replay as { productionReady?: unknown }).productionReady).not.toBe(true);
+    expect(replay.pressureReplayAudit).toMatchObject({
+      schemaVersion: 'fem-plane-strain-dp-biot-pressure-replay-audit.v1',
+      mode: 'sequential-one-way-biot-pressure-replay',
+      pressureFrameSource: 'final-biot-step',
+      sourceTransientAccepted: true,
+      sourceAcceptedStepCount: 4,
+      replayNodeCount: replay.mesh.nodes,
+      pressureScale: 1,
+    });
+    expect(replay.pressureReplayAudit?.sourcePorePressureDofCount).toBe(replay.mesh.nodes);
+    expect(replay.pressureReplayAudit?.maxInputPorePressureKpa).toBeGreaterThan(0);
+    expect(replay.pressureReplayAudit?.maxAppliedEffectiveStressReductionKpa).toBeGreaterThan(0);
+    expect(replay.pressureAudit).toBeDefined();
+    expect(replay.biotTransientAcceptance?.accepted).toBe(true);
+    expect(replay.envelope.porePressureDofCount).toBe(0);
+    expect(replay.envelope.coupledUnknownCount).toBe(replay.envelope.displacementDofCount);
+    expect(replay.envelope.maxBiotCouplingKpa).toBeCloseTo(replay.pressureReplayAudit!.maxAppliedEffectiveStressReductionKpa, 8);
+    expect(zeroScaleReplay.envelope.maxSettlementMm).toBeCloseTo(drained.envelope.maxSettlementMm, 8);
+    expect(zeroScaleReplay.envelope.maxHorizontalDisplacementMm).toBeCloseTo(drained.envelope.maxHorizontalDisplacementMm!, 8);
+    expect(Math.abs(replay.envelope.maxSettlementMm - drained.envelope.maxSettlementMm)).toBeGreaterThan(1e-9);
+    expect(replay.limitations.join(' ')).toMatch(/sequential one-way/i);
+    expect(replay.limitations.join(' ')).toMatch(/No pore-pressure DOFs/i);
+    expect(replay.limitations.join(' ')).toMatch(/not a production/i);
     expect(validation.status).toBe('review');
     expect(validation.blockers).toBe(0);
   });

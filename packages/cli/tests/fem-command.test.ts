@@ -1045,6 +1045,123 @@ describe('registerFemCommand', () => {
     logSpy.mockRestore();
   });
 
+  it('prepares and runs a route-backed plane-strain DP Biot pressure-replay excavation draft', async () => {
+    const { validateFemResultManifest } = await import('../../core/src/fem/index.js');
+    const registerFemCommand = await loadRegisterFemCommand();
+    const program = new Command();
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-fem-dp-biot-replay-route-'));
+    tempDirs.push(dir);
+    const casePath = join(dir, 'dp-biot-replay.analysis_case.json');
+    const resultPath = join(dir, 'dp-biot-replay.manifest.json');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    program.exitOverride();
+    registerFemCommand(program);
+
+    await program.parseAsync([
+      'fem',
+      'draft',
+      'excavation-plane-strain-dp-biot-replay',
+      '--excavation-length',
+      '22',
+      '--excavation-width',
+      '14',
+      '--excavation-depth',
+      '9',
+      '--wall-toe-depth',
+      '15',
+      '--stage-depths',
+      '3,6,9',
+      '--support-levels',
+      '0,2,5',
+      '--pressure',
+      '25',
+      '--elastic-modulus',
+      '36000',
+      '--poisson-ratio',
+      '0.31',
+      '--unit-weight',
+      '18.8',
+      '--friction-angle',
+      '32',
+      '--cohesion',
+      '10',
+      '--hardening-modulus',
+      '5000',
+      '--initial-pore-pressure',
+      '100',
+      '--top-pore-pressure',
+      '0',
+      '--time-steps',
+      '1,2,4,8',
+      '--hydraulic-conductivity',
+      '0.000001',
+      '--specific-storage',
+      '0.0001',
+      '--biot-alpha',
+      '0.8',
+      '--case-output',
+      casePath,
+      '--json',
+    ], { from: 'user' });
+
+    const draftPayload = JSON.parse(collectLogText(logSpy).trim());
+    const caseFile = JSON.parse(await readFile(casePath, 'utf-8'));
+    expect(draftPayload.objective).toBe('excavation-plane-strain-dp-biot-replay');
+    expect(draftPayload.draft.recommendedAction).toBe('run-reviewed-case');
+    expect(draftPayload.draft.recommendedCommand).toContain('--backend plane-strain-dp-biot-replay');
+    expect(draftPayload.draft.reviewGates).toContain('sequential-one-way-pressure-replay-only');
+    expect(caseFile.caseId).toBe('excavation-plane-strain-dp-biot-replay-draft');
+    expect(caseFile.objective).toBe('excavation_deformation');
+    expect(caseFile.analysisType).toBe('static_2d_plane_strain_drucker_prager');
+    expect(caseFile.geometry.biot.initialPorePressureKpa).toBe(100);
+    expect(caseFile.geometry.biot.timeStepsSeconds).toEqual([1, 2, 4, 8]);
+    expect(caseFile.geometry.biot.porePressureBoundaries).toEqual([
+      { id: 'top-drained', boundary: 'top', porePressureKpa: 0 },
+    ]);
+    expect(caseFile.materials[0].biotCoefficient).toBe(0.8);
+    expect(caseFile.materials[0].specificStorage1PerM).toBe(0.0001);
+
+    logSpy.mockClear();
+    await program.parseAsync([
+      'fem',
+      'run',
+      casePath,
+      '--experimental',
+      '--reviewed',
+      ...femApprovalArgs(join(dir, 'dp-biot-replay-approval.json')),
+      '--backend',
+      'dp-biot-pressure-replay',
+      '--output',
+      resultPath,
+      '--no-open',
+      '--json',
+    ], { from: 'user' });
+
+    const runPayload = JSON.parse(collectLogText(logSpy).trim());
+    const writtenManifest = JSON.parse(await readFile(resultPath, 'utf-8'));
+    expect(runPayload.kind).toBe('geotech-fem-run-result');
+    expect(runPayload.manifest.backend.id).toBe('builtin-plane-strain-dp-biot-replay-v0');
+    expect(writtenManifest.backend.id).toBe('builtin-plane-strain-dp-biot-replay-v0');
+    expect(runPayload.manifest.pressureReplayAudit).toMatchObject({
+      schemaVersion: 'fem-plane-strain-dp-biot-pressure-replay-audit.v1',
+      mode: 'sequential-one-way-biot-pressure-replay',
+      sourceTransientAccepted: true,
+      sourceAcceptedStepCount: 4,
+      pressureScale: 1,
+    });
+    expect(runPayload.manifest.pressureReplayAudit.sourcePorePressureDofCount).toBe(runPayload.manifest.mesh.nodes);
+    expect(runPayload.manifest.envelope.porePressureDofCount).toBe(0);
+    expect(runPayload.manifest.envelope.maxBiotCouplingKpa).toBeGreaterThan(0);
+    expect(runPayload.manifest.envelope.maxSolverResidualRatio).toBeLessThanOrEqual(1e-3);
+    expect(runPayload.manifest.biotTransientAcceptance.accepted).toBe(true);
+    expect(runPayload.manifest.backend.productionReady).toBe(false);
+    expect(JSON.stringify(runPayload)).not.toContain('"productionReady":true');
+    expect(validateFemResultManifest(writtenManifest).blockers).toBe(0);
+    expect(runPayload.warnings.join(' ')).toMatch(/plane-strain-dp-biot-replay backend/i);
+    expect(runPayload.warnings.join(' ')).toMatch(/not monolithic production hydro-mechanical plasticity/i);
+    logSpy.mockRestore();
+  });
+
   it('requires explicit experimental acknowledgement for running FEM case files', async () => {
     const { buildRaftDemoAnalysisCase } = await import('../../core/src/fem/index.js');
     const registerFemCommand = await loadRegisterFemCommand();

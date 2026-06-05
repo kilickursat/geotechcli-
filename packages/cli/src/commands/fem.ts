@@ -18,6 +18,7 @@ import {
   runBuiltinElasticExcavationDemo,
   runBuiltinElasticRaftDemo,
   runBuiltinNonlinearConsolidationColumnSolver,
+  runBuiltinPlaneStrainDruckerPragerBiotPressureReplayPreview,
   runBuiltinPlaneStrainDruckerPragerAdaptivePreview,
   runBuiltinStagedSettlementConsolidationDemo,
   runBuiltinTunnelVolumeLossDemo,
@@ -56,7 +57,8 @@ const DEFAULT_CONSOLIDATION_HTML = 'geotech-fem-consolidation-demo.html';
 const DEFAULT_BIOT_HTML = 'geotech-fem-biot-up-demo.html';
 const DEFAULT_RUN_HTML = 'geotech-fem-run.html';
 const PLANE_STRAIN_DP_ADAPTIVE_BACKEND_ID = 'builtin-plane-strain-dp-adaptive-v0';
-const FEM_RUN_BACKEND_HELP = 'preview, nonlinear-column, biot-up, or plane-strain-dp-adaptive';
+const PLANE_STRAIN_DP_BIOT_REPLAY_BACKEND_ID = 'builtin-plane-strain-dp-biot-replay-v0';
+const FEM_RUN_BACKEND_HELP = 'preview, nonlinear-column, biot-up, plane-strain-dp-adaptive, or plane-strain-dp-biot-replay';
 type FemDemoKind = 'raft' | 'excavation' | 'tunnel' | 'consolidation' | 'biot';
 const FEM_AGENT_TOOLS = [
   'list_fem_capabilities',
@@ -142,6 +144,14 @@ function normalizeFemObjective(value: string): FemRouteObjective {
     case 'plane-strain-dp-adaptive':
     case 'drucker-prager-excavation':
       return 'excavation-plane-strain-dp-adaptive';
+    case 'excavation-plane-strain-dp-biot-replay':
+    case 'excavation-dp-biot-replay':
+    case 'plane-strain-dp-biot-replay':
+    case 'plane-strain-dp-biot-pressure-replay':
+    case 'dp-biot-pressure-replay':
+    case 'biot-pressure-replay':
+    case 'hydro-mechanical-pressure-replay':
+      return 'excavation-plane-strain-dp-biot-replay';
     case 'shaft-deformation':
     case 'shaft':
     case 'pit-deformation':
@@ -228,7 +238,7 @@ function loadFemAnalysisCase(filePath: string): { casePath: string; analysisCase
   };
 }
 
-type FemRunBackend = 'preview' | 'nonlinear-column' | 'biot-up' | 'plane-strain-dp-adaptive';
+type FemRunBackend = 'preview' | 'nonlinear-column' | 'biot-up' | 'plane-strain-dp-adaptive' | 'plane-strain-dp-biot-replay';
 
 function normalizeFemRunBackend(value: unknown): FemRunBackend {
   if (value == null || value === '' || value === true) return 'preview';
@@ -249,6 +259,19 @@ function normalizeFemRunBackend(value: unknown): FemRunBackend {
     || normalized === PLANE_STRAIN_DP_ADAPTIVE_BACKEND_ID
   ) {
     return 'plane-strain-dp-adaptive';
+  }
+  if (
+    normalized === 'plane-strain-dp-biot-replay'
+    || normalized === 'plane-strain-dp-biot-pressure-replay'
+    || normalized === 'plane-strain-drucker-prager-biot-replay'
+    || normalized === 'dp-biot-replay'
+    || normalized === 'dp-biot-pressure-replay'
+    || normalized === 'biot-pressure-replay'
+    || normalized === 'hydro-mechanical-pressure-replay'
+    || normalized === 'hydromechanical-pressure-replay'
+    || normalized === PLANE_STRAIN_DP_BIOT_REPLAY_BACKEND_ID
+  ) {
+    return 'plane-strain-dp-biot-replay';
   }
   throw new Error(`Unsupported FEM run backend: ${value}. Use ${FEM_RUN_BACKEND_HELP}.`);
 }
@@ -274,6 +297,15 @@ function runDeterministicFemAnalysisCase(
     if (String(manifest.backend.id) !== PLANE_STRAIN_DP_ADAPTIVE_BACKEND_ID) {
       throw new Error(
         `--backend plane-strain-dp-adaptive must emit manifest backend ${PLANE_STRAIN_DP_ADAPTIVE_BACKEND_ID}; received ${String(manifest.backend.id)}.`,
+      );
+    }
+    return manifest;
+  }
+  if (backend === 'plane-strain-dp-biot-replay') {
+    const manifest = runBuiltinPlaneStrainDruckerPragerBiotPressureReplayPreview(analysisCase);
+    if (String(manifest.backend.id) !== PLANE_STRAIN_DP_BIOT_REPLAY_BACKEND_ID) {
+      throw new Error(
+        `--backend plane-strain-dp-biot-replay must emit manifest backend ${PLANE_STRAIN_DP_BIOT_REPLAY_BACKEND_ID}; received ${String(manifest.backend.id)}.`,
       );
     }
     return manifest;
@@ -338,6 +370,8 @@ function workflowForFemObjective(
 ): 'fem-foundation-settlement' | 'fem-excavation-deformation' | 'fem-tunnel-volume-loss-settlement' | 'fem-shaft-deformation' | 'fem-pile-group-elastic-interaction' | 'fem-slope-embankment-deformation' | 'fem-retaining-wall-excavation-support' | 'fem-seepage-groundwater-coupling' | 'fem-staged-settlement-consolidation' | null {
   if (objective === 'foundation-settlement') return 'fem-foundation-settlement';
   if (objective === 'excavation-deformation') return 'fem-excavation-deformation';
+  if (objective === 'excavation-plane-strain-dp-adaptive') return 'fem-excavation-deformation';
+  if (objective === 'excavation-plane-strain-dp-biot-replay') return 'fem-excavation-deformation';
   if (objective === 'tunnel-volume-loss-settlement') return 'fem-tunnel-volume-loss-settlement';
   if (objective === 'shaft-deformation') return 'fem-shaft-deformation';
   if (objective === 'pile-group-elastic-interaction') return 'fem-pile-group-elastic-interaction';
@@ -1009,6 +1043,7 @@ async function runFemAnalysisCaseCommand(caseFilePath: string, opts: Record<stri
       'Experimental deterministic FEM run only; not a design calculation.',
       ...(backend === 'nonlinear-column' ? ['Used nonlinear-column backend: 1D staged consolidation equilibrium with Drucker-Prager material-point return mapping, not a full 2D/3D production FEM solver.'] : []),
       ...(backend === 'plane-strain-dp-adaptive' ? [`Used plane-strain-dp-adaptive backend mapped to ${PLANE_STRAIN_DP_ADAPTIVE_BACKEND_ID}: nonlinear plane-strain Drucker-Prager adaptive load stepping is reviewed experimental preview evidence only and not production-ready.`] : []),
+      ...(backend === 'plane-strain-dp-biot-replay' ? [`Used plane-strain-dp-biot-replay backend mapped to ${PLANE_STRAIN_DP_BIOT_REPLAY_BACKEND_ID}: sequential one-way Biot pressure replay into Drucker-Prager effective stress is reviewed experimental preview evidence only, not monolithic production hydro-mechanical plasticity.`] : []),
       'Run was invoked by the CLI from a reviewed analysis_case.json file with persisted approval metadata; LLM agents can plan and validate cases but cannot execute this command as a tool.',
       ...(generatedApprovalRecord ? ['Persisted FEM reviewer approval metadata for this run.'] : []),
       ...(existingApprovalRecord ? ['Validated existing FEM approval record against the current case hash before this run.'] : []),
@@ -1149,7 +1184,7 @@ export function registerFemCommand(program: Command): void {
     .argument('<analysisCaseJson>', 'Path to fem-analysis-case.v0 JSON produced by geotech fem draft or manual review')
     .option('--experimental', 'Acknowledge that this FEM run is experimental and not a design calculation')
     .option('--reviewed', 'Confirm a human reviewed geometry, loads, staging, assumptions, validation findings, and limitations')
-    .option('--backend <name>', 'Deterministic backend: preview, nonlinear-column, biot-up, or plane-strain-dp-adaptive')
+    .option('--backend <name>', 'Deterministic backend: preview, nonlinear-column, biot-up, plane-strain-dp-adaptive, or plane-strain-dp-biot-replay')
     .option('--require-approval-record', 'Deprecated compatibility flag; FEM run now always validates or persists a fem-reviewer-approval.v1 record')
     .option('--approval-record <file>', 'Validate an existing fem-reviewer-approval.v1 record against the current case hash before running')
     .option('--approval-output <file>', 'Persist a fem-reviewer-approval.v1 record for this run')
@@ -1167,10 +1202,11 @@ export function registerFemCommand(program: Command): void {
     geotech fem run consolidation_case.json --experimental --reviewed --approval-output fem-approval.json --reviewer-name "Jane Engineer" --reviewer-license PE-12345 --reviewer-jurisdiction US-CA --backend nonlinear-column --output fem-nonlinear-column.manifest.json --json
     geotech fem run seepage_case.json --experimental --reviewed --approval-output fem-approval.json --reviewer-name "Jane Engineer" --reviewer-license PE-12345 --reviewer-jurisdiction US-CA --backend biot-up --output fem-biot-up.manifest.json --json
     geotech fem run plane_strain_case.json --experimental --reviewed --approval-output fem-approval.json --reviewer-name "Jane Engineer" --reviewer-license PE-12345 --reviewer-jurisdiction US-CA --backend plane-strain-dp-adaptive --output fem-plane-strain-dp-adaptive.manifest.json --json
+    geotech fem run plane_strain_pressure_case.json --experimental --reviewed --approval-output fem-approval.json --reviewer-name "Jane Engineer" --reviewer-license PE-12345 --reviewer-jurisdiction US-CA --backend plane-strain-dp-biot-replay --output fem-plane-strain-dp-biot-replay.manifest.json --json
     geotech fem run analysis_case.json --experimental --reviewed --approval-output fem-approval.json --reviewer-name "Jane Engineer" --reviewer-license PE-12345 --reviewer-jurisdiction US-CA
     geotech fem run analysis_case.json --experimental --reviewed --approval-record fem-approval.json --json
 
-  This command executes only deterministic built-in preview/nonlinear-column/biot-up/plane-strain-dp-adaptive backends from a reviewed analysis_case.json.
+  This command executes only deterministic built-in preview/nonlinear-column/biot-up/plane-strain-dp-adaptive/plane-strain-dp-biot-replay backends from a reviewed analysis_case.json.
   It requires --reviewed as an explicit human-review acknowledgement and requires a persisted approval record for every run.
   Use --approval-output with reviewer metadata to persist identity, license, assumptions, limitations, validation summary, experimental-preview scope, and case hash.
   Use --approval-record to fail closed when a prior approval record is stale or does not match the current case hash.
@@ -1187,7 +1223,7 @@ export function registerFemCommand(program: Command): void {
 
   const draft = new Command('draft')
     .description('Prepare a validated experimental FEM analysis-case draft without running a solver')
-    .argument('<objective>', 'FEM objective, such as foundation-settlement, excavation-deformation, or excavation-plane-strain-dp-adaptive')
+    .argument('<objective>', 'FEM objective, such as foundation-settlement, excavation-deformation, excavation-plane-strain-dp-adaptive, or excavation-plane-strain-dp-biot-replay')
     .option('--input <jsonOrFile>', 'JSON object string or path containing prepare_fem_analysis_case-style inputs')
     .option('--workspace <dir>', 'Analyze a workspace and prefill FEM draft inputs from GroundModel readiness evidence')
     .option('--demo-defaults', 'Use built-in demo defaults for implemented demo routes')
@@ -1248,6 +1284,7 @@ export function registerFemCommand(program: Command): void {
     geotech fem draft foundation-settlement --raft-length 10 --raft-width 8 --pressure 150 --json
     geotech fem draft excavation-deformation --excavation-length 22 --excavation-width 14 --excavation-depth 9 --stage-depths 3,6,9 --support-levels 0,2,5 --json
     geotech fem draft excavation-plane-strain-dp-adaptive --excavation-length 22 --excavation-width 14 --excavation-depth 9 --stage-depths 3,6,9 --support-levels 0,2,5 --friction-angle 32 --cohesion 10 --hardening-modulus 5000 --case-output dp_case.json --json
+    geotech fem draft excavation-plane-strain-dp-biot-replay --excavation-length 22 --excavation-width 14 --excavation-depth 9 --stage-depths 3,6,9 --support-levels 0,2,5 --friction-angle 32 --cohesion 10 --hardening-modulus 5000 --initial-pore-pressure 100 --top-pore-pressure 0 --time-steps 1,2,4,8 --hydraulic-conductivity 0.000001 --specific-storage 0.0001 --biot-alpha 0.8 --case-output dp_biot_replay_case.json --json
     geotech fem draft excavation-deformation --input fem-input.json --case-output analysis_case.json
     geotech fem draft foundation-settlement --workspace ./site-data --raft-length 10 --raft-width 8 --pressure 150 --json
     geotech fem draft tunnel-volume-loss-settlement --tunnel-diameter 6 --tunnel-depth 18 --tunnel-length 60 --volume-loss 1.2 --trough-width 0.5 --json

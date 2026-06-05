@@ -1,6 +1,8 @@
 import { DEFAULT_FEM_CONVERGENCE_POLICY, type FemConvergencePolicy } from './engineering-evidence.js';
 import {
   buildPlaneStrainRectangularMesh,
+  runPlaneStrainBiotConsolidation,
+  runPlaneStrainDruckerPragerBiotPressureReplay,
   runPlaneStrainDruckerPragerLoadSteps,
   type FemPlaneStrainDruckerPragerResult,
   type FemPlaneStrainModel,
@@ -14,7 +16,8 @@ import type {
 } from './types.js';
 import { validateFemAnalysisCase } from './validation.js';
 
-const BACKEND_ID = 'builtin-plane-strain-dp-adaptive-v0';
+const DP_ADAPTIVE_BACKEND_ID = 'builtin-plane-strain-dp-adaptive-v0';
+const DP_BIOT_REPLAY_BACKEND_ID = 'builtin-plane-strain-dp-biot-replay-v0';
 const ANALYSIS_TYPE = 'static_2d_plane_strain_drucker_prager';
 
 function round(value: number, digits = 6): number {
@@ -198,6 +201,25 @@ function buildTopLoad(
   return topNodes.map((node) => ({ nodeId: node.id, fyKn: loadPerNodeKn }));
 }
 
+function buildPorePressureBoundaryConditions(
+  mesh: ReturnType<typeof buildPlaneStrainRectangularMesh>,
+  widthM: number,
+  heightM: number,
+  boundaries: NonNullable<FemAnalysisCase['geometry']['biot']>['porePressureBoundaries'],
+): Array<{ nodeId: string; porePressureKpa: number }> {
+  const eps = Math.max(widthM, heightM, 1) * 1e-10;
+  return boundaries.flatMap((boundary) => (
+    mesh.nodes
+      .filter((node) => {
+        if (boundary.boundary === 'top') return Math.abs(node.yM - heightM) <= eps;
+        if (boundary.boundary === 'bottom') return Math.abs(node.yM) <= eps;
+        if (boundary.boundary === 'left') return Math.abs(node.xM) <= eps;
+        return Math.abs(node.xM - widthM) <= eps;
+      })
+      .map((node) => ({ nodeId: node.id, porePressureKpa: boundary.porePressureKpa }))
+  ));
+}
+
 export function buildPlaneStrainDruckerPragerAdaptiveExcavationDemoAnalysisCase(
   caseFile: FemAnalysisCase,
 ): FemAnalysisCase {
@@ -360,7 +382,7 @@ export function runBuiltinPlaneStrainDruckerPragerAdaptivePreview(
     title: `${caseFile.title} - adaptive Drucker-Prager result`,
     generatedAt: new Date().toISOString(),
     backend: {
-      id: BACKEND_ID,
+      id: DP_ADAPTIVE_BACKEND_ID,
       label: 'Built-in experimental plane-strain Drucker-Prager adaptive preview',
       deterministic: true,
       version: '0.1.0',
@@ -412,9 +434,258 @@ export function runBuiltinPlaneStrainDruckerPragerAdaptivePreview(
   };
 }
 
+export function runBuiltinPlaneStrainDruckerPragerBiotPressureReplayPreview(
+  caseFile: FemAnalysisCase,
+  options: { policy?: FemConvergencePolicy; pressureScale?: number } = {},
+): FemResultManifest {
+  const validation = validateFemAnalysisCase(caseFile);
+  if (validation.status === 'blocked') {
+    throw new Error(`Cannot run plane-strain Drucker-Prager Biot pressure-replay preview: ${validation.findings.map((item) => item.message).join('; ')}`);
+  }
+  if (caseFile.objective !== 'excavation_deformation' || caseFile.analysisType !== ANALYSIS_TYPE) {
+    throw new Error('The plane-strain Drucker-Prager Biot pressure-replay preview requires an excavation_deformation case with static_2d_plane_strain_drucker_prager analysisType.');
+  }
+  if (caseFile.mesh.elementType !== 'quad4_plane_strain') {
+    throw new Error('The plane-strain Drucker-Prager Biot pressure-replay preview requires a quad4_plane_strain mesh.');
+  }
+  const excavation = caseFile.geometry.excavation;
+  const biot = caseFile.geometry.biot;
+  const material = caseFile.materials[0];
+  if (!excavation || !biot || !material) {
+    throw new Error('The plane-strain Drucker-Prager Biot pressure-replay preview requires excavation geometry, Biot pressure-source geometry, and one reviewed material.');
+  }
+
+  const widthM = caseFile.geometry.domain.lengthM;
+  const heightM = caseFile.geometry.domain.depthM;
+  const thicknessM = caseFile.geometry.domain.widthM;
+  const mesh = buildPlaneStrainRectangularMesh({
+    widthM,
+    heightM,
+    divisionsX: caseFile.mesh.divisionsX,
+    divisionsY: caseFile.mesh.divisionsY,
+    materialId: material.id,
+  });
+  const boundaryConditions = buildBoundaryConditions(mesh, widthM, heightM);
+  const porePressureBoundaryConditions = buildPorePressureBoundaryConditions(
+    mesh,
+    widthM,
+    heightM,
+    biot.porePressureBoundaries,
+  );
+  const policy = options.policy ?? {
+    ...DEFAULT_FEM_CONVERGENCE_POLICY,
+    maxIterations: 8,
+  };
+  const biotResult = runPlaneStrainBiotConsolidation({
+    schemaVersion: 'fem-plane-strain-biot-consolidation-model.v1',
+    nodes: mesh.nodes,
+    elements: mesh.elements,
+    materials: [
+      {
+        id: material.id,
+        elasticModulusKpa: material.elasticModulusKpa,
+        poissonRatio: material.poissonRatio,
+        unitWeightKnM3: material.unitWeightKnM3,
+        hydraulicConductivityXMPerS: material.hydraulicConductivityXMPerS ?? material.hydraulicConductivityMPerS,
+        hydraulicConductivityYMPerS: material.hydraulicConductivityYMPerS ?? material.hydraulicConductivityMPerS,
+        biotCoefficient: material.biotCoefficient,
+        specificStorage1PerM: material.specificStorage1PerM,
+      },
+    ],
+    boundaryConditions,
+    porePressureBoundaryConditions,
+    timeStepsSeconds: biot.timeStepsSeconds,
+    initialPorePressureKpa: biot.initialPorePressureKpa,
+    defaultThicknessM: biot.thicknessM,
+    policy,
+  });
+  const totalExcavatedWeightKn = excavation.lengthM * excavation.widthM * excavation.finalDepthM * material.unitWeightKnM3;
+  const result = runPlaneStrainDruckerPragerBiotPressureReplay({
+    mechanicalModel: {
+      schemaVersion: 'fem-plane-strain-model.v1',
+      nodes: mesh.nodes,
+      elements: mesh.elements,
+      materials: [{
+        id: material.id,
+        elasticModulusKpa: material.elasticModulusKpa,
+        poissonRatio: material.poissonRatio,
+        unitWeightKnM3: material.unitWeightKnM3,
+        frictionAngleDeg: material.frictionAngleDeg,
+        cohesionKpa: material.cohesionKpa,
+        hardeningModulusKpa: material.hardeningModulusKpa,
+        biotCoefficient: material.biotCoefficient,
+        dilationAngleDeg: 0,
+      }],
+      boundaryConditions,
+      nodalLoads: buildTopLoad(mesh, heightM, totalExcavatedWeightKn),
+      defaultThicknessM: thicknessM,
+      policy,
+    },
+    biotResult,
+    pressureScale: options.pressureScale ?? 1,
+    requireAcceptedTransient: true,
+    maxMassBalanceErrorRatio: policy.porePressureMassBalanceTolerance,
+    solverOptions: {
+      loadStepFractions: [1],
+      adaptiveLoadStepping: {
+        enabled: true,
+        strategy: 'cutback-bisection',
+        minLoadFactorIncrement: 1 / 64,
+        maxCutbacks: 24,
+      },
+    },
+  });
+  const visualization = buildPlaneStrainDpVisualization(caseFile, result);
+  const finalBiotStep = biotResult.timeSteps[biotResult.timeSteps.length - 1];
+  const maxSettlementMm = round(Math.max(...result.nodes.map((node) => Math.max(0, -node.uyM))) * 1000, 6);
+  const maxHorizontalDisplacementMm = round(Math.max(...result.nodes.map((node) => Math.abs(node.uxM))) * 1000, 6);
+  const maxHardeningStressKpa = Math.max(
+    0,
+    ...result.elements.flatMap((element) => element.gaussPoints.map((point) => point.hardeningStressKpa)),
+  );
+  const solverIterations = result.loadSteps.reduce((total, step) => total + step.iterations, 0);
+  const rejectedAttemptCount = result.adaptiveLoadStepping.attempts.filter((attempt) => !attempt.accepted).length;
+  const adaptiveLoadStepping = {
+    ...result.adaptiveLoadStepping,
+    attempts: result.adaptiveLoadStepping.attempts.map((attempt) => ({ ...attempt })),
+    blockerCodes: [...result.adaptiveLoadStepping.blockerCodes],
+  };
+  const envelope: FemResultManifest['envelope'] = {
+    maxSettlementMm,
+    minSettlementMm: 0,
+    totalLoadKn: round(totalExcavatedWeightKn, 6),
+    reactionKn: round(totalExcavatedWeightKn, 6),
+    reactionBalanceRatio: round(result.reactionBalanceRatio, 8),
+    maxSurfaceSettlementMm: maxSettlementMm,
+    maxHorizontalDisplacementMm,
+    maxWallDeflectionMm: maxHorizontalDisplacementMm,
+    maxBasalHeaveMm: maxSettlementMm,
+    totalExcavatedWeightKn: round(totalExcavatedWeightKn, 6),
+    supportReactionKn: 0,
+    boundaryReactionKn: round(totalExcavatedWeightKn, 6),
+    stageCount: excavation.stages.length,
+    solverLoadSteps: result.loadSteps.length,
+    solverIterations,
+    maxSolverResidualRatio: round(result.residualNormRatio, 12),
+    maxYieldResidualRatio: round(result.maxYieldResidualRatio, 12),
+    nonlinearPlasticStrain: round(result.maxEquivalentPlasticStrain, 12),
+    planeStrainDofCount: result.dofCount,
+    planeStrainFreeDofCount: result.freeDofCount,
+    planeStrainConstrainedDofCount: result.constrainedDofCount,
+    plasticGaussPointCount: result.plasticGaussPointCount,
+    maxEquivalentPlasticStrain: round(result.maxEquivalentPlasticStrain, 12),
+    maxEquivalentPlasticStrainIncrement: round(result.maxEquivalentPlasticStrainIncrement, 12),
+    ...(material.hardeningModulusKpa != null && material.hardeningModulusKpa > 0 ? {
+      maxHardeningStressKpa: round(maxHardeningStressKpa, 8),
+    } : {}),
+    adaptiveAttemptCount: result.adaptiveLoadStepping.attemptedStepCount,
+    adaptiveAcceptedStepCount: result.adaptiveLoadStepping.acceptedStepCount,
+    adaptiveRejectedAttemptCount: rejectedAttemptCount,
+    adaptiveCutbackCount: result.adaptiveLoadStepping.cutbackCount,
+    adaptiveMaxCutbackDepth: result.adaptiveLoadStepping.maxCutbackDepth,
+    maxExcessPorePressureKpa: round(biotResult.maxPorePressureKpa, 8),
+    timeStepCount: biotResult.timeSteps.length,
+    minPorePressureKpa: round(biotResult.minPorePressureKpa, 8),
+    maxPorePressureKpa: round(biotResult.maxPorePressureKpa, 8),
+    maxBiotCouplingKpa: round(result.pressureReplayAudit.maxAppliedEffectiveStressReductionKpa, 8),
+    porePressureMassBalanceErrorRatio: finalBiotStep?.massBalanceErrorRatio ?? biotResult.massBalanceErrorRatio,
+    maxFreePorePressureResidualM3PerS: biotResult.maxFreePorePressureResidualM3PerS,
+    freePorePressureResidualL1M3PerS: biotResult.freePorePressureResidualL1M3PerS,
+    prescribedPorePressureResidualL1M3PerS: biotResult.pressureAudit.prescribedPorePressureResidualL1M3PerS,
+    averagePorePressureKpa: biotResult.pressureDiagnostics.averagePorePressureKpa,
+    averageFreePorePressureKpa: biotResult.pressureDiagnostics.averageFreePorePressureKpa,
+    porePressureDissipationRatio: biotResult.pressureDiagnostics.porePressureDissipationRatio,
+    maxPorePressureChangeRateKpaPerS: biotResult.pressureDiagnostics.maxPorePressureChangeRateKpaPerS,
+    coupledUnknownCount: result.dofCount,
+    displacementDofCount: result.dofCount,
+    porePressureDofCount: 0,
+  };
+
+  return {
+    schemaVersion: 'fem-result-manifest.v0',
+    caseId: caseFile.caseId,
+    title: `${caseFile.title} - Drucker-Prager Biot pressure-replay result`,
+    generatedAt: new Date().toISOString(),
+    backend: {
+      id: DP_BIOT_REPLAY_BACKEND_ID,
+      label: 'Built-in experimental plane-strain Drucker-Prager Biot pressure-replay preview',
+      deterministic: true,
+      version: '0.1.0',
+      productionReady: false,
+    },
+    analysisCase: caseFile,
+    validation,
+    mesh: {
+      nodes: mesh.nodes.length,
+      elements: mesh.elements.length,
+      elementType: 'quad4_plane_strain',
+      divisions: [caseFile.mesh.divisionsX, caseFile.mesh.divisionsY, caseFile.mesh.divisionsZ],
+      visualizationNodes: visualization.base.length / 3,
+      visualizationTriangles: visualization.tri.length / 3,
+      visualizationEdges: visualization.edge.length / 2,
+    },
+    envelope,
+    pressureAudit: biotResult.pressureAudit,
+    biotTransientAcceptance: {
+      ...biotResult.transientAcceptance,
+      blockerCodes: [...biotResult.transientAcceptance.blockerCodes],
+    },
+    pressureReplayAudit: {
+      ...result.pressureReplayAudit,
+      sourceTransientBlockerCodes: [...result.pressureReplayAudit.sourceTransientBlockerCodes],
+      limitations: [...result.pressureReplayAudit.limitations],
+    },
+    adaptiveLoadStepping,
+    solverConvergence: buildSolverConvergenceReport(result),
+    visualization,
+    assumptions: [
+      ...caseFile.assumptions,
+      {
+        id: 'dp-biot-pressure-replay-route',
+        parameter: 'hydro-mechanical route scope',
+        value: 'sequential one-way final Biot pressure-frame replay into plane-strain Drucker-Prager effective stress',
+        basis: 'The manifest records accepted upstream Biot transient metadata, pressure audit, pressure-replay audit, and nonlinear DP convergence metadata. It is not a monolithic Biot-plastic solve.',
+        confidence: 'measured',
+        reviewRequired: true,
+      },
+      {
+        id: 'dp-biot-pressure-frame-source',
+        parameter: 'pore-pressure frame source',
+        value: 'final accepted Biot u-p transient step',
+        basis: 'The pressure frame is replayed as prescribed pore-pressure increments against matching mechanical node ids; nonlinear iterations do not include pore-pressure unknowns.',
+        confidence: 'measured',
+        reviewRequired: true,
+      },
+      ...(material.hardeningModulusKpa != null && material.hardeningModulusKpa > 0 ? [{
+        id: 'dp-isotropic-hardening-route',
+        parameter: 'Drucker-Prager hardening modulus',
+        value: material.hardeningModulusKpa,
+        unit: 'kPa',
+        basis: 'Route-backed adaptive Drucker-Prager preview forwarded the reviewed hardening modulus into Gauss-point return mapping and reports the resulting hardening stress envelope; calibration and independent benchmark approval are still required.',
+        confidence: 'review' as const,
+        reviewRequired: true,
+      }] : []),
+    ],
+    limitations: [
+      'Experimental route-backed sequential Biot pressure-replay preview only; not a production hydro-mechanical nonlinear FEM design solver.',
+      'Uses a final accepted linear Biot u-p pressure frame as prescribed pore-pressure increments in the Drucker-Prager mechanical solve.',
+      'No pore-pressure DOFs, pressure equation, plastic volumetric source term, monolithic hydro-mechanical coupling, or consistent Biot-plastic tangent is assembled in the nonlinear iterations.',
+      'Mechanical load factor and pore-pressure time remain separate reviewed engineering inputs; advanced staged activation, support member design, seepage/dewatering design, and commercial benchmark acceptance are not provided.',
+      ...result.pressureReplayAudit.limitations,
+      ...result.limitations,
+      ...biotResult.limitations,
+      ...caseFile.limitations,
+    ],
+  };
+}
+
 export const runBuiltinPlaneStrainDruckerPragerAdaptiveSolver =
   runBuiltinPlaneStrainDruckerPragerAdaptivePreview;
 export const runBuiltinPlaneStrainDpAdaptivePreview =
   runBuiltinPlaneStrainDruckerPragerAdaptivePreview;
 export const runBuiltinPlaneStrainDpAdaptiveSolver =
   runBuiltinPlaneStrainDruckerPragerAdaptivePreview;
+export const runBuiltinPlaneStrainDpBiotReplayPreview =
+  runBuiltinPlaneStrainDruckerPragerBiotPressureReplayPreview;
+export const runBuiltinPlaneStrainDpBiotReplaySolver =
+  runBuiltinPlaneStrainDruckerPragerBiotPressureReplayPreview;

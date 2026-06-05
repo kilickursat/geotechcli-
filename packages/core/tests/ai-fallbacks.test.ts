@@ -495,6 +495,143 @@ describe('AI fallback behavior', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
+  it('uses mocked default hosted GLM to prepare DP Biot pressure-replay drafts through readiness gates', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        hostedBetaSuccessResponse([
+          'I will check FEM production readiness before drafting the pressure-replay route.',
+          '```tool',
+          JSON.stringify({
+            tool: 'assess_fem_production_readiness',
+            args: {
+              objective: 'excavation-plane-strain-dp-biot-replay',
+              requestedFeatures: [
+                'nonlinear-plasticity',
+                'pressure-replay',
+                'hydro-mechanical-coupling',
+                'independent-benchmark-validation',
+              ],
+            },
+          }),
+          '```',
+        ].join('\n')),
+      )
+      .mockResolvedValueOnce(
+        hostedBetaSuccessResponse([
+          'Production readiness is still blocked, so I will prepare a review-gated deterministic draft only.',
+          '```tool',
+          JSON.stringify({
+            tool: 'prepare_fem_analysis_case',
+            args: {
+              objective: 'hydro mechanical pressure replay',
+              excavation_length_m: 22,
+              excavation_width_m: 14,
+              final_depth_m: 9,
+              stage_depths: [3, 6, 9],
+              support_levels: [0, 2, 5],
+              pressure_kpa: 25,
+              elastic_modulus_kpa: 36000,
+              poisson_ratio: 0.31,
+              unit_weight_kn_m3: 18.8,
+              phi: 32,
+              cohesion_kpa: 10,
+              hardening_modulus_kpa: 5000,
+              initial_excess_pore_pressure_kpa: 100,
+              drained_top_pressure_kpa: 0,
+              time_steps: [1, 2, 4, 8],
+              hydraulic_conductivity: 0.000001,
+              specific_storage: 0.0001,
+              biot_alpha: 0.8,
+            },
+          }),
+          '```',
+        ].join('\n')),
+      )
+      .mockResolvedValueOnce(
+        hostedBetaSuccessResponse(
+          'The pressure-replay draft is prepared for human review only; production hydro-mechanical readiness remains blocked and no FEM solver was run.',
+        ),
+      );
+    global.fetch = fetchMock as typeof fetch;
+
+    const session = await runAgent(
+      'Use the default hosted GLM to plan a Drucker-Prager excavation with Biot pressure replay. Check production readiness first, then prepare the deterministic draft without running a solver.',
+      {
+        provider: 'hosted-beta',
+        apiKey: '',
+        timeout: 1000,
+      },
+      () => {},
+      undefined,
+      {
+        allowedTools: [
+          'assess_fem_production_readiness',
+          'prepare_fem_analysis_case',
+        ],
+        disableDeterministicPreflight: true,
+        requiredToolsBeforeFinal: [
+          'assess_fem_production_readiness',
+          'prepare_fem_analysis_case',
+        ],
+      },
+    );
+
+    const requests = fetchMock.mock.calls.map((call) => (
+      JSON.parse(String(call[1]?.body ?? '{}')) as { model?: string; messages?: Array<{ content?: unknown }> }
+    ));
+    expect(requests.map((request) => request.model)).toEqual(['glm-5.1', 'glm-5.1', 'glm-5.1']);
+
+    const toolCalls = session.steps.filter((step) => step.type === 'tool_call');
+    expect(toolCalls.map((step) => step.toolName)).toEqual([
+      'assess_fem_production_readiness',
+      'prepare_fem_analysis_case',
+    ]);
+    expect(toolCalls[0]?.toolArgs).toMatchObject({
+      objective: 'excavation-plane-strain-dp-biot-replay',
+      requestedFeatures: expect.arrayContaining([
+        'pressure-replay',
+        'hydro-mechanical-coupling',
+      ]),
+    });
+    expect(toolCalls[1]?.toolArgs).toMatchObject({
+      objective: 'excavation-plane-strain-dp-biot-replay',
+      biot: {
+        initialPorePressureKpa: 100,
+        topPorePressureKpa: 0,
+        timeStepsSeconds: [1, 2, 4, 8],
+      },
+      material: {
+        hydraulicConductivityMPerS: 0.000001,
+        specificStorage1PerM: 0.0001,
+        biotCoefficient: 0.8,
+      },
+    });
+
+    const readinessResult = session.steps.find(
+      (step) => step.type === 'tool_result' && step.toolName === 'assess_fem_production_readiness',
+    );
+    expect(readinessResult?.content).toContain('FEM production readiness blocked');
+    expect(JSON.stringify(readinessResult?.toolResult?.data))
+      .toContain('quad4-plane-strain-dp-sequential-biot-pressure-replay-audit');
+
+    const draftResult = session.steps.find(
+      (step) => step.type === 'tool_result' && step.toolName === 'prepare_fem_analysis_case',
+    );
+    const draft = draftResult?.toolResult?.data as any;
+    expect(draft.canAutoProceed).toBe(false);
+    expect(draft.analysisCase.caseId).toBe('excavation-plane-strain-dp-biot-replay-draft');
+    expect(draft.analysisCase.geometry.biot.initialPorePressureKpa).toBe(100);
+    expect(draft.analysisCase.materials[0].biotCoefficient).toBe(0.8);
+    expect(draft.recommendedCommand).toContain('--backend plane-strain-dp-biot-replay');
+
+    const answer = session.steps.find((step) => step.type === 'answer');
+    expect(answer?.content).toMatch(/human review|review/i);
+    expect(answer?.content).toMatch(/no FEM solver was run|no solver/i);
+    expect(answer?.content).not.toMatch(/\bis production[- ]?(?:ready|grade)\b/i);
+    expect(answer?.content).not.toMatch(/\bready for production\b/i);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
   it('uses mocked default hosted GLM to block production FEM claims before readiness evidence and run attempts', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(

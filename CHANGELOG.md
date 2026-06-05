@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.124] - 2026-06-05
+
+### FEM DP Biot Pressure Replay Route
+
+- Added reviewed experimental `excavation-plane-strain-dp-biot-replay` drafting and `--backend plane-strain-dp-biot-replay` execution for sequential one-way Biot pressure-frame replay into plane-strain Drucker-Prager effective-stress analysis.
+- Added result-manifest `pressureReplayAudit` validation that requires accepted upstream Biot transient metadata, pressure audit evidence, zero nonlinear pore-pressure DOFs, and explicit no-monolithic-coupling limitations.
+- Extended CLI, agent schema/normalization, default hosted GLM guardrails, route tests, and draft-run smoke coverage while keeping FEM production readiness blocked.
+
 ## [0.4.123] - 2026-06-04
 
 ### FEM Benchmark And DP Route Evidence

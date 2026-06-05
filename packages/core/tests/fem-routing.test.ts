@@ -24,6 +24,7 @@ describe('FEM routing contract', () => {
       'foundation-settlement',
       'excavation-deformation',
       'excavation-plane-strain-dp-adaptive',
+      'excavation-plane-strain-dp-biot-replay',
       'shaft-deformation',
       'tunnel-volume-loss-settlement',
       'pile-group-elastic-interaction',
@@ -47,6 +48,11 @@ describe('FEM routing contract', () => {
     expect(capabilities.find((capability) => capability.objective === 'excavation-plane-strain-dp-adaptive')?.runCommandTemplate).toBe('geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction> --backend plane-strain-dp-adaptive');
     expect(capabilities.find((capability) => capability.objective === 'excavation-plane-strain-dp-adaptive')?.reviewGates).toContain('plane-strain-idealization');
     expect(capabilities.find((capability) => capability.objective === 'excavation-plane-strain-dp-adaptive')?.reviewGates).toContain('nonlinear-preview-only');
+    expect(capabilities.find((capability) => capability.objective === 'excavation-plane-strain-dp-biot-replay')?.status).toBe('implemented-demo');
+    expect(capabilities.find((capability) => capability.objective === 'excavation-plane-strain-dp-biot-replay')?.deterministicBackend).toBe('builtin-plane-strain-dp-biot-replay-v0');
+    expect(capabilities.find((capability) => capability.objective === 'excavation-plane-strain-dp-biot-replay')?.runCommandTemplate).toBe('geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction> --backend plane-strain-dp-biot-replay');
+    expect(capabilities.find((capability) => capability.objective === 'excavation-plane-strain-dp-biot-replay')?.reviewGates).toContain('sequential-one-way-pressure-replay-only');
+    expect(capabilities.find((capability) => capability.objective === 'excavation-plane-strain-dp-biot-replay')?.reviewGates).toContain('no-pore-pressure-dofs-in-nonlinear-iterations');
     expect(capabilities.find((capability) => capability.objective === 'tunnel-volume-loss-settlement')?.status).toBe('implemented-demo');
     expect(capabilities.find((capability) => capability.objective === 'tunnel-volume-loss-settlement')?.command).toBe('geotech fem draft tunnel-volume-loss-settlement --input <json> --case-output <analysis_case.json>');
     expect(capabilities.find((capability) => capability.objective === 'tunnel-volume-loss-settlement')?.demoCommand).toBe('geotech fem demo tunnel --experimental');
@@ -244,6 +250,92 @@ describe('FEM routing contract', () => {
     expect(draft.reviewGates).toContain('plane-strain-idealization');
     expect(draft.reviewGates).toContain('no-monolithic-seepage-or-consolidation-coupling');
     expect(draft.reviewGates).toContain('not-design-calculation');
+  });
+
+  it('prepares route-backed plane-strain Drucker-Prager Biot pressure-replay drafts', () => {
+    const missing = prepareFemAnalysisCaseDraft({
+      objective: 'excavation-plane-strain-dp-biot-replay',
+      geometry: {
+        excavationLengthM: 22,
+        excavationWidthM: 14,
+        excavationFinalDepthM: 9,
+      },
+    });
+
+    expect(missing.recommendedAction).toBe('collect-inputs');
+    expect(missing.analysisCase).toBeUndefined();
+    expect(missing.missingUserInputs).toContain('initial pore pressure');
+    expect(missing.missingUserInputs).toContain('horizontal hydraulic conductivity');
+
+    const draft = prepareFemAnalysisCaseDraft({
+      objective: 'excavation-plane-strain-dp-biot-replay',
+      geometry: {
+        excavationLengthM: 22,
+        excavationWidthM: 14,
+        excavationFinalDepthM: 9,
+        wallToeDepthM: 15,
+      },
+      excavation: {
+        stageDepthsM: [3, 6, 9],
+        supportLevelsM: [0, 2, 5],
+        wallType: 'secant_pile_wall',
+      },
+      load: { pressureKpa: 25 },
+      biot: {
+        initialPorePressureKpa: 100,
+        topPorePressureKpa: 0,
+        timeStepsSeconds: [1, 2, 4, 8],
+      },
+      material: {
+        elasticModulusKpa: 36_000,
+        poissonRatio: 0.31,
+        unitWeightKnM3: 18.8,
+        frictionAngleDeg: 32,
+        cohesionKpa: 10,
+        hardeningModulusKpa: 5_000,
+        hydraulicConductivityMPerS: 1e-6,
+        specificStorage1PerM: 1e-4,
+        biotCoefficient: 0.8,
+      },
+      evidenceRefs: [{ id: 'ev-dp-biot-1', source: 'GroundModel', page: 22 }],
+    });
+
+    expect(draft.implemented).toBe(true);
+    expect(draft.canAutoProceed).toBe(false);
+    expect(draft.recommendedAction).toBe('run-reviewed-case');
+    expect(draft.recommendedCommand).toBe('geotech fem run <analysis_case.json> --experimental --reviewed --approval-output <fem-approval.json> --reviewer-name <name> --reviewer-license <id> --reviewer-jurisdiction <jurisdiction> --backend plane-strain-dp-biot-replay');
+    expect(draft.analysisCase?.caseId).toBe('excavation-plane-strain-dp-biot-replay-draft');
+    expect(draft.analysisCase?.objective).toBe('excavation_deformation');
+    expect(draft.analysisCase?.analysisType).toBe('static_2d_plane_strain_drucker_prager');
+    expect(draft.analysisCase?.mesh.elementType).toBe('quad4_plane_strain');
+    expect(draft.analysisCase?.geometry.biot).toMatchObject({
+      type: 'plane_strain_biot_column',
+      initialPorePressureKpa: 100,
+      timeStepsSeconds: [1, 2, 4, 8],
+    });
+    expect(draft.analysisCase?.geometry.biot?.widthM).toBe(draft.analysisCase?.geometry.domain.lengthM);
+    expect(draft.analysisCase?.geometry.biot?.heightM).toBe(draft.analysisCase?.geometry.domain.depthM);
+    expect(draft.analysisCase?.geometry.biot?.thicknessM).toBe(draft.analysisCase?.geometry.domain.widthM);
+    expect(draft.analysisCase?.geometry.biot?.porePressureBoundaries).toEqual([
+      { id: 'top-drained', boundary: 'top', porePressureKpa: 0 },
+    ]);
+    expect(draft.analysisCase?.materials[0]).toMatchObject({
+      model: 'mohr_coulomb',
+      frictionAngleDeg: 32,
+      cohesionKpa: 10,
+      hardeningModulusKpa: 5_000,
+      hydraulicConductivityMPerS: 1e-6,
+      hydraulicConductivityXMPerS: 1e-6,
+      hydraulicConductivityYMPerS: 1e-6,
+      specificStorage1PerM: 1e-4,
+      biotCoefficient: 0.8,
+    });
+    expect(draft.validation?.status).toBe('review');
+    expect(draft.validation?.blockers).toBe(0);
+    expect(draft.reviewGates).toContain('sequential-one-way-pressure-replay-only');
+    expect(draft.reviewGates).toContain('no-pore-pressure-dofs-in-nonlinear-iterations');
+    expect(draft.reviewGates).toContain('not-design-calculation');
+    expect(draft.analysisCase?.limitations.join(' ')).toMatch(/no pore-pressure DOFs/i);
   });
 
   it('prepares tunnel volume-loss settlement drafts without pretending it is production FEM', () => {

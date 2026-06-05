@@ -38,6 +38,7 @@ const FEM_MAX_PREVIEW_MESH_NODES = FEM_WEBGL_UINT16_INDEX_LIMIT + 1;
 const FEM_MIN_BIOT_TRANSIENT_STEPS = 3;
 const FEM_MAX_BIOT_TIME_STEP_GROWTH_RATIO = 8;
 const FEM_PLANE_STRAIN_DP_ADAPTIVE_BACKEND_ID = 'builtin-plane-strain-dp-adaptive-v0';
+const FEM_PLANE_STRAIN_DP_BIOT_REPLAY_BACKEND_ID = 'builtin-plane-strain-dp-biot-replay-v0';
 const FEM_PLANE_STRAIN_DP_ANALYSIS_TYPE = 'static_2d_plane_strain_drucker_prager';
 
 function expectedMeshCounts(mesh: FemAnalysisCase['mesh']): { nodes: number; elements: number } {
@@ -816,11 +817,17 @@ export function validateFemAnalysisCase(caseFile: FemAnalysisCase): FemValidatio
         findings.push(finding('review', 'stages.final-depth-review', 'Last excavation stage does not exactly match the final depth; staging requires review.'));
       }
       findings.push(isPlaneStrainDruckerPragerAnalysis
-        ? finding(
-          'review',
-          'excavation.plane-strain-dp-preview',
-          'Excavation preview uses experimental plane-strain Drucker-Prager plasticity and still excludes retaining wall design, basal heave, seepage, consolidation, and production design acceptance.',
-        )
+        ? biot
+          ? finding(
+            'review',
+            'excavation.plane-strain-dp-biot-replay-preview',
+            'Excavation preview uses experimental plane-strain Drucker-Prager plasticity with sequential Biot pressure replay; it still excludes retaining wall design, basal heave, monolithic hydro-mechanical coupling, and production design acceptance.',
+          )
+          : finding(
+            'review',
+            'excavation.plane-strain-dp-preview',
+            'Excavation preview uses experimental plane-strain Drucker-Prager plasticity and still excludes retaining wall design, basal heave, seepage, consolidation, and production design acceptance.',
+          )
         : finding(
           'review',
           'excavation.design-excluded',
@@ -928,7 +935,10 @@ export function validateFemAnalysisCase(caseFile: FemAnalysisCase): FemValidatio
       ));
     }
   }
-  if (caseFile.objective === 'seepage_groundwater_coupling') {
+  const validatesBiotPressureSourceGeometry =
+    caseFile.objective === 'seepage_groundwater_coupling' ||
+    (caseFile.objective === 'excavation_deformation' && isPlaneStrainDruckerPragerAnalysis && biot != null);
+  if (validatesBiotPressureSourceGeometry) {
     if (!biot) {
       findings.push(finding('blocker', 'geometry.biot-missing', 'Seepage/groundwater coupling cases require plane-strain Biot geometry.'));
     } else {
@@ -1001,11 +1011,17 @@ export function validateFemAnalysisCase(caseFile: FemAnalysisCase): FemValidatio
           pushFiniteNumberFinding(findings, boundary.porePressureKpa, `${prefix}.pore-pressure`, 'Prescribed pore pressure', { nonNegative: true });
         }
       }
-      findings.push(finding(
-        'review',
-        'biot.up-preview-only',
-        'Seepage/groundwater coupling uses an experimental deterministic 2D Biot u-p preview and is not production design evidence.',
-      ));
+      findings.push(caseFile.objective === 'seepage_groundwater_coupling'
+        ? finding(
+          'review',
+          'biot.up-preview-only',
+          'Seepage/groundwater coupling uses an experimental deterministic 2D Biot u-p preview and is not production design evidence.',
+        )
+        : finding(
+          'review',
+          'biot.pressure-replay-source-preview-only',
+          'Plane-strain Drucker-Prager excavation uses Biot geometry only as an experimental sequential pressure-replay source; this is not monolithic hydro-mechanical production evidence.',
+        ));
     }
   }
   if (caseFile.materials.length === 0) {
@@ -1062,8 +1078,11 @@ export function validateFemAnalysisCase(caseFile: FemAnalysisCase): FemValidatio
         }
         pushFiniteNumberFinding(findings, material.cohesionKpa, `${prefix}.plane-strain-dp-cohesion`, 'Plane-strain Drucker-Prager cohesion', { nonNegative: true });
       }
-      if (caseFile.objective === 'seepage_groundwater_coupling') {
-        if (material.model !== 'linear_elastic') {
+      const requiresBiotMaterial =
+        caseFile.objective === 'seepage_groundwater_coupling' ||
+        (isPlaneStrainDruckerPragerAnalysis && biot != null);
+      if (requiresBiotMaterial) {
+        if (caseFile.objective === 'seepage_groundwater_coupling' && material.model !== 'linear_elastic') {
           findings.push(finding('blocker', `${prefix}.biot-model-required`, 'Biot u-p preview requires a linear_elastic material with hydraulic coupling parameters.'));
         }
         const hasHydraulicX = material.hydraulicConductivityXMPerS != null || material.hydraulicConductivityMPerS != null;
@@ -1759,6 +1778,344 @@ function validatePlaneStrainDpAdaptiveAcceptance(
   }
 }
 
+function validatePressureAuditEnvelope(
+  findings: FemValidationFinding[],
+  manifest: FemResultManifest,
+  context: 'biot' | 'dp-biot-replay',
+): void {
+  const { envelope } = manifest;
+  const pressureAudit = manifest.pressureAudit;
+  const codePrefix = context === 'biot' ? 'result.pressure-audit' : 'result.dp-biot-replay.pressure-audit';
+  if (!pressureAudit) {
+    findings.push(finding('blocker', `${codePrefix}.missing`, context === 'biot'
+      ? 'Biot result manifests must include a pressure audit.'
+      : 'DP Biot pressure-replay manifests must include the upstream Biot pressure audit.'));
+    return;
+  }
+  const pressureAuditEntries: Array<[keyof NonNullable<FemResultManifest['pressureAudit']>, string, string]> = [
+    ['freePorePressureResidualL1M3PerS', 'free-pore-pressure-residual-l1', 'Free pore-pressure residual L1 norm'],
+    ['prescribedPorePressureResidualL1M3PerS', 'prescribed-pore-pressure-residual-l1', 'Prescribed pore-pressure residual L1 norm'],
+    ['netPrescribedPressureBoundaryFlowM3PerS', 'net-prescribed-pressure-boundary-flow', 'Net prescribed pressure boundary flow'],
+    ['appliedNodalFluxSumM3PerS', 'applied-nodal-flux-sum', 'Applied nodal flux sum'],
+    ['storageRateSumM3PerS', 'storage-rate-sum', 'Storage-rate sum'],
+    ['couplingRateSumM3PerS', 'coupling-rate-sum', 'Coupling-rate sum'],
+    ['darcyFlowRateSumM3PerS', 'darcy-flow-rate-sum', 'Darcy flow-rate sum'],
+  ];
+  for (const [key, code, label] of pressureAuditEntries) {
+    pushFiniteNumberFinding(findings, pressureAudit[key], `${codePrefix}.${code}`, label);
+  }
+  pushApproximateMatchFinding(
+    findings,
+    pressureAudit.freePorePressureResidualL1M3PerS,
+    envelope.freePorePressureResidualL1M3PerS!,
+    `${codePrefix}.free-residual-envelope-mismatch`,
+    'Pressure-audit free residual',
+    1e-12,
+  );
+  pushApproximateMatchFinding(
+    findings,
+    pressureAudit.prescribedPorePressureResidualL1M3PerS,
+    envelope.prescribedPorePressureResidualL1M3PerS!,
+    `${codePrefix}.prescribed-residual-envelope-mismatch`,
+    'Pressure-audit prescribed residual',
+    1e-12,
+  );
+}
+
+function validateBiotTransientAcceptanceEnvelope(
+  findings: FemValidationFinding[],
+  manifest: FemResultManifest,
+  options: {
+    context: 'biot' | 'dp-biot-replay';
+    requireDrainedMonotonicChecks: boolean;
+    expectedAcceptedStepCount?: number;
+  },
+): void {
+  const { envelope } = manifest;
+  const transientAcceptance = manifest.biotTransientAcceptance;
+  const codePrefix = options.context === 'biot'
+    ? 'result.biot-transient-acceptance'
+    : 'result.dp-biot-replay.biot-transient-acceptance';
+  if (!transientAcceptance) {
+    findings.push(finding('blocker', `${codePrefix}.missing`, options.context === 'biot'
+      ? 'Biot result manifests must include transient acceptance metadata.'
+      : 'DP Biot pressure-replay manifests must include upstream Biot transient acceptance metadata.'));
+    return;
+  }
+  if (transientAcceptance.schemaVersion !== 'fem-plane-strain-biot-transient-acceptance.v1') {
+    findings.push(finding('blocker', `${codePrefix}.schema.unsupported`, 'Unsupported Biot transient acceptance schema.'));
+  }
+  if (transientAcceptance.accepted !== true) {
+    findings.push(finding('blocker', `${codePrefix}.not-accepted`, 'Biot transient acceptance must be accepted before publishing a preview manifest.'));
+  }
+  if (
+    transientAcceptance.dissipationCheckMode !== 'drained-dissipation' &&
+    transientAcceptance.dissipationCheckMode !== 'prescribed-gradient-relaxation' &&
+    transientAcceptance.dissipationCheckMode !== 'load-generated-consolidation'
+  ) {
+    findings.push(finding('blocker', `${codePrefix}.mode.invalid`, 'Biot transient acceptance mode is invalid.'));
+  }
+  const pressureEnvelopeMode = transientAcceptance.pressureEnvelopeMode ??
+    (transientAcceptance.dissipationCheckMode === 'load-generated-consolidation'
+      ? 'load-generated-positive-pressure'
+      : 'initial-prescribed-bound');
+  if (
+    pressureEnvelopeMode !== 'initial-prescribed-bound' &&
+    pressureEnvelopeMode !== 'load-generated-positive-pressure'
+  ) {
+    findings.push(finding('blocker', `${codePrefix}.pressure-envelope-mode.invalid`, 'Biot transient pressure envelope mode is invalid.'));
+  }
+  const acceptedStepCountOk = pushFiniteNumberFinding(
+    findings,
+    transientAcceptance.acceptedStepCount,
+    `${codePrefix}.accepted-step-count`,
+    'Biot transient accepted step count',
+    { positive: true },
+  );
+  const requiredStepCountOk = pushFiniteNumberFinding(
+    findings,
+    transientAcceptance.requiredStepCount,
+    `${codePrefix}.required-step-count`,
+    'Biot transient required step count',
+    { positive: true },
+  );
+  const maxResidualOk = pushFiniteNumberFinding(
+    findings,
+    transientAcceptance.maxResidualNormRatio,
+    `${codePrefix}.max-residual-ratio`,
+    'Biot transient maximum residual ratio',
+    { nonNegative: true },
+  );
+  const maxMassBalanceOk = pushFiniteNumberFinding(
+    findings,
+    transientAcceptance.maxMassBalanceErrorRatio,
+    `${codePrefix}.max-mass-balance-ratio`,
+    'Biot transient maximum mass-balance ratio',
+    { nonNegative: true },
+  );
+  pushFiniteNumberFinding(
+    findings,
+    transientAcceptance.maxPressureOvershootKpa,
+    `${codePrefix}.max-pressure-overshoot`,
+    'Biot transient maximum pressure overshoot',
+    { nonNegative: true },
+  );
+  const finalDissipationOk = pushFiniteNumberFinding(
+    findings,
+    transientAcceptance.finalPorePressureDissipationRatio,
+    `${codePrefix}.final-dissipation-ratio`,
+    'Biot transient final pore-pressure dissipation ratio',
+    { nonNegative: true },
+  );
+  if (acceptedStepCountOk && isFiniteNumber(envelope.timeStepCount) && transientAcceptance.acceptedStepCount !== envelope.timeStepCount) {
+    findings.push(finding('blocker', `${codePrefix}.accepted-step-count-mismatch`, 'Biot accepted step count must match the envelope time-step count.'));
+  }
+  if (
+    acceptedStepCountOk &&
+    options.expectedAcceptedStepCount != null &&
+    transientAcceptance.acceptedStepCount !== options.expectedAcceptedStepCount
+  ) {
+    findings.push(finding('blocker', `${codePrefix}.accepted-step-count-audit-mismatch`, 'Biot accepted step count must match the pressure-replay audit source step count.'));
+  }
+  if (requiredStepCountOk && transientAcceptance.requiredStepCount < FEM_MIN_BIOT_TRANSIENT_STEPS) {
+    findings.push(finding('blocker', `${codePrefix}.required-step-count-too-small`, 'Biot required transient step count is below the preview policy.'));
+  }
+  if (acceptedStepCountOk && requiredStepCountOk && transientAcceptance.acceptedStepCount < transientAcceptance.requiredStepCount) {
+    findings.push(finding('blocker', `${codePrefix}.accepted-step-count-too-small`, 'Biot accepted step count is below the required transient step count.'));
+  }
+  if (maxResidualOk && transientAcceptance.maxResidualNormRatio > 1e-3) {
+    findings.push(finding('blocker', `${codePrefix}.max-residual-too-large`, 'Biot transient maximum residual ratio exceeds the preview tolerance.'));
+  }
+  if (maxMassBalanceOk && transientAcceptance.maxMassBalanceErrorRatio > 1e-3) {
+    findings.push(finding('blocker', `${codePrefix}.max-mass-balance-too-large`, 'Biot transient maximum mass-balance ratio exceeds the preview tolerance.'));
+  }
+  if (finalDissipationOk && isFiniteNumber(envelope.porePressureDissipationRatio)) {
+    pushApproximateMatchFinding(
+      findings,
+      transientAcceptance.finalPorePressureDissipationRatio,
+      envelope.porePressureDissipationRatio,
+      `${codePrefix}.final-dissipation-envelope-mismatch`,
+      'Biot transient final dissipation ratio',
+      1e-12,
+    );
+  }
+  if (
+    options.requireDrainedMonotonicChecks &&
+    transientAcceptance.dissipationCheckMode === 'drained-dissipation' &&
+    transientAcceptance.monotonicAverageFreePressureDissipationRequired !== true
+  ) {
+    findings.push(finding('blocker', `${codePrefix}.drained-monotonic-required`, 'Drained-dissipation Biot acceptance must require monotonic average free pore-pressure dissipation.'));
+  }
+  if (
+    transientAcceptance.monotonicAverageFreePressureDissipationRequired &&
+    transientAcceptance.monotonicAverageFreePressureDissipation !== true
+  ) {
+    findings.push(finding('blocker', `${codePrefix}.average-free-pressure-not-monotonic`, 'Required average free pore-pressure dissipation was not monotonic.'));
+  }
+  if (
+    options.requireDrainedMonotonicChecks &&
+    pressureEnvelopeMode === 'initial-prescribed-bound' &&
+    transientAcceptance.monotonicMaxPressureEnvelope !== true
+  ) {
+    findings.push(finding('blocker', `${codePrefix}.max-pressure-not-monotonic`, 'Biot maximum pore-pressure envelope must be monotonic non-increasing.'));
+  }
+  if (!Array.isArray(transientAcceptance.blockerCodes)) {
+    findings.push(finding('blocker', `${codePrefix}.blocker-codes.invalid`, 'Biot transient acceptance blocker codes must be an array.'));
+  } else if (transientAcceptance.accepted && transientAcceptance.blockerCodes.length > 0) {
+    findings.push(finding('blocker', `${codePrefix}.blocker-codes-not-empty`, 'Accepted Biot transient metadata must not include blocker codes.'));
+  }
+}
+
+function validatePlaneStrainDpBiotPressureReplayAcceptance(
+  findings: FemValidationFinding[],
+  manifest: FemResultManifest,
+): void {
+  const { envelope, analysisCase } = manifest;
+  const biot = analysisCase.geometry.biot;
+  if (!biot) {
+    findings.push(finding('blocker', 'result.dp-biot-replay.geometry-biot-missing', 'DP Biot pressure-replay manifests must embed the reviewed Biot pressure-source geometry.'));
+    return;
+  }
+  const audit = manifest.pressureReplayAudit;
+  if (!isRecord(audit)) {
+    findings.push(finding('blocker', 'result.dp-biot-replay.audit.missing', 'DP Biot pressure-replay manifests must include pressureReplayAudit metadata.'));
+    return;
+  }
+  if (audit.schemaVersion !== 'fem-plane-strain-dp-biot-pressure-replay-audit.v1') {
+    findings.push(finding('blocker', 'result.dp-biot-replay.audit.schema.unsupported', 'Unsupported DP Biot pressure-replay audit schema.'));
+  }
+  if (audit.mode !== 'sequential-one-way-biot-pressure-replay') {
+    findings.push(finding('blocker', 'result.dp-biot-replay.audit.mode.invalid', 'DP Biot pressure replay must declare sequential one-way replay mode.'));
+  }
+  if (audit.pressureFrameSource !== 'final-biot-step') {
+    findings.push(finding('blocker', 'result.dp-biot-replay.audit.pressure-frame-source.invalid', 'DP Biot pressure replay must use the final Biot step as the pressure-frame source.'));
+  }
+  if (!isNonEmptyString(audit.sourceMethod)) {
+    findings.push(finding('blocker', 'result.dp-biot-replay.audit.source-method.missing', 'DP Biot pressure replay must record the upstream Biot source method.'));
+  }
+  if (audit.sourceTransientAccepted !== true) {
+    findings.push(finding('blocker', 'result.dp-biot-replay.audit.source-transient-not-accepted', 'DP Biot pressure replay requires an accepted upstream transient source.'));
+  }
+  if (!Array.isArray(audit.sourceTransientBlockerCodes)) {
+    findings.push(finding('blocker', 'result.dp-biot-replay.audit.source-blockers.invalid', 'DP Biot pressure replay source blocker codes must be an array.'));
+  } else if (audit.sourceTransientBlockerCodes.length > 0) {
+    findings.push(finding('blocker', 'result.dp-biot-replay.audit.source-blockers-not-empty', 'Accepted DP Biot pressure replay source must not include blocker codes.'));
+  }
+  const sourceStepsOk = pushFiniteNumberFinding(findings, audit.sourceAcceptedStepCount, 'result.dp-biot-replay.audit.source-accepted-step-count', 'Pressure-replay source accepted step count', { positive: true });
+  const sourcePressureDofsOk = pushFiniteNumberFinding(findings, audit.sourcePorePressureDofCount, 'result.dp-biot-replay.audit.source-pore-pressure-dof-count', 'Pressure-replay source pore-pressure DOF count', { positive: true });
+  const replayNodeCountOk = pushFiniteNumberFinding(findings, audit.replayNodeCount, 'result.dp-biot-replay.audit.replay-node-count', 'Pressure-replay node count', { positive: true });
+  const sourceMassBalanceOk = pushFiniteNumberFinding(findings, audit.sourceMassBalanceErrorRatio, 'result.dp-biot-replay.audit.source-mass-balance-ratio', 'Pressure-replay source mass-balance ratio', { nonNegative: true });
+  const sourceResidualOk = pushFiniteNumberFinding(findings, audit.sourceResidualNormRatio, 'result.dp-biot-replay.audit.source-residual-ratio', 'Pressure-replay source residual ratio', { nonNegative: true });
+  pushFiniteNumberFinding(findings, audit.pressureScale, 'result.dp-biot-replay.audit.pressure-scale', 'Pressure-replay scale', { nonNegative: true });
+  pushFiniteNumberFinding(findings, audit.maxInputPorePressureKpa, 'result.dp-biot-replay.audit.max-input-pore-pressure', 'Pressure-replay maximum input pore pressure', { nonNegative: true });
+  const auditCouplingOk = pushFiniteNumberFinding(findings, audit.maxAppliedEffectiveStressReductionKpa, 'result.dp-biot-replay.audit.max-applied-effective-stress-reduction', 'Pressure-replay maximum applied effective-stress reduction', { nonNegative: true });
+  if (!Array.isArray(audit.limitations) || audit.limitations.length === 0) {
+    findings.push(finding('blocker', 'result.dp-biot-replay.audit.limitations.missing', 'DP Biot pressure-replay audit must include explicit limitations.'));
+  } else {
+    const limitationText = audit.limitations.join(' ').toLowerCase();
+    if (!limitationText.includes('sequential one-way') || !limitationText.includes('no pore-pressure dofs')) {
+      findings.push(finding('blocker', 'result.dp-biot-replay.audit.limitations.incomplete', 'DP Biot pressure-replay audit limitations must disclose sequential one-way replay and no pore-pressure DOFs.'));
+    }
+  }
+  for (const [ok, value, code, label] of [
+    [sourceStepsOk, audit.sourceAcceptedStepCount, 'source-accepted-step-count', 'source accepted step count'],
+    [sourcePressureDofsOk, audit.sourcePorePressureDofCount, 'source-pore-pressure-dof-count', 'source pore-pressure DOF count'],
+    [replayNodeCountOk, audit.replayNodeCount, 'replay-node-count', 'replay node count'],
+  ] as const) {
+    if (ok && !Number.isInteger(value)) {
+      findings.push(finding('blocker', `result.dp-biot-replay.audit.${code}.integer`, `Pressure-replay ${label} must be an integer.`));
+    }
+  }
+  if (replayNodeCountOk && audit.replayNodeCount !== manifest.mesh.nodes) {
+    findings.push(finding('blocker', 'result.dp-biot-replay.audit.replay-node-count-mismatch', 'Pressure-replay node count must match the manifest mesh node count.'));
+  }
+  if (sourcePressureDofsOk && audit.sourcePorePressureDofCount !== manifest.mesh.nodes) {
+    findings.push(finding('blocker', 'result.dp-biot-replay.audit.source-pore-pressure-dof-count-mismatch', 'Pressure-replay source pore-pressure DOF count must match the pressure-source mesh node count.'));
+  }
+  if (sourceStepsOk && audit.sourceAcceptedStepCount !== biot.timeStepsSeconds.length) {
+    findings.push(finding('blocker', 'result.dp-biot-replay.audit.source-step-count-mismatch', 'Pressure-replay source accepted step count must match Biot time steps.'));
+  }
+  if (sourceMassBalanceOk && audit.sourceMassBalanceErrorRatio > 1e-3) {
+    findings.push(finding('blocker', 'result.dp-biot-replay.audit.source-mass-balance-too-large', 'Pressure-replay source mass-balance ratio exceeds the preview tolerance.'));
+  }
+  if (sourceResidualOk && audit.sourceResidualNormRatio > 1e-3) {
+    findings.push(finding('blocker', 'result.dp-biot-replay.audit.source-residual-too-large', 'Pressure-replay source residual ratio exceeds the preview tolerance.'));
+  }
+
+  const minPorePressureOk = pushFiniteNumberFinding(findings, envelope.minPorePressureKpa, 'result.envelope.dp-biot-replay.min-pore-pressure', 'Pressure-replay envelope minimum pore pressure', { nonNegative: true });
+  const maxPorePressureOk = pushFiniteNumberFinding(findings, envelope.maxPorePressureKpa, 'result.envelope.dp-biot-replay.max-pore-pressure', 'Pressure-replay envelope maximum pore pressure', { nonNegative: true });
+  const maxExcessOk = pushFiniteNumberFinding(findings, envelope.maxExcessPorePressureKpa, 'result.envelope.dp-biot-replay.max-excess-pore-pressure', 'Pressure-replay envelope maximum excess pore pressure', { nonNegative: true });
+  const maxCouplingOk = pushFiniteNumberFinding(findings, envelope.maxBiotCouplingKpa, 'result.envelope.dp-biot-replay.max-biot-coupling', 'Pressure-replay envelope maximum Biot coupling', { nonNegative: true });
+  const massBalanceOk = pushFiniteNumberFinding(findings, envelope.porePressureMassBalanceErrorRatio, 'result.envelope.dp-biot-replay.mass-balance-ratio', 'Pressure-replay envelope pore-pressure mass-balance ratio', { nonNegative: true });
+  pushFiniteNumberFinding(findings, envelope.maxFreePorePressureResidualM3PerS, 'result.envelope.dp-biot-replay.max-free-pore-pressure-residual', 'Pressure-replay maximum free pore-pressure residual', { nonNegative: true });
+  pushFiniteNumberFinding(findings, envelope.freePorePressureResidualL1M3PerS, 'result.envelope.dp-biot-replay.free-pore-pressure-residual-l1', 'Pressure-replay free pore-pressure residual L1 norm', { nonNegative: true });
+  pushFiniteNumberFinding(findings, envelope.prescribedPorePressureResidualL1M3PerS, 'result.envelope.dp-biot-replay.prescribed-pore-pressure-residual-l1', 'Pressure-replay prescribed pore-pressure residual L1 norm', { nonNegative: true });
+  const averagePorePressureOk = pushFiniteNumberFinding(findings, envelope.averagePorePressureKpa, 'result.envelope.dp-biot-replay.average-pore-pressure', 'Pressure-replay average pore pressure', { nonNegative: true });
+  const averageFreePorePressureOk = pushFiniteNumberFinding(findings, envelope.averageFreePorePressureKpa, 'result.envelope.dp-biot-replay.average-free-pore-pressure', 'Pressure-replay average free pore pressure', { nonNegative: true });
+  const dissipationRatioOk = pushFiniteNumberFinding(findings, envelope.porePressureDissipationRatio, 'result.envelope.dp-biot-replay.pore-pressure-dissipation-ratio', 'Pressure-replay pore-pressure dissipation ratio', { nonNegative: true });
+  pushFiniteNumberFinding(findings, envelope.maxPorePressureChangeRateKpaPerS, 'result.envelope.dp-biot-replay.max-pore-pressure-change-rate', 'Pressure-replay maximum pore-pressure change rate', { nonNegative: true });
+  const timeStepCountOk = pushFiniteNumberFinding(findings, envelope.timeStepCount, 'result.envelope.dp-biot-replay.time-step-count', 'Pressure-replay envelope time-step count', { positive: true });
+  const coupledUnknownsOk = pushFiniteNumberFinding(findings, envelope.coupledUnknownCount, 'result.envelope.dp-biot-replay.coupled-unknown-count', 'Pressure-replay coupled unknown count', { positive: true });
+  const displacementDofsOk = pushFiniteNumberFinding(findings, envelope.displacementDofCount, 'result.envelope.dp-biot-replay.displacement-dof-count', 'Pressure-replay displacement DOF count', { positive: true });
+  const pressureDofsOk = pushFiniteNumberFinding(findings, envelope.porePressureDofCount, 'result.envelope.dp-biot-replay.pore-pressure-dof-count', 'Pressure-replay nonlinear pore-pressure DOF count', { nonNegative: true });
+
+  if (minPorePressureOk && maxPorePressureOk && envelope.minPorePressureKpa! > envelope.maxPorePressureKpa!) {
+    findings.push(finding('blocker', 'result.envelope.dp-biot-replay.pore-pressure-range-invalid', 'Pressure-replay minimum pore pressure cannot exceed maximum pore pressure.'));
+  }
+  if (maxExcessOk && maxPorePressureOk) {
+    pushApproximateMatchFinding(findings, envelope.maxExcessPorePressureKpa, envelope.maxPorePressureKpa!, 'result.envelope.dp-biot-replay.max-excess-pore-pressure-mismatch', 'Pressure-replay maximum excess pore pressure', 1e-6);
+  }
+  if (averagePorePressureOk && minPorePressureOk && maxPorePressureOk && (
+    envelope.averagePorePressureKpa! < envelope.minPorePressureKpa! - 1e-6 ||
+    envelope.averagePorePressureKpa! > envelope.maxPorePressureKpa! + 1e-6
+  )) {
+    findings.push(finding('blocker', 'result.envelope.dp-biot-replay.average-pore-pressure-range-invalid', 'Pressure-replay average pore pressure must stay within the reported range.'));
+  }
+  if (averageFreePorePressureOk && maxPorePressureOk && envelope.averageFreePorePressureKpa! > envelope.maxPorePressureKpa! + 1e-6) {
+    findings.push(finding('blocker', 'result.envelope.dp-biot-replay.average-free-pore-pressure-range-invalid', 'Pressure-replay average free pore pressure cannot exceed the maximum pore pressure.'));
+  }
+  if (dissipationRatioOk && envelope.porePressureDissipationRatio! > 1) {
+    findings.push(finding('blocker', 'result.envelope.dp-biot-replay.dissipation-ratio-invalid', 'Pressure-replay pore-pressure dissipation ratio must be between 0 and 1.'));
+  }
+  if (timeStepCountOk && (!Number.isInteger(envelope.timeStepCount) || envelope.timeStepCount !== biot.timeStepsSeconds.length)) {
+    findings.push(finding('blocker', 'result.envelope.dp-biot-replay.time-step-count-mismatch', 'Pressure-replay envelope time-step count must match Biot time steps.'));
+  }
+  if (massBalanceOk && envelope.porePressureMassBalanceErrorRatio! > 1e-3) {
+    findings.push(finding('blocker', 'result.envelope.dp-biot-replay.mass-balance-too-large', 'Pressure-replay mass-balance ratio exceeds the preview tolerance.'));
+  }
+  for (const [ok, value, code, label] of [
+    [coupledUnknownsOk, envelope.coupledUnknownCount, 'coupled-unknown-count', 'coupled unknown count'],
+    [displacementDofsOk, envelope.displacementDofCount, 'displacement-dof-count', 'displacement DOF count'],
+    [pressureDofsOk, envelope.porePressureDofCount, 'pore-pressure-dof-count', 'pore-pressure DOF count'],
+  ] as const) {
+    if (ok && !Number.isInteger(value)) {
+      findings.push(finding('blocker', `result.envelope.dp-biot-replay.${code}.integer`, `Pressure-replay ${label} must be an integer.`));
+    }
+  }
+  if (pressureDofsOk && envelope.porePressureDofCount !== 0) {
+    findings.push(finding('blocker', 'result.envelope.dp-biot-replay.pore-pressure-dof-count-not-zero', 'DP Biot pressure replay must report zero pore-pressure DOFs in the nonlinear mechanical iterations.'));
+  }
+  if (coupledUnknownsOk && displacementDofsOk && envelope.coupledUnknownCount !== envelope.displacementDofCount) {
+    findings.push(finding('blocker', 'result.envelope.dp-biot-replay.coupled-unknown-count-mismatch', 'DP Biot pressure replay coupled unknown count must equal displacement DOFs only.'));
+  }
+  if (maxCouplingOk && auditCouplingOk) {
+    pushApproximateMatchFinding(
+      findings,
+      envelope.maxBiotCouplingKpa,
+      audit.maxAppliedEffectiveStressReductionKpa,
+      'result.envelope.dp-biot-replay.max-coupling-audit-mismatch',
+      'Pressure-replay maximum Biot coupling',
+      1e-8,
+    );
+  }
+  validatePressureAuditEnvelope(findings, manifest, 'dp-biot-replay');
+  validateBiotTransientAcceptanceEnvelope(findings, manifest, {
+    context: 'dp-biot-replay',
+    requireDrainedMonotonicChecks: false,
+    expectedAcceptedStepCount: sourceStepsOk ? audit.sourceAcceptedStepCount : undefined,
+  });
+}
+
 function validateResultEnvelopeSemantics(
   findings: FemValidationFinding[],
   manifest: FemResultManifest,
@@ -1776,7 +2133,7 @@ function validateResultEnvelopeSemantics(
 
   const expectedBackendByObjective = new Map([
     ['foundation_settlement', ['builtin-elastic3d-demo']],
-    ['excavation_deformation', ['builtin-staged-excavation-demo', FEM_PLANE_STRAIN_DP_ADAPTIVE_BACKEND_ID]],
+    ['excavation_deformation', ['builtin-staged-excavation-demo', FEM_PLANE_STRAIN_DP_ADAPTIVE_BACKEND_ID, FEM_PLANE_STRAIN_DP_BIOT_REPLAY_BACKEND_ID]],
     ['tunnel_volume_loss_settlement', ['builtin-tunnel-volume-loss-demo']],
     ['staged_settlement_consolidation', ['builtin-staged-consolidation-1d', 'builtin-nonlinear-column-v0']],
     ['seepage_groundwater_coupling', ['builtin-biot-up-plane-strain-v0']],
@@ -1786,7 +2143,10 @@ function validateResultEnvelopeSemantics(
     findings.push(finding('blocker', 'result.backend.objective-mismatch', 'Result backend must match the embedded FEM objective.'));
   }
 
-  if (analysisCase.objective !== 'seepage_groundwater_coupling') {
+  const isPlaneStrainDpAdaptiveManifest = manifest.backend.id === FEM_PLANE_STRAIN_DP_ADAPTIVE_BACKEND_ID;
+  const isPlaneStrainDpBiotReplayManifest = manifest.backend.id === FEM_PLANE_STRAIN_DP_BIOT_REPLAY_BACKEND_ID;
+  const isPlaneStrainDpManifest = isPlaneStrainDpAdaptiveManifest || isPlaneStrainDpBiotReplayManifest;
+  if (analysisCase.objective !== 'seepage_groundwater_coupling' && !isPlaneStrainDpBiotReplayManifest) {
     if (manifest.pressureAudit != null) {
       findings.push(finding('blocker', 'result.pressure-audit.unexpected', 'Pressure audit is only valid for Biot u-p seepage result manifests.'));
     }
@@ -1794,11 +2154,13 @@ function validateResultEnvelopeSemantics(
       findings.push(finding('blocker', 'result.biot-transient-acceptance.unexpected', 'Biot transient acceptance metadata is only valid for Biot u-p seepage result manifests.'));
     }
   }
-  const isPlaneStrainDpAdaptiveManifest = manifest.backend.id === FEM_PLANE_STRAIN_DP_ADAPTIVE_BACKEND_ID;
-  if (!isPlaneStrainDpAdaptiveManifest && manifest.adaptiveLoadStepping != null) {
+  if (!isPlaneStrainDpManifest && manifest.adaptiveLoadStepping != null) {
     findings.push(finding('blocker', 'result.dp-adaptive.unexpected', 'Drucker-Prager adaptive metadata is only valid for plane-strain DP adaptive result manifests.'));
   }
-  if (isPlaneStrainDpAdaptiveManifest) {
+  if (!isPlaneStrainDpBiotReplayManifest && manifest.pressureReplayAudit != null) {
+    findings.push(finding('blocker', 'result.dp-biot-replay.unexpected', 'Biot pressure-replay audit metadata is only valid for the plane-strain DP Biot replay backend.'));
+  }
+  if (isPlaneStrainDpManifest) {
     if (analysisCase.analysisType !== FEM_PLANE_STRAIN_DP_ANALYSIS_TYPE) {
       findings.push(finding('blocker', 'result.dp-adaptive.analysis-type-mismatch', 'Plane-strain DP adaptive manifests require static_2d_plane_strain_drucker_prager analysis cases.'));
     }
@@ -1868,6 +2230,9 @@ function validateResultEnvelopeSemantics(
         : undefined;
       const solverTolerances = validateNonlinearSolverConvergenceReport(findings, manifest, expectedDpLoadSteps);
       validatePlaneStrainDpAdaptiveAcceptance(findings, manifest, solverTolerances);
+    }
+    if (isPlaneStrainDpBiotReplayManifest) {
+      validatePlaneStrainDpBiotPressureReplayAcceptance(findings, manifest);
     }
     return;
   }
@@ -2215,6 +2580,7 @@ export function validateFemResultManifest(manifest: FemResultManifest): FemValid
     'builtin-nonlinear-column-v0',
     'builtin-biot-up-plane-strain-v0',
     FEM_PLANE_STRAIN_DP_ADAPTIVE_BACKEND_ID,
+    FEM_PLANE_STRAIN_DP_BIOT_REPLAY_BACKEND_ID,
   ]);
   if (!validBackendIds.has(manifest.backend.id)) {
     findings.push(finding('blocker', 'result.backend.id-invalid', `Unsupported FEM result backend: ${String(manifest.backend.id)}.`));

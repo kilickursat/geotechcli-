@@ -5,8 +5,18 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 const releases = [
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-06-04',
+    date: '2026-06-05',
     tag: `${GEOTECHCLI_VERSION} Release`,
+    changes: [
+      { type: 'feat', text: 'Added reviewed experimental excavation-plane-strain-dp-biot-replay drafting and backend execution for sequential Biot pressure-frame replay into Drucker-Prager effective stress' },
+      { type: 'feat', text: 'Added pressureReplayAudit result validation for accepted upstream Biot transient evidence, pressure audit metadata, zero nonlinear pore-pressure DOFs, and explicit limitations' },
+      { type: 'fix', text: 'Extended CLI aliases, agent schema normalization, default hosted GLM guardrails, route tests, and draft-run smoke coverage while FEM production readiness remains blocked' },
+    ],
+  },
+  {
+    version: '0.4.123',
+    date: '2026-06-04',
+    tag: '0.4.123 Release',
     changes: [
       { type: 'feat', text: 'Added an OpenGeoSys Liquid Flow h1_1Dsteady open-source comparison for steady Darcy seepage head, flux, and gradient evidence' },
       { type: 'feat', text: 'Added a route-backed excavation-plane-strain-dp-adaptive draft path with hardening-modulus parsing and approval-bearing run templates' },

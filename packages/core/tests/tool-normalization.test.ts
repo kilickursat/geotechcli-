@@ -96,4 +96,52 @@ describe('tool normalization', () => {
       },
     });
   });
+
+  it('normalizes hosted-model-shaped Biot pressure-replay FEM draft inputs', () => {
+    expect(
+      normalizeToolArgs('prepare_fem_analysis_case', {
+        objective: 'hydro mechanical pressure replay',
+        excavation_length_m: 22,
+        excavation_width_m: 14,
+        final_depth_m: 9,
+        stage_depths: [3, 6, 9],
+        support_levels: [0, 2, 5],
+        phi: 32,
+        cohesion_kpa: 10,
+        hardening_modulus_kpa: 5000,
+        initial_excess_pore_pressure_kpa: 100,
+        time_steps: [1, 2, 4, 8],
+        drained_top_pressure_kpa: 0,
+        kx: 1e-6,
+        ky: 8e-7,
+        specific_storage: 1e-4,
+        biot_alpha: 0.8,
+      }),
+    ).toMatchObject({
+      objective: 'excavation-plane-strain-dp-biot-replay',
+      geometry: {
+        excavationLengthM: 22,
+        excavationWidthM: 14,
+        excavationFinalDepthM: 9,
+      },
+      excavation: {
+        stageDepthsM: [3, 6, 9],
+        supportLevelsM: [0, 2, 5],
+      },
+      biot: {
+        initialPorePressureKpa: 100,
+        timeStepsSeconds: [1, 2, 4, 8],
+        topPorePressureKpa: 0,
+      },
+      material: {
+        frictionAngleDeg: 32,
+        cohesionKpa: 10,
+        hardeningModulusKpa: 5000,
+        hydraulicConductivityXMPerS: 1e-6,
+        hydraulicConductivityYMPerS: 8e-7,
+        specificStorage1PerM: 1e-4,
+        biotCoefficient: 0.8,
+      },
+    });
+  });
 });

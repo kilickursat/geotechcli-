@@ -45,6 +45,14 @@ function normalizeObjective(value: unknown): FemRouteObjective | undefined {
     case 'plane-strain-dp-adaptive':
     case 'drucker-prager-excavation':
       return 'excavation-plane-strain-dp-adaptive';
+    case 'excavation-plane-strain-dp-biot-replay':
+    case 'excavation-dp-biot-replay':
+    case 'plane-strain-dp-biot-replay':
+    case 'plane-strain-dp-biot-pressure-replay':
+    case 'dp-biot-pressure-replay':
+    case 'biot-pressure-replay':
+    case 'hydro-mechanical-pressure-replay':
+      return 'excavation-plane-strain-dp-biot-replay';
     case 'shaft-deformation':
     case 'shaft':
     case 'pit-deformation':
@@ -174,6 +182,9 @@ function normalizeProductionFeature(value: unknown): FemProductionFeature | unde
     case 'biot-u-p-coupling':
     case 'u-p-coupling':
     case 'up-coupling':
+    case 'pressure-replay':
+    case 'biot-pressure-replay':
+    case 'hydro-mechanical-coupling':
       return 'seepage-pore-pressure-coupling';
     case 'advanced-staging':
     case 'advanced-staged-construction':
@@ -214,6 +225,7 @@ toolRegistry.register(
             'foundation-settlement',
             'excavation-deformation',
             'excavation-plane-strain-dp-adaptive',
+            'excavation-plane-strain-dp-biot-replay',
             'shaft-deformation',
             'tunnel-volume-loss-settlement',
             'pile-group-elastic-interaction',
@@ -256,6 +268,7 @@ toolRegistry.register(
             'foundation-settlement',
             'excavation-deformation',
             'excavation-plane-strain-dp-adaptive',
+            'excavation-plane-strain-dp-biot-replay',
             'shaft-deformation',
             'tunnel-volume-loss-settlement',
             'pile-group-elastic-interaction',
@@ -334,6 +347,7 @@ toolRegistry.register(
             'foundation-settlement',
             'excavation-deformation',
             'excavation-plane-strain-dp-adaptive',
+            'excavation-plane-strain-dp-biot-replay',
             'shaft-deformation',
             'tunnel-volume-loss-settlement',
             'pile-group-elastic-interaction',
@@ -346,12 +360,12 @@ toolRegistry.register(
         },
         useDemoDefaults: {
           type: 'boolean',
-          description: 'Use built-in demo defaults for implemented foundation-settlement, excavation-deformation, excavation-plane-strain-dp-adaptive, tunnel-volume-loss-settlement, seepage-groundwater-coupling, and staged-settlement-consolidation previews. Keep false for user/project evidence routing.',
+          description: 'Use built-in demo defaults for implemented foundation-settlement, excavation-deformation, excavation-plane-strain-dp-adaptive, excavation-plane-strain-dp-biot-replay, tunnel-volume-loss-settlement, seepage-groundwater-coupling, and staged-settlement-consolidation previews. Keep false for user/project evidence routing.',
           default: false,
         },
         geometry: {
           type: 'object',
-          description: 'Explicit geometry inputs. For foundation-settlement: raftLengthM, raftWidthM, raftThicknessM, domainLengthM, domainWidthM, domainDepthM. For excavation-deformation and excavation-plane-strain-dp-adaptive: excavationLengthM, excavationWidthM, excavationFinalDepthM, wallToeDepthM, plus optional domain dimensions. For tunnel-volume-loss-settlement: tunnelDiameterM, tunnelAxisDepthM, tunnelLengthM, tunnelVolumeLossPercent, troughWidthParameterK, optional tunnelCenterXM/tunnelCenterYM, plus optional domain dimensions.',
+          description: 'Explicit geometry inputs. For foundation-settlement: raftLengthM, raftWidthM, raftThicknessM, domainLengthM, domainWidthM, domainDepthM. For excavation-deformation, excavation-plane-strain-dp-adaptive, and excavation-plane-strain-dp-biot-replay: excavationLengthM, excavationWidthM, excavationFinalDepthM, wallToeDepthM, plus optional domain dimensions. For tunnel-volume-loss-settlement: tunnelDiameterM, tunnelAxisDepthM, tunnelLengthM, tunnelVolumeLossPercent, troughWidthParameterK, optional tunnelCenterXM/tunnelCenterYM, plus optional domain dimensions.',
           additionalProperties: false,
           properties: {
             raftLengthM: { type: 'number' },
@@ -375,7 +389,7 @@ toolRegistry.register(
         },
         load: {
           type: 'object',
-          description: 'Explicit load inputs. For foundation-settlement: raft pressureKpa. For excavation-deformation and excavation-plane-strain-dp-adaptive: surcharge pressureKpa.',
+          description: 'Explicit load inputs. For foundation-settlement: raft pressureKpa. For excavation-deformation, excavation-plane-strain-dp-adaptive, and excavation-plane-strain-dp-biot-replay: surcharge pressureKpa.',
           additionalProperties: false,
           properties: {
             pressureKpa: { type: 'number' },
@@ -400,9 +414,28 @@ toolRegistry.register(
             },
           },
         },
+        biot: {
+          type: 'object',
+          description: 'Biot pressure-source inputs for seepage-groundwater-coupling and excavation-plane-strain-dp-biot-replay: dimensions, initial pore pressure, time steps, and prescribed pressure boundaries.',
+          additionalProperties: false,
+          properties: {
+            widthM: { type: 'number' },
+            heightM: { type: 'number' },
+            thicknessM: { type: 'number' },
+            initialPorePressureKpa: { type: 'number' },
+            timeStepsSeconds: {
+              type: 'array',
+              items: { type: 'number' },
+            },
+            topPorePressureKpa: { type: 'number' },
+            bottomPorePressureKpa: { type: 'number' },
+            leftPorePressureKpa: { type: 'number' },
+            rightPorePressureKpa: { type: 'number' },
+          },
+        },
         material: {
           type: 'object',
-          description: 'Explicit material inputs: elasticModulusKpa, poissonRatio, unitWeightKnM3, and optional frictionAngleDeg, cohesionKpa, hardeningModulusKpa for nonlinear Drucker-Prager drafts.',
+          description: 'Explicit material inputs: elasticModulusKpa, poissonRatio, unitWeightKnM3, optional frictionAngleDeg/cohesionKpa/hardeningModulusKpa for nonlinear Drucker-Prager drafts, and hydraulicConductivity/specificStorage/biotCoefficient for Biot pressure-source drafts.',
           additionalProperties: false,
           properties: {
             elasticModulusKpa: { type: 'number' },
@@ -411,6 +444,11 @@ toolRegistry.register(
             frictionAngleDeg: { type: 'number' },
             cohesionKpa: { type: 'number' },
             hardeningModulusKpa: { type: 'number' },
+            hydraulicConductivityMPerS: { type: 'number' },
+            hydraulicConductivityXMPerS: { type: 'number' },
+            hydraulicConductivityYMPerS: { type: 'number' },
+            specificStorage1PerM: { type: 'number' },
+            biotCoefficient: { type: 'number' },
           },
         },
         groundwater: {
@@ -449,6 +487,7 @@ toolRegistry.register(
       objective,
       useDemoDefaults: args.useDemoDefaults === true,
       geometry: args.geometry as any,
+      biot: args.biot as any,
       excavation: args.excavation as any,
       load: args.load as any,
       material: args.material as any,

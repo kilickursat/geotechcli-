@@ -196,6 +196,16 @@ const FEM_OBJECTIVE_ALIASES: Record<string, string> = {
   'plane strain drucker prager adaptive': 'excavation-plane-strain-dp-adaptive',
   'drucker prager excavation': 'excavation-plane-strain-dp-adaptive',
   'dp adaptive excavation': 'excavation-plane-strain-dp-adaptive',
+  'excavation plane strain dp biot replay': 'excavation-plane-strain-dp-biot-replay',
+  'excavation plane strain dp biot pressure replay': 'excavation-plane-strain-dp-biot-replay',
+  'excavation plane strain drucker prager biot replay': 'excavation-plane-strain-dp-biot-replay',
+  'plane strain dp biot replay': 'excavation-plane-strain-dp-biot-replay',
+  'plane strain dp biot pressure replay': 'excavation-plane-strain-dp-biot-replay',
+  'plane strain drucker prager biot replay': 'excavation-plane-strain-dp-biot-replay',
+  'dp biot pressure replay': 'excavation-plane-strain-dp-biot-replay',
+  'biot pressure replay': 'excavation-plane-strain-dp-biot-replay',
+  'hydro mechanical pressure replay': 'excavation-plane-strain-dp-biot-replay',
+  'hydromechanical pressure replay': 'excavation-plane-strain-dp-biot-replay',
   'tunnel volume loss settlement': 'tunnel-volume-loss-settlement',
   'tunnel settlement': 'tunnel-volume-loss-settlement',
   tunnel: 'tunnel-volume-loss-settlement',
@@ -442,6 +452,104 @@ function normalizeFemMaterial(source: ToolArgs): ToolArgs | undefined {
       'hKpa',
       'h_kpa',
     ]),
+    hydraulicConductivityMPerS: firstFiniteNumber(source, [
+      'hydraulicConductivityMPerS',
+      'hydraulicConductivity',
+      'hydraulic_conductivity_m_per_s',
+      'hydraulic_conductivity',
+      'permeabilityMPerS',
+      'permeability',
+      'kMPerS',
+      'k',
+    ]),
+    hydraulicConductivityXMPerS: firstFiniteNumber(source, [
+      'hydraulicConductivityXMPerS',
+      'hydraulicConductivityX',
+      'hydraulic_conductivity_x_m_per_s',
+      'hydraulic_conductivity_x',
+      'kx',
+      'k_x',
+      'kh',
+      'k_h',
+    ]),
+    hydraulicConductivityYMPerS: firstFiniteNumber(source, [
+      'hydraulicConductivityYMPerS',
+      'hydraulicConductivityY',
+      'hydraulic_conductivity_y_m_per_s',
+      'hydraulic_conductivity_y',
+      'ky',
+      'k_y',
+      'kv',
+      'k_v',
+    ]),
+    specificStorage1PerM: firstFiniteNumber(source, [
+      'specificStorage1PerM',
+      'specificStorage',
+      'specific_storage_1_per_m',
+      'specific_storage',
+      'Ss',
+      'ss',
+    ]),
+    biotCoefficient: firstFiniteNumber(source, [
+      'biotCoefficient',
+      'biotAlpha',
+      'biot_alpha',
+      'alpha',
+      'alphaBiot',
+      'alpha_biot',
+    ]),
+  });
+}
+
+function normalizeFemBiot(source: ToolArgs): ToolArgs | undefined {
+  return compactRecord({
+    widthM: firstFiniteNumber(source, ['widthM', 'width_m', 'biotWidthM', 'biot_width_m']),
+    heightM: firstFiniteNumber(source, ['heightM', 'height_m', 'biotHeightM', 'biot_height_m']),
+    thicknessM: firstFiniteNumber(source, ['thicknessM', 'thickness_m', 'biotThicknessM', 'biot_thickness_m']),
+    initialPorePressureKpa: firstFiniteNumber(source, [
+      'initialPorePressureKpa',
+      'initialPorePressure',
+      'initial_pore_pressure_kpa',
+      'initial_pore_pressure',
+      'initialExcessPorePressureKpa',
+      'initial_excess_pore_pressure_kpa',
+      'excessPorePressureKpa',
+      'excess_pore_pressure_kpa',
+    ]),
+    timeStepsSeconds: toFiniteNumberArray(valueFromAliases(source, [
+      'timeStepsSeconds',
+      'timeSteps',
+      'time_steps_seconds',
+      'time_steps',
+      'biotTimeStepsSeconds',
+      'biot_time_steps_seconds',
+    ])),
+    topPorePressureKpa: firstFiniteNumber(source, [
+      'topPorePressureKpa',
+      'topPorePressure',
+      'top_pore_pressure_kpa',
+      'top_pore_pressure',
+      'drainedTopPressureKpa',
+      'drained_top_pressure_kpa',
+    ]),
+    bottomPorePressureKpa: firstFiniteNumber(source, [
+      'bottomPorePressureKpa',
+      'bottomPorePressure',
+      'bottom_pore_pressure_kpa',
+      'bottom_pore_pressure',
+    ]),
+    leftPorePressureKpa: firstFiniteNumber(source, [
+      'leftPorePressureKpa',
+      'leftPorePressure',
+      'left_pore_pressure_kpa',
+      'left_pore_pressure',
+    ]),
+    rightPorePressureKpa: firstFiniteNumber(source, [
+      'rightPorePressureKpa',
+      'rightPorePressure',
+      'right_pore_pressure_kpa',
+      'right_pore_pressure',
+    ]),
   });
 }
 
@@ -501,6 +609,16 @@ function normalizePrepareFemAnalysisCaseArgs(args: ToolArgs): ToolArgs {
     recordFromAliases(args, ['excavation']),
     mergeRecords(recordFromAliases(inputs, ['excavation']), mergeRecords(inputs, args)),
   ));
+  const biot = normalizeFemBiot(mergeRecords(
+    recordFromAliases(args, ['biot']),
+    mergeRecords(
+      recordFromAliases(args, ['pressureReplay', 'pressure_replay', 'porePressure', 'pore_pressure']),
+      mergeRecords(
+        recordFromAliases(inputs, ['biot']),
+        mergeRecords(recordFromAliases(inputs, ['pressureReplay', 'pressure_replay', 'porePressure', 'pore_pressure']), mergeRecords(inputs, args)),
+      ),
+    ),
+  ));
   const groundwater = normalizeFemGroundwater(mergeRecords(
     recordFromAliases(args, ['groundwater']),
     mergeRecords(
@@ -531,6 +649,7 @@ function normalizePrepareFemAnalysisCaseArgs(args: ToolArgs): ToolArgs {
     load,
     material,
     excavation,
+    biot,
     groundwater,
     evidenceRefs,
   };

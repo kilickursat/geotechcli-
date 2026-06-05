@@ -220,6 +220,18 @@ async function draftAndRun({ name, objective, draftArgs, runArgs = [], expectedO
     );
     assert(Array.isArray(acceptance.blockerCodes) && acceptance.blockerCodes.length === 0, `${name}: Biot transient acceptance has blocker codes`);
   }
+  if (expectedBackend === 'builtin-plane-strain-dp-biot-replay-v0') {
+    const replayAudit = run.manifest.pressureReplayAudit;
+    assert(replayAudit?.schemaVersion === 'fem-plane-strain-dp-biot-pressure-replay-audit.v1', `${name}: pressure replay audit schema missing`);
+    assert(replayAudit.mode === 'sequential-one-way-biot-pressure-replay', `${name}: pressure replay mode mismatch`);
+    assert(replayAudit.sourceTransientAccepted === true, `${name}: pressure replay source transient was not accepted`);
+    assert(replayAudit.sourcePorePressureDofCount === run.manifest.mesh.nodes, `${name}: pressure replay source pore-pressure DOF count mismatch`);
+    assert(replayAudit.replayNodeCount === run.manifest.mesh.nodes, `${name}: pressure replay node count mismatch`);
+    assert(run.manifest.envelope.porePressureDofCount === 0, `${name}: pressure replay nonlinear pore-pressure DOF count must be zero`);
+    assert(run.manifest.envelope.maxBiotCouplingKpa > 0, `${name}: pressure replay Biot coupling envelope missing`);
+    assert(run.manifest.biotTransientAcceptance?.accepted === true, `${name}: pressure replay Biot transient acceptance missing`);
+    assert(run.manifest.warnings == null, `${name}: result manifest should not embed CLI warnings`);
+  }
   const fieldIds = new Set((run.manifest.resultFields ?? []).map((field) => field.id));
   for (const fieldId of expectedFields) {
     assert(fieldIds.has(fieldId), `${name}: expected result field ${fieldId} missing`);
@@ -231,6 +243,10 @@ async function draftAndRun({ name, objective, draftArgs, runArgs = [], expectedO
   assert(manifest.schemaVersion === 'fem-result-manifest.v0', `${name}: persisted manifest schema mismatch`);
   if (expectedObjective === 'seepage_groundwater_coupling') {
     assert(manifest.biotTransientAcceptance?.accepted === true, `${name}: persisted Biot transient acceptance missing`);
+  }
+  if (expectedBackend === 'builtin-plane-strain-dp-biot-replay-v0') {
+    assert(manifest.pressureReplayAudit?.sourceTransientAccepted === true, `${name}: persisted pressure replay audit missing`);
+    assert(manifest.envelope.porePressureDofCount === 0, `${name}: persisted pressure replay pore-pressure DOF count must be zero`);
   }
   assert(html.includes('const MANIFEST = '), `${name}: WebGL HTML manifest missing`);
   return {
@@ -259,8 +275,10 @@ assert(runHelp.includes('--reviewed'), 'FEM run help must expose the human-revie
 assert(runHelp.includes('--approval-output'), 'FEM run help must expose approval persistence');
 assert(runHelp.includes('--reviewer-license'), 'FEM run help must expose reviewer license metadata');
 assert(runHelp.includes('--backend'), 'FEM run help must expose deterministic backend selection');
+assert(runHelp.includes('plane-strain-dp-biot-replay'), 'FEM run help must expose the DP Biot pressure-replay backend');
 const draftHelp = await runCli(['fem', 'draft', '--help']);
 assert(draftHelp.includes('excavation-plane-strain-dp-adaptive'), 'FEM draft help must expose the DP adaptive excavation objective');
+assert(draftHelp.includes('excavation-plane-strain-dp-biot-replay'), 'FEM draft help must expose the DP Biot pressure-replay excavation objective');
 assert(draftHelp.includes('--hardening-modulus'), 'FEM draft help must expose reviewed hardening modulus input');
 
 const contractOnlyRoutes = [
@@ -416,6 +434,51 @@ const cases = [
       '--friction-angle', '10',
       '--cohesion', '2',
       '--hardening-modulus', '5000',
+    ],
+  },
+  {
+    name: 'excavation-dp-biot-replay',
+    objective: 'excavation-plane-strain-dp-biot-replay',
+    runArgs: ['--backend', 'plane-strain-dp-biot-replay'],
+    expectedObjective: 'excavation_deformation',
+    expectedBackend: 'builtin-plane-strain-dp-biot-replay-v0',
+    expectedEnvelope: {
+      maxSettlementMm: { min: 0, max: 1000 },
+      maxHorizontalDisplacementMm: { min: 0, max: 1000 },
+      maxWallDeflectionMm: { min: 0, max: 1000 },
+      totalExcavatedWeightKn: { equals: 52113.6, tolerance: 0.01 },
+      reactionKn: { equals: 52113.6, tolerance: 0.01 },
+      maxSolverResidualRatio: { min: 0, max: 0.001 },
+      maxYieldResidualRatio: { min: 0, max: 0.000001 },
+      plasticGaussPointCount: { min: 0, max: 10000 },
+      maxHardeningStressKpa: { min: 0, max: 100000 },
+      timeStepCount: { equals: 4, tolerance: 0.000001 },
+      maxPorePressureKpa: { min: 0, max: 100 },
+      maxBiotCouplingKpa: { min: 0.001, max: 100 },
+      porePressureMassBalanceErrorRatio: { min: 0, max: 0.000001 },
+      porePressureDofCount: { equals: 0, tolerance: 0.000001 },
+      adaptiveAcceptedStepCount: { min: 1, max: 64 },
+    },
+    draftArgs: [
+      '--excavation-length', '22',
+      '--excavation-width', '14',
+      '--excavation-depth', '9',
+      '--wall-toe-depth', '15',
+      '--stage-depths', '3,6,9',
+      '--support-levels', '0,2,5',
+      '--pressure', '25',
+      '--elastic-modulus', '36000',
+      '--poisson-ratio', '0.31',
+      '--unit-weight', '18.8',
+      '--friction-angle', '32',
+      '--cohesion', '10',
+      '--hardening-modulus', '5000',
+      '--initial-pore-pressure', '100',
+      '--top-pore-pressure', '0',
+      '--time-steps', '1,2,4,8',
+      '--hydraulic-conductivity', '0.000001',
+      '--specific-storage', '0.0001',
+      '--biot-alpha', '0.8',
     ],
   },
   {
@@ -598,12 +661,13 @@ console.log(JSON.stringify({
   ok: true,
   outDir,
   agentBoundary: 'FEM agents plan, draft, and validate only; deterministic CLI runs require human-invoked geotech fem run --experimental --reviewed with persisted fem-reviewer-approval.v1 metadata.',
-  scenarioContract: 'Envelope ranges and cross-scenario trends passed for raft, elastic excavation, DP adaptive excavation, tunnel, consolidation, and Biot seepage mock datasets.',
+  scenarioContract: 'Envelope ranges and cross-scenario trends passed for raft, elastic excavation, DP adaptive excavation, DP Biot pressure replay, tunnel, consolidation, and Biot seepage mock datasets.',
   contractOnlyRoutes,
   referenceChecks: [
     'raft reaction balance',
     'excavation reaction partition',
     'Drucker-Prager adaptive convergence and plasticity envelope',
+    'Drucker-Prager Biot pressure-replay audit and zero pore-pressure nonlinear DOF guard',
     'tunnel prescribed-volume conservation',
     'Biot pore-pressure mass balance',
   ],

@@ -18,6 +18,7 @@ export type FemRouteObjective =
   | 'foundation-settlement'
   | 'excavation-deformation'
   | 'excavation-plane-strain-dp-adaptive'
+  | 'excavation-plane-strain-dp-biot-replay'
   | 'shaft-deformation'
   | 'tunnel-volume-loss-settlement'
   | 'pile-group-elastic-interaction'
@@ -211,6 +212,24 @@ const CAPABILITIES: FemCapability[] = [
     command: 'geotech fem draft excavation-plane-strain-dp-adaptive --input <json> --case-output <analysis_case.json>',
     draftCommandTemplate: 'geotech fem draft excavation-plane-strain-dp-adaptive --input <json> --case-output <analysis_case.json>',
     runCommandTemplate: `geotech fem run <analysis_case.json> --experimental --reviewed ${FEM_REVIEWED_RUN_APPROVAL_TEMPLATE} --backend plane-strain-dp-adaptive`,
+  },
+  {
+    objective: 'excavation-plane-strain-dp-biot-replay',
+    label: 'Plane-strain Drucker-Prager excavation with Biot pressure replay preview',
+    status: 'implemented-demo',
+    executionMode: 'human-reviewed-preview',
+    agentRunAllowed: false,
+    analysisType: 'static_2d_plane_strain_drucker_prager',
+    deterministicBackend: 'builtin-plane-strain-dp-biot-replay-v0',
+    description: 'Experimental reviewed Quad4 plane-strain Drucker-Prager excavation preview that replays an accepted final Biot u-p pressure frame as prescribed pore-pressure increments for effective-stress evidence.',
+    requiredEvidence: ['stratigraphy', 'groundwater condition', 'wall geometry', 'support levels', 'excavation stage depths', 'elastic stiffness basis', 'Mohr-Coulomb friction angle', 'Mohr-Coulomb cohesion', 'hydraulic conductivity', 'specific storage', 'Biot coefficient', 'initial excess pore pressure', 'drained pressure boundary', 'Biot transient time-step schedule'],
+    requiredUserInputs: ['excavation length', 'excavation width', 'final depth', 'stage depths', 'wall/support assumptions', 'surcharge pressure', 'friction angle', 'cohesion', 'initial pore pressure', 'Biot time steps', 'top drained pore pressure', 'hydraulic conductivity', 'specific storage', 'Biot coefficient'],
+    visualizationFields: ['surface settlement', 'horizontal displacement', 'wall deflection proxy', 'plastic Gauss point count', 'adaptive load-step audit', 'Biot pressure-replay audit'],
+    reviewGates: ['experimental-only', 'sequential-one-way-pressure-replay-only', 'no-pore-pressure-dofs-in-nonlinear-iterations', 'no-monolithic-biot-plastic-tangent', 'adaptive-load-stepping-audit-required', 'support-reaction-screening-only', 'not-jurisdiction-specific-structural-design', 'not-design-calculation'],
+    limitations: ['Sequential one-way pressure replay only; no pore-pressure DOFs, pressure equation, plastic volumetric source, monolithic hydro-mechanical coupling, support member design, basal heave design, or independent commercial benchmark approval.'],
+    command: 'geotech fem draft excavation-plane-strain-dp-biot-replay --input <json> --case-output <analysis_case.json>',
+    draftCommandTemplate: 'geotech fem draft excavation-plane-strain-dp-biot-replay --input <json> --case-output <analysis_case.json>',
+    runCommandTemplate: `geotech fem run <analysis_case.json> --experimental --reviewed ${FEM_REVIEWED_RUN_APPROVAL_TEMPLATE} --backend plane-strain-dp-biot-replay`,
   },
   {
     objective: 'shaft-deformation',
@@ -509,6 +528,7 @@ export function prepareFemAnalysisCaseDraft(input: PrepareFemAnalysisCaseDraftIn
     capability.objective !== 'foundation-settlement' &&
     capability.objective !== 'excavation-deformation' &&
     capability.objective !== 'excavation-plane-strain-dp-adaptive' &&
+    capability.objective !== 'excavation-plane-strain-dp-biot-replay' &&
     capability.objective !== 'tunnel-volume-loss-settlement' &&
     capability.objective !== 'staged-settlement-consolidation' &&
     capability.objective !== 'seepage-groundwater-coupling'
@@ -890,7 +910,11 @@ export function prepareFemAnalysisCaseDraft(input: PrepareFemAnalysisCaseDraftIn
     };
   }
 
-  if (capability.objective === 'excavation-deformation' || capability.objective === 'excavation-plane-strain-dp-adaptive') {
+  if (
+    capability.objective === 'excavation-deformation' ||
+    capability.objective === 'excavation-plane-strain-dp-adaptive' ||
+    capability.objective === 'excavation-plane-strain-dp-biot-replay'
+  ) {
     const missing: string[] = [];
     const useDemoDefaults = input.useDemoDefaults === true;
     const lengthM = input.geometry?.excavationLengthM ?? (useDemoDefaults ? 18 : undefined);
@@ -911,13 +935,60 @@ export function prepareFemAnalysisCaseDraft(input: PrepareFemAnalysisCaseDraftIn
       missing,
       { nonNegative: true },
     );
+    const needsBiotReplay = capability.objective === 'excavation-plane-strain-dp-biot-replay';
+    const biotInitialPorePressureKpa = input.biot?.initialPorePressureKpa ?? (useDemoDefaults ? 100 : undefined);
+    const biotTopPorePressureKpa = input.biot?.topPorePressureKpa ?? (useDemoDefaults ? 0 : undefined);
+    const biotTimeStepsInput = input.biot?.timeStepsSeconds ?? (useDemoDefaults ? [1, 2, 4, 8] : undefined);
+    const biotTimeStepsSeconds = parseOptionalFiniteArray(
+      biotTimeStepsInput,
+      'valid Biot pressure-replay time steps',
+      missing,
+      { positive: true },
+    );
+    const hydraulicConductivityXMPerS = input.material?.hydraulicConductivityXMPerS ??
+      input.material?.hydraulicConductivityMPerS ??
+      (useDemoDefaults ? 1e-6 : undefined);
+    const hydraulicConductivityYMPerS = input.material?.hydraulicConductivityYMPerS ??
+      input.material?.hydraulicConductivityMPerS ??
+      (useDemoDefaults ? 1e-6 : undefined);
+    const biotCoefficient = input.material?.biotCoefficient ?? (useDemoDefaults ? 0.8 : undefined);
+    const specificStorage1PerM = input.material?.specificStorage1PerM ?? (useDemoDefaults ? 1e-4 : undefined);
+    const checkedBiotInitialPorePressureKpa = needsBiotReplay
+      ? requireNonNegative(biotInitialPorePressureKpa, 'initial pore pressure', missing)
+      : undefined;
+    const checkedBiotTopPorePressureKpa = needsBiotReplay
+      ? requireNonNegative(biotTopPorePressureKpa, 'top drained pore pressure', missing)
+      : undefined;
+    const checkedHydraulicConductivityXMPerS = needsBiotReplay
+      ? requirePositive(hydraulicConductivityXMPerS, 'horizontal hydraulic conductivity', missing)
+      : undefined;
+    const checkedHydraulicConductivityYMPerS = needsBiotReplay
+      ? requirePositive(hydraulicConductivityYMPerS, 'vertical hydraulic conductivity', missing)
+      : undefined;
+    const checkedSpecificStorage1PerM = needsBiotReplay
+      ? requirePositive(specificStorage1PerM, 'specific storage', missing)
+      : undefined;
+    const checkedBiotCoefficient = needsBiotReplay && finiteNumber(biotCoefficient) && biotCoefficient >= 0 && biotCoefficient <= 1
+      ? biotCoefficient
+      : undefined;
+    if (needsBiotReplay && checkedBiotCoefficient == null) missing.push('Biot coefficient between 0 and 1');
+    if (needsBiotReplay && !biotTimeStepsSeconds) missing.push('Biot pressure-replay time steps');
 
     if (
       !checkedLengthM ||
       !checkedWidthM ||
       !checkedFinalDepthM ||
       (input.excavation?.stageDepthsM != null && !stageDepthsM) ||
-      (input.excavation?.supportLevelsM != null && !supportLevelsM)
+      (input.excavation?.supportLevelsM != null && !supportLevelsM) ||
+      (needsBiotReplay && (
+        checkedBiotInitialPorePressureKpa == null ||
+        checkedBiotTopPorePressureKpa == null ||
+        !biotTimeStepsSeconds ||
+        !checkedHydraulicConductivityXMPerS ||
+        !checkedHydraulicConductivityYMPerS ||
+        checkedBiotCoefficient == null ||
+        !checkedSpecificStorage1PerM
+      ))
     ) {
       return {
         schemaVersion: 'fem-analysis-case-draft.v1',
@@ -983,6 +1054,46 @@ export function prepareFemAnalysisCaseDraft(input: PrepareFemAnalysisCaseDraftIn
     ) {
       analysisCase.materials[0].hardeningModulusKpa = input.material.hardeningModulusKpa;
     }
+    if (needsBiotReplay) {
+      const pressureBoundaries = [
+        { id: 'top-drained', boundary: 'top' as const, porePressureKpa: checkedBiotTopPorePressureKpa! },
+        ...(finiteNonNegative(input.biot?.bottomPorePressureKpa) ? [{
+          id: 'bottom-prescribed',
+          boundary: 'bottom' as const,
+          porePressureKpa: input.biot.bottomPorePressureKpa,
+        }] : []),
+        ...(finiteNonNegative(input.biot?.leftPorePressureKpa) ? [{
+          id: 'left-prescribed',
+          boundary: 'left' as const,
+          porePressureKpa: input.biot.leftPorePressureKpa,
+        }] : []),
+        ...(finiteNonNegative(input.biot?.rightPorePressureKpa) ? [{
+          id: 'right-prescribed',
+          boundary: 'right' as const,
+          porePressureKpa: input.biot.rightPorePressureKpa,
+        }] : []),
+      ];
+      analysisCase.geometry.biot = {
+        type: 'plane_strain_biot_column',
+        widthM: analysisCase.geometry.domain.lengthM,
+        heightM: analysisCase.geometry.domain.depthM,
+        thicknessM: analysisCase.geometry.domain.widthM,
+        initialPorePressureKpa: checkedBiotInitialPorePressureKpa!,
+        timeStepsSeconds: biotTimeStepsSeconds!,
+        porePressureBoundaries: pressureBoundaries,
+      };
+      analysisCase.materials[0].hydraulicConductivityMPerS =
+        input.material?.hydraulicConductivityMPerS ?? Math.min(checkedHydraulicConductivityXMPerS!, checkedHydraulicConductivityYMPerS!);
+      analysisCase.materials[0].hydraulicConductivityXMPerS = checkedHydraulicConductivityXMPerS!;
+      analysisCase.materials[0].hydraulicConductivityYMPerS = checkedHydraulicConductivityYMPerS!;
+      analysisCase.materials[0].biotCoefficient = checkedBiotCoefficient!;
+      analysisCase.materials[0].specificStorage1PerM = checkedSpecificStorage1PerM!;
+      analysisCase.groundwater.condition = input.groundwater?.condition ?? 'specified';
+      analysisCase.groundwater.depthM = input.groundwater?.depthM ?? 0;
+      analysisCase.groundwater.note = input.groundwater?.note ??
+        'Saturated excess-pore-pressure source for sequential Biot pressure replay; pressure frame requires review and is not a dewatering design.';
+      analysisCase.groundwater.reviewRequired = true;
+    }
     if (input.groundwater?.condition) {
       analysisCase.groundwater.condition = input.groundwater.condition;
     }
@@ -993,7 +1104,10 @@ export function prepareFemAnalysisCaseDraft(input: PrepareFemAnalysisCaseDraftIn
       analysisCase.groundwater.note = input.groundwater.note;
     }
 
-    const routedAnalysisCase = capability.objective === 'excavation-plane-strain-dp-adaptive'
+    const isPlaneStrainDpRoute =
+      capability.objective === 'excavation-plane-strain-dp-adaptive' ||
+      capability.objective === 'excavation-plane-strain-dp-biot-replay';
+    const routedAnalysisCase = isPlaneStrainDpRoute
       ? buildPlaneStrainDruckerPragerAdaptiveExcavationDemoAnalysisCase(analysisCase)
       : analysisCase;
     if (capability.objective === 'excavation-plane-strain-dp-adaptive') {
@@ -1004,6 +1118,28 @@ export function prepareFemAnalysisCaseDraft(input: PrepareFemAnalysisCaseDraftIn
       routedAnalysisCase.materials.forEach((material) => {
         material.evidenceRefs = input.evidenceRefs ?? [];
       });
+    }
+    if (capability.objective === 'excavation-plane-strain-dp-biot-replay') {
+      routedAnalysisCase.caseId = 'excavation-plane-strain-dp-biot-replay-draft';
+      routedAnalysisCase.title = 'Experimental plane-strain Drucker-Prager Biot pressure-replay excavation draft';
+      routedAnalysisCase.createdBy = 'geotechcli-fem-routing';
+      routedAnalysisCase.evidenceRefs = input.evidenceRefs ?? [];
+      routedAnalysisCase.assumptions.push({
+        id: 'dp-biot-pressure-replay-source',
+        parameter: 'Biot pressure-replay source',
+        value: 'final accepted Biot u-p pressure frame replayed into DP effective-stress increments',
+        basis: 'Draft route requires reviewer-supplied pore-pressure schedule and hydraulic parameters; nonlinear iterations still have no pore-pressure DOFs.',
+        confidence: 'review',
+        reviewRequired: true,
+      });
+      routedAnalysisCase.materials.forEach((material) => {
+        material.evidenceRefs = input.evidenceRefs ?? [];
+      });
+      routedAnalysisCase.limitations = [
+        'Sequential one-way Biot pressure replay only; not a production hydro-mechanical nonlinear FEM design solver.',
+        'No pore-pressure DOFs, pressure equation, monolithic coupling, or consistent Biot-plastic tangent is assembled in the nonlinear DP iterations.',
+        ...routedAnalysisCase.limitations.filter((limitation) => !limitation.includes('No retaining-wall member design, basal heave, seepage, consolidation')),
+      ];
     }
 
     const validation = validateFemAnalysisCase(routedAnalysisCase);

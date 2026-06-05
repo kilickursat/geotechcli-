@@ -353,6 +353,24 @@ export interface FemResultBiotTransientAcceptance {
   blockerCodes: string[];
 }
 
+export interface FemResultPressureReplayAudit {
+  schemaVersion: 'fem-plane-strain-dp-biot-pressure-replay-audit.v1';
+  mode: 'sequential-one-way-biot-pressure-replay';
+  pressureFrameSource: 'final-biot-step';
+  sourceMethod: string;
+  sourceTransientAccepted: boolean;
+  sourceTransientBlockerCodes: string[];
+  sourceAcceptedStepCount: number;
+  sourcePorePressureDofCount: number;
+  sourceMassBalanceErrorRatio: number;
+  sourceResidualNormRatio: number;
+  replayNodeCount: number;
+  pressureScale: number;
+  maxInputPorePressureKpa: number;
+  maxAppliedEffectiveStressReductionKpa: number;
+  limitations: string[];
+}
+
 export type FemSolverConvergenceStatus = 'converged' | 'nonconverged';
 
 export type FemSolverTerminationReason =
@@ -453,7 +471,8 @@ export type FemResultBackendId =
   | 'builtin-staged-consolidation-1d'
   | 'builtin-nonlinear-column-v0'
   | 'builtin-biot-up-plane-strain-v0'
-  | 'builtin-plane-strain-dp-adaptive-v0';
+  | 'builtin-plane-strain-dp-adaptive-v0'
+  | 'builtin-plane-strain-dp-biot-replay-v0';
 
 export interface FemResultManifest {
   schemaVersion: 'fem-result-manifest.v0';
@@ -481,6 +500,7 @@ export interface FemResultManifest {
   envelope: FemResultEnvelope;
   pressureAudit?: FemResultPressureAudit;
   biotTransientAcceptance?: FemResultBiotTransientAcceptance;
+  pressureReplayAudit?: FemResultPressureReplayAudit;
   adaptiveLoadStepping?: FemResultDruckerPragerAdaptiveLoadSteppingAudit;
   solverConvergence?: FemSolverConvergenceReport;
   visualization: FemVisualizationMesh;
