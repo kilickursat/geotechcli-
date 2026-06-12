@@ -2494,6 +2494,24 @@ function buildBoreholeProfile(result: BoreholeDocumentIngestResult): IngestDossi
     return undefined;
   }
 
+  const notes = ['Layer blocks are scaled to extracted depth intervals. Missing boundaries are shown as uncertain.'];
+  const continuityRepairCount = result.reviewFindings.filter(
+    (finding) => finding.code === 'continuity_repair_applied',
+  ).length;
+  const continuityFlagCount = result.reviewFindings.filter(
+    (finding) => finding.code === 'continuity_unrepairable',
+  ).length;
+  if (continuityRepairCount > 0 || continuityFlagCount > 0) {
+    const parts: string[] = [];
+    if (continuityRepairCount > 0) {
+      parts.push(`${continuityRepairCount} page-break continuity repair(s) applied`);
+    }
+    if (continuityFlagCount > 0) {
+      parts.push(`${continuityFlagCount} unresolved continuity issue(s) flagged for review`);
+    }
+    notes.push(`Depth continuity: ${parts.join('; ')}. See findings for detail.`);
+  }
+
   return {
     title: 'Borehole Stratigraphy Visualization',
     maxDepth,
@@ -2523,7 +2541,7 @@ function buildBoreholeProfile(result: BoreholeDocumentIngestResult): IngestDossi
         })
         .filter((layer): layer is IngestDossierBoreholeProfileLayer => layer != null),
     })),
-    notes: ['Layer blocks are scaled to extracted depth intervals. Missing boundaries are shown as uncertain.'],
+    notes,
   };
 }
 

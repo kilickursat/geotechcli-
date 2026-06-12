@@ -262,3 +262,21 @@ export {
 } from './page-evidence-cache.js';
 export { parseAGS, parseAGSContent, type AGSFile, type AGSGroup } from './ags.js';
 export { parseCPT, parseCPTContent, type CPTProfile, type CPTReading, type CPTParseOptions } from './cpt.js';
+export {
+  assessBoreholeContinuity,
+  reconstructBoreholeContinuity,
+  type BoreholeContinuityAction,
+  type BoreholeContinuityMetrics,
+  type BoreholeContinuityRepair,
+  type BoreholeContinuityRepairDepths,
+  type ReconstructBoreholeContinuityOptions,
+} from './borehole-continuity.js';
+export {
+  assessBoreholeCoordinateConsistency,
+  validateBoreholeLocationPlausibility,
+  type AssessBoreholeCoordinateConsistencyOptions,
+  type BoreholeCoordinateEntry,
+  type CoordinateValidationCode,
+  type CoordinateValidationIssue,
+  type CoordinateValidationSeverity,
+} from './coordinate-validation.js';

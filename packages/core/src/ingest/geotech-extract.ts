@@ -12,6 +12,15 @@ import type { GlmOcrLayoutPage } from '../vision/layout-ocr.js';
 import type { ParseStatus } from '../vision/parse.js';
 import type { PdfDocumentInspection, PdfPageClassification } from './pdf.js';
 import type { IngestSegmentationSummary } from './segmentation.js';
+import {
+  reconstructBoreholeContinuity,
+  type BoreholeContinuityRepair,
+  type ReconstructBoreholeContinuityOptions,
+} from './borehole-continuity.js';
+import {
+  assessBoreholeCoordinateConsistency,
+  validateBoreholeLocationPlausibility,
+} from './coordinate-validation.js';
 
 export interface BoreholeVisionInput {
   base64: string;
@@ -102,6 +111,8 @@ export interface IngestBoreholeLogDocumentOptions {
   interpretPageWithContext?: typeof interpretBoreholeLogWithContext;
   recoverTextHint?: typeof recoverDocumentTextHint;
   transcribePageImageText?: typeof transcribeDocumentImageText;
+  /** Optional thresholds for deterministic page-break continuity repair (defaults are conservative). */
+  continuityRepair?: ReconstructBoreholeContinuityOptions;
   now?: () => Date;
 }
 
@@ -888,7 +899,7 @@ export async function ingestBoreholeLogDocument(
     );
   }
 
-  const mergedBoreholes = groups
+  const sanitizedBoreholes = groups
     .filter((group) => group.pages.length > 0)
     .map((group) =>
       mergeBoreholeLogPages(
@@ -897,6 +908,15 @@ export async function ingestBoreholeLogDocument(
       ),
     )
     .map(sanitizeMergedBoreholeSptValues);
+  // Deterministic page-break continuity repair runs before validation so duplicated boundary rows,
+  // micro-gaps, and small page-break overlaps are healed, while genuine anomalies remain for
+  // validateMergedBorehole to surface authoritatively.
+  const continuityRepairs: BoreholeContinuityRepair[] = [];
+  const mergedBoreholes = sanitizedBoreholes.map((borehole) => {
+    const reconstructed = reconstructBoreholeContinuity(borehole, options.continuityRepair ?? {});
+    continuityRepairs.push(...reconstructed.repairs);
+    return reconstructed.borehole;
+  });
   const boreholeValidationFeedback = mergedBoreholes.map((borehole) => validateMergedBorehole(borehole));
   const boreholes = mergedBoreholes.map((borehole, index) => {
     const validation = boreholeValidationFeedback[index];
@@ -986,6 +1006,39 @@ export async function ingestBoreholeLogDocument(
 
   reviewFindings.push(
     ...boreholeValidationFeedback.flatMap((validation) => validation.findings),
+  );
+
+  reviewFindings.push(
+    ...continuityRepairs.map((repair) => ({
+      code:
+        repair.action === 'flag-unrepairable'
+          ? 'continuity_unrepairable'
+          : 'continuity_repair_applied',
+      severity: 'advisory' as const,
+      scope: 'borehole' as const,
+      message: repair.note,
+      boreholeId: repair.boreholeId,
+    })),
+  );
+
+  // Deterministic coordinate plausibility and cross-borehole consistency checks. These only flag
+  // for review; locations are never dropped or rewritten here.
+  const coordinateIssues = [
+    ...boreholes.flatMap((borehole) =>
+      validateBoreholeLocationPlausibility(borehole.boreholeId, borehole.location),
+    ),
+    ...assessBoreholeCoordinateConsistency(
+      boreholes.map((borehole) => ({ boreholeId: borehole.boreholeId, location: borehole.location })),
+    ),
+  ];
+  reviewFindings.push(
+    ...coordinateIssues.map((issue) => ({
+      code: issue.code,
+      severity: issue.severity,
+      scope: (issue.boreholeId != null ? 'borehole' : 'document') as BoreholeIngestFindingScope,
+      message: issue.message,
+      ...(issue.boreholeId != null ? { boreholeId: issue.boreholeId } : {}),
+    })),
   );
 
   if (boreholes.some((borehole) => borehole.confidence < 70 || borehole.parseStatus !== 'parsed')) {
