@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.125] - 2026-06-13
+
+### Geotech Ingest Borehole Continuity And Coordinate Validation
+
+- Added deterministic page-break continuity repair for merged multi-page borehole logs: small overlaps are trimmed, duplicated boundary rows are dropped, and micro-gaps are snapped, each with a typed audit trail and advisory findings while genuine anomalies stay blocking through `validateMergedBorehole`.
+- Added deterministic coordinate plausibility validation: BNG/UTM range envelopes, suspected easting/northing axis swaps, WGS84-out-of-region checks, UTM zone vs longitude consistency, mixed-CRS detection, and cross-borehole spatial outlier flagging for OCR digit errors, all review-gated without dropping or rewriting coordinates.
+- Exposed continuity repair thresholds through `IngestBoreholeLogDocumentOptions.continuityRepair` with unchanged conservative defaults, and surfaced repair notes in the ingest dossier stratigraphy panel.
+
 ## [0.4.124] - 2026-06-05
 
 ### FEM DP Biot Pressure Replay Route

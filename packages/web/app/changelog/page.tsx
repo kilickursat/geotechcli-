@@ -5,8 +5,18 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 const releases = [
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-06-05',
+    date: '2026-06-13',
     tag: `${GEOTECHCLI_VERSION} Release`,
+    changes: [
+      { type: 'feat', text: 'Added deterministic page-break continuity repair for merged multi-page borehole logs with a typed audit trail, advisory findings, and unchanged blocking validation for genuine anomalies' },
+      { type: 'feat', text: 'Added deterministic coordinate plausibility validation covering axis-swap detection, BNG/UTM range envelopes, UTM zone vs longitude consistency, mixed-CRS detection, and cross-borehole spatial outlier flagging' },
+      { type: 'fix', text: 'Exposed continuity repair thresholds through ingest options with conservative defaults and surfaced repair notes in the ingest dossier stratigraphy panel' },
+    ],
+  },
+  {
+    version: '0.4.124',
+    date: '2026-06-05',
+    tag: '0.4.124 Release',
     changes: [
       { type: 'feat', text: 'Added reviewed experimental excavation-plane-strain-dp-biot-replay drafting and backend execution for sequential Biot pressure-frame replay into Drucker-Prager effective stress' },
       { type: 'feat', text: 'Added pressureReplayAudit result validation for accepted upstream Biot transient evidence, pressure audit metadata, zero nonlinear pore-pressure DOFs, and explicit limitations' },
