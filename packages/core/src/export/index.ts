@@ -44,7 +44,13 @@ export function exportBoreholeGeoJSON(
     lat: number;
     lng: number;
     depth: number;
-    layers: Array<{ depthFrom: number; depthTo: number; description: string; uscs?: string }>;
+    layers: Array<{
+      depthFrom: number;
+      depthTo: number;
+      description: string;
+      uscs?: string;
+      lithology?: { key: string; materialClass: string; uscsSymbol?: string | null; confidence?: number } | null;
+    }>;
   }>,
 ): string {
   const features = boreholes.map((bh) => ({

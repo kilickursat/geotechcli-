@@ -7,6 +7,7 @@ import type {
   GroundModelStratum,
 } from '../ground-model/index.js';
 import type { ProjectManifest, WorkspaceFileEntry } from './manifest.js';
+import { normalizeLithology } from '../geo/lithology.js';
 
 function escapeHtml(value: unknown): string {
   return String(value ?? '')
@@ -129,14 +130,10 @@ function finiteNumber(value: unknown): value is number {
 }
 
 function materialKind(description: string): string {
-  const text = description.toLowerCase();
-  if (/\b(fill|made ground|debris)\b/.test(text)) return 'fill';
-  if (/\b(bedrock|rock|mudstone|sandstone|limestone|granite|basalt|siltstone|shale)\b/.test(text)) return 'rock';
-  if (/\b(gravel|cobble|boulder)\b/.test(text)) return 'gravel';
-  if (/\b(sand|sandy)\b/.test(text)) return 'sand';
-  if (/\b(clay|clayey)\b/.test(text)) return 'clay';
-  if (/\b(silt|silty)\b/.test(text)) return 'silt';
-  return 'unknown';
+  const key = normalizeLithology(description).key;
+  if (key === 'bedrock' || key === 'weathered-rock') return 'rock';
+  if (key === 'mixed') return 'unknown';
+  return key; // organic | gravel | sand | clay | silt | fill
 }
 
 function materialColor(kind: string): string {
@@ -147,6 +144,7 @@ function materialColor(kind: string): string {
     case 'sand': return '#d4a843';
     case 'clay': return '#b87556';
     case 'silt': return '#b9a77a';
+    case 'organic': return '#4d3b2e';
     default: return '#aab4b0';
   }
 }

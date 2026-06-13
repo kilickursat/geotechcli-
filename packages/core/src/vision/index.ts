@@ -3,6 +3,7 @@ import { generateDocumentVision, generateVision, generateText } from '../llm/rou
 import { providerSupportsNativePdfDocuments } from '../llm/capabilities.js';
 import { buildBoreholeLocation as buildStructuredBoreholeLocation } from '../geo/coordinates.js';
 import { classifyRMR89 } from '../geo/classification.js';
+import { detectLithologyDescriptors, type LithologyNormalization } from '../geo/lithology.js';
 import type { BoreholeLocation } from '../ingest/geotech-schemas.js';
 import {
   clampConfidence,
@@ -731,23 +732,24 @@ function includesAny(haystack: string, needles: string[]): boolean {
 function classifySoilFromDescriptionHeuristically(
   description: string,
 ): SoilClassificationFromTextResult {
-  const normalized = description.toLowerCase().replace(/[^a-z0-9\s/-]+/g, ' ');
-  const hasClay = includesAny(normalized, [' clay', 'clayey', 'fat clay', 'lean clay']) || normalized.startsWith('clay');
-  const hasSilt = includesAny(normalized, [' silt', 'silty']) || normalized.startsWith('silt');
-  const hasSand = includesAny(normalized, [' sand', 'sandy']) || normalized.startsWith('sand');
-  const hasGravel = includesAny(normalized, [' gravel', 'gravelly', 'cobble', 'cobbly']) || normalized.startsWith('gravel');
-  const hasOrganic = includesAny(normalized, ['organic', 'organics', 'humic', 'humus']);
-  const hasPeat = includesAny(normalized, ['peat', 'peaty']);
-  const highPlasticity = includesAny(normalized, ['high plasticity', 'very plastic', 'fat clay', 'high pi']);
-  const lowPlasticity = includesAny(normalized, ['low plasticity', 'lean clay', 'lean silt', 'low pi']);
-  const wellGraded = includesAny(normalized, ['well graded', 'well-graded', 'wide gradation']);
-  const poorlyGraded = includesAny(normalized, ['poorly graded', 'poorly-graded', 'uniform']);
-  const lowPermeability = includesAny(normalized, ['low permeability', 'impermeable', 'low hydraulic conductivity']);
-  const highPermeability = includesAny(normalized, ['high permeability', 'free draining', 'freely draining']);
-  const softConsistency = includesAny(normalized, ['very soft', 'soft']);
-  const stiffConsistency = includesAny(normalized, ['very stiff', 'stiff', 'hard']);
-  const looseDensity = includesAny(normalized, ['very loose', 'loose']);
-  const denseDensity = includesAny(normalized, ['very dense', 'dense']);
+  const {
+    hasClay,
+    hasSilt,
+    hasSand,
+    hasGravel,
+    hasOrganic,
+    hasPeat,
+    highPlasticity,
+    lowPlasticity,
+    wellGraded,
+    poorlyGraded,
+    lowPermeability,
+    highPermeability,
+    softConsistency,
+    stiffConsistency,
+    looseDensity,
+    denseDensity,
+  } = detectLithologyDescriptors(description);
 
   let symbol: string | null = null;
 
@@ -918,6 +920,8 @@ export interface BoreholeLayer {
   sptN: number | null;
   waterContent: number | null;
   notes: string | null;
+  /** Deterministic normalized lithology, populated additively during borehole ingest. */
+  lithology?: LithologyNormalization | null;
 }
 
 function sanitizeSptNValue(

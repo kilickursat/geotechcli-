@@ -10,6 +10,18 @@ export {
   type BoreholeLocationInput,
 } from './coordinates.js';
 export { classifyUSCS, classifyRMR89, classifyQSystem, type USCSResult, type RMR89Result, type QSystemResult } from './classification.js';
+export {
+  normalizeLithology,
+  extractUscsSymbol,
+  detectLithologyDescriptors,
+  lithologyClassForKey,
+  LITHOLOGY_MATERIAL_KEYS,
+  type LithologyMaterialKey,
+  type LithologyClass,
+  type LithologyTone,
+  type LithologyNormalization,
+  type LithologyDescriptors,
+} from './lithology.js';
 export { calculateLiquefaction, type LiquefactionResult } from './liquefaction.js';
 export {
   calculateConsolidation,

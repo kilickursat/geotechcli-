@@ -8,6 +8,16 @@ const releases = [
     date: '2026-06-13',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Added a single deterministic lithology normalizer with a shared controlled vocabulary; the six previously independent soil/rock classifiers now delegate to it with unchanged outputs' },
+      { type: 'fix', text: 'Fixed organic/peat classification: preserved as an organic class in the integrated review and recognized in the workspace dossier instead of being dropped to mixed/unknown' },
+      { type: 'feat', text: 'Persisted normalized lithology on borehole layers and ground-model strata and surfaced it in borehole GeoJSON export, while always preserving the raw description' },
+    ],
+  },
+  {
+    version: '0.4.125',
+    date: '2026-06-13',
+    tag: '0.4.125 Release',
+    changes: [
       { type: 'feat', text: 'Added deterministic page-break continuity repair for merged multi-page borehole logs with a typed audit trail, advisory findings, and unchanged blocking validation for genuine anomalies' },
       { type: 'feat', text: 'Added deterministic coordinate plausibility validation covering axis-swap detection, BNG/UTM range envelopes, UTM zone vs longitude consistency, mixed-CRS detection, and cross-borehole spatial outlier flagging' },
       { type: 'fix', text: 'Exposed continuity repair thresholds through ingest options with conservative defaults and surfaced repair notes in the ingest dossier stratigraphy panel' },

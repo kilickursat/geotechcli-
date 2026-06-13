@@ -16,6 +16,7 @@ import {
 } from '../fem/index.js';
 import type { EvidenceMethod, EvidenceRef } from '../evidence/index.js';
 import { buildBoreholeLocation } from '../geo/coordinates.js';
+import { normalizeLithology } from '../geo/lithology.js';
 import type {
   IntegratedReviewAgentReview,
   IntegratedReviewSourceRegionLink,
@@ -379,11 +380,7 @@ function formatDepthMeters(value: number | null | undefined): string {
 }
 
 function materialTone(description: string | null | undefined, uscsSymbol?: string | null): IngestDossierTone {
-  const text = `${description ?? ''} ${uscsSymbol ?? ''}`.toLowerCase();
-  if (/rock|shale|limestone|sandstone|fractured|weathered/.test(text)) return 'neutral';
-  if (/clay|ci|cl|ch/.test(text)) return 'warning';
-  if (/sand|sm|sp|sw|gravel|gm|gp|gw/.test(text)) return 'accent';
-  return 'good';
+  return normalizeLithology(description, uscsSymbol).tone;
 }
 
 function isNonReportDisplayTitle(value: string | null | undefined): boolean {
@@ -418,16 +415,7 @@ function deriveGeotechDisplayTitle(result: GeotechDocumentIngestResult): string 
 }
 
 function materialKey(description: string | null | undefined, uscsSymbol?: string | null): string {
-  const text = `${description ?? ''} ${uscsSymbol ?? ''}`.toLowerCase();
-  if (/peat|organic|top\s*soil|topsoil/.test(text)) return 'organic';
-  if (/bedrock|fresh\s+rock|moderately\s+strong|strong\s+(?:shale|sandstone|siltstone|gneiss|rock)/.test(text)) return 'bedrock';
-  if (/weathered|fractured|residual\s+rock|rocky\s+shale|shale|sandstone|gneiss|rock/.test(text)) return 'weathered-rock';
-  if (/gravel|\bgm\b|\bgp\b|\bgw\b/.test(text)) return 'gravel';
-  if (/sand|\bsm\b|\bsp\b|\bsw\b|\bsc\b/.test(text)) return 'sand';
-  if (/clay|clayey|\bci\b|\bcl\b|\bch\b/.test(text)) return 'clay';
-  if (/silt|silty|\bml\b|\bmh\b/.test(text)) return 'silt';
-  if (/fill|made\s+ground|debris/.test(text)) return 'fill';
-  return 'mixed';
+  return normalizeLithology(description, uscsSymbol).key;
 }
 
 function uniqueSortedPages(values: Array<number | null | undefined>): number[] {

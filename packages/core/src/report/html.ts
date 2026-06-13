@@ -7,6 +7,7 @@ import type {
   IngestDossierTone,
 } from './ingest-dossier.js';
 import type { GroundModel, GroundModelParameter, GroundModelStratum } from '../ground-model/index.js';
+import { normalizeLithology } from '../geo/lithology.js';
 import {
   buildIntegratedReviewModel,
   integratedBoreholeMaxDepth,
@@ -124,16 +125,7 @@ function layerMaterialKey(layer: IngestDossierBoreholeProfileLayer): string {
   if (explicit) {
     return explicit;
   }
-  const text = `${layer.label} ${layer.description} ${layer.uscsSymbol ?? ''}`.toLowerCase();
-  if (/peat|organic|top\s*soil|topsoil/.test(text)) return 'organic';
-  if (/bedrock|fresh\s+rock|strong\s+(?:shale|sandstone|siltstone|gneiss|rock)/.test(text)) return 'bedrock';
-  if (/weathered|fractured|rock|shale|sandstone|gneiss/.test(text)) return 'weathered-rock';
-  if (/gravel|\bgm\b|\bgp\b|\bgw\b/.test(text)) return 'gravel';
-  if (/sand|\bsm\b|\bsp\b|\bsw\b|\bsc\b/.test(text)) return 'sand';
-  if (/clay|\bci\b|\bcl\b|\bch\b/.test(text)) return 'clay';
-  if (/silt|\bml\b|\bmh\b/.test(text)) return 'silt';
-  if (/fill|made\s+ground|debris/.test(text)) return 'fill';
-  return 'mixed';
+  return normalizeLithology(`${layer.label} ${layer.description}`, layer.uscsSymbol).key;
 }
 
 function lithologyColor(key: string): string {
@@ -845,7 +837,7 @@ function renderGroundModelVisualReview(model: GroundModel | undefined): string {
 }
 
 function lightMaterialClass(className: IntegratedReviewMaterialClass): 'made' | 'clay' | 'sand' | 'gravel' {
-  if (className === 'fill') return 'made';
+  if (className === 'fill' || className === 'organic') return 'made';
   if (className === 'clay') return 'clay';
   if (className === 'sand' || className === 'silt' || className === 'mixed') return 'sand';
   return 'gravel';

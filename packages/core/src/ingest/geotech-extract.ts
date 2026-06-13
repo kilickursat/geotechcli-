@@ -17,6 +17,7 @@ import {
   type BoreholeContinuityRepair,
   type ReconstructBoreholeContinuityOptions,
 } from './borehole-continuity.js';
+import { normalizeLithology } from '../geo/lithology.js';
 import {
   assessBoreholeCoordinateConsistency,
   validateBoreholeLocationPlausibility,
@@ -928,6 +929,13 @@ export async function ingestBoreholeLogDocument(
 
     return {
       ...borehole,
+      layers: borehole.layers.map((layer) => ({
+        ...layer,
+        lithology:
+          layer.description != null || layer.uscsSymbol != null
+            ? normalizeLithology(layer.description, layer.uscsSymbol)
+            : null,
+      })),
       parseStatus,
       confidence,
       warnings: uniqueStrings([...borehole.warnings, ...(validation?.warnings ?? [])]),

@@ -42,6 +42,13 @@ export interface GroundModelStratum {
   evidenceIds: string[];
   confidence: number;
   warnings: string[];
+  /** Deterministic normalized lithology derived from the description (additive, optional). */
+  lithology?: {
+    key: string;
+    materialClass: string;
+    uscsSymbol: string | null;
+    confidence: number;
+  };
 }
 
 export interface GroundModelGroundwaterObservation {

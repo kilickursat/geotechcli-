@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.126] - 2026-06-13
+
+### Lithology Normalization
+
+- Added a single deterministic lithology normalizer (`normalizeLithology` in `@geotechcli/core/geo`) with a shared controlled vocabulary, collapsed material class, display tone, USCS extraction, and confidence; the six previously independent ad-hoc classifiers (vision heuristic, ingest dossier material key/tone, integrated-review class, workspace dossier kind, html cross-section fallback, and USCS text extraction) now delegate to it with unchanged signatures.
+- Fixed two latent classification bugs: organic/peat strata are preserved as an `organic` class in the integrated review instead of collapsing to `mixed` (F2), and the workspace dossier now recognizes peat/organic/topsoil instead of rendering them as `unknown` (F1).
+- Unified the vocabulary as a superset of all prior sites, which also widens recognition deterministically: broader rock names and `moderately strong` route mudstone/limestone-type strata to rock rather than mixed (D1/D2), `boulder` is recognized as a coarse-grained descriptor (D3), and the workspace material kind adopts the canonical substring precedence (D4/D5; e.g. `backfill` -> fill). Tone matching is preserved verbatim and intentionally independent of the key.
+- Persisted normalized lithology additively on `BoreholeLayer.lithology` (during borehole ingest) and `GroundModelStratum.lithology` (during ground-model build), and surfaced it in `exportBoreholeGeoJSON` layer properties. Raw descriptions are always preserved.
+- DIGGS/AGSi export, tunnel longitudinal sections, and a dossier class column are deferred to later slices.
+
 ## [0.4.125] - 2026-06-13
 
 ### Geotech Ingest Borehole Continuity And Coordinate Validation

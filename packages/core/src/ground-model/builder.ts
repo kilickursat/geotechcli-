@@ -1,5 +1,6 @@
 import type { EvidenceMethod, EvidenceRef } from '../evidence/index.js';
 import { normalizeEvidenceConfidence } from '../evidence/index.js';
+import { normalizeLithology } from '../geo/lithology.js';
 import {
   parseDelimitedFile,
   parseXlsxFile,
@@ -330,6 +331,7 @@ function bindStrata(
   if (topDepthColumn && topDepth != null) evidenceIds.push(addEvidence(state, source, rowIndex, topDepthColumn, cell(row, topDepthColumn), topDepth));
   if (bottomDepthColumn && bottomDepth != null) evidenceIds.push(addEvidence(state, source, rowIndex, bottomDepthColumn, cell(row, bottomDepthColumn), bottomDepth));
 
+  const lithology = normalizeLithology(description);
   const stratum: GroundModelStratum = {
     boreholeId: rowBoreholeId(source, row),
     topDepth,
@@ -338,6 +340,12 @@ function bindStrata(
     evidenceIds,
     confidence: evidenceConfidence(source.file, source.schema),
     warnings: bottomDepth != null && topDepth != null && bottomDepth < topDepth ? ['Bottom depth is shallower than top depth.'] : [],
+    lithology: {
+      key: lithology.key,
+      materialClass: lithology.materialClass,
+      uscsSymbol: lithology.uscsSymbol,
+      confidence: lithology.confidence,
+    },
   };
   strata.push(stratum);
   if (stratum.boreholeId) {

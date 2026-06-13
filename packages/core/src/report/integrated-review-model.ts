@@ -2,6 +2,7 @@ import type {
   GroundModel,
   GroundModelStratum,
 } from '../ground-model/index.js';
+import { lithologyClassForKey, normalizeLithology, type LithologyMaterialKey } from '../geo/lithology.js';
 import { DEFAULT_LLM_MODEL, DEFAULT_LLM_VISION_MODEL } from '../meta/index.js';
 import type { AgentSession } from '../agents/brain.js';
 import type { SwarmSession } from '../agents/swarm.js';
@@ -12,7 +13,7 @@ import type {
 } from './ingest-dossier.js';
 import type { GlmOcrLayoutPage } from '../vision/layout-ocr.js';
 
-export type IntegratedReviewMaterialClass = 'fill' | 'clay' | 'silt' | 'sand' | 'gravel' | 'rock' | 'mixed';
+export type IntegratedReviewMaterialClass = 'fill' | 'clay' | 'silt' | 'sand' | 'gravel' | 'rock' | 'organic' | 'mixed';
 
 export interface IntegratedReviewStratum {
   top: number;
@@ -193,17 +194,8 @@ function finiteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
-function groundModelMaterialKey(description: string): string {
-  const text = description.toLowerCase();
-  if (/peat|organic|top\s*soil|topsoil/.test(text)) return 'organic';
-  if (/bedrock|fresh\s+rock|strong\s+(?:shale|sandstone|siltstone|gneiss|rock)/.test(text)) return 'bedrock';
-  if (/weathered|fractured|rock|shale|sandstone|gneiss/.test(text)) return 'weathered-rock';
-  if (/gravel|\bgm\b|\bgp\b|\bgw\b/.test(text)) return 'gravel';
-  if (/sand|\bsm\b|\bsp\b|\bsw\b|\bsc\b/.test(text)) return 'sand';
-  if (/clay|\bci\b|\bcl\b|\bch\b/.test(text)) return 'clay';
-  if (/silt|\bml\b|\bmh\b/.test(text)) return 'silt';
-  if (/fill|made\s+ground|debris/.test(text)) return 'fill';
-  return 'mixed';
+function groundModelMaterialKey(description: string): LithologyMaterialKey {
+  return normalizeLithology(description).key;
 }
 
 function stratumTopDepth(stratum: GroundModelStratum, index: number, sorted: GroundModelStratum[]): number {
@@ -235,10 +227,7 @@ function integratedStatus(confidence: number, warnings: string[] = []): 'accepte
 }
 
 function integratedClass(description: string): IntegratedReviewMaterialClass {
-  const key = groundModelMaterialKey(description);
-  if (key === 'fill' || key === 'clay' || key === 'silt' || key === 'sand' || key === 'gravel') return key;
-  if (key === 'weathered-rock' || key === 'bedrock') return 'rock';
-  return 'mixed';
+  return lithologyClassForKey(groundModelMaterialKey(description));
 }
 
 function integratedClassLabel(className: IntegratedReviewMaterialClass): string {
@@ -249,6 +238,7 @@ function integratedClassLabel(className: IntegratedReviewMaterialClass): string 
     case 'sand': return 'Sand';
     case 'gravel': return 'Gravel';
     case 'rock': return 'Rock';
+    case 'organic': return 'Organic';
     default: return 'Mixed';
   }
 }

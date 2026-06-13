@@ -10,6 +10,7 @@ import {
   type ParseStatus,
 } from './parse.js';
 import { transcribeDocumentImageText } from './index.js';
+import { extractUscsSymbol } from '../geo/lithology.js';
 
 export type { ParseSafety, ParseStatus } from './parse.js';
 
@@ -290,8 +291,7 @@ function normalizeMaterialKind(value: unknown): GeotechMaterialObservation['kind
 }
 
 function inferUscsFromText(rawText: string): string | null {
-  const match = rawText.match(/\b(GW|GP|GM|GC|SW|SP|SM|SC|ML|CL|OL|MH|CH|OH|PT|CL-ML)\b/i);
-  return match ? match[1].toUpperCase() : null;
+  return extractUscsSymbol(rawText);
 }
 
 function normalizeMaterials(value: unknown): GeotechMaterialObservation[] {

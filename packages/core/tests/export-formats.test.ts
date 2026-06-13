@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { exportBoreholeProfileDXF, exportCSV, exportGeoJSON } from '../src/export/index.js';
+import { exportBoreholeGeoJSON, exportBoreholeProfileDXF, exportCSV, exportGeoJSON } from '../src/export/index.js';
 
 describe('export formats', () => {
   it('builds valid GeoJSON feature collections', () => {
@@ -19,6 +19,40 @@ describe('export formats', () => {
     expect(geojson.features).toHaveLength(1);
     expect(geojson.features[0].geometry.coordinates).toEqual([139.6917, 35.6895]);
     expect(geojson.features[0].properties.name).toBe('BH-01');
+  });
+
+  it('includes normalized lithology in borehole GeoJSON layer properties when present', () => {
+    const geojson = JSON.parse(
+      exportBoreholeGeoJSON([
+        {
+          id: 'BH-01',
+          lat: 51.5,
+          lng: -0.1,
+          depth: 8,
+          layers: [
+            {
+              depthFrom: 0,
+              depthTo: 4,
+              description: 'Stiff CLAY',
+              uscs: 'CL',
+              lithology: { key: 'clay', materialClass: 'clay', uscsSymbol: 'CL', confidence: 0.74 },
+            },
+          ],
+        },
+      ]),
+    );
+    expect(geojson.features[0].properties.layers[0].lithology.key).toBe('clay');
+    expect(geojson.features[0].properties.layers[0].lithology.materialClass).toBe('clay');
+  });
+
+  it('serializes borehole GeoJSON layers without lithology unchanged (back-compat)', () => {
+    const geojson = JSON.parse(
+      exportBoreholeGeoJSON([
+        { id: 'BH-02', lat: 51.5, lng: -0.1, depth: 5, layers: [{ depthFrom: 0, depthTo: 5, description: 'Sand' }] },
+      ]),
+    );
+    expect(geojson.features[0].properties.layers[0]).toEqual({ depthFrom: 0, depthTo: 5, description: 'Sand' });
+    expect(geojson.features[0].properties.layers[0].lithology).toBeUndefined();
   });
 
   it('builds borehole profile DXF text with key entities', () => {
