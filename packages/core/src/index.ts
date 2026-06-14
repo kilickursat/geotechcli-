@@ -227,8 +227,13 @@ export {
   exportBoreholeProfileDXF,
   exportCSV,
   exportJSON,
+  exportBoreholeAgsi,
+  exportBoreholeDiggs,
   type GeoJSONFeatureInput,
   type DXFEntity,
+  type InterchangeBorehole,
+  type InterchangeLayer,
+  type InterchangeExportOptions,
 } from './export/index.js';
 
 // Metering & anti-abuse

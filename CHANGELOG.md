@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.127] - 2026-06-14
+
+### DIGGS / AGSi Export Adapters
+
+- Added two deterministic, dependency-free geotechnical interchange exporters in `@geotechcli/core`: `exportBoreholeAgsi` (AGSi 1.x ground-model JSON) and `exportBoreholeDiggs` (DIGGS 2.x XML). Both reuse the shared `normalizeLithology` vocabulary and the workspace lithology colour palette, so geology codes, USCS symbols, and unit colours stay consistent with the rest of the app; raw stratum descriptions are always preserved.
+- AGSi output captures `agsSchema`/`agsProject` (name + coordinate system), one observational `agsiModel` whose elements are the per-borehole stratum intervals (depth, level when ground level is known, geology unit, colour, USCS, confidence), and a deduped `agsiGeologyUnit` set. DIGGS output is well-formed, fully escaped XML with one `Borehole` sampling feature per hole (reference point + total measured depth) and per-borehole geology intervals.
+- Exposed both formats on the CLI (`geotech export agsi` / `geotech export diggs`, with `--project`/`--crs` and a tolerant input mapper) and as agent tools (`export_agsi` / `export_diggs`) sourced from the stored ground-model artifact, mirroring the existing `export_dxf`/`export_geojson` surface.
+- Faithful-subset scope by design: output is structurally correct and round-trippable but not full XSD/JSON-schema validated. Full schema validation, DIGGS measurement/sample/SPT coverage, AGSi 3D volume/surface geometry, and AGS4 (CSV) export are deferred to later slices.
+
 ## [0.4.126] - 2026-06-13
 
 ### Lithology Normalization

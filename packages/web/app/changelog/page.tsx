@@ -5,8 +5,18 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 const releases = [
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-06-13',
+    date: '2026-06-14',
     tag: `${GEOTECHCLI_VERSION} Release`,
+    changes: [
+      { type: 'feat', text: 'Added AGSi (AGS interchange ground-model JSON) and DIGGS 2.x (XML) export adapters that turn the normalized ground model into industry-standard geotechnical interchange files' },
+      { type: 'feat', text: 'Exposed both formats on the CLI (geotech export agsi / export diggs) and as agent tools (export_agsi / export_diggs), reusing the shared lithology vocabulary so geology codes, USCS, and unit colours stay consistent' },
+      { type: 'fix', text: 'Faithful-subset output by design: structurally correct and round-trippable, dependency-free, with full XSD validation, DIGGS measurements, and AGSi 3D geometry deferred' },
+    ],
+  },
+  {
+    version: '0.4.126',
+    date: '2026-06-13',
+    tag: '0.4.126 Release',
     changes: [
       { type: 'feat', text: 'Added a single deterministic lithology normalizer with a shared controlled vocabulary; the six previously independent soil/rock classifiers now delegate to it with unchanged outputs' },
       { type: 'fix', text: 'Fixed organic/peat classification: preserved as an organic class in the integrated review and recognized in the workspace dossier instead of being dropped to mixed/unknown' },

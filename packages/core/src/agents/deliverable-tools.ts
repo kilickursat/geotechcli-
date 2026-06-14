@@ -5,6 +5,9 @@ import {
   exportCSV,
   exportGeoJSON,
   exportBoreholeProfileDXF,
+  exportBoreholeAgsi,
+  exportBoreholeDiggs,
+  type InterchangeBorehole,
 } from '../export/index.js';
 import {
   generateReportFromCaseFile,
@@ -617,6 +620,136 @@ toolRegistry.register(
           : inlineTextPayload(geojson)),
       },
       summary: `Exported GeoJSON summary for scenario "${scenarioId}"`,
+    };
+  },
+);
+
+// Build a single interchange borehole from the stored ground-model artifact strata
+// (mirrors export_dxf's sourcing). Returns the borehole plus its stratum count.
+function interchangeBoreholeFromGroundModel(
+  projectId: string,
+  scenarioId: string,
+  args: Record<string, unknown>,
+): { borehole: InterchangeBorehole; layerCount: number } {
+  const groundModel = requireArtifact(projectId, scenarioId, 'ground-model');
+  const caseFile = loadScenarioCaseFile(projectId, scenarioId);
+  const strata = groundModel.payload.strata ?? [];
+
+  if (strata.length === 0) {
+    throw new Error(`Ground-model artifact for scenario "${scenarioId}" does not contain any strata.`);
+  }
+
+  const layers = strata.map((stratum) => ({
+    depthFrom: stratum.fromM,
+    depthTo: stratum.toM,
+    description: stratum.description ?? stratum.material,
+    uscs: stratum.uscsSymbol,
+  }));
+
+  const borehole: InterchangeBorehole = {
+    id: readOptionalString(args.boreholeId) ?? caseFile?.title ?? scenarioId,
+    lat: readOptionalNumber(args.latitude),
+    lng: readOptionalNumber(args.longitude),
+    crs: readOptionalString(args.crs),
+    depth: layers.reduce((max, layer) => Math.max(max, layer.depthTo), 0),
+    layers,
+  };
+
+  return { borehole, layerCount: strata.length };
+}
+
+toolRegistry.register(
+  {
+    name: 'export_agsi',
+    description:
+      'Export an AGSi ground-model interchange file (JSON) from the latest stored ground-model artifact.',
+    parameters: {
+      type: 'object',
+      required: ['projectId', 'scenarioId'],
+      properties: {
+        projectId: { type: 'string', description: 'Project identifier' },
+        scenarioId: { type: 'string', description: 'Scenario identifier' },
+        projectName: { type: 'string', description: 'Optional project name for the AGSi document' },
+        boreholeId: { type: 'string', description: 'Optional borehole label for the generated model' },
+        latitude: { type: 'number', description: 'Optional borehole latitude' },
+        longitude: { type: 'number', description: 'Optional borehole longitude' },
+        crs: { type: 'string', description: 'Optional coordinate reference system (e.g. EPSG:27700)' },
+        outputPath: { type: 'string', description: 'Optional file path for the AGSi output' },
+      },
+    },
+  },
+  (args): ToolResult => {
+    const projectId = readString(args.projectId, 'projectId');
+    const scenarioId = readString(args.scenarioId, 'scenarioId');
+    const outputPath = readOptionalString(args.outputPath);
+    const { borehole, layerCount } = interchangeBoreholeFromGroundModel(projectId, scenarioId, args);
+
+    const agsi = exportBoreholeAgsi([borehole], {
+      projectName: readOptionalString(args.projectName),
+      crs: readOptionalString(args.crs),
+    });
+
+    return {
+      success: true,
+      data: {
+        source: 'case-file',
+        format: 'agsi',
+        mimeType: 'application/json',
+        boreholeCount: 1,
+        layerCount,
+        ...(outputPath
+          ? { outputPath: writeOutputFile(outputPath, agsi), byteLength: Buffer.byteLength(agsi, 'utf8') }
+          : inlineTextPayload(agsi)),
+      },
+      summary: `Exported AGSi from ${layerCount} stored ground-model layers`,
+    };
+  },
+);
+
+toolRegistry.register(
+  {
+    name: 'export_diggs',
+    description:
+      'Export a DIGGS 2.x interchange file (XML) from the latest stored ground-model artifact.',
+    parameters: {
+      type: 'object',
+      required: ['projectId', 'scenarioId'],
+      properties: {
+        projectId: { type: 'string', description: 'Project identifier' },
+        scenarioId: { type: 'string', description: 'Scenario identifier' },
+        projectName: { type: 'string', description: 'Optional project name for the DIGGS document' },
+        boreholeId: { type: 'string', description: 'Optional borehole label for the generated model' },
+        latitude: { type: 'number', description: 'Optional borehole latitude' },
+        longitude: { type: 'number', description: 'Optional borehole longitude' },
+        crs: { type: 'string', description: 'Optional coordinate reference system (e.g. EPSG:27700)' },
+        outputPath: { type: 'string', description: 'Optional file path for the DIGGS output' },
+      },
+    },
+  },
+  (args): ToolResult => {
+    const projectId = readString(args.projectId, 'projectId');
+    const scenarioId = readString(args.scenarioId, 'scenarioId');
+    const outputPath = readOptionalString(args.outputPath);
+    const { borehole, layerCount } = interchangeBoreholeFromGroundModel(projectId, scenarioId, args);
+
+    const diggs = exportBoreholeDiggs([borehole], {
+      projectName: readOptionalString(args.projectName),
+      crs: readOptionalString(args.crs),
+    });
+
+    return {
+      success: true,
+      data: {
+        source: 'case-file',
+        format: 'diggs',
+        mimeType: 'application/xml',
+        boreholeCount: 1,
+        layerCount,
+        ...(outputPath
+          ? { outputPath: writeOutputFile(outputPath, diggs), byteLength: Buffer.byteLength(diggs, 'utf8') }
+          : inlineTextPayload(diggs)),
+      },
+      summary: `Exported DIGGS from ${layerCount} stored ground-model layers`,
     };
   },
 );

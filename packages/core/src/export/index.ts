@@ -3,6 +3,8 @@
 // No heavy dependencies — pure string/buffer generation
 // ---------------------------------------------------------------------------
 
+import { normalizeLithology } from '../geo/lithology.js';
+
 export interface ExportOptions {
   filename: string;
   format: 'geojson' | 'dxf' | 'csv' | 'json';
@@ -65,6 +67,268 @@ export function exportBoreholeGeoJSON(
   }));
 
   return JSON.stringify({ type: 'FeatureCollection', features }, null, 2);
+}
+
+// ---------------------------------------------------------------------------
+// Geotechnical interchange exports — AGSi (JSON) and DIGGS (XML)
+//
+// Faithful, well-formed *subsets* of the AGSi 1.x and DIGGS 2.x standards: enough
+// structure for real GI software (Leapfrog, Holebase, gINT, OpenGround) to read the
+// project, borehole locations, total depths, and lithology-normalized stratum intervals.
+// Dependency-free and deterministic (inject `generatedAt` to pin output). Not a full
+// XSD/JSON-schema-validated document — 3D geometry, DIGGS measurement/sample coverage,
+// and schema validation are intentionally out of scope.
+// ---------------------------------------------------------------------------
+
+export interface InterchangeLayer {
+  depthFrom: number;
+  depthTo: number;
+  description: string;
+  uscs?: string;
+  lithology?: { key: string; materialClass: string; uscsSymbol?: string | null; confidence?: number } | null;
+}
+
+export interface InterchangeBorehole {
+  id: string;
+  lat?: number;
+  lng?: number;
+  easting?: number;
+  northing?: number;
+  groundLevel?: number;
+  depth?: number;
+  crs?: string;
+  layers: InterchangeLayer[];
+}
+
+export interface InterchangeExportOptions {
+  projectName?: string;
+  crs?: string;
+  generatedAt?: string;
+}
+
+// Geology-unit colours reuse the exact palette from workspace/dossier.ts materialColor,
+// keyed by the canonical lithology key from geo/lithology.ts.
+const LITHOLOGY_KEY_COLOURS: Record<string, string> = {
+  organic: '#4d3b2e',
+  bedrock: '#657282',
+  'weathered-rock': '#657282',
+  gravel: '#8a9aa4',
+  sand: '#d4a843',
+  clay: '#b87556',
+  silt: '#b9a77a',
+  fill: '#9a8065',
+  mixed: '#aab4b0',
+};
+
+function lithologyColour(key: string): string {
+  return LITHOLOGY_KEY_COLOURS[key] ?? LITHOLOGY_KEY_COLOURS.mixed;
+}
+
+interface ResolvedLithology {
+  key: string;
+  materialClass: string;
+  uscsSymbol: string | null;
+  confidence: number;
+}
+
+// Prefer a lithology already normalized upstream (ingest/ground-model); otherwise derive
+// deterministically here so geology codes and colours are always populated.
+function resolveLayerLithology(layer: InterchangeLayer): ResolvedLithology {
+  const pre = layer.lithology;
+  if (pre && typeof pre.key === 'string') {
+    const norm = normalizeLithology(layer.description, layer.uscs);
+    return {
+      key: pre.key,
+      materialClass: typeof pre.materialClass === 'string' ? pre.materialClass : pre.key,
+      uscsSymbol: pre.uscsSymbol ?? layer.uscs ?? norm.uscsSymbol,
+      confidence: typeof pre.confidence === 'number' ? pre.confidence : norm.confidence,
+    };
+  }
+  const norm = normalizeLithology(layer.description, layer.uscs);
+  return { key: norm.key, materialClass: norm.materialClass, uscsSymbol: norm.uscsSymbol, confidence: norm.confidence };
+}
+
+function resolveCrs(boreholes: InterchangeBorehole[], options?: InterchangeExportOptions): string | undefined {
+  return options?.crs ?? boreholes.find((bh) => typeof bh.crs === 'string' && bh.crs.trim())?.crs;
+}
+
+function numberToXml(value: number): string {
+  return Number.isFinite(value) ? String(value) : '';
+}
+
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+/**
+ * Export an AGSi 1.x ground-model document (JSON) — project + coordinate system + one
+ * observational model whose elements are the per-borehole stratum intervals, plus the
+ * deduped geology units they reference.
+ */
+export function exportBoreholeAgsi(
+  boreholes: InterchangeBorehole[],
+  options?: InterchangeExportOptions,
+): string {
+  const generatedAt = options?.generatedAt ?? new Date().toISOString();
+  const crs = resolveCrs(boreholes, options);
+
+  const elements: Array<Record<string, unknown>> = [];
+  const units = new Map<string, { geologyUnitID: string; geologyCode: string; description: string; colourRGB: string }>();
+
+  for (const bh of boreholes) {
+    bh.layers.forEach((layer, index) => {
+      const litho = resolveLayerLithology(layer);
+      const colour = lithologyColour(litho.key);
+      const hasLevels = typeof bh.groundLevel === 'number' && Number.isFinite(bh.groundLevel);
+
+      elements.push({
+        elementID: `${bh.id}--${index + 1}`,
+        boreholeID: bh.id,
+        name: `${bh.id}: ${layer.depthFrom.toFixed(2)}-${layer.depthTo.toFixed(2)} m`,
+        description: layer.description,
+        geologyUnitID: litho.key,
+        colourRGB: colour,
+        topDepth: layer.depthFrom,
+        bottomDepth: layer.depthTo,
+        ...(hasLevels
+          ? { topLevel: bh.groundLevel! - layer.depthFrom, bottomLevel: bh.groundLevel! - layer.depthTo }
+          : {}),
+        ...(litho.uscsSymbol ? { uscs: litho.uscsSymbol } : {}),
+        confidence: litho.confidence,
+      });
+
+      if (!units.has(litho.key)) {
+        units.set(litho.key, {
+          geologyUnitID: litho.key,
+          geologyCode: litho.key,
+          description: litho.materialClass,
+          colourRGB: colour,
+        });
+      }
+    });
+  }
+
+  const document = {
+    agsSchema: { name: 'AGSi', version: '1.0.1' },
+    agsProject: {
+      projectName: options?.projectName ?? 'GeotechCLI ground model',
+      coordinateSystem: crs ?? 'unknown',
+    },
+    agsiModel: [
+      {
+        modelID: 'model-1',
+        modelName: 'Observational ground model',
+        category: 'Geological observations',
+        element: elements,
+      },
+    ],
+    agsiGeologyUnit: [...units.values()],
+    generatedAt,
+  };
+
+  return JSON.stringify(document, null, 2);
+}
+
+/**
+ * Export a DIGGS 2.x document (XML) — project + one Borehole sampling feature per borehole
+ * (location, total depth) + per-borehole geology intervals. Hand-rolled, fully escaped, and
+ * well-formed; no XML dependency.
+ */
+export function exportBoreholeDiggs(
+  boreholes: InterchangeBorehole[],
+  options?: InterchangeExportOptions,
+): string {
+  const generatedAt = options?.generatedAt ?? new Date().toISOString();
+  const fallbackCrs = resolveCrs(boreholes, options);
+  const projectName = options?.projectName ?? 'GeotechCLI ground model';
+
+  const referencePoint = (
+    bh: InterchangeBorehole,
+  ): { coords: string; srs?: string } | null => {
+    const srs = bh.crs ?? fallbackCrs;
+    if (typeof bh.easting === 'number' && typeof bh.northing === 'number') {
+      return { coords: `${numberToXml(bh.easting)} ${numberToXml(bh.northing)}`, srs };
+    }
+    if (typeof bh.lat === 'number' && typeof bh.lng === 'number') {
+      return { coords: `${numberToXml(bh.lat)} ${numberToXml(bh.lng)}`, srs };
+    }
+    return null;
+  };
+
+  const lines: string[] = [];
+  lines.push('<?xml version="1.0" encoding="UTF-8"?>');
+  lines.push(
+    '<Diggs xmlns="http://diggsml.org/schemas/2.6" xmlns:gml="http://www.opengis.net/gml/3.2" ' +
+      'xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ' +
+      'gml:id="geotechcli-diggs">',
+  );
+
+  lines.push('  <documentInformation>');
+  lines.push('    <DocumentInformation gml:id="di-1">');
+  lines.push(`      <creationDate>${escapeXml(generatedAt)}</creationDate>`);
+  lines.push('      <description>Generated by geotechCLI</description>');
+  lines.push('    </DocumentInformation>');
+  lines.push('  </documentInformation>');
+
+  lines.push('  <project>');
+  lines.push('    <Project gml:id="project-1">');
+  lines.push(`      <gml:name>${escapeXml(projectName)}</gml:name>`);
+  lines.push('    </Project>');
+  lines.push('  </project>');
+
+  for (const bh of boreholes) {
+    lines.push('  <samplingFeature>');
+    lines.push(`    <Borehole gml:id="${escapeXml(bh.id)}">`);
+    lines.push(`      <gml:name>${escapeXml(bh.id)}</gml:name>`);
+    lines.push('      <investigationTarget>Geotechnical</investigationTarget>');
+    lines.push('      <samplingFeatureType>Borehole</samplingFeatureType>');
+    const pos = referencePoint(bh);
+    if (pos) {
+      lines.push('      <referencePoint>');
+      lines.push(
+        `        <gml:Point gml:id="${escapeXml(bh.id)}-rp"${pos.srs ? ` srsName="${escapeXml(pos.srs)}"` : ''}>`,
+      );
+      lines.push(`          <gml:pos>${pos.coords}</gml:pos>`);
+      lines.push('        </gml:Point>');
+      lines.push('      </referencePoint>');
+    }
+    if (typeof bh.depth === 'number' && Number.isFinite(bh.depth)) {
+      lines.push(`      <totalMeasuredDepth uom="m">${numberToXml(bh.depth)}</totalMeasuredDepth>`);
+    }
+    lines.push('    </Borehole>');
+    lines.push('  </samplingFeature>');
+  }
+
+  for (const bh of boreholes) {
+    if (bh.layers.length === 0) continue;
+    lines.push('  <observation>');
+    lines.push(`    <Geology gml:id="${escapeXml(bh.id)}-geol">`);
+    lines.push(`      <samplingFeatureRef xlink:href="#${escapeXml(bh.id)}"/>`);
+    bh.layers.forEach((layer, index) => {
+      const litho = resolveLayerLithology(layer);
+      lines.push('      <geologyInterval>');
+      lines.push(`        <GeologyInterval gml:id="${escapeXml(bh.id)}-geol-${index + 1}">`);
+      lines.push(`          <topDepth uom="m">${numberToXml(layer.depthFrom)}</topDepth>`);
+      lines.push(`          <baseDepth uom="m">${numberToXml(layer.depthTo)}</baseDepth>`);
+      lines.push(`          <description>${escapeXml(layer.description)}</description>`);
+      lines.push(`          <geologyCode>${escapeXml(litho.key)}</geologyCode>`);
+      if (litho.uscsSymbol) {
+        lines.push(`          <uscs>${escapeXml(litho.uscsSymbol)}</uscs>`);
+      }
+      lines.push('        </GeologyInterval>');
+      lines.push('      </geologyInterval>');
+    });
+    lines.push('    </Geology>');
+    lines.push('  </observation>');
+  }
+
+  lines.push('</Diggs>');
+  return lines.join('\n');
 }
 
 // ---------------------------------------------------------------------------
