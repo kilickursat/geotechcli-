@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.128] - 2026-06-14
+
+### Default Text Model GLM-5.2
+
+- Promoted the hosted strong-beta default text/agent model from `glm-5.1` to `glm-5.2` (Z.ai's latest flagship in the same GLM-5 series, served through the same `/paas/v4/chat/completions` endpoint and hosted-beta proxy). Vision (`glm-5v-turbo`) and layout (`glm-ocr`) defaults are unchanged.
+- Updated the shared metadata default and supported-proxy-model catalog so the proxy allowlist, hosted-beta thinking-mode injection, CLI status/config output, and web defaults all follow `glm-5.2`; the superseded `glm-5.1` is removed from the catalog.
+- Realigned the release-consistency guard, the release smoke gate (`/api/version` expected text model), BYOK/benchmark smoke defaults, README/CLAUDE/PRIVACY/handoff docs, and the active test/fixture corpus to `glm-5.2` so no shipped or authoritative surface references the old default.
+
 ## [0.4.127] - 2026-06-14
 
 ### DIGGS / AGSi Export Adapters

@@ -92,7 +92,7 @@ const model: IntegratedModel = {
     "models": {
       "ocr": "glm-ocr",
       "vision": "glm-5v-turbo",
-      "text": "glm-5.1"
+      "text": "glm-5.2"
     },
     "status": "review_recommended"
   },

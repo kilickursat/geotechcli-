@@ -168,7 +168,7 @@ describe('geotech benchmark corpus', () => {
     expect(trendSerialized).not.toContain('"fixtures"');
     expect(trendSerialized).not.toContain('"benchmark"');
     expect(trendSerialized).not.toContain('"modelId"');
-    expect(trendSerialized).not.toContain('glm-5.1');
+    expect(trendSerialized).not.toContain('glm-5.2');
     expect(inspectGeotechBenchmarkCorpusArtifactSafety(trend.report).ok).toBe(true);
     expect(trendHtml).toContain('GeotechCLI Corpus Trend');
     expect(trendHtml).toContain('No previous local run is available yet.');
@@ -266,7 +266,7 @@ describe('geotech benchmark corpus', () => {
       };
     };
     unsafe.current.runs[0]!.source = 'C:/Users/Databil/private/reports/site.pdf';
-    unsafe.current.runs[0]!.modelId = 'glm-5.1-private-route';
+    unsafe.current.runs[0]!.modelId = 'glm-5.2-private-route';
     unsafe.current.summary.pathLeakCount = 1;
 
     const validation = validateGeotechBenchmarkCorpusTrendContract(unsafe);
@@ -514,7 +514,7 @@ function testProviderBlock(providerProfile: string): NonNullable<GeotechDocument
     return {
       provider: 'hosted-beta',
       profile: 'hosted-default',
-      modelId: 'glm-5.1',
+      modelId: 'glm-5.2',
       visionModelId: 'glm-5v-turbo',
       capabilities: {
         text: true,

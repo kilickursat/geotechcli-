@@ -4,7 +4,7 @@
     {
       "id": "hosted-beta",
       "provider": "hosted-beta",
-      "modelId": "glm-5.1",
+      "modelId": "glm-5.2",
       "visionModelId": "glm-5v-turbo",
       "expectedCapabilityProfile": "hosted-default",
       "likelyFreeRoute": false,

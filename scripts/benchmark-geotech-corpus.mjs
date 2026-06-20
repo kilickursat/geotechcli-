@@ -457,7 +457,7 @@ function providerBlock(profile) {
     return {
       provider: 'hosted-beta',
       profile: 'hosted-beta',
-      modelId: 'glm-5.1',
+      modelId: 'glm-5.2',
       visionModelId: 'glm-5v-turbo',
       capabilities: {
         text: true,

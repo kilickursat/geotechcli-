@@ -101,7 +101,7 @@ jobs:
           export EXPECTED_VERSION=$(node -p "require('./packages/core/package.json').version")
           node <<'NODE'
           const expectedVersion = process.env.EXPECTED_VERSION;
-          const expectedTextModel = 'glm-5.1';
+          const expectedTextModel = 'glm-5.2';
           const expectedVisionModel = 'glm-5v-turbo';
           const expectedLayoutModel = 'glm-ocr';
           const checks = [

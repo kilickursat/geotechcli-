@@ -51,7 +51,7 @@ describe('BYOK provider benchmark contract', () => {
   it('uses the same preprocessed page-evidence contract for hosted and OpenRouter/free providers', () => {
     const hosted = buildByokProviderBenchmarkProfile('hosted-beta', {
       provider: 'hosted-beta',
-      modelId: 'glm-5.1',
+      modelId: 'glm-5.2',
       visionModelId: 'glm-5v-turbo',
     });
     const openrouter = buildByokProviderBenchmarkProfile('openrouter-free', {
@@ -121,7 +121,7 @@ describe('BYOK provider benchmark contract', () => {
   it('builds comparable run reports across provider profiles', () => {
     const hosted = buildByokProviderBenchmarkProfile('hosted-beta', {
       provider: 'hosted-beta',
-      modelId: 'glm-5.1',
+      modelId: 'glm-5.2',
       visionModelId: 'glm-5v-turbo',
     });
     const local = buildByokProviderBenchmarkProfile('local-hf-compatible', {
@@ -133,7 +133,7 @@ describe('BYOK provider benchmark contract', () => {
       {
         profile: hosted,
         ok: true,
-        model: 'glm-5.1',
+        model: 'glm-5.2',
         latencyMs: 120,
         totalTokens: 42,
         response: {

@@ -33,7 +33,7 @@ That means:
 
 A model response still requires sending the request to the model provider that generates it.
 
-- In strong beta, the default hosted provider path uses `glm-5.1` for text/agent reasoning and `glm-5v-turbo` for vision.
+- In strong beta, the default hosted provider path uses `glm-5.2` for text/agent reasoning and `glm-5v-turbo` for vision.
 - If a user manually switches to another provider, that provider handles the request directly.
 - Provider-side handling follows that provider's API terms and privacy commitments in addition to geotechCLI server behavior.
 

@@ -91,7 +91,7 @@ describe('geotech document synthesis', () => {
         }),
         latencyMs: 25,
         usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
-        model: 'glm-5.1',
+        model: 'glm-5.2',
         provider: 'hosted-beta',
       });
 

@@ -1251,7 +1251,7 @@ Trace should include:
     },
     {
       "type": "model_call",
-      "model": "glm-5.1",
+      "model": "glm-5.2",
       "purpose": "intent_resolution",
       "status": "pass"
     }

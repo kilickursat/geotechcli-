@@ -18,7 +18,7 @@ vi.mock('@geotechcli/core', () => ({
 }));
 
 vi.mock('@geotechcli/core/meta', () => ({
-  DEFAULT_LLM_MODEL: 'glm-5.1',
+  DEFAULT_LLM_MODEL: 'glm-5.2',
 }));
 
 import { registerConfigCommand } from '../src/commands/config.js';
@@ -41,7 +41,7 @@ describe('config command', () => {
       },
     });
     coreMocks.registry.get.mockReturnValue({
-      defaultModel: 'glm-5.1',
+      defaultModel: 'glm-5.2',
       defaultVisionModel: 'glm-5v-turbo',
     });
 
@@ -51,7 +51,7 @@ describe('config command', () => {
     await modelProgram.parseAsync(['config', 'get', 'llm.model'], { from: 'user' });
     await visionProgram.parseAsync(['config', 'get', 'llm.vision_model'], { from: 'user' });
 
-    expect(logSpy).toHaveBeenNthCalledWith(1, 'glm-5.1');
+    expect(logSpy).toHaveBeenNthCalledWith(1, 'glm-5.2');
     expect(logSpy).toHaveBeenNthCalledWith(2, 'glm-5v-turbo');
   });
 });

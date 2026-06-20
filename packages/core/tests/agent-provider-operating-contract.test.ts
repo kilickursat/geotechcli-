@@ -79,7 +79,7 @@ describe('provider-agnostic agent operating contract', () => {
   it('keeps hosted GLM on the same operating scaffold without free-route gates', () => {
     const prompt = buildProviderOperatingPrompt({
       provider: 'hosted-beta',
-      modelId: 'glm-5.1',
+      modelId: 'glm-5.2',
       visionModelId: 'glm-5v-turbo',
     }, { compact: true });
 

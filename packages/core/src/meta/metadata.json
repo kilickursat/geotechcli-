@@ -1,12 +1,12 @@
 {
-  "version": "0.4.127",
+  "version": "0.4.128",
   "defaults": {
     "provider": "hosted-beta",
-    "model": "glm-5.1",
+    "model": "glm-5.2",
     "visionModel": "glm-5v-turbo"
   },
   "proxyModels": [
-    "glm-5.1",
+    "glm-5.2",
     "glm-5v-turbo",
     "glm-ocr"
   ],

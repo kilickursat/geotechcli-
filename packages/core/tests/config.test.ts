@@ -253,7 +253,7 @@ describe('hosted-beta config defaults', () => {
       llm: {
         provider: 'zhipu',
         api_key: '',
-        model: 'glm-5.1',
+        model: 'glm-5.2',
         vision_model: 'glm-5v-turbo',
         base_url: '',
         timeout: 60000,
@@ -272,7 +272,7 @@ describe('hosted-beta config defaults', () => {
     expect(llmConfig.provider).toBe('zhipu');
     expect(llmConfig.apiKey).toBe('zhipu-env-key');
     expect(llmConfig.baseUrl).toBe('https://api.z.ai/api/paas/v4');
-    expect(llmConfig.modelId).toBe('glm-5.1');
+    expect(llmConfig.modelId).toBe('glm-5.2');
     expect(llmConfig.visionModelId).toBe('glm-5v-turbo');
   });
 

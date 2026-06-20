@@ -10,7 +10,7 @@ describe('AI fallback behavior', () => {
   function hostedBetaSuccessResponse(content: string): Response {
     return new Response(
       JSON.stringify({
-        model: 'glm-5.1',
+        model: 'glm-5.2',
         choices: [{ message: { role: 'assistant', content } }],
         usage: {
           prompt_tokens: 120,
@@ -353,7 +353,7 @@ describe('AI fallback behavior', () => {
     const firstRequest = JSON.parse(
       String(fetchMock.mock.calls[0]?.[1]?.body ?? '{}'),
     ) as { model?: string };
-    expect(firstRequest.model).toBe('glm-5.1');
+    expect(firstRequest.model).toBe('glm-5.2');
 
     const toolCalls = session.steps.filter((step) => step.type === 'tool_call');
     expect(toolCalls.map((step) => step.toolName)).toEqual([
@@ -448,7 +448,7 @@ describe('AI fallback behavior', () => {
         ? message.content
         : JSON.stringify(message.content))
       .join('\n');
-    expect(secondRequest.model).toBe('glm-5.1');
+    expect(secondRequest.model).toBe('glm-5.2');
     expect(secondPrompt).toContain('[Tool Result: assess_fem_production_readiness]');
     expect(secondPrompt).toContain('productionReady: no');
     expect(secondPrompt).toContain('coupled-nonlinear-plane-strain');
@@ -579,7 +579,7 @@ describe('AI fallback behavior', () => {
     const requests = fetchMock.mock.calls.map((call) => (
       JSON.parse(String(call[1]?.body ?? '{}')) as { model?: string; messages?: Array<{ content?: unknown }> }
     ));
-    expect(requests.map((request) => request.model)).toEqual(['glm-5.1', 'glm-5.1', 'glm-5.1']);
+    expect(requests.map((request) => request.model)).toEqual(['glm-5.2', 'glm-5.2', 'glm-5.2']);
 
     const toolCalls = session.steps.filter((step) => step.type === 'tool_call');
     expect(toolCalls.map((step) => step.toolName)).toEqual([
@@ -719,11 +719,11 @@ describe('AI fallback behavior', () => {
       JSON.parse(String(call[1]?.body ?? '{}')) as { model?: string; messages?: Array<{ content?: unknown }> }
     ));
     expect(requests.map((request) => request.model)).toEqual([
-      'glm-5.1',
-      'glm-5.1',
-      'glm-5.1',
-      'glm-5.1',
-      'glm-5.1',
+      'glm-5.2',
+      'glm-5.2',
+      'glm-5.2',
+      'glm-5.2',
+      'glm-5.2',
     ]);
 
     const firstBlockedIndex = session.steps.findIndex(
@@ -866,7 +866,7 @@ describe('AI fallback behavior', () => {
     const requests = fetchMock.mock.calls.map((call) => (
       JSON.parse(String(call[1]?.body ?? '{}')) as { model?: string; messages?: Array<{ content?: unknown }> }
     ));
-    expect(requests.map((request) => request.model)).toEqual(['glm-5.1', 'glm-5.1']);
+    expect(requests.map((request) => request.model)).toEqual(['glm-5.2', 'glm-5.2']);
 
     const readinessResult = session.steps.find(
       (step) => step.type === 'tool_result' && step.toolName === 'assess_fem_production_readiness',
@@ -986,7 +986,7 @@ describe('AI fallback behavior', () => {
     const requests = fetchMock.mock.calls.map((call) => (
       JSON.parse(String(call[1]?.body ?? '{}')) as { model?: string; messages?: Array<{ content?: unknown }> }
     ));
-    expect(requests.map((request) => request.model)).toEqual(['glm-5.1', 'glm-5.1']);
+    expect(requests.map((request) => request.model)).toEqual(['glm-5.2', 'glm-5.2']);
 
     const supportResult = session.steps.find(
       (step) => step.type === 'tool_result' && step.toolName === 'check_fem_support_member_design',

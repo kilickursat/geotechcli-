@@ -314,8 +314,8 @@ describe('project workflow router', () => {
   });
 
   it.each([
-    { provider: 'hosted-beta' as const, modelId: 'glm-5.1', expectedProfile: 'hosted-default', freeGate: false },
-    { provider: 'zhipu' as const, modelId: 'glm-5.1', expectedProfile: 'direct-zai', freeGate: false },
+    { provider: 'hosted-beta' as const, modelId: 'glm-5.2', expectedProfile: 'hosted-default', freeGate: false },
+    { provider: 'zhipu' as const, modelId: 'glm-5.2', expectedProfile: 'direct-zai', freeGate: false },
     { provider: 'openai-compatible' as const, modelId: 'poolside/laguna-m.1:free', expectedProfile: 'open-byok', freeGate: true },
     { provider: 'openai-compatible' as const, modelId: 'local/model', expectedProfile: 'open-byok', freeGate: false },
   ])('builds the same allowed workflow contract for $provider $modelId', ({ provider, modelId, expectedProfile, freeGate }) => {

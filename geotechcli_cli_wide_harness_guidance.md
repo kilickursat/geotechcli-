@@ -390,7 +390,7 @@ Every run should write:
 {
   "type": "model_call",
   "provider": "z_ai",
-  "model": "glm-5.1",
+  "model": "glm-5.2",
   "purpose": "schema_normalization",
   "inputEvidenceIds": ["ev_p012_b001"],
   "outputSchema": "borehole_log.v1",

@@ -35,15 +35,16 @@ const lockCorePkg = lockfile.packages?.['packages/core'];
 const lockWebPkg = lockfile.packages?.['packages/web'];
 
 assert(metadata.defaults.provider === 'hosted-beta', 'Strong beta must keep hosted-beta as the public default provider.');
-assert(metadata.defaults.model === 'glm-5.1', `Default text model must be glm-5.1, found ${metadata.defaults.model}.`);
+assert(metadata.defaults.model === 'glm-5.2', `Default text model must be glm-5.2, found ${metadata.defaults.model}.`);
 assert(metadata.defaults.visionModel === 'glm-5v-turbo', `Default vision model must be glm-5v-turbo, found ${metadata.defaults.visionModel}.`);
 assert(
   Array.isArray(metadata.proxyModels) &&
-    metadata.proxyModels.includes('glm-5.1') &&
+    metadata.proxyModels.includes('glm-5.2') &&
     metadata.proxyModels.includes('glm-5v-turbo') &&
     metadata.proxyModels.includes('glm-ocr') &&
-    !metadata.proxyModels.some((model) => /qwen/i.test(model)),
-  'Supported proxy models must include the GLM text, vision, and OCR defaults and must not include stale Qwen defaults.',
+    !metadata.proxyModels.some((model) => /qwen/i.test(model)) &&
+    !metadata.proxyModels.includes('glm-5.1'),
+  'Supported proxy models must include the GLM 5.2 text, vision, and OCR defaults and must not include the superseded glm-5.1 or stale Qwen defaults.',
 );
 
 for (const pkg of [cliPkg, corePkg, webPkg]) {

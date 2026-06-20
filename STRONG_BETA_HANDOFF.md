@@ -6,7 +6,7 @@ Repo: `https://github.com/kilickursat/geotechcli-.git`
 Current branch head: see git history for the latest `strong-beta` release commit
 Current release in repo: `0.4.33` local release candidate until the approved commit/tag/push
 Beta host: `https://beta.geotechcli.com`
-Hosted text/agent model: `glm-5.1`
+Hosted text/agent model: `glm-5.2`
 Hosted vision model: `glm-5v-turbo`
 Hosted runtime: Z.ai API through the Cloudflare hosted-beta proxy
 
@@ -56,7 +56,7 @@ What strong beta should not claim yet:
 - `packages/cli` is the published CLI surface
 - `packages/core` contains deterministic engineering logic, hosted-beta routing, agent orchestration, intake/preflight logic, and shared metadata
 - default provider is `hosted-beta`
-- default text model is `glm-5.1`
+- default text model is `glm-5.2`
 - default vision model is `glm-5v-turbo`
 
 ### Web + Proxy

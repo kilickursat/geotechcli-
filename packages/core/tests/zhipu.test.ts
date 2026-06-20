@@ -17,7 +17,7 @@ describe('ZhipuAdapter', () => {
           id: 'glm-test',
           object: 'chat.completion',
           created: 1,
-          model: 'glm-5.1',
+          model: 'glm-5.2',
           choices: [{ index: 0, message: { role: 'assistant', content: 'OK' }, finish_reason: 'stop' }],
           usage: { prompt_tokens: 5, completion_tokens: 1, total_tokens: 6 },
         }),
@@ -30,7 +30,7 @@ describe('ZhipuAdapter', () => {
     const response = await adapter.complete(
       {
         messages: [{ role: 'user', content: 'Reply with OK' }],
-        model: 'glm-5.1',
+        model: 'glm-5.2',
         jsonMode: true,
         maxTokens: 64,
       },
@@ -43,7 +43,7 @@ describe('ZhipuAdapter', () => {
     );
 
     expect(response.text).toBe('OK');
-    expect(response.model).toBe('glm-5.1');
+    expect(response.model).toBe('glm-5.2');
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('https://api.z.ai/api/paas/v4/chat/completions');
@@ -52,7 +52,7 @@ describe('ZhipuAdapter', () => {
       'Content-Type': 'application/json',
     });
     expect(JSON.parse(String(init.body))).toMatchObject({
-      model: 'glm-5.1',
+      model: 'glm-5.2',
       response_format: { type: 'json_object' },
       max_tokens: 64,
     });
@@ -129,7 +129,7 @@ describe('ZhipuAdapter', () => {
       adapter.complete(
         {
           messages: [{ role: 'user', content: 'Reply with JSON' }],
-          model: 'glm-5.1',
+          model: 'glm-5.2',
         },
         {
           provider: 'zhipu',

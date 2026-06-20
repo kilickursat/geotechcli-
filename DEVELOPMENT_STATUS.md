@@ -14,7 +14,7 @@ Current focus:
 
 - Keep `hosted-beta` as the default public provider while preserving BYOK as an advanced override through provider-specific keys and the same evidence-contract smoke checks.
 - Publish npm packages through Trusted Publishing/OIDC rather than long-lived write tokens once the npm package settings are configured.
-- Route hosted text and agent reasoning to `glm-5.1`.
+- Route hosted text and agent reasoning to `glm-5.2`.
 - Route hosted vision to `glm-5v-turbo`.
 - Route hosted PDF/table layout extraction to `glm-ocr`.
 - Retry final report synthesis without thinking when GLM-5.1 returns an empty thinking-mode response.

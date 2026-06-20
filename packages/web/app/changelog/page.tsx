@@ -8,6 +8,16 @@ const releases = [
     date: '2026-06-14',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Promoted the hosted strong-beta default text/agent model from glm-5.1 to glm-5.2, Z.ai’s latest flagship in the same GLM-5 series, served through the same chat-completions endpoint and hosted-beta proxy' },
+      { type: 'fix', text: 'Updated the shared metadata default and supported-proxy-model catalog so the proxy allowlist, thinking-mode injection, CLI status/config output, and web defaults all follow glm-5.2; the superseded glm-5.1 is removed' },
+      { type: 'fix', text: 'Realigned the release-consistency guard, release smoke gate, BYOK/benchmark defaults, docs, and the active test corpus to glm-5.2; vision (glm-5v-turbo) and layout (glm-ocr) defaults are unchanged' },
+    ],
+  },
+  {
+    version: '0.4.127',
+    date: '2026-06-14',
+    tag: '0.4.127 Release',
+    changes: [
       { type: 'feat', text: 'Added AGSi (AGS interchange ground-model JSON) and DIGGS 2.x (XML) export adapters that turn the normalized ground model into industry-standard geotechnical interchange files' },
       { type: 'feat', text: 'Exposed both formats on the CLI (geotech export agsi / export diggs) and as agent tools (export_agsi / export_diggs), reusing the shared lithology vocabulary so geology codes, USCS, and unit colours stay consistent' },
       { type: 'fix', text: 'Faithful-subset output by design: structurally correct and round-trippable, dependency-free, with full XSD validation, DIGGS measurements, and AGSi 3D geometry deferred' },

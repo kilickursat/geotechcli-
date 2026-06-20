@@ -354,7 +354,7 @@ describe('agent command skill opt-in', () => {
     coreMocks.buildLLMConfig.mockReturnValue({
       provider: 'hosted-beta',
       apiKey: '',
-      modelId: 'glm-5.1',
+      modelId: 'glm-5.2',
       timeout: 60000,
       skillsEnabled: true,
     });
@@ -362,7 +362,7 @@ describe('agent command skill opt-in', () => {
     coreMocks.generateText.mockResolvedValue({
       text: '{"tasks":["risk-analysis"],"rationale":["model proposed risk workflow"]}',
       usage: { promptTokens: 10, completionTokens: 8, totalTokens: 18 },
-      model: 'glm-5.1',
+      model: 'glm-5.2',
       provider: 'hosted-beta',
       latencyMs: 25,
     });
@@ -858,7 +858,7 @@ describe('agent command skill opt-in', () => {
     expect(coreMocks.buildProjectWorkflowRouterPrompt).toHaveBeenCalledWith(expect.objectContaining({
       prompt: 'decide the best project workflow',
       manifest: expect.any(Object),
-      providerConfig: expect.objectContaining({ provider: 'hosted-beta', modelId: 'glm-5.1' }),
+      providerConfig: expect.objectContaining({ provider: 'hosted-beta', modelId: 'glm-5.2' }),
       compact: true,
     }));
     expect(coreMocks.generateText).toHaveBeenCalledWith(
@@ -878,7 +878,7 @@ describe('agent command skill opt-in', () => {
     expect(modelRows[0]).toEqual(expect.objectContaining({
       purpose: 'project-workflow-router',
       status: 'pass',
-      model: 'glm-5.1',
+      model: 'glm-5.2',
     }));
   });
 
@@ -889,7 +889,7 @@ describe('agent command skill opt-in', () => {
     coreMocks.generateText.mockResolvedValueOnce({
       text: '{"tasks":["invent-fem-result"],"rationale":["bad proposal"]}',
       usage: { promptTokens: 10, completionTokens: 8, totalTokens: 18 },
-      model: 'glm-5.1',
+      model: 'glm-5.2',
       provider: 'hosted-beta',
       latencyMs: 25,
     });
