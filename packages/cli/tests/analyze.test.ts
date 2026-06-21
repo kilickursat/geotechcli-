@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Command } from 'commander';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { registerAnalyzeCommand } from '../src/commands/analyze.js';
+import { registerAnalyzeCommand, suggestAgentQuestion } from '../src/commands/analyze.js';
+import type { ProjectManifest } from '@geotechcli/core';
 
 describe('analyze command', () => {
   const tempDirs: string[] = [];
@@ -85,6 +86,72 @@ describe('analyze command', () => {
     expect(html).toContain('Verifier Findings');
     expect(html).toContain('Calculation Readiness');
     expect(html).toContain('locations.csv');
-    expect(logSpy.mock.calls.map((call) => String(call[0])).join('\n')).toContain('Workspace report saved');
+    const htmlOutput = logSpy.mock.calls.map((call) => String(call[0])).join('\n');
+    expect(htmlOutput).toContain('Workspace report saved');
+    expect(htmlOutput).not.toContain('Work with this data using the AI agent');
+  });
+
+  it('signposts the AI agent verbs in text output (Gap F)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-cli-analyze-signpost-'));
+    tempDirs.push(dir);
+    await writeFile(
+      join(dir, 'spt.csv'),
+      ['borehole_id,depth_m,sptN', 'BH-01,1.5,12'].join('\n'),
+      'utf-8',
+    );
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const program = new Command();
+    registerAnalyzeCommand(program);
+
+    await program.parseAsync(['analyze', dir], { from: 'user' });
+
+    const output = logSpy.mock.calls.map((call) => String(call[0])).join('\n');
+    expect(output).toContain('Work with this data using the AI agent:');
+    expect(output).toContain('geotech chat');
+    expect(output).toContain('geotech agent "interpret the ground model');
+  });
+
+  it('does not signpost the agent in JSON output (Gap F)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'geotech-cli-analyze-signpost-json-'));
+    tempDirs.push(dir);
+    await writeFile(
+      join(dir, 'spt.csv'),
+      ['borehole_id,depth_m,sptN', 'BH-01,1.5,12'].join('\n'),
+      'utf-8',
+    );
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const program = new Command();
+    registerAnalyzeCommand(program);
+
+    await program.parseAsync(['analyze', dir, '--json'], { from: 'user' });
+
+    const output = logSpy.mock.calls.map((call) => String(call[0])).join('\n');
+    expect(output).not.toContain('Work with this data using the AI agent');
+  });
+});
+
+describe('suggestAgentQuestion (Gap F)', () => {
+  it('picks the ground-model question when boreholes exist', () => {
+    const manifest = {
+      groundModel: { stats: { boreholes: 2 } },
+      summary: { branches: [] },
+    } as unknown as ProjectManifest;
+    expect(suggestAgentQuestion(manifest)).toContain('ground model');
+  });
+
+  it('picks the monitoring question for monitoring branches', () => {
+    const manifest = {
+      summary: { branches: ['monitoring'] },
+    } as unknown as ProjectManifest;
+    expect(suggestAgentQuestion(manifest)).toContain('monitoring trends');
+  });
+
+  it('falls back to a generic question', () => {
+    const manifest = {
+      summary: { branches: [] },
+    } as unknown as ProjectManifest;
+    expect(suggestAgentQuestion(manifest)).toBe('what can you tell me about this project data?');
   });
 });

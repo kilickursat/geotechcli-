@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.130] - 2026-06-21
+
+### Agentic Surface Sharpening — chat auto-context, force-agent, wider data window, analyze signposts
+
+- `geotech chat` no longer starts cold: at session start it auto-scans the current project folder (the same deterministic manifest `geotech agent --workspace` builds, via `resolveWorkspaceRoot` + `analyzeWorkspace`) and seeds the session with a bounded ground-model digest — representative strata values, lithology, groundwater, counts, and verifier status — so the LLM agent understands the dataset from the first message. The human-readable digest is injected first so it survives the context cap; depth is pulled on demand via the read-only `query_ground_model` tool. Added `--workspace <dir>` / `--no-workspace` flags and `/workspace` (show the scanned manifest) + `/rescan` (re-scan the folder) REPL commands. (Gap B)
+- Added `--force-agent` to `geotech agent` and `geotech chat`: skips the deterministic preflight short-circuit and routes the request through the LLM agent loop (sets the existing `AgentRunOptions.disableDeterministicPreflight`). Off by default — the deterministic fast path remains the default, trust-preserving behavior. (Gap E)
+- Read-only data tools (`query_ground_model`, `parse_ags`, `parse_csv`, `parse_cpt`, `read_file`, `analyze_signal_file`) now serialize up to ~8 KB of result into the agent prompt (vs the 3 KB calculator window), and the hosted final-answer token budget grows when a data tool was actually read, so the LLM can reason across the whole dataset. Loop steps stay lean for cost. The agent system prompt now states that data tools are paginated (re-call `query_ground_model` with a higher `limit` or a specific `section`/`boreholeId` to fetch more). (Gap D)
+- `geotech analyze` text output now signposts the LLM-active verbs, printing copy-pasteable `geotech chat` and a contextual `geotech agent "<question>"` next step seeded from the scan; `--json` and `--format html` output are unchanged. (Gap F)
+- The deterministic trust boundary is unchanged across all four changes: the LLM interprets and orchestrates; deterministic code still owns every number, and the new tool/context surfaces are read-only. The implementation plans are documented in `AGENT_SURFACE_GAP_PLANS.md`.
+
 ## [0.4.129] - 2026-06-21
 
 ### Queryable GroundModel for the Agent

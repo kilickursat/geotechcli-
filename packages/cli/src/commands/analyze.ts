@@ -170,6 +170,25 @@ function renderTextManifest(manifest: ProjectManifest): void {
   }
 }
 
+// Gap F: pick a contextual starter question for the agent signpost from the actual scan.
+export function suggestAgentQuestion(manifest: ProjectManifest): string {
+  if (manifest.groundModel && manifest.groundModel.stats.boreholes > 0) {
+    return 'interpret the ground model and flag the main geotechnical risks';
+  }
+  if (manifest.summary.branches.includes('monitoring')) {
+    return 'review the monitoring trends and highlight anything exceeding thresholds';
+  }
+  return 'what can you tell me about this project data?';
+}
+
+// Gap F: route users from deterministic analyze output to the LLM-active agent verbs.
+function renderAgentSignpost(manifest: ProjectManifest): void {
+  console.log('');
+  console.log(chalk.cyan('  Work with this data using the AI agent:'));
+  console.log(chalk.gray('    geotech chat') + chalk.gray('   - interactive agent; this folder is auto-scanned into context'));
+  console.log(chalk.gray(`    geotech agent "${suggestAgentQuestion(manifest)}"`));
+}
+
 export function registerAnalyzeCommand(program: Command): void {
   const cmd = new Command('analyze')
     .description('Analyze a local geotechnical project folder and produce a workspace manifest')
@@ -239,6 +258,7 @@ export function registerAnalyzeCommand(program: Command): void {
 
     if (!flags.quiet) {
       renderTextManifest(manifest);
+      renderAgentSignpost(manifest);
       console.log('');
       info('Open browser report: geotech analyze . --format html');
     }

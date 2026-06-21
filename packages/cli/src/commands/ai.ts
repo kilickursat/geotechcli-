@@ -145,6 +145,40 @@ function buildAgentRuntimeContext(
   };
 }
 
+// Build the session context the interactive `chat` REPL seeds into AgentConversation.
+// Mirrors what `agent --workspace` feeds its LLM, but kept lean because chat re-serializes
+// this context into the prompt on every turn (serializeContextForPrompt caps at 6000 chars):
+// the human-readable manifest digest (with strata values) is injected first so it survives
+// truncation, plus compact structured counts/verifier status. Depth is pulled on demand via
+// the read-only query_ground_model tool. Read-only: no recomputation, no writes.
+function buildChatSessionContext(
+  projectContext: Record<string, unknown> | undefined,
+  workspaceManifest?: ProjectManifest,
+): Record<string, unknown> | undefined {
+  if (!workspaceManifest) {
+    return projectContext;
+  }
+
+  return {
+    ...(projectContext ?? {}),
+    workspaceSummary: summarizeWorkspaceManifestForAgent(workspaceManifest),
+    workspace: {
+      rootPath: workspaceManifest.rootPath,
+      summary: workspaceManifest.summary,
+      groundModel: workspaceManifest.groundModel
+        ? {
+            stats: workspaceManifest.groundModel.stats,
+            coordinateSystem: workspaceManifest.groundModel.coordinateSystem,
+          }
+        : undefined,
+      verifier: workspaceManifest.verifier
+        ? { status: workspaceManifest.verifier.status, summary: workspaceManifest.verifier.summary }
+        : undefined,
+      warnings: workspaceManifest.warnings,
+    },
+  };
+}
+
 type ProjectAgentTask =
   | 'data-quality'
   | 'ground-model'
@@ -2458,6 +2492,7 @@ export function registerAgentCommand(program: Command): void {
     .option('--no-workspace', 'Disable automatic project-aware workspace discovery')
     .option('--task <task>', 'Run a project-aware task: data-quality, ground-model, calculation-readiness, risk-analysis, anomaly-detection, recommendations, signal-analysis, visualization')
     .option('--route-with-model', 'Let the configured LLM propose a validated workflow route when deterministic routing needs selection')
+    .option('--force-agent', 'Force the LLM agent loop, skipping the deterministic preflight short-circuit')
     .option('--plan-only', 'Scan the workspace, write .geotech project state, and show workflow readiness without calling an LLM')
     .option('--refresh', 'Refresh the deterministic workspace manifest and .geotech project state')
     .option('--trace', 'Write project-agent trace artifacts (enabled by default in project-aware mode)')
@@ -2734,12 +2769,20 @@ export function registerAgentCommand(program: Command): void {
 
         } else {
           // Single-agent ReAct mode (default)
-          const session = await runAgent(agentTask, config, (step) => {
+          const onAgentStep = (step: AgentStep) => {
             liveStatus?.onAgentStep(step);
             if (flags.verbose) {
               renderAgentStepPlain(step, flags.json, flags.quiet);
             }
-          }, runtimeContext);
+          };
+          const forcedRunOptions = opts.forceAgent === true ? { disableDeterministicPreflight: true } : undefined;
+          if (forcedRunOptions && !flags.json) {
+            console.log(chalk.gray('  Forcing the LLM agent path; deterministic preflight disabled.'));
+            console.log('');
+          }
+          const session = forcedRunOptions
+            ? await runAgent(agentTask, config, onAgentStep, runtimeContext, forcedRunOptions)
+            : await runAgent(agentTask, config, onAgentStep, runtimeContext);
 
           const answer = session.steps.find((s) => s.type === 'answer');
           if (projectState) {
@@ -2833,6 +2876,9 @@ export function registerChatCommand(program: Command): void {
     .description('Interactive agentic session - type natural language, agent executes tools with memory')
     .option('--skills', 'Enable installed skill tools for this session')
     .option('--project <id>', 'Load and persist context to a stored project')
+    .option('--workspace <dir>', 'Auto-scan a local workspace into the session context at startup (default: current project)')
+    .option('--no-workspace', 'Disable automatic workspace scanning at startup')
+    .option('--force-agent', 'Force the LLM agent loop, skipping the deterministic preflight short-circuit')
     .action(async (opts) => {
       const { createInterface } = await import('node:readline');
 
@@ -2840,7 +2886,7 @@ export function registerChatCommand(program: Command): void {
       console.log(chalk.bold.cyan('  geotech') + chalk.bold.white('CLI') + chalk.gray(' Agent - Interactive Mode'));
       console.log(chalk.gray('  Type engineering questions. The agent will reason and execute calculations.'));
       console.log(chalk.gray('  Live status updates will appear while Terzaghi is thinking and calling tools.'));
-      console.log(chalk.gray('  Commands: /context (show memory), /clear (reset), /exit (quit)'));
+      console.log(chalk.gray('  Commands: /context (show memory), /workspace (show scanned manifest), /rescan (re-scan folder), /clear (reset), /exit (quit)'));
       console.log('');
 
       let config;
@@ -2868,8 +2914,49 @@ export function registerChatCommand(program: Command): void {
         console.log('');
       }
 
+      // Gap B: auto-scan the current project folder so the agent starts with the dataset
+      // context (the same deterministic manifest `agent --workspace` gets) instead of cold.
+      const shouldAutoScanWorkspace = opts.workspace !== false;
+      const resolvedWorkspacePath = shouldAutoScanWorkspace
+        ? resolveWorkspaceRoot({
+            workspacePath: typeof opts.workspace === 'string' && opts.workspace.trim() ? opts.workspace : undefined,
+          }).path
+        : undefined;
+      const scanWorkspace = async (): Promise<ProjectManifest | undefined> =>
+        resolvedWorkspacePath
+          ? analyzeWorkspace(resolvedWorkspacePath, { includeCalculationInputDrafts: opts.skills === true })
+          : undefined;
+
+      let workspaceManifest: ProjectManifest | undefined;
+      if (shouldAutoScanWorkspace) {
+        try {
+          workspaceManifest = await scanWorkspace();
+        } catch (err) {
+          warn(`Workspace auto-scan skipped: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        if (workspaceManifest) {
+          const gm = workspaceManifest.groundModel;
+          console.log(chalk.gray(
+            `  Workspace auto-scanned: ${workspaceManifest.summary.totalFiles} files, branches: ${workspaceManifest.summary.branches.join(', ') || 'none'}`
+            + (gm ? `, ground model: ${gm.stats.boreholes} boreholes / ${gm.stats.parameters} parameters` : '')
+            + '.',
+          ));
+          console.log(chalk.gray('  The agent can pull strata detail with query_ground_model. Commands: /workspace (show manifest), /rescan (re-scan folder).'));
+          console.log('');
+        }
+      } else {
+        console.log(chalk.gray('  Workspace auto-scan disabled (--no-workspace).'));
+        console.log('');
+      }
+
+      if (opts.forceAgent === true) {
+        console.log(chalk.gray('  Forcing the LLM agent path; deterministic preflight disabled for this session.'));
+        console.log('');
+      }
+
       const conversation = new AgentConversation({
-        context: projectState?.context,
+        context: buildChatSessionContext(projectState?.context, workspaceManifest),
+        runOptions: opts.forceAgent === true ? { disableDeterministicPreflight: true } : undefined,
       });
       const rl = createInterface({
         input: process.stdin,
@@ -2930,6 +3017,41 @@ export function registerChatCommand(program: Command): void {
             });
           }
           console.log(chalk.gray('  Context cleared.'));
+          console.log('');
+          rl.prompt();
+          return;
+        }
+
+        if (input === '/workspace') {
+          if (!workspaceManifest) {
+            console.log(chalk.gray('  No workspace scanned. Start chat inside a project folder or pass --workspace <dir>.'));
+          } else {
+            console.log(chalk.gray('  Workspace manifest (auto-scanned at session start):'));
+            console.log('');
+            renderRichText(summarizeWorkspaceManifestForAgent(workspaceManifest));
+          }
+          console.log('');
+          rl.prompt();
+          return;
+        }
+
+        if (input === '/rescan') {
+          if (!resolvedWorkspacePath) {
+            console.log(chalk.gray('  Workspace scanning is disabled for this session (--no-workspace).'));
+            console.log('');
+            rl.prompt();
+            return;
+          }
+          try {
+            workspaceManifest = await scanWorkspace();
+            const refreshed = buildChatSessionContext(conversation.getContext(), workspaceManifest);
+            if (refreshed) {
+              conversation.replaceContext(refreshed);
+            }
+            console.log(chalk.gray(`  Workspace re-scanned: ${workspaceManifest?.summary.totalFiles ?? 0} files.`));
+          } catch (err) {
+            error(err instanceof Error ? err.message : String(err));
+          }
           console.log('');
           rl.prompt();
           return;

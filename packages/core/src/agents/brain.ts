@@ -54,6 +54,27 @@ export interface AgentRunOptions {
   systemPromptSuffix?: string;
   disableDeterministicPreflight?: boolean;
   requiredToolsBeforeFinal?: readonly string[];
+  /** Override the default 3 KB serialization window for non-data tool results. */
+  toolResultMaxChars?: number;
+}
+
+// Gap D: read-only data tools may legitimately return more than the 3 KB calculator window
+// when the LLM needs to reason across the dataset. Give them a wider serialization budget;
+// calculators stay lean. These tools also support paging (e.g. query_ground_model limit/section).
+const DEFAULT_TOOL_RESULT_CHARS = 3000;
+const DATA_TOOL_RESULT_CHARS = 8000;
+const DATA_TOOL_NAMES: ReadonlySet<string> = new Set([
+  'query_ground_model',
+  'parse_ags',
+  'parse_csv',
+  'parse_cpt',
+  'read_file',
+  'analyze_signal_file',
+]);
+
+export function selectToolResultMaxChars(toolName: string, options: AgentRunOptions = {}): number {
+  if (DATA_TOOL_NAMES.has(toolName)) return DATA_TOOL_RESULT_CHARS;
+  return options.toolResultMaxChars ?? DEFAULT_TOOL_RESULT_CHARS;
 }
 
 interface ConversationMessage {
@@ -67,6 +88,18 @@ function getHostedAgentMaxTokens(config: LLMConfig, phase: 'loop' | 'final'): nu
   }
 
   return phase === 'loop' ? 700 : 900;
+}
+
+// Gap D: give the final-answer synthesis more room when the session actually read a
+// data-heavy result, so the LLM can reason across the dataset. Loop steps stay lean (700)
+// for cost; only the one final synthesis grows, and only when a data tool was used.
+export function selectFinalAnswerBudget(session: AgentSession, config: LLMConfig): number {
+  const base = getHostedAgentMaxTokens(config, 'final');
+  const usedDataTool = session.steps.some(
+    (step) => step.type === 'tool_result' && step.toolName !== undefined && DATA_TOOL_NAMES.has(step.toolName),
+  );
+  if (!usedDataTool) return base;
+  return Math.max(base, config.provider === 'hosted-beta' ? 1200 : 1800);
 }
 
 function hasProjectContextData(sessionContext?: Record<string, unknown>): boolean {
@@ -164,6 +197,7 @@ ${config ? buildProviderOperatingPrompt(config, { task: 'single-agent', compact:
 - Use tools for calculations instead of inventing numbers.
 - Keep assumptions brief and explicit when inputs are incomplete.
 - Interpret tool outputs in engineering terms with units.
+- Data tools are paginated: if a result looks truncated, re-call query_ground_model with a higher limit or a specific section/boreholeId (or re-read the source) to fetch more detail.
 - If a tool result is blocked, low confidence, or canAutoProceed=false, do not continue blindly.
 - If a draft tool is required for this scoped task, call the draft tool before validation.
 - When finished, provide a concise engineering answer in prose with key results, assumptions, and recommendations.
@@ -225,6 +259,7 @@ ${proprietaryRules}
 - Chain multiple tools when engineering judgment requires it.
 - Reference actual standards: Terzaghi, Meyerhof, Bieniawski, Barton, Boulanger & Idriss, etc.
 - Report tool results with proper units and significant figures.
+- Data tools are paginated: if a result looks truncated, re-call query_ground_model with a higher limit or a specific section/boreholeId (or re-read the source in chunks) to fetch more detail before concluding data is missing.
 - If a tool returns parseStatus/confidence metadata with canAutoProceed=false, treat it as blocked evidence. Do not continue downstream deterministic calculations from it until you retry, request better input, or explain the limitation.
 - If a draft tool is required for this scoped task, call the draft tool before validation.
 - Normalize near-valid natural language inputs into the closest supported engineering enum before calling a tool. Example: "mixed face" should map to the TBM ground type "mixed".
@@ -642,7 +677,7 @@ export async function runAgent(
       continue;
     }
 
-    const dataStr = serializeToolDataForPrompt(result.data, 3000);
+    const dataStr = serializeToolDataForPrompt(result.data, selectToolResultMaxChars(toolCall.tool, options));
 
     messages.push({
       role: 'user',
@@ -665,7 +700,7 @@ export async function runAgent(
     try {
       const finalResponse = await generateChat(messages, config, {
         temperature: 0.2,
-        maxTokens: getHostedAgentMaxTokens(config, 'final'),
+        maxTokens: selectFinalAnswerBudget(session, config),
       });
 
       session.totalTokens += finalResponse.usage.totalTokens;
@@ -715,18 +750,26 @@ export async function runAgent(
 export class AgentConversation {
   private context: Record<string, unknown> = {};
   private history: AgentSession[] = [];
+  private runOptions: AgentRunOptions;
 
-  constructor(options?: { context?: Record<string, unknown>; history?: AgentSession[] }) {
+  constructor(options?: {
+    context?: Record<string, unknown>;
+    history?: AgentSession[];
+    runOptions?: AgentRunOptions;
+  }) {
     this.context = { ...(options?.context ?? {}) };
     this.history = [...(options?.history ?? [])];
+    this.runOptions = { ...(options?.runOptions ?? {}) };
   }
 
   async ask(
     query: string,
     config: LLMConfig,
     onStep: AgentCallback,
+    options?: AgentRunOptions,
   ): Promise<AgentSession> {
-    const session = await runAgent(query, config, onStep, this.context);
+    const runOptions = { ...this.runOptions, ...(options ?? {}) };
+    const session = await runAgent(query, config, onStep, this.context, runOptions);
     this.context = { ...this.context, ...session.context };
     this.history.push(session);
     return session;

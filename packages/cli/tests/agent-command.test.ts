@@ -449,6 +449,35 @@ describe('agent command skill opt-in', () => {
     );
   });
 
+  it('forces the LLM agent path past the deterministic preflight with --force-agent', async () => {
+    const program = new Command();
+    registerAgentCommand(program);
+
+    await program.parseAsync(['agent', 'review', 'foundation', '--no-workspace', '--force-agent', '--json'], { from: 'user' });
+
+    expect(coreMocks.runAgent).toHaveBeenCalledWith(
+      'review foundation',
+      expect.any(Object),
+      expect.any(Function),
+      undefined,
+      { disableDeterministicPreflight: true },
+    );
+  });
+
+  it('keeps the deterministic preflight enabled without --force-agent', async () => {
+    const program = new Command();
+    registerAgentCommand(program);
+
+    await program.parseAsync(['agent', 'review', 'foundation', '--no-workspace', '--json'], { from: 'user' });
+
+    expect(coreMocks.runAgent).toHaveBeenCalledWith(
+      'review foundation',
+      expect.any(Object),
+      expect.any(Function),
+      undefined,
+    );
+  });
+
   it('passes skill opt-in and workspace drafts into swarm sessions', async () => {
     const workspace = mkdtempSync(join(tmpdir(), 'geotech-agent-swarm-'));
     tempDirs.push(workspace);

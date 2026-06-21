@@ -8,6 +8,18 @@ const releases = [
     date: '2026-06-21',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'geotech chat now auto-scans the current project folder at session start and seeds the agent with a bounded ground-model digest (strata values, lithology, groundwater, counts, verifier status), so the LLM understands your dataset from the first message; added --workspace/--no-workspace and /workspace + /rescan commands' },
+      { type: 'feat', text: 'Added --force-agent to geotech agent and geotech chat to skip the deterministic preflight short-circuit and route the request through the LLM agent loop; off by default' },
+      { type: 'feat', text: 'Read-only data tools (query_ground_model, parse_ags/csv/cpt, read_file, analyze_signal_file) now serialize a wider ~8 KB result window and the hosted final-answer budget grows when a data tool was read, so the agent can reason across the whole dataset; data tools are paginated via limit/section' },
+      { type: 'feat', text: 'geotech analyze text output now signposts the AI agent verbs (geotech chat / geotech agent "<question>"); JSON and HTML output are unchanged' },
+      { type: 'fix', text: 'The deterministic trust boundary is unchanged: the LLM interprets and orchestrates while deterministic code owns every number, and the new context/tool surfaces are read-only' },
+    ],
+  },
+  {
+    version: '0.4.129',
+    date: '2026-06-21',
+    tag: '0.4.129 Release',
+    changes: [
       { type: 'feat', text: 'Added a read-only query_ground_model agent tool so the LLM agent can query the deterministic, evidence-bound GroundModel (strata, parameters, groundwater, SPT, coordinates, per-borehole detail) instead of re-parsing raw files' },
       { type: 'feat', text: 'Enriched the agent context with a bounded GroundModel values digest (representative strata, lithology, USCS, groundwater) plus a tool pointer, available to chat/agent and the swarm interpretation and reviewer roles' },
       { type: 'fix', text: 'The deterministic trust boundary is unchanged: the tool sources the model via analyzeWorkspace, never recomputes a number or writes a file, and the LLM interprets while deterministic code owns the values' },
