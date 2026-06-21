@@ -5,8 +5,18 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 const releases = [
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-06-14',
+    date: '2026-06-21',
     tag: `${GEOTECHCLI_VERSION} Release`,
+    changes: [
+      { type: 'feat', text: 'Added a read-only query_ground_model agent tool so the LLM agent can query the deterministic, evidence-bound GroundModel (strata, parameters, groundwater, SPT, coordinates, per-borehole detail) instead of re-parsing raw files' },
+      { type: 'feat', text: 'Enriched the agent context with a bounded GroundModel values digest (representative strata, lithology, USCS, groundwater) plus a tool pointer, available to chat/agent and the swarm interpretation and reviewer roles' },
+      { type: 'fix', text: 'The deterministic trust boundary is unchanged: the tool sources the model via analyzeWorkspace, never recomputes a number or writes a file, and the LLM interprets while deterministic code owns the values' },
+    ],
+  },
+  {
+    version: '0.4.128',
+    date: '2026-06-14',
+    tag: '0.4.128 Release',
     changes: [
       { type: 'feat', text: 'Promoted the hosted strong-beta default text/agent model from glm-5.1 to glm-5.2, Z.ai’s latest flagship in the same GLM-5 series, served through the same chat-completions endpoint and hosted-beta proxy' },
       { type: 'fix', text: 'Updated the shared metadata default and supported-proxy-model catalog so the proxy allowlist, thinking-mode injection, CLI status/config output, and web defaults all follow glm-5.2; the superseded glm-5.1 is removed' },

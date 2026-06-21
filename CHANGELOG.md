@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.129] - 2026-06-21
+
+### Queryable GroundModel for the Agent
+
+- Added a read-only `query_ground_model` agent tool that returns the deterministic, evidence-bound GroundModel `geotech analyze` builds for a workspace folder — strata, parameters, groundwater, SPT, coordinates, and per-borehole detail with evidence IDs — so the LLM agent reasons over the interpreted ground model instead of re-parsing raw files. The tool is read-only: it sources the model via `analyzeWorkspace`, never recomputes a number or writes a file, and supports `section` / `boreholeId` / `limit` filters to stay within the token budget. It is available to single-agent (`chat`/`agent`) sessions and to the swarm `interpretation` and `reviewer` roles.
+- Added a shared, bounded `buildGroundModelAgentView` + `formatGroundModelAgentDigest` core helper (in `@geotechcli/core/ground-model`) used by both the tool and the CLI agent context.
+- Enriched the CLI agent runtime context additively: `geotech agent`/`chat` now inject a bounded GroundModel values digest (representative strata, lithology, USCS, groundwater) plus a pointer to `query_ground_model`, alongside the existing stats. The deterministic trust boundary is unchanged — the LLM interprets; deterministic code still owns every number.
+- Documented the agentic-surface audit in `AGENT_SURFACE_AUDIT.md`. Deferred follow-ups: `chat` auto-scanning the cwd at session start, larger tool-result windows, and signposting the LLM verbs from `analyze` output.
+
 ## [0.4.128] - 2026-06-14
 
 ### Default Text Model GLM-5.2

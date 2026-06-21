@@ -7,6 +7,21 @@ export {
 } from './map.js';
 
 export {
+  buildGroundModelAgentView,
+  formatGroundModelAgentDigest,
+  type GroundModelAgentSection,
+  type GroundModelAgentViewOptions,
+  type GroundModelAgentView,
+  type GroundModelAgentBoreholeView,
+  type GroundModelAgentStratumView,
+  type GroundModelAgentParameterView,
+  type GroundModelAgentGroundwaterView,
+  type GroundModelAgentSptView,
+  type GroundModelAgentCoordinateView,
+  type GroundModelAgentCounts,
+} from './agent-view.js';
+
+export {
   type GroundModel,
   type GroundModelBorehole,
   type GroundModelCoordinate,

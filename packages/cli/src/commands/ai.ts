@@ -33,6 +33,8 @@ import {
   persistSwarmCaseFile,
   persistCaseFileEvidence,
   analyzeWorkspace,
+  buildGroundModelAgentView,
+  formatGroundModelAgentDigest,
   resolveWorkspaceRoot,
   buildProjectWorkflowRouterPrompt,
   generateText,
@@ -85,6 +87,9 @@ function summarizeWorkspaceManifestForAgent(manifest: ProjectManifest): string {
         `- Rejected observations: ${manifest.groundModel.stats.rejectedObservations}`,
       ].join('\n')
     : '';
+  const groundModelDigest = manifest.groundModel
+    ? formatGroundModelAgentDigest(buildGroundModelAgentView(manifest.groundModel, { section: 'summary', limit: 6 }))
+    : '';
   const verifier = manifest.verifier
     ? [
         'Calculation/verifier pre-check:',
@@ -102,6 +107,7 @@ function summarizeWorkspaceManifestForAgent(manifest: ProjectManifest): string {
     `Files: ${manifest.summary.totalFiles} total, ${manifest.summary.supportedFiles} supported, ${manifest.summary.tabularFiles} tabular, ${manifest.summary.pdfFiles} PDFs`,
     `Detected branches: ${manifest.summary.branches.join(', ') || 'none'}`,
     groundModel,
+    groundModelDigest,
     verifier,
     files ? `Files:\n${files}` : 'Files: none',
     recommendations ? `Recommended next steps:\n${recommendations}` : '',
@@ -129,6 +135,7 @@ function buildAgentRuntimeContext(
             groundModel: workspaceManifest.groundModel ? {
               stats: workspaceManifest.groundModel.stats,
               coordinateSystem: workspaceManifest.groundModel.coordinateSystem,
+              digest: buildGroundModelAgentView(workspaceManifest.groundModel, { section: 'summary', limit: 6 }),
             } : undefined,
             verifier: workspaceManifest.verifier,
             warnings: workspaceManifest.warnings,

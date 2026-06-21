@@ -79,6 +79,7 @@ const ROLE_TOOL_ALLOWLIST = {
     'list_skills',
     'describe_skill',
     'run_skill',
+    'query_ground_model',
   ],
   simulation: [
     'calculate_bearing_capacity',
@@ -129,6 +130,7 @@ const ROLE_TOOL_ALLOWLIST = {
     'promote_persisted_ingest_review',
     'list_skills',
     'describe_skill',
+    'query_ground_model',
   ],
 } as const;
 
