@@ -230,6 +230,95 @@ jobs:
           });
           NODE
 
+  deploy-production:
+    name: Deploy production to Cloudflare
+    runs-on: ubuntu-latest
+    needs: [verify]
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - name: Deploy Worker (production)
+        run: npm run --workspace=@geotechcli/web deploy:prod
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          NEXT_PUBLIC_APP_URL: https://www.geotechcli.com
+      - name: Smoke check deployed production site
+        run: |
+          node <<'NODE'
+          const base = 'https://www.geotechcli.com';
+          const checks = [
+            {
+              url: `${base}/?ts=${Date.now()}`,
+              async validate(response) {
+                return response.status === 200 ? null : `unexpected status=${response.status}`;
+              },
+              description: 'production home returns 200',
+            },
+            {
+              url: `${base}/robots.txt?ts=${Date.now()}`,
+              async validate(response) {
+                if (response.status !== 200) return `unexpected status=${response.status}`;
+                const body = await response.text();
+                if (/Disallow:\s*\//i.test(body)) return `robots still disallows indexing: ${body}`;
+                if (!/Allow:\s*\//i.test(body)) return `robots missing Allow: /`;
+                if (!/Sitemap:/i.test(body)) return `robots missing Sitemap link`;
+                return null;
+              },
+              description: 'production robots.txt allows indexing and links the sitemap',
+            },
+            {
+              url: `${base}/sitemap.xml?ts=${Date.now()}`,
+              async validate(response) {
+                if (response.status !== 200) return `unexpected status=${response.status}`;
+                const body = await response.text();
+                if (!body.includes('www.geotechcli.com')) return `sitemap missing www host`;
+                return null;
+              },
+              description: 'production sitemap.xml is reachable with the www host',
+            },
+          ];
+
+          const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+          (async () => {
+            for (const check of checks) {
+              let lastError = 'unknown error';
+              for (let attempt = 1; attempt <= 20; attempt += 1) {
+                try {
+                  const response = await fetch(check.url, {
+                    redirect: 'follow',
+                    headers: { 'cache-control': 'no-cache', pragma: 'no-cache' },
+                  });
+                  const validationError = await check.validate(response);
+                  if (!validationError) {
+                    console.log(`${check.description}: OK`);
+                    lastError = '';
+                    break;
+                  }
+                  lastError = validationError;
+                } catch (error) {
+                  lastError = error instanceof Error ? error.message : String(error);
+                }
+                console.log(`Attempt ${attempt}/20 failed for ${check.url}: ${lastError}`);
+                await wait(15000);
+              }
+
+              if (lastError) {
+                throw new Error(`Smoke check failed for ${check.url}: ${lastError}`);
+              }
+            }
+          })().catch((error) => {
+            console.error(error);
+            process.exit(1);
+          });
+          NODE
+
   github-release:
     name: GitHub Release
     runs-on: ubuntu-latest

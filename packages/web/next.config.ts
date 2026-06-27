@@ -4,6 +4,8 @@ import type { NextConfig } from 'next';
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
+  // No-leakage guardrail: never ship browser source maps (keeps compiled TS unreconstructable).
+  productionBrowserSourceMaps: false,
   outputFileTracingRoot: path.resolve(process.cwd(), '../..'),
   headers: async () => [
     {

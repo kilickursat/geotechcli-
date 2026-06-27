@@ -15,5 +15,25 @@
       "pattern": "beta.geotechcli.com",
       "custom_domain": true
     }
-  ]
+  ],
+  "env": {
+    "production": {
+      "name": "geotechcli-production",
+      "main": ".open-next/worker.js",
+      "compatibility_date": "2026-04-06",
+      "compatibility_flags": ["nodejs_compat"],
+      "observability": {
+        "enabled": true
+      },
+      "assets": {
+        "directory": ".open-next/assets"
+      },
+      "routes": [
+        {
+          "pattern": "www.geotechcli.com",
+          "custom_domain": true
+        }
+      ]
+    }
+  }
 }

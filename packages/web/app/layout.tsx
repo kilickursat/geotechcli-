@@ -1,12 +1,18 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { IS_PUBLIC_PRODUCTION, SITE_URL } from '@/lib/site';
 
-const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || 'https://beta.geotechcli.com';
+const title = IS_PUBLIC_PRODUCTION
+  ? 'geotechCLI - Agentic AI CLI for Geotechnical Engineering'
+  : 'geotechCLI Strong Beta - Geotechnical CLI';
+
+const description = IS_PUBLIC_PRODUCTION
+  ? 'geotechCLI is an agentic AI command-line tool for geotechnical engineering. Deterministic calculations are free and offline; LLM and bring-your-own-key workflows are donation-supported. Privacy-first.'
+  : 'Strong beta for geotechCLI. Deterministic geotechnical calculations and hosted GLM beta access are live now with privacy-first guardrails.';
 
 export const metadata: Metadata = {
-  title: 'geotechCLI Strong Beta - Geotechnical CLI',
-  description:
-    'Strong beta for geotechCLI. Deterministic geotechnical calculations and hosted GLM beta access are live now with privacy-first guardrails.',
+  title,
+  description,
   keywords: [
     'geotechnical engineering',
     'CLI',
@@ -19,18 +25,26 @@ export const metadata: Metadata = {
     'tunnel',
     'soil classification',
   ],
-  metadataBase: new URL(appUrl),
+  metadataBase: new URL(SITE_URL),
+  alternates: {
+    canonical: SITE_URL,
+  },
+  // Only the public production host is indexable; beta and previews stay noindex.
+  robots: {
+    index: IS_PUBLIC_PRODUCTION,
+    follow: IS_PUBLIC_PRODUCTION,
+  },
   openGraph: {
-    title: 'geotechCLI Strong Beta',
-    description: 'Privacy-first strong beta for a geotechnical engineering CLI with deterministic workflows and hosted GLM beta access live now.',
-    url: appUrl,
+    title,
+    description,
+    url: SITE_URL,
     siteName: 'geotechCLI',
     type: 'website',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'geotechCLI Strong Beta',
-    description: 'Privacy-first deterministic geotechnical CLI workflows and hosted GLM beta access are live now.',
+    title,
+    description,
   },
 };
 

@@ -5,6 +5,7 @@ import {
   DEFAULT_LLM_MODEL,
   DEFAULT_LLM_VISION_MODEL,
 } from '@geotechcli/core/meta';
+import { PATREON_JOIN_URL, DONATION_MINIMUM_USD } from '@/lib/site';
 
 export default function PricingPage() {
   return (
@@ -13,47 +14,55 @@ export default function PricingPage() {
       <main className="pt-24">
         <Pricing />
         <section className="px-12 pb-24 max-w-[800px] mx-auto">
-          <h2 className="text-2xl font-bold tracking-tight mb-6">Strong Beta FAQ</h2>
+          <h2 className="text-2xl font-bold tracking-tight mb-6">Donation &amp; Membership FAQ</h2>
           <div className="space-y-8">
             <div>
-              <h3 className="font-semibold mb-2">What is included in strong beta today?</h3>
+              <h3 className="font-semibold mb-2">What is free?</h3>
               <p className="text-[var(--text-secondary)] text-sm leading-relaxed">
-                Deterministic commands are available now with no signup or billing.
-                That includes bearing capacity, liquefaction, classification, pile,
-                slope, retaining, tunnel, exports, and bundled skills.
+                All deterministic geotechnical tools are free for everyone, forever — no signup, no API key,
+                works offline. That includes bearing capacity, liquefaction, classification, pile, slope,
+                retaining, settlement, tunnel/TBM, seepage, workspace analysis, monitoring signal analysis,
+                visualization, exports, and bundled skills.
               </p>
             </div>
             <div>
-              <h3 className="font-semibold mb-2">How does AI work in this beta branch?</h3>
+              <h3 className="font-semibold mb-2">What do donations support?</h3>
               <p className="text-[var(--text-secondary)] text-sm leading-relaxed">
-                AI commands now use hosted GLM beta access by default, so end users
-                do not need to bring their own API key. The current default model
-                family is {DEFAULT_LLM_MODEL} for text and {DEFAULT_LLM_VISION_MODEL}{' '}
-                for vision, with server-side rate limits protecting the beta.
+                Donations support the Tier-1 LLM and agentic features — chat, agent, ingest, vision, GBR Q&amp;A,
+                AI reports, and natural-language classification — using the hosted GLM defaults ({DEFAULT_LLM_MODEL}{' '}
+                for text and {DEFAULT_LLM_VISION_MODEL} for vision) or your own provider key (BYOK).
               </p>
             </div>
             <div>
-              <h3 className="font-semibold mb-2">Why are the paid plans marked coming soon?</h3>
+              <h3 className="font-semibold mb-2">How much, and where?</h3>
               <p className="text-[var(--text-secondary)] text-sm leading-relaxed">
-                Stripe approval, billing, signup, and entitlement flows are
-                intentionally disabled during strong beta. The goal of this branch
-                is to validate the CLI, docs, and hosted beta rollout safely before
-                commercial plans go live.
+                Donations start at ${DONATION_MINIMUM_USD} or more through Patreon —{' '}
+                <a
+                  href={PATREON_JOIN_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[var(--accent-teal)] hover:brightness-110 transition"
+                >
+                  donate on Patreon
+                </a>
+                .
               </p>
             </div>
             <div>
-              <h3 className="font-semibold mb-2">What LLM models are used by default?</h3>
+              <h3 className="font-semibold mb-2">How do I avoid being charged every month?</h3>
               <p className="text-[var(--text-secondary)] text-sm leading-relaxed">
-                The strong-beta defaults are {DEFAULT_LLM_MODEL} for text and{' '}
-                {DEFAULT_LLM_VISION_MODEL} for vision analysis. These defaults are live on the hosted beta gateway today.
+                Patreon has no one-time payment option; memberships renew automatically every month. Our goal is
+                a donation, not a subscription. To keep your donation a one-time gift and avoid automatic
+                withdrawals in the following months, cancel your Patreon membership immediately after your
+                payment clears — your support for the month still counts.
               </p>
             </div>
             <div>
-              <h3 className="font-semibold mb-2">Will there be hosted AI limits?</h3>
+              <h3 className="font-semibold mb-2">Can I use my own LLM key?</h3>
               <p className="text-[var(--text-secondary)] text-sm leading-relaxed">
-                Yes. Strong beta uses higher installed-CLI development limits,
-                stricter anonymous caps, and anti-abuse controls so users can
-                evaluate the product without exhausting the hosted compute budget.
+                Yes. geotechCLI is LLM-agnostic — configure OpenAI, Anthropic, Zhipu/Z.ai, any
+                OpenAI-compatible/OpenRouter endpoint, or Hugging Face with your own key. The hosted GLM
+                defaults are {DEFAULT_LLM_MODEL} for text and {DEFAULT_LLM_VISION_MODEL} for vision.
               </p>
             </div>
           </div>

@@ -26,7 +26,7 @@ const features = [
     colorClass: 'cyan',
     name: 'Vision AI Workflows',
     desc: 'Point a photo at a tunnel face, core box, or borehole log and extract RQD, fracture spacing, weathering, and classification signals automatically.',
-    tag: 'GLM 5.1',
+    tag: 'GLM 5.2',
     tagColor: 'cyan',
   },
   {

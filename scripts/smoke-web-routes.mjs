@@ -50,4 +50,39 @@ for (const route of routeExpectations) {
   }
 }
 
+// Domain-aware indexing + sitemap: production (www) indexable, beta stays noindex.
+const siteSource = readText('packages', 'web', 'lib', 'site.ts');
+assert(
+  siteSource.includes('SITE_URL') && siteSource.includes('IS_PUBLIC_PRODUCTION'),
+  'packages/web/lib/site.ts must export SITE_URL and IS_PUBLIC_PRODUCTION.',
+);
+assert(
+  siteSource.includes('https://www.geotechcli.com') && siteSource.includes('https://beta.geotechcli.com'),
+  'packages/web/lib/site.ts must define both the production (www) and beta hosts.',
+);
+assert(
+  siteSource.includes('https://www.patreon.com/16003704/join'),
+  'packages/web/lib/site.ts must define the Patreon donate (join) URL.',
+);
+
+const robotsSource = readText('packages', 'web', 'app', 'robots.ts');
+assert(
+  robotsSource.includes('IS_PUBLIC_PRODUCTION'),
+  'packages/web/app/robots.ts must gate indexing on IS_PUBLIC_PRODUCTION.',
+);
+assert(
+  robotsSource.includes("disallow: '/'"),
+  'packages/web/app/robots.ts must keep disallow for non-production hosts (beta stays noindex).',
+);
+assert(
+  robotsSource.includes('sitemap'),
+  'packages/web/app/robots.ts must link the sitemap on production.',
+);
+
+const sitemapSource = readText('packages', 'web', 'app', 'sitemap.ts');
+assert(
+  sitemapSource.includes('SITE_URL'),
+  'packages/web/app/sitemap.ts must build URLs from SITE_URL.',
+);
+
 console.log('smoke-web-routes: OK');

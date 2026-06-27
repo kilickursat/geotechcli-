@@ -1,8 +1,16 @@
 'use client';
 
 import { Reveal } from '@/components/Reveal';
+import { IS_PUBLIC_PRODUCTION, PATREON_JOIN_URL } from '@/lib/site';
 
 export function CTASection() {
+  const installLabel = IS_PUBLIC_PRODUCTION ? 'Install geotechCLI →' : 'Install Beta →';
+  const subcopy = IS_PUBLIC_PRODUCTION
+    ? 'Deterministic tools are free for everyone, no key required. The agentic LLM features are donation-supported — your support keeps them growing.'
+    : 'No signup. No credit card. No provider key required. The strong beta is focused on real CLI usage and safe iteration.';
+  const footnote = IS_PUBLIC_PRODUCTION
+    ? 'Deterministic tools free forever · LLM features donation-supported · Privacy-first'
+    : 'Free during beta · No credit card · Privacy-first AI evaluation';
   return (
     <section className="py-28 px-12 text-center max-w-[860px] mx-auto">
       <div
@@ -24,14 +32,22 @@ export function CTASection() {
               className="font-bold tracking-[-2px] leading-[1.1] mb-4"
               style={{ fontSize: 'clamp(28px,3.5vw,44px)' }}
             >
-              Install the beta.
-              <br />Shape the product.
+              {IS_PUBLIC_PRODUCTION ? (
+                <>
+                  Install geotechCLI.
+                  <br />Support the build.
+                </>
+              ) : (
+                <>
+                  Install the beta.
+                  <br />Shape the product.
+                </>
+              )}
             </h2>
           </Reveal>
           <Reveal delay={160}>
             <p className="text-[var(--text-secondary)] text-[16px] mb-10 max-w-md mx-auto leading-[1.7]">
-              No signup. No credit card. No provider key required.
-              The strong beta is focused on real CLI usage and safe iteration.
+              {subcopy}
             </p>
           </Reveal>
           <Reveal delay={240}>
@@ -51,10 +67,12 @@ export function CTASection() {
                   el.style.transform = '';
                 }}
               >
-                Install Beta →
+                {installLabel}
               </a>
               <a
-                href="mailto:support@geotechcli.com"
+                href={PATREON_JOIN_URL}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="px-8 py-3.5 font-semibold text-[15px] rounded-lg border transition-all duration-300 inline-block"
                 style={{ background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.1)', color: 'var(--text-secondary)', letterSpacing: '-0.3px' }}
                 onMouseEnter={(e) => {
@@ -68,13 +86,13 @@ export function CTASection() {
                   el.style.color = 'var(--text-secondary)';
                 }}
               >
-                Contact Us
+                Support on Patreon
               </a>
             </div>
           </Reveal>
           <Reveal delay={320}>
             <p className="text-[12px] text-[var(--text-muted)] mt-6">
-              Free during beta · No credit card · Privacy-first AI evaluation
+              {footnote}
             </p>
           </Reveal>
         </div>

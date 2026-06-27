@@ -11,6 +11,7 @@
     "build:cf": "npm run --workspace=@geotechcli/core build && node ../../node_modules/@opennextjs/cloudflare/dist/cli/index.js build",
     "preview": "npm run build:cf && node ../../node_modules/wrangler/bin/wrangler.js dev",
     "deploy": "npm run build:cf && node ../../node_modules/@opennextjs/cloudflare/dist/cli/index.js deploy",
+    "deploy:prod": "npm run build:cf && node ../../node_modules/@opennextjs/cloudflare/dist/cli/index.js deploy -- --env production",
     "cf-typegen": "node ../../node_modules/wrangler/bin/wrangler.js types ./cloudflare-env.d.ts",
     "cf:check": "node ../../node_modules/wrangler/bin/wrangler.js check"
   },
