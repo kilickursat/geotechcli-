@@ -9,6 +9,10 @@ const execFileAsync = promisify(execFile);
 const root = new URL('../', import.meta.url);
 const dryRun = process.argv.includes('--dry-run');
 const registry = process.env.NPM_CONFIG_REGISTRY || 'https://registry.npmjs.org';
+const tagFlagIndex = process.argv.indexOf('--tag');
+const publishTag = tagFlagIndex !== -1 && process.argv[tagFlagIndex + 1]
+  ? process.argv[tagFlagIndex + 1]
+  : process.env.NPM_PUBLISH_TAG || 'latest';
 const npmCommand = 'npm';
 const useShell = process.platform === 'win32';
 
@@ -69,15 +73,15 @@ async function publishPackage({ name, dir, version }) {
   }
 
   if (dryRun) {
-    console.log(`[dry-run] validating ${name}@${version} from ${packagePath}`);
-    await run(npmCommand, ['publish', '--dry-run', '--access', 'public', '--registry', registry], {
+    console.log(`[dry-run] validating ${name}@${version} from ${packagePath} (dist-tag: ${publishTag})`);
+    await run(npmCommand, ['publish', '--dry-run', '--access', 'public', '--registry', registry, '--tag', publishTag], {
       cwd: packagePath,
     });
     return;
   }
 
-  console.log(`Publishing ${name}@${version}`);
-  await run(npmCommand, ['publish', '--access', 'public', '--registry', registry], {
+  console.log(`Publishing ${name}@${version} (dist-tag: ${publishTag})`);
+  await run(npmCommand, ['publish', '--access', 'public', '--registry', registry, '--tag', publishTag], {
     cwd: packagePath,
   });
   await waitForVisibility(name, version);

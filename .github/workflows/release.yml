@@ -30,6 +30,7 @@ jobs:
         working-directory: packages/web
       - run: npx turbo run build
       - run: npm run smoke:fem:draft-run
+      - run: npm run smoke:agent-tasks
       - run: npm run --workspace=@geotechcli/web build:cf
       - run: npm run smoke:web
       - run: test -f packages/cli/dist/index.js && test -f packages/core/dist/index.js
@@ -55,27 +56,27 @@ jobs:
           node -e 'const [major, minor] = process.versions.node.split(".").map(Number); if (major < 22 || (major === 22 && minor < 14)) throw new Error("Node " + process.versions.node + " is too old for npm trusted publishing");'
           node -e 'const child_process = require("node:child_process"); const version = child_process.execSync("npm --version", { encoding: "utf8" }).trim(); const [major, minor, patch] = version.split(".").map(Number); if (major < 11 || (major === 11 && (minor < 5 || (minor === 5 && patch < 1)))) throw new Error("npm " + version + " is too old for npm trusted publishing"); console.log("npm trusted publishing toolchain OK: node " + process.versions.node + ", npm " + version);'
       - run: npx turbo run build
-      - name: Publish
-        run: node scripts/publish-npm-workspaces.mjs
-      - name: Verify npm package versions
+      - name: Publish (dist-tag beta; latest is promoted on main)
+        run: node scripts/publish-npm-workspaces.mjs --tag beta
+      - name: Verify npm package versions (beta dist-tag)
         if: github.ref == 'refs/heads/strong-beta'
         run: |
           EXPECTED_VERSION=$(node -p "require('./packages/core/package.json').version")
 
           for attempt in $(seq 1 20); do
-            CLI_VERSION=$(npm view geotechcli version 2>/dev/null || true)
-            CORE_VERSION=$(npm view @geotechcli/core version 2>/dev/null || true)
+            CLI_VERSION=$(npm view geotechcli dist-tags.beta 2>/dev/null || true)
+            CORE_VERSION=$(npm view @geotechcli/core dist-tags.beta 2>/dev/null || true)
 
             if [ "$CLI_VERSION" = "$EXPECTED_VERSION" ] && [ "$CORE_VERSION" = "$EXPECTED_VERSION" ]; then
-              echo "npm publish verified at version $EXPECTED_VERSION"
+              echo "npm publish verified: dist-tag beta is at $EXPECTED_VERSION"
               exit 0
             fi
 
-            echo "Attempt $attempt/20: waiting for npm registry to report geotechcli=$EXPECTED_VERSION and @geotechcli/core=$EXPECTED_VERSION (saw CLI=$CLI_VERSION CORE=$CORE_VERSION)"
+            echo "Attempt $attempt/20: waiting for npm dist-tag beta to report geotechcli=$EXPECTED_VERSION and @geotechcli/core=$EXPECTED_VERSION (saw CLI=$CLI_VERSION CORE=$CORE_VERSION)"
             sleep 15
           done
 
-          echo "npm registry did not report the expected version in time."
+          echo "npm registry did not report the expected beta dist-tag in time."
           exit 1
 
   deploy-beta:
@@ -229,6 +230,46 @@ jobs:
             process.exit(1);
           });
           NODE
+
+  promote-latest:
+    name: Promote npm latest
+    runs-on: ubuntu-latest
+    needs: [verify]
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+      - name: Promote the merged version from beta to latest
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_DIST_TAG_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::warning::NPM_DIST_TAG_TOKEN is not configured; skipping latest promotion. Create a granular npm automation token (read/write on geotechcli + @geotechcli/core) and add it as the NPM_DIST_TAG_TOKEN repository secret."
+            exit 0
+          fi
+
+          VERSION=$(node -p "require('./packages/core/package.json').version")
+          for PKG in @geotechcli/core geotechcli; do
+            PUBLISHED=$(npm view "$PKG@$VERSION" version 2>/dev/null || true)
+            if [ "$PUBLISHED" != "$VERSION" ]; then
+              echo "::warning::$PKG@$VERSION is not on npm yet; skipping latest promotion for it (versions publish from strong-beta releases)."
+              continue
+            fi
+
+            CURRENT_LATEST=$(npm view "$PKG" dist-tags.latest 2>/dev/null || true)
+            if [ "$CURRENT_LATEST" = "$VERSION" ]; then
+              echo "$PKG latest already points at $VERSION"
+              continue
+            fi
+
+            npm dist-tag add "$PKG@$VERSION" latest
+            echo "$PKG latest -> $VERSION"
+          done
 
   deploy-production:
     name: Deploy production to Cloudflare

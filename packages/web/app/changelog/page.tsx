@@ -5,8 +5,19 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 const releases = [
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-06-21',
+    date: '2026-06-28',
     tag: `${GEOTECHCLI_VERSION} Release`,
+    changes: [
+      { type: 'feat', text: 'Added a deterministic agent-task evaluation benchmark that drives the real agent, swarm, and workflow loops with scripted model turns (zero network) and scores tool correctness, evidence citation, review-gate preservation, and fail-closed guardrails across 9 geotech scenarios' },
+      { type: 'feat', text: 'Guardrail scenarios prove the runtime fails closed: fabricated calculation values are blocked, invented FEM result-manifest writes are rejected, and swarm reviewer rejections stay unresolved' },
+      { type: 'feat', text: 'npm channel split: strong-beta releases publish under the beta dist-tag (npm i geotechcli@beta); merging to main promotes that version to latest for production users' },
+      { type: 'fix', text: 'The deterministic trust boundary is unchanged: the benchmark scripts the model, never the tools, and every scored number still comes from deterministic code' },
+    ],
+  },
+  {
+    version: '0.4.130',
+    date: '2026-06-21',
+    tag: '0.4.130 Release',
     changes: [
       { type: 'feat', text: 'geotech chat now auto-scans the current project folder at session start and seeds the agent with a bounded ground-model digest (strata values, lithology, groundwater, counts, verifier status), so the LLM understands your dataset from the first message; added --workspace/--no-workspace and /workspace + /rescan commands' },
       { type: 'feat', text: 'Added --force-agent to geotech agent and geotech chat to skip the deterministic preflight short-circuit and route the request through the LLM agent loop; off by default' },

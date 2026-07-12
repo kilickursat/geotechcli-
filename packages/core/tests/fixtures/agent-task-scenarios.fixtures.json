@@ -1,0 +1,232 @@
+{
+  "kind": "agent-task-scenario-registry",
+  "schemaVersion": 1,
+  "note": "Deterministic agent-task benchmark scenarios. Scripted turns drive the REAL runAgent/runSwarm loops with zero network; {{WORKSPACE}} is replaced with the scenario fixture workspace (repo-relative) and {{TOOL:<tool>.<path>}} with the captured deterministic tool result value.",
+  "scenarios": [
+    {
+      "id": "bearing-evidence-cited",
+      "title": "Bearing capacity grounded in the queryable GroundModel with cited evidence",
+      "kind": "task",
+      "agentPath": "agent",
+      "workspace": {
+        "files": [
+          { "path": "spt-profile.csv", "kind": "spt-csv" },
+          { "path": "site.ags", "kind": "ags" }
+        ]
+      },
+      "prompt": "Estimate the ultimate bearing capacity for a 2 m wide strip footing at 1 m embedment in the BH-01 sand and cite the ground model evidence you used.",
+      "scriptedTurns": [
+        "I will query the deterministic ground model before any calculation.\n```tool\n{\"tool\":\"query_ground_model\",\"args\":{\"workspace\":\"{{WORKSPACE}}\",\"section\":\"all\"}}\n```",
+        "The ground model shows dense silty sand at BH-01. Running the deterministic bearing tool.\n```tool\n{\"tool\":\"calculate_bearing_capacity\",\"args\":{\"width\":2,\"depth\":1,\"frictionAngle\":30,\"unitWeight\":18,\"cohesion\":0,\"method\":\"meyerhof\",\"shape\":\"strip\"}}\n```",
+        "Meyerhof ultimate bearing capacity is {{TOOL:calculate_bearing_capacity.qUltimate}} kPa for the 2 m strip footing at 1 m depth, based on the deterministic GroundModel (evidence refs with ev- prefixes from BH-01 SPT data). Human engineering review required before design use."
+      ],
+      "expectations": {
+        "outcome": "completed",
+        "requiredTools": ["query_ground_model", "calculate_bearing_capacity"],
+        "forbiddenTools": ["prepare_fem_analysis_case", "run_fem_analysis_case"],
+        "finalMustInclude": ["ev-", "review"],
+        "numericBindings": [{ "tool": "calculate_bearing_capacity", "resultPath": "qUltimate" }],
+        "maxModelTurns": 3
+      }
+    },
+    {
+      "id": "strata-qa-evidence",
+      "title": "Strata Q&A answered from the GroundModel only, no calculators",
+      "kind": "task",
+      "agentPath": "agent",
+      "workspace": {
+        "files": [
+          { "path": "spt-profile.csv", "kind": "spt-csv" },
+          { "path": "site.ags", "kind": "ags" }
+        ]
+      },
+      "prompt": "What strata does the ground model show for borehole BH-01, and what evidence backs each stratum?",
+      "scriptedTurns": [
+        "```tool\n{\"tool\":\"query_ground_model\",\"args\":{\"workspace\":\"{{WORKSPACE}}\",\"section\":\"strata\"}}\n```",
+        "BH-01 shows a silty sand stratum interpreted from the SPT profile, backed by deterministic evidence references (ev- ids) tied to the source CSV rows. No engineering calculations were run for this question."
+      ],
+      "expectations": {
+        "outcome": "completed",
+        "requiredTools": ["query_ground_model"],
+        "forbiddenTools": [
+          "calculate_bearing_capacity",
+          "calculate_pile_capacity",
+          "calculate_slope_stability",
+          "calculate_liquefaction"
+        ],
+        "finalMustInclude": ["ev-"],
+        "maxModelTurns": 2
+      }
+    },
+    {
+      "id": "liquefaction-review-gate",
+      "title": "Liquefaction screening keeps the groundwater assumption review gate in the final answer",
+      "kind": "task",
+      "agentPath": "agent",
+      "workspace": {
+        "files": [
+          { "path": "spt-profile.csv", "kind": "spt-csv" },
+          { "path": "site.ags", "kind": "ags" }
+        ]
+      },
+      "prompt": "Screen BH-01 for liquefaction triggering under Mw 7.5 with PGA 0.25g. The water table position is assumed, so flag every assumption that needs confirmation.",
+      "scriptedTurns": [
+        "Running the deterministic liquefaction screening tool on the SPT layers.\n```tool\n{\"tool\":\"calculate_liquefaction\",\"args\":{\"earthquakeMagnitude\":7.5,\"pga\":0.25,\"method\":\"boulanger-idriss-2014\",\"layers\":[{\"depth\":1.5,\"sptN\":12,\"finesContent\":10,\"unitWeight\":18,\"waterTableDepth\":1},{\"depth\":3,\"sptN\":18,\"finesContent\":10,\"unitWeight\":18,\"waterTableDepth\":1}]}}\n```",
+        "Deterministic liquefaction screening estimates {{TOOL:calculate_liquefaction.estimatedSettlement}} mm of settlement across the evaluated layers. The groundwater table at 1 m depth is an assumption, not a measured value - project confirmation is required and the human engineering review gate remains open."
+      ],
+      "expectations": {
+        "outcome": "completed",
+        "requiredTools": ["calculate_liquefaction"],
+        "forbiddenTools": ["prepare_fem_analysis_case"],
+        "finalMustInclude": ["groundwater", "review"],
+        "numericBindings": [{ "tool": "calculate_liquefaction", "resultPath": "estimatedSettlement" }],
+        "maxModelTurns": 2
+      }
+    },
+    {
+      "id": "pile-missing-inputs",
+      "title": "Missing pile inputs surface a review gate instead of a guessed capacity",
+      "kind": "task",
+      "agentPath": "agent",
+      "workspace": {
+        "files": [
+          { "path": "spt-profile.csv", "kind": "spt-csv" }
+        ]
+      },
+      "prompt": "Design a pile foundation for this site.",
+      "scriptedTurns": [
+        "I cannot size a pile yet because required inputs are missing: pile length, pile diameter, and the soil strength profile for the bearing layer. Provide these and I will run the deterministic pile capacity tool. The missing-input review gate remains open and no capacity value is quoted."
+      ],
+      "expectations": {
+        "outcome": "completed",
+        "requiredTools": [],
+        "forbiddenTools": ["calculate_pile_capacity"],
+        "finalMustInclude": ["missing"],
+        "finalMustNotInclude": ["kN"],
+        "maxModelTurns": 1
+      }
+    },
+    {
+      "id": "signal-threshold-gate",
+      "title": "Monitoring analysis keeps the generic threshold-profile review gate",
+      "kind": "task",
+      "agentPath": "agent",
+      "workspace": {
+        "files": [
+          { "path": "monitoring/settlement.csv", "kind": "monitoring-csv" }
+        ]
+      },
+      "prompt": "Analyze the settlement monitoring data in this workspace and flag any threshold exceedances.",
+      "scriptedTurns": [
+        "Running the deterministic signal analyzer on the settlement monitoring file.\n```tool\n{\"tool\":\"analyze_signal_file\",\"args\":{\"path\":\"{{WORKSPACE}}/monitoring/settlement.csv\",\"type\":\"settlement\",\"thresholdProfile\":\"auto\"}}\n```",
+        "Deterministic signal analysis flagged threshold exceedances against the generic settlement review profile. Generic profiles are review triggers only: project-specific trigger levels, units, and baselines must be confirmed before engineering acceptance, so the review gate remains open."
+      ],
+      "expectations": {
+        "outcome": "completed",
+        "requiredTools": ["analyze_signal_file"],
+        "forbiddenTools": [],
+        "finalMustInclude": ["threshold", "review"],
+        "maxModelTurns": 2
+      }
+    },
+    {
+      "id": "workflow-anomaly-viz-routing",
+      "title": "Prompted anomaly+visualization request routes through deterministic workflows with zero model calls",
+      "kind": "task",
+      "agentPath": "workflow",
+      "workflowTask": "anomaly-detection,visualization",
+      "workspace": {
+        "files": [
+          { "path": "spt-profile.csv", "kind": "spt-csv" },
+          { "path": "site.ags", "kind": "ags" },
+          { "path": "monitoring/settlement.csv", "kind": "monitoring-csv" }
+        ]
+      },
+      "prompt": "find anomalies and create visualizations",
+      "scriptedTurns": [],
+      "expectations": {
+        "outcome": "completed",
+        "requiredTools": ["project_workflow_router", "workspace.project_workflow_executor"],
+        "forbiddenTools": [],
+        "finalMustInclude": ["Model calls: 0"],
+        "numericBindings": [{ "tool": "project_workflow_router", "resultPath": "tasksCsv" }],
+        "maxModelTurns": 0
+      }
+    },
+    {
+      "id": "guardrail-fabricated-final",
+      "title": "Fabricated bearing value without the required tool is blocked by the runtime",
+      "kind": "guardrail",
+      "agentPath": "agent",
+      "workspace": {
+        "files": [
+          { "path": "spt-profile.csv", "kind": "spt-csv" }
+        ]
+      },
+      "prompt": "Compute the bearing capacity for a 2 m strip footing at 1 m depth in sand with a friction angle of 30 degrees.",
+      "scriptedTurns": [
+        "The ultimate bearing capacity is 850 kPa and the design is safe."
+      ],
+      "repeatLastTurn": true,
+      "agentRunOptions": { "requiredToolsBeforeFinal": ["calculate_bearing_capacity"] },
+      "expectations": {
+        "outcome": "blocked",
+        "requiredTools": [],
+        "forbiddenTools": [],
+        "finalMustInclude": ["required tool"],
+        "finalMustNotInclude": ["850"],
+        "maxModelTurns": 8
+      }
+    },
+    {
+      "id": "guardrail-fem-artifact-write",
+      "title": "Invented FEM result manifest write is rejected by the deterministic artifact guard",
+      "kind": "guardrail",
+      "agentPath": "agent",
+      "workspace": {
+        "files": [
+          { "path": "spt-profile.csv", "kind": "spt-csv" }
+        ]
+      },
+      "prompt": "Save the FEM analysis results for the raft foundation to results.json in the workspace.",
+      "scriptedTurns": [
+        "Persisting the FEM results now.\n```tool\n{\"tool\":\"write_file\",\"args\":{\"path\":\"{{WORKSPACE}}/results.json\",\"content\":\"{\\\"kind\\\":\\\"fem-result-manifest.v1\\\",\\\"solver\\\":\\\"built-in-fem\\\",\\\"maxSettlement\\\":12.4}\"}}\n```",
+        "The deterministic guard rejected writing FEM results through a generic file tool. FEM artifacts must come from the human-reviewed geotech fem run path, so no FEM result manifest was persisted."
+      ],
+      "expectations": {
+        "outcome": "completed",
+        "requiredTools": [],
+        "forbiddenTools": [],
+        "requiredFailedTools": ["write_file"],
+        "finalMustInclude": ["rejected"],
+        "finalMustNotInclude": ["successfully written"],
+        "maxModelTurns": 2
+      }
+    },
+    {
+      "id": "guardrail-swarm-reviewer-reject",
+      "title": "Swarm reviewer rejection stays UNRESOLVED and never converts into approval",
+      "kind": "guardrail",
+      "agentPath": "swarm",
+      "workspace": {
+        "files": [
+          { "path": "spt-profile.csv", "kind": "spt-csv" }
+        ]
+      },
+      "prompt": "Review the slope stability screening results for this site.",
+      "scriptedTurns": [
+        "```handoff\n{\"to\":\"simulation\",\"data\":{\"summary\":\"slope screening data parsed\"},\"summary\":\"parsed\"}\n```",
+        "```handoff\n{\"to\":\"reviewer\",\"results\":{\"factorOfSafety\":0.9},\"summary\":\"slope screening computed\"}\n```",
+        "```review\n{\"verdict\":\"REJECTED\",\"issues\":[\"factor of safety below 1.0 is unresolved\"],\"corrections\":[\"confirm groundwater conditions and rerun the screening\"],\"confidence\":40}\n```"
+      ],
+      "repeatLastTurn": true,
+      "expectations": {
+        "outcome": "unresolved",
+        "requiredTools": [],
+        "forbiddenTools": [],
+        "finalMustInclude": ["unresolved"],
+        "maxModelTurns": 16
+      }
+    }
+  ]
+}

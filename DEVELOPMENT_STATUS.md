@@ -1,8 +1,10 @@
 # geotechCLI Development Status
 
-Last updated: 2026-06-03
+Last updated: 2026-06-28
 
 ## Current Work
+
+v0.4.131 starts the "robust domain-specific agent" program with a deterministic agent-task evaluation benchmark: `npm run benchmark:agent-tasks` (and the CI-gating `npm run smoke:agent-tasks`) drives the real `runAgent`/`runSwarm`/project-workflow loops with scripted model turns over a registered scripted provider — zero network, zero model calls — and scores tool correctness, numeric fidelity against deterministic tool outputs, evidence/review-gate preservation, and fail-closed guardrails (fabricated finals blocked, invented FEM artifact writes rejected, swarm reviewer rejections staying unresolved) across 9 scenarios with path-safe report/history/trend artifacts. The npm release channel also split: strong-beta publishes under the `beta` dist-tag and merging to `main` promotes that version to `latest`.
 
 v0.4.92 adds FEM production-readiness guardrails instead of claiming a full production nonlinear solver. The shipped contract now reports `productionReady: false` for nonlinear/plasticity, consolidation, seepage/pore-pressure coupling, advanced staged construction, support design, real project workspace-to-run acceptance, independent benchmark validation, and licensed-review workflow until dedicated solver physics, acceptance fixtures, benchmark comparisons, and review records exist. The scoped FEM agent and swarm prompts must call the deterministic production-readiness assessment before answering production-grade requests, and `geotech fem run` now requires both `--experimental` and `--reviewed`. The draft/run smoke also checks contract-only route refusal, raft/excavation/tunnel reference balances, and monotonic mock-dataset trends.
 

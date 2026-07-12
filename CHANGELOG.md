@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.4.131] - 2026-06-28
+
+### Agent Task Evaluation Benchmark — a deterministic scoreboard for the agentic harness
+
+- Added an agent-task evaluation benchmark (`npm run benchmark:agent-tasks` / `npm run smoke:agent-tasks`) that drives the REAL `runAgent`, `runSwarm`, and deterministic project-workflow loops end-to-end with scripted model turns — zero network, zero model cost, CI-safe — so agent-harness changes are scored against realistic geotech tasks instead of reviewed by eye.
+- 9 initial scenarios cover both behavior classes: task scenarios (bearing capacity grounded in the queryable GroundModel with cited `ev-` evidence, strata Q&A without calculators, liquefaction screening that preserves the groundwater-assumption review gate, missing pile inputs surfacing a review gate instead of a guessed capacity, monitoring analysis keeping the threshold-profile review gate, prompted anomaly+visualization routing through deterministic workflows with zero model calls) and guardrail scenarios that pass only when the runtime fails closed (a fabricated bearing value without the required tool is blocked, an invented FEM result-manifest write is rejected by the deterministic artifact guard, a swarm reviewer rejection stays UNRESOLVED).
+- New core contract module (`agent-task-benchmark`) owns the scenario schema, session scoring (outcome, tool correctness, numeric fidelity from deterministic tool results, evidence/review-gate text, turn budgets), report/trend contracts with `contractValidation`, path/secret-safety inspection, and SVG/HTML renderers; artifacts persist as path-safe `comparison.json`, `summary.svg`, and last-50 `agent-tasks-history/trend` files.
+- `smoke:agent-tasks` now runs in CI (build job) and in the release verify gate alongside the FEM draft-run smoke.
+- npm release channel: strong-beta releases now publish under the npm dist-tag `beta` (`npm i geotechcli@beta`), and merging to `main` promotes that version to `latest` via a new idempotent `promote-latest` workflow job — production npm users only receive versions that passed the beta channel.
+- The deterministic trust boundary is unchanged: the benchmark scripts the model, never the tools; every number in a scored session still comes from deterministic code, and the scripted provider is registered only inside the benchmark process.
+
 ## [0.4.130] - 2026-06-21
 
 ### Agentic Surface Sharpening — chat auto-context, force-agent, wider data window, analyze signposts
