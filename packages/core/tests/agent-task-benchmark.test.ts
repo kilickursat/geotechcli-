@@ -284,7 +284,9 @@ describe('benchmark report contract', () => {
     expect(validation.ok).toBe(false);
     expect(validation.failures.some((failure) => failure.startsWith('sensitive_value_leak_'))).toBe(true);
 
-    expect(inspectAgentTaskBenchmarkPathSafety({ token: 'sk-abcdefghijklmnop1234' }).ok).toBe(false);
+    // Underscored fake token: caught by the benchmark detector ([A-Za-z0-9_-]) but not a
+    // real key shape, so the CI hardcoded-secret grep (alphanumeric-only) ignores it.
+    expect(inspectAgentTaskBenchmarkPathSafety({ token: 'sk-test_fake_token_1234' }).ok).toBe(false);
     expect(inspectAgentTaskBenchmarkPathSafety({ note: 'relative/path/only.csv' }).ok).toBe(true);
   });
 });

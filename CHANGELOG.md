@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.4.132] - 2026-06-28
+
+### CI secret-scan false-positive hotfix
+
+- Replaced the agent-task benchmark path-safety test fixture token with an underscored fake shape so the CI hardcoded-secret grep no longer false-positives on it; the benchmark detector still flags it. No runtime behavior changes from 0.4.131.
+
 ## [0.4.131] - 2026-06-28
 
 ### Agent Task Evaluation Benchmark — a deterministic scoreboard for the agentic harness
