@@ -1,6 +1,6 @@
 'use client';
 
-import { IS_PUBLIC_PRODUCTION, PATREON_JOIN_URL } from '@/lib/site';
+import { IS_PUBLIC_PRODUCTION, PATREON_JOIN_URL, GITHUB_URL } from '@/lib/site';
 
 export function Nav() {
   const installLabel = IS_PUBLIC_PRODUCTION ? 'Install' : 'Install Beta';
@@ -19,8 +19,13 @@ export function Nav() {
         <a href="/changelog" className="text-[var(--text-secondary)] text-[13.5px] font-medium hover:text-[var(--text-primary)] transition">
           Changelog
         </a>
-        <a href="mailto:support@geotechcli.com" className="text-[var(--text-secondary)] text-[13.5px] font-medium hover:text-[var(--text-primary)] transition">
-          Contact
+        <a
+          href={GITHUB_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-[var(--text-secondary)] text-[13.5px] font-medium hover:text-[var(--text-primary)] transition"
+        >
+          GitHub
         </a>
         <a
           href={PATREON_JOIN_URL}

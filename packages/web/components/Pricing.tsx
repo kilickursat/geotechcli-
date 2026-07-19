@@ -3,7 +3,7 @@ import {
   DEFAULT_LLM_VISION_MODEL,
 } from '@geotechcli/core/meta';
 import { FREE_DETERMINISTIC, TIER1_LLM, BYOK_PROVIDERS } from '@/lib/tiers';
-import { PATREON_JOIN_URL, PATREON_PAGE_URL, DONATION_MINIMUM_USD } from '@/lib/site';
+import { PATREON_JOIN_URL, PATREON_PAGE_URL, DONATION_MINIMUM_USD, GITHUB_URL, MEMBERSHIP_TIERS } from '@/lib/site';
 
 // Donation & Membership section (kept exported as `Pricing` for existing imports on the
 // homepage and /pricing route). Discloses exactly what is free vs donation-supported.
@@ -77,6 +77,74 @@ export function Pricing() {
               Bring your own key: {BYOK_PROVIDERS.join(' · ')}.
             </p>
           </div>
+        </div>
+      </div>
+
+      {/* Open source strip */}
+      <div className="max-w-[1100px] mx-auto mt-6 rounded-2xl p-6 bg-[var(--bg-secondary)] border border-[var(--border-color)] flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h3 className="text-lg font-bold tracking-tight mb-1">geotechCLI is open source</h3>
+          <p className="text-[13px] text-[var(--text-secondary)] leading-relaxed max-w-[620px]">
+            Apache-2.0 licensed — fork it, star it, contribute. Issues and pull requests are open to
+            everyone; sponsorship adds priority collaboration on top, never a paywall.
+          </p>
+        </div>
+        <a
+          href={GITHUB_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="shrink-0 text-center px-6 py-2.5 rounded-lg text-[13px] font-semibold border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition"
+        >
+          View on GitHub →
+        </a>
+      </div>
+
+      {/* Membership tiers */}
+      <div className="max-w-[1100px] mx-auto mt-10">
+        <h3 className="text-center text-[clamp(22px,2.5vw,30px)] font-bold tracking-tight mb-8">Choose your membership</h3>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          {MEMBERSHIP_TIERS.map((tier) => (
+            <div
+              key={tier.id}
+              className={
+                tier.id === 'excellent'
+                  ? 'rounded-2xl p-7 bg-[var(--bg-card)] border-2 border-[var(--accent-teal)] shadow-[0_0_40px_rgba(0,229,160,0.08)] flex flex-col'
+                  : 'rounded-2xl p-7 bg-[var(--bg-secondary)] border border-[var(--border-color)] flex flex-col'
+              }
+            >
+              {tier.id === 'excellent' && (
+                <div className="text-[10px] font-semibold uppercase tracking-[1.5px] text-[var(--accent-teal)] mb-2">
+                  Most popular
+                </div>
+              )}
+              <div className="text-lg font-semibold">{tier.name}</div>
+              <div className="mt-1 mb-1">
+                <span className="text-[32px] font-bold tracking-tight">${tier.priceUsd}</span>
+                <span className="text-[13px] text-[var(--text-muted)]"> / month</span>
+              </div>
+              <p className="text-[12px] text-[var(--text-muted)] mb-5">{tier.tagline}</p>
+              <ul className="flex-1 space-y-2 mb-6">
+                {tier.benefits.map((benefit) => (
+                  <li key={benefit} className="flex items-start gap-2 text-[13px] text-[var(--text-secondary)] leading-[1.5]">
+                    <span className="text-[var(--accent-teal)] mt-0.5 shrink-0">✓</span>
+                    <span>{benefit}</span>
+                  </li>
+                ))}
+              </ul>
+              <a
+                href={PATREON_JOIN_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={
+                  tier.id === 'excellent'
+                    ? 'text-center px-6 py-3 rounded-lg text-sm font-bold bg-[var(--accent-teal)] text-[var(--bg-primary)] hover:brightness-110 transition'
+                    : 'text-center px-6 py-3 rounded-lg text-sm font-semibold border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition'
+                }
+              >
+                Join — ${tier.priceUsd}/mo
+              </a>
+            </div>
+          ))}
         </div>
       </div>
 

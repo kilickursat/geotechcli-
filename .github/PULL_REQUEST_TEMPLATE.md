@@ -1,5 +1,5 @@
 ## Summary
-<!-- Brief description -->
+<!-- What does this PR change, and why? -->
 
 ## Type
 - [ ] Bug fix
@@ -8,9 +8,11 @@
 - [ ] Documentation
 
 ## Checklist
+- [ ] PR targets `strong-beta` (not `main`)
 - [ ] `npm test --workspace=packages/core` — all pass
-- [ ] `npx tsc --noEmit` in `packages/core` — zero errors
-- [ ] Tests added for new calculations
-- [ ] Guardrails added for new agent tools
-- [ ] No hardcoded API keys or secrets
-- [ ] Changelog updated (if user-facing)
+- [ ] `npm run smoke:agent-tasks` — agent benchmark green
+- [ ] `npx tsc --noEmit` in touched packages — zero errors
+- [ ] Tests added for new calculations; guardrails added for new agent tools
+- [ ] Trust boundary respected: no LLM-owned numbers, fail-closed guards intact
+- [ ] No hardcoded API keys or secrets (fake test tokens use non-alphanumeric shapes)
+- [ ] Changelog updated (if user-facing; maintainer can handle at release)

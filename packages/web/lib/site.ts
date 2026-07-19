@@ -27,3 +27,45 @@ export const PATREON_PAGE_URL = 'https://www.patreon.com/c/geotechcli/posts';
 
 /** Minimum suggested donation shown in the UI. */
 export const DONATION_MINIMUM_USD = 10;
+
+/** Public open-source repository (Apache-2.0). */
+export const GITHUB_URL = 'https://github.com/kilickursat/geotechcli-';
+
+/** Patreon membership tiers shown on the support page (copy reworked for the site). */
+export const MEMBERSHIP_TIERS = [
+  {
+    id: 'supporter',
+    name: 'Supporter',
+    priceUsd: 10,
+    tagline: 'Keep the free hosted AI free',
+    benefits: [
+      'Fund development and the hosted GLM API bill',
+      'Early access to new AI features',
+      'Your name in the SUPPORTERS list (opt-in)',
+    ],
+  },
+  {
+    id: 'excellent',
+    name: 'Excellent Support',
+    priceUsd: 50,
+    tagline: 'Become part of the journey',
+    benefits: [
+      'Everything in Supporter',
+      'Priority support and feedback',
+      'Roadmap influence on new features',
+      'Hands-on collaboration time on your geotech projects',
+    ],
+  },
+  {
+    id: 'diamond',
+    name: 'Diamond Supporter',
+    priceUsd: 500,
+    tagline: 'Drive the future of the tool',
+    benefits: [
+      'Everything in Excellent Support',
+      'Deep-level implementation partnership',
+      'Direct access to the maintainer',
+      'Sponsored-feature prioritization',
+    ],
+  },
+] as const;

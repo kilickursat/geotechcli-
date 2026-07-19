@@ -1,6 +1,0 @@
-clone the repo
-check out strong-beta
-open STRONG_BETA_HANDOFF.md
-add local env only
-rerun the exact validation steps in that file
-continue Wave 2 hosted-beta validation and then Cloudflare beta deployment prep

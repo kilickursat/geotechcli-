@@ -1,6 +1,6 @@
 {
   "name": "geotechcli",
-  "version": "0.4.132",
+  "version": "0.4.133",
   "description": "AI-native CLI for geotechnical engineering",
   "type": "module",
   "bin": {
@@ -16,7 +16,7 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "@geotechcli/core": "0.4.132",
+    "@geotechcli/core": "0.4.133",
     "asciichart": "^1.5.25",
     "boxen": "^8.0.1",
     "chalk": "^5.4.0",
@@ -32,6 +32,7 @@
     "vitest": "^4.1.4"
   },
   "files": [
+    "NOTICE",
     "dist"
   ],
   "keywords": [
@@ -52,5 +53,5 @@
     "directory": "packages/cli"
   },
   "homepage": "https://beta.geotechcli.com",
-  "license": "SEE LICENSE IN LICENSE"
+  "license": "Apache-2.0"
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { Reveal } from '@/components/Reveal';
-import { IS_PUBLIC_PRODUCTION, PATREON_JOIN_URL } from '@/lib/site';
+import { IS_PUBLIC_PRODUCTION, PATREON_JOIN_URL, GITHUB_URL } from '@/lib/site';
 
 export function CTASection() {
   const installLabel = IS_PUBLIC_PRODUCTION ? 'Install geotechCLI →' : 'Install Beta →';
@@ -87,6 +87,25 @@ export function CTASection() {
                 }}
               >
                 Support on Patreon
+              </a>
+              <a
+                href={GITHUB_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-8 py-3.5 font-semibold text-[15px] rounded-lg border transition-all duration-300 inline-block"
+                style={{ background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.1)', color: 'var(--text-secondary)', letterSpacing: '-0.3px' }}
+                onMouseEnter={(e) => {
+                  const el = e.currentTarget as HTMLAnchorElement;
+                  el.style.borderColor = 'rgba(255,255,255,0.2)';
+                  el.style.color = 'var(--text-primary)';
+                }}
+                onMouseLeave={(e) => {
+                  const el = e.currentTarget as HTMLAnchorElement;
+                  el.style.borderColor = 'rgba(255,255,255,0.1)';
+                  el.style.color = 'var(--text-secondary)';
+                }}
+              >
+                Star on GitHub
               </a>
             </div>
           </Reveal>

@@ -1,8 +1,8 @@
-import { IS_PUBLIC_PRODUCTION, PATREON_PAGE_URL } from '@/lib/site';
+import { IS_PUBLIC_PRODUCTION, PATREON_PAGE_URL, GITHUB_URL } from '@/lib/site';
 
 export function Footer() {
   const tagline = IS_PUBLIC_PRODUCTION
-    ? 'Free deterministic geotechnical tools for everyone. LLM and agentic features are donation-supported. Privacy-first, no signup.'
+    ? 'Open-source (Apache-2.0) geotechnical tools for everyone — free deterministic engines, hosted GLM AI included, donation-supported. Privacy-first, no signup.'
     : 'Strong beta: no signup, no live billing, and hosted GLM beta is active now. Deterministic commands, privacy-first AI evaluation, and server-side limits are live.';
   return (
     <footer className="px-12 py-10 border-t border-[var(--border-color)]">
@@ -16,6 +16,7 @@ export function Footer() {
           </p>
         </div>
         <div className="flex gap-8">
+          <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" className="text-[var(--text-muted)] text-xs hover:text-[var(--text-secondary)] transition">GitHub</a>
           <a href="/docs" className="text-[var(--text-muted)] text-xs hover:text-[var(--text-secondary)] transition">Documentation</a>
           <a href="/pricing" className="text-[var(--text-muted)] text-xs hover:text-[var(--text-secondary)] transition">Support</a>
           <a href={PATREON_PAGE_URL} target="_blank" rel="noopener noreferrer" className="text-[var(--text-muted)] text-xs hover:text-[var(--text-secondary)] transition">Patreon</a>

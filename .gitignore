@@ -38,3 +38,16 @@ coverage/
 .wrangler/
 .dev.vars
 .dev.vars.*
+
+# Local benchmark/smoke output dirs and working artifacts (never commit)
+__*/
+/tmp/
+/.gh-localappdata/
+/*.png
+/*.html
+/*.pdf
+/geotechnical-dossier-*
+/htmldossierexample.txt
+/boreholelogview*
+/groundmodelview*
+/token

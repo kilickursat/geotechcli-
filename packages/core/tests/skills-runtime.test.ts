@@ -15,11 +15,11 @@ import {
   validateSkillSource,
 } from '../src/index.js';
 
-const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
-const deterministicArchive = join(repoRoot, 'skill_archive (1).zip');
-const promptOnlyArchive = join(repoRoot, 'skill.zip');
-const waveTwoArchive = join(repoRoot, 'geotechcli-geotech-skills-wave-2.zip');
-const tunnelWorkspaceArchive = join(repoRoot, 'geotechcli-tunnel-skills-workspace.zip');
+const archiveFixturesDir = fileURLToPath(new URL('./fixtures/skill-archives/', import.meta.url));
+const deterministicArchive = join(archiveFixturesDir, 'skill_archive-deterministic.zip');
+const promptOnlyArchive = join(archiveFixturesDir, 'skill-prompt-only.zip');
+const waveTwoArchive = join(archiveFixturesDir, 'geotechcli-geotech-skills-wave-2.zip');
+const tunnelWorkspaceArchive = join(archiveFixturesDir, 'geotechcli-tunnel-skills-workspace.zip');
 
 describe('Skills runtime', () => {
   let configDir = '';

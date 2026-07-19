@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://www.geotechcli.com/docs
+    about: Install, commands, and workflow docs
+  - name: Security vulnerability (private)
+    url: https://github.com/kilickursat/geotechcli-/security/advisories/new
+    about: Report security issues privately — never as a public issue
+  - name: Support the project
+    url: https://www.patreon.com/16003704/join
+    about: Sponsorship funds development and keeps the hosted AI tier free

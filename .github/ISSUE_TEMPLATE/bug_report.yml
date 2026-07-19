@@ -1,0 +1,49 @@
+name: Bug report
+description: Something broke or produced a wrong/unexpected result
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: geotechCLI version
+      description: Output of `geotech --version`
+      placeholder: "0.4.133"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS + Node version
+      placeholder: "Windows 11 / Node 22.11"
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command and input
+      description: The exact command you ran. Describe the input data shape (columns, file types) — do NOT paste confidential project data.
+      placeholder: |
+        geotech analyze . --branch foundation
+        (workspace: 3 borehole CSVs with columns borehole_id, depth_m, sptN)
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Relevant output / error
+      description: Paste terminal output. Redact any paths or data you consider private.
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I removed confidential project data and secrets from this report
+          required: true

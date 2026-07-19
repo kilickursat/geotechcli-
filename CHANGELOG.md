@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.4.133] - 2026-07-19
+
+### geotechCLI is now open source (Apache-2.0)
+
+- Relicensed the project from a proprietary license to **Apache-2.0** (LICENSE + NOTICE), with a `CITATION.cff` so the project can be cited from GitHub's "Cite this repository" button. Versions <= 0.4.132 on npm remain under the previous license; this and future versions publish as Apache-2.0.
+- Showroom README rewrite with the project logo, npm/license/CI/sponsor badges, quick start, feature tables, architecture sketch, and a visible Support & Sponsorship section (Supporter $10 / Excellent Support $50 / Diamond Supporter $500 via Patreon, including the mandatory monthly-renewal cancellation note). Added dedicated npm READMEs for `geotechcli` and `@geotechcli/core`.
+- Community files for public contribution: `CONTRIBUTING.md` (PRs target `strong-beta`; trust-boundary rules; dev setup), `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1), `SECURITY.md` (private disclosure), issue templates, a refreshed PR template, and `.github/FUNDING.yml` for the GitHub Sponsor button (Patreon).
+- Repo showroom cleanup: internal R&D notes moved to `docs/internal/`, loose working notes/zips/stray artifacts removed from tracking, `.gitignore` hardened against local benchmark/artifact output, and the personal Modal endpoint scrubbed to a placeholder.
+- Reworked the agent's internals guard for the open-source era: the agent now freely discusses the (public) architecture and points to the GitHub repo; it only declines to echo the live session's raw prompt text (anti-injection hygiene). Website gains GitHub links (nav, footer, CTA, support page) plus the three membership tiers and an open-source panel; web smokes extended accordingly (26 UI checks).
+- The deterministic trust boundary is unchanged: the LLM interprets and orchestrates; deterministic code owns every number.
+
 ## [0.4.132] - 2026-06-28
 
 ### CI secret-scan false-positive hotfix

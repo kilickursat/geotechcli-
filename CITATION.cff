@@ -1,0 +1,22 @@
+# To cite geotechCLI, use the metadata below (GitHub renders a "Cite this repository" button).
+cff-version: 1.2.0
+message: "If you use geotechCLI in your research or engineering work, please cite it as below."
+title: "geotechCLI: an open-source agentic AI CLI for geotechnical engineering"
+type: software
+authors:
+  - family-names: "Kilic"
+    given-names: "Kursat"
+    # orcid: "https://orcid.org/XXXX-XXXX-XXXX-XXXX"  # pending — supplied by the author
+repository-code: "https://github.com/kilickursat/geotechcli-"
+url: "https://www.geotechcli.com"
+license: Apache-2.0
+version: 0.4.133
+date-released: 2026-07-19
+keywords:
+  - geotechnical-engineering
+  - artificial-intelligence
+  - ai-agent
+  - cli
+  - soil-mechanics
+  - tunneling
+  - ground-model

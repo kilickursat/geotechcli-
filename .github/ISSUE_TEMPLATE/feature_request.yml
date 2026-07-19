@@ -1,0 +1,36 @@
+name: Feature request
+description: Propose a new capability or improvement
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The engineering problem
+      description: What geotechnical task or workflow are you trying to accomplish?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should geotechCLI do? If it involves a calculation, name the published method/standard (e.g. Eurocode 7, AASHTO, a paper).
+    validations:
+      required: true
+  - type: dropdown
+    id: layer
+    attributes:
+      label: Which layer does this touch?
+      options:
+        - Deterministic engine (new/extended calculation)
+        - AI agent / chat behavior
+        - Data ingest (formats, OCR, parsing)
+        - Visualization / export
+        - Website / docs
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Sample data shapes, sketches, references. Note — the trust boundary applies; engineering numbers must come from deterministic, tested code, never from the LLM.

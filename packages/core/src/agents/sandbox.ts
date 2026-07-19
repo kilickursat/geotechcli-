@@ -143,9 +143,7 @@ function buildInternalPathRules(): InternalPathRule[] {
     addInternalPathRule(rules, join(MONOREPO_ROOT_CANDIDATE, '__agent-skill-mock'), 'geotechCLI internal skill fixtures');
     addInternalPathRule(rules, join(MONOREPO_ROOT_CANDIDATE, 'AGENTS.md'), 'geotechCLI internal repo instructions');
     addInternalPathRule(rules, join(MONOREPO_ROOT_CANDIDATE, 'CLAUDE.md'), 'geotechCLI internal repo instructions');
-    addInternalPathRule(rules, join(MONOREPO_ROOT_CANDIDATE, 'STRONG_BETA_HANDOFF.md'), 'geotechCLI internal handoff notes');
-    addInternalPathRule(rules, join(MONOREPO_ROOT_CANDIDATE, 'STRONG_BETA_SKILLS_CERTIFICATION.md'), 'geotechCLI internal certification notes');
-    addInternalPathRule(rules, join(MONOREPO_ROOT_CANDIDATE, 'STRONG_BETA_SKILLS_POLICY.md'), 'geotechCLI internal policy notes');
+    addInternalPathRule(rules, join(MONOREPO_ROOT_CANDIDATE, 'docs', 'internal'), 'geotechCLI internal R&D notes');
     addInternalPathRule(rules, join(MONOREPO_ROOT_CANDIDATE, 'packages', 'cli', 'src'), 'geotechCLI CLI source tree');
     addInternalPathRule(rules, join(MONOREPO_ROOT_CANDIDATE, 'packages', 'cli', 'dist'), 'geotechCLI CLI build output');
     addInternalPathRule(rules, join(MONOREPO_ROOT_CANDIDATE, 'packages', 'cli', 'tests'), 'geotechCLI CLI test fixtures');

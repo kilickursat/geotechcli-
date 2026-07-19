@@ -64,6 +64,14 @@ assert(
   siteSource.includes('https://www.patreon.com/16003704/join'),
   'packages/web/lib/site.ts must define the Patreon donate (join) URL.',
 );
+assert(
+  siteSource.includes('https://github.com/kilickursat/geotechcli-'),
+  'packages/web/lib/site.ts must define the public GitHub repository URL.',
+);
+assert(
+  siteSource.includes('MEMBERSHIP_TIERS') && siteSource.includes('500'),
+  'packages/web/lib/site.ts must define the membership tiers including the top tier.',
+);
 
 const robotsSource = readText('packages', 'web', 'app', 'robots.ts');
 assert(

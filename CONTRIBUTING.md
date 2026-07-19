@@ -1,76 +1,77 @@
 # Contributing to geotechCLI
 
-## Branching Strategy
+Thanks for helping build the open-source agentic AI CLI for geotechnical engineering!
+Contributions of every size are welcome — bug reports from real project data are especially
+valuable. You never need to be a sponsor to contribute; sponsorship
+([Patreon](https://www.patreon.com/16003704/join)) adds priority support and collaboration
+on top, but issues and PRs are open to everyone.
 
-geotechCLI uses this branch flow:
-
-`feature/* -> master -> strong-beta -> main`
-
-| Branch | Purpose | Protected |
-|--------|---------|-----------|
-| `master` | Default development branch. All normal work lands here first. | Recommended |
-| `strong-beta` | Public beta branch for Cloudflare beta deploys and the automated npm release path used for current public beta drops. | Yes |
-| `main` | Stable production branch for final promotion, stable website traffic, and release tags. | Yes |
-| `feature/*` | Focused work branches opened from `master`. | No |
-| `hotfix/*` | Emergency fixes branched from `main`, then merged back into `main` and `master`. | Same as `main` |
-
-## Daily Workflow
+## Quick start (dev setup)
 
 ```bash
-git checkout master
-git pull
-git checkout -b feature/my-fix
-
-# ... work, test, and commit ...
-
-git push -u origin feature/my-fix
-# Open PR: feature/my-fix -> master
+git clone https://github.com/kilickursat/geotechcli-.git
+cd geotechcli-
+npm ci
+npm run build                       # build all packages (Turborepo)
+npm test --workspace=packages/core  # core test suite
+npm run smoke:agent-tasks           # deterministic agent benchmark (zero network)
+npm run verify:consistency          # release-surface consistency guard
 ```
 
-When `master` is ready for a public beta drop, open:
+Node 22+ recommended. The repo is TypeScript throughout (npm workspaces:
+`packages/cli`, `packages/core`, `packages/web`).
 
-```bash
-# PR: master -> strong-beta
-```
+## Branch flow — PRs target `strong-beta`
 
-When the beta has passed smoke checks and manual review, open:
+| Branch | Purpose |
+|--------|---------|
+| `strong-beta` | Integration branch — **open your PR against this branch.** Releases from here publish npm under the `beta` dist-tag and deploy the beta site. |
+| `main` | Production — updated by maintainer merges from `strong-beta`; promotes npm `latest` and deploys www.geotechcli.com. Never PR directly to `main`. |
+| `master` | Legacy development branch. |
 
-```bash
-# PR: strong-beta -> main
-```
+Fork → feature branch → PR into `strong-beta`. The maintainer reviews, merges, and cuts
+releases (every `strong-beta` release carries a version bump + CHANGELOG entry — maintainer
+handles this unless you're asked to include it).
 
-`strong-beta` is the branch that currently drives the public beta website and automated npm release pipeline. Promote `strong-beta -> main` after beta validation when you want the same version to be reflected as the stable branch state and tagged release.
+## The trust boundary (non-negotiable)
 
-## npm Trusted Publishing
+geotechCLI's core promise: **the LLM interprets and orchestrates; deterministic code owns every
+number.** PRs must preserve this:
 
-The npm release workflow publishes `geotechcli` and `@geotechcli/core` with npm Trusted Publishing/OIDC instead of a long-lived write token. Configure the same GitHub Actions trusted publisher on both npm packages:
+1. **No LLM-owned numbers.** Engineering values come from deterministic engines with tests —
+   never from model output. New calculations follow published methods with citations in comments.
+2. **Evidence-bound data.** Extracted values carry evidence references (source page/row);
+   unverifiable values become explicit review gates, not silent guesses.
+3. **Fail closed.** Guards (FEM artifact guards, reviewer contracts, tool allowlists) must
+   stay fail-closed. If your change can fail, it must fail blocked — not approved.
+4. **Benchmarks stay green.** `npm run smoke:agent-tasks` gates CI; if your change breaks a
+   scenario, fix the change or (with justification) evolve the scenario in the same PR.
+5. **No secrets, ever.** CI scans every push. Test tokens must be obviously fake and
+   non-alphanumeric-only (e.g. `sk-test_fake_...`) so the secret scan ignores them.
 
-| npm package | Publisher | Organization/user | Repository | Workflow filename | Environment | Allowed actions |
-|-------------|-----------|-------------------|------------|-------------------|-------------|-----------------|
-| `geotechcli` | GitHub Actions | `kilickursat` | `geotechcli-` | `release.yml` | leave blank | `npm publish` |
-| `@geotechcli/core` | GitHub Actions | `kilickursat` | `geotechcli-` | `release.yml` | leave blank | `npm publish` |
+## Adding a new calculation (the standard path)
 
-After both trusted publishers are verified by one successful release, restrict package publishing access in npm package settings to require 2FA and disallow traditional tokens, then revoke the old `NPM_TOKEN` automation secret from GitHub.
+1. Implement in `packages/core/src/geo/` with a Zod schema and unit tests.
+2. Register as an agent tool in `packages/core/src/agents/tools.ts`.
+3. Add physical-constraint guardrails in `packages/core/src/agents/guardrails.ts`.
+4. Add to the swarm tool allowlists in `packages/core/src/agents/swarm.ts` where appropriate.
+5. Add the CLI command in `packages/cli/src/commands/` and export from `packages/core/src/geo/index.ts`.
+6. Consider an agent-task benchmark scenario if the tool changes agent behavior.
 
-The release workflow publishes npm packages only from `strong-beta`. Tag-triggered workflows are for GitHub release notes only. The npm publish script publishes `@geotechcli/core` first and waits for registry visibility before publishing `geotechcli`, so a scoped-package trust failure cannot publish a CLI version that depends on a missing core version.
-
-## Minimum Validation
-
-Before opening a PR, aim to run:
+## Before opening a PR
 
 ```bash
 npm run verify:consistency
 npm test --workspace=packages/core
+npm run smoke:agent-tasks
+npx tsc --noEmit   # in packages/core (and packages/cli if touched)
 ```
 
-If your change touches the website or CLI behavior, also run beta smoke checks when they are available.
+Match the surrounding code style; keep comments for constraints the code can't express.
+By contributing you agree your contribution is licensed under [Apache-2.0](LICENSE)
+(see LICENSE §5 — no CLA needed).
 
-## Adding a New Calculation
+## Releases (maintainer)
 
-1. Implement in `packages/core/src/geo/` with Zod schema.
-2. Register as a tool in `packages/core/src/agents/tools.ts`.
-3. Add guardrails in `packages/core/src/agents/guardrails.ts`.
-4. Add to the swarm tool list in `packages/core/src/agents/swarm.ts`.
-5. Write tests in `packages/core/tests/core.test.ts`.
-6. Add the CLI command in `packages/cli/src/commands/`.
-7. Export from `packages/core/src/geo/index.ts`.
+npm publishing uses Trusted Publishing/OIDC from `release.yml` on `strong-beta` (dist-tag
+`beta`); merging to `main` promotes `latest`. See `.github/workflows/release.yml`.

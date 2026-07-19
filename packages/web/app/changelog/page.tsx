@@ -5,8 +5,19 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 const releases = [
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-06-28',
+    date: '2026-07-19',
     tag: `${GEOTECHCLI_VERSION} Release`,
+    changes: [
+      { type: 'feat', text: 'geotechCLI is now open source under Apache-2.0 — the full source, including the deterministic engines, agent runtime, and prompts, is public at github.com/kilickursat/geotechcli- with a CITATION.cff for academic citation' },
+      { type: 'feat', text: 'New membership tiers on the support page (Supporter $10 / Excellent Support $50 / Diamond Supporter $500) with an open-source contribution panel; contributions via issues and PRs are open to everyone' },
+      { type: 'feat', text: 'Community files for public contribution: CONTRIBUTING (PRs target strong-beta), Code of Conduct, private security reporting, issue templates, and the GitHub Sponsor button' },
+      { type: 'fix', text: 'The agent internals guard was reworked for the open-source era: architecture questions are answered freely with pointers to the public repo; only live-session raw prompt echoes are declined' },
+    ],
+  },
+  {
+    version: '0.4.132',
+    date: '2026-06-28',
+    tag: '0.4.132 Release',
     changes: [
       { type: 'feat', text: 'Added a deterministic agent-task evaluation benchmark that drives the real agent, swarm, and workflow loops with scripted model turns (zero network) and scores tool correctness, evidence citation, review-gate preservation, and fail-closed guardrails across 9 geotech scenarios' },
       { type: 'feat', text: 'Guardrail scenarios prove the runtime fails closed: fabricated calculation values are blocked, invented FEM result-manifest writes are rejected, and swarm reviewer rejections stay unresolved' },
