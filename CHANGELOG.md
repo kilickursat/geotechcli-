@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.4.141] - 2026-07-28
+
+### Surface verification waits for propagation
+
+The surface gate added in 0.4.140 failed on its first real run, and it was wrong to fail: npm had `beta` at 0.4.140 and the deploy had succeeded, but `beta.geotechcli.com` still answered 0.4.139 for a few seconds afterwards. Cloudflare serves the site from many edge locations and npm serves dist-tags through a CDN, so both keep reporting the previous version briefly after a successful deploy — the deploy job's own smoke check already polls for exactly this reason, and the new gate read each surface once.
+
+- `verify-release-surfaces` now polls each remote surface until it agrees or the attempts run out (20 attempts, 15s apart by default, tunable with `SURFACE_CHECK_ATTEMPTS` / `SURFACE_CHECK_DELAY_MS`), matching the retry behaviour of every other remote check in the pipeline.
+- Surfaces that already agree still pass immediately, so the happy path adds no waiting.
+- A surface that never catches up still fails the run, and the error now reports how many attempts it took before giving up.
+
+## [0.4.140] - 2026-07-28
+
+### Release surfaces stay in lockstep automatically
+
+A release lands on four independent surfaces — npm dist-tags, the deployed site, the git tag, and the GitHub Release — each written by a different job. Three were automated; tagging never was. GitHub Releases therefore froze at **v0.4.124 on 5 June** while fourteen versions shipped to npm and to the site, and nothing reported the gap.
+
+- **Production pushes now tag themselves.** A new `tag-release` job creates `v<version>` and publishes the GitHub Release after npm promotion and the production deploy succeed. Tagging is no longer a step someone has to remember.
+- **Release notes come from the changelog.** GitHub's generated notes build from merged pull requests, and this repo releases by pushing branches directly — so the generated body collapsed to a bare compare link. Releases now publish the changelog entry for that version instead.
+- **A final gate checks every surface.** `verify-release-surfaces` asserts that npm dist-tags, the deployed site and the git tag all report the version the commit claims, and fails the run when any disagrees. It runs on production after tagging and on beta after deployment, and is available locally as `npm run verify:surfaces`.
+- **Silent promotion skips are now failures.** `Promote npm latest` previously warned and exited 0 when the token was missing or the version was absent from npm, so a skipped promotion looked exactly like a successful one — which is how npm `latest` could sit a version behind production while the job reported green. Both cases now fail the run with a named cause.
+
 ## [0.4.139] - 2026-07-28
 
 ### Fixed npm publishing for the CLI package

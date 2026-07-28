@@ -29,7 +29,9 @@
     "changeset": "changeset",
     "version-packages": "changeset version",
     "release": "turbo run build && node scripts/publish-npm-workspaces.mjs",
-    "release:npm": "node scripts/publish-npm-workspaces.mjs"
+    "release:npm": "node scripts/publish-npm-workspaces.mjs",
+    "verify:surfaces": "node scripts/verify-release-surfaces.mjs",
+    "verify:surfaces:beta": "node scripts/verify-release-surfaces.mjs --channel beta"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.0",
