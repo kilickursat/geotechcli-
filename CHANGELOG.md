@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.4.139] - 2026-07-28
+
+### Fixed npm publishing for the CLI package
+
+The 0.4.138 release published `@geotechcli/core` but failed on `geotechcli` with a bare `404 Not Found - PUT`, leaving the version half-released and blocking both site deployments.
+
+- **Root cause.** npm resolves trusted publishing (OIDC) **per package**, by exchanging the GitHub id-token at `/-/npm/v1/oidc/token/exchange/package/<name>`. That exchange is deliberately non-throwing: when it fails, npm logs nothing at default verbosity and falls back to whatever `_authToken` sits in the npmrc — which is `setup-node`'s placeholder when no token is supplied. The scoped package still had a trusted publisher and published normally; the unscoped one did not, fell through to the placeholder, and the registry answered 404 (npm reports 404 rather than 403 for packages you have no write access to).
+- **Supplied a real credential.** The publish job now passes the `NPM_DIST_TAG_TOKEN` automation token as `NODE_AUTH_TOKEN`, so a package that OIDC cannot cover still authenticates. Trusted publishing keeps priority where it is configured.
+- **Kept provenance on both packages.** npm only auto-enables provenance on the OIDC path, so publishing through the token would have silently dropped the SLSA attestation. The publish script now requests `--provenance` explicitly whenever the runner can mint an id-token, which covers both paths.
+- **Made the failure legible.** Publishing now fails fast with a named cause when neither credential is usable — including when `NODE_AUTH_TOKEN` is the `setup-node` placeholder, which previously looked like a configured credential right up until the registry rejected it — and a failed publish prints which auth path was in play and both remedies.
+
+## [0.4.138] - 2026-07-28
+
+### Author ORCID on the citation metadata
+
+- Added the maintainer's ORCID (`0000-0003-4362-0704`) to `CITATION.cff`, replacing the placeholder that had been waiting for it. GitHub's *Cite this repository* button and the APA/BibTeX exports it generates now carry a persistent author identifier, so citations of geotechCLI resolve to the right researcher regardless of name formatting. The same identifier is added to the BibTeX snippet in the README.
+- Fixed the citation version, which had drifted to **0.4.133** while the project shipped four releases past it — anyone citing the software was crediting the wrong release. `CITATION.cff` now reports the current version and release date.
+- Added release-consistency assertions for both: the build fails if `CITATION.cff` falls behind the shared metadata version again, or if the author ORCID is missing or malformed.
+
 ## [0.4.137] - 2026-07-28
 
 ### Docs and Changelog rebuilt around Sphinx/Furo navigation patterns

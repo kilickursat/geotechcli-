@@ -200,6 +200,19 @@ assert(
   'Pricing page must use shared default model metadata.',
 );
 
+// CITATION.cff feeds GitHub's "Cite this repository" button and any DOI/archive
+// export, so a stale version there misattributes the release being cited.
+const citationSource = readText('CITATION.cff');
+const citationVersion = citationSource.match(/^version:\s*"?([^"\s]+)"?\s*$/m)?.[1];
+assert(
+  citationVersion === metadata.version,
+  `CITATION.cff version ${citationVersion ?? '(missing)'} does not match shared metadata version ${metadata.version}.`,
+);
+assert(
+  /orcid:\s*"https:\/\/orcid\.org\/\d{4}-\d{4}-\d{4}-\d{3}[\dX]"/.test(citationSource),
+  'CITATION.cff must carry a well-formed author ORCID.',
+);
+
 const changelogSource = readText('packages', 'web', 'app', 'changelog', 'page.tsx');
 assert(
   changelogSource.includes('GEOTECHCLI_VERSION'),

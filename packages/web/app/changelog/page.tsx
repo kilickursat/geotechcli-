@@ -9,6 +9,25 @@ const releases: Release[] = [
     date: '2026-07-28',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'fix', text: 'Fixed npm publishing for the CLI package. The 0.4.139 release published @geotechcli/core but failed on geotechcli with a bare 404, leaving the version half-released and blocking both site deployments. npm resolves trusted publishing (OIDC) per package and the exchange fails silently, so the unscoped package fell back to a placeholder credential; the publish job now supplies the automation token as well' },
+      { type: 'fix', text: 'Kept SLSA provenance on both published packages. npm only auto-enables provenance on the OIDC path, so publishing through a token would have silently dropped the attestation; the publish script now requests it explicitly whenever the runner can mint an id-token' },
+      { type: 'fix', text: 'Publishing now fails fast with a named cause when neither credential is usable, including when the token is the setup-node placeholder, and a failed publish reports which auth path was in play and both remedies' },
+    ],
+  },
+  {
+    version: '0.4.138',
+    date: '2026-07-28',
+    tag: '0.4.138 Release',
+    changes: [
+      { type: 'feat', text: "Added the maintainer's ORCID (0000-0003-4362-0704) to CITATION.cff, so GitHub's Cite this repository button and the APA/BibTeX exports it generates now carry a persistent author identifier; the same identifier is in the README BibTeX snippet" },
+      { type: 'fix', text: 'The citation version had drifted to 0.4.133 while the project shipped four releases past it, so anyone citing geotechCLI was crediting the wrong release. CITATION.cff now reports the current version and release date, and release-consistency assertions fail the build if it falls behind again or if the author ORCID is missing or malformed' },
+    ],
+  },
+  {
+    version: '0.4.137',
+    date: '2026-07-28',
+    tag: '0.4.137 Release',
+    changes: [
       { type: 'feat', text: 'Docs rebuilt around Sphinx/Furo navigation patterns: a persistent sidebar groups sections by progressive disclosure (Getting started → Deterministic engines → AI & agents → Reference) with scroll-spy highlighting, replacing the flat anchor grid you had to scroll back to the top to use' },
       { type: 'feat', text: 'Docs filter searches section titles, groups and body text at once, narrowing both the sidebar and the page; code blocks now render as real elements with a language chip and copy button, and every heading has a Sphinx-style ¶ permalink with Furo-style previous/next cards' },
       { type: 'feat', text: 'Changelog no longer renders all 127 releases expanded on one scroll: the three most recent are open, the rest collapse to one-line headers with version, tag, date and entry count, and expand/collapse all is one click' },

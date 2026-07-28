@@ -57,6 +57,14 @@ jobs:
           node -e 'const child_process = require("node:child_process"); const version = child_process.execSync("npm --version", { encoding: "utf8" }).trim(); const [major, minor, patch] = version.split(".").map(Number); if (major < 11 || (major === 11 && (minor < 5 || (minor === 5 && patch < 1)))) throw new Error("npm " + version + " is too old for npm trusted publishing"); console.log("npm trusted publishing toolchain OK: node " + process.versions.node + ", npm " + version);'
       - run: npx turbo run build
       - name: Publish (dist-tag beta; latest is promoted on main)
+        # npm prefers trusted publishing (OIDC) when the registry has a trusted
+        # publisher configured for the package being published. That exchange is
+        # per-package and fails silently, so a package whose trusted publisher is
+        # missing falls back to whatever _authToken setup-node wrote — which is a
+        # placeholder unless we supply one. Passing the automation token here keeps
+        # publishing working for packages that OIDC cannot cover.
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_DIST_TAG_TOKEN }}
         run: node scripts/publish-npm-workspaces.mjs --tag beta
       - name: Verify npm package versions (beta dist-tag)
         if: github.ref == 'refs/heads/strong-beta'
