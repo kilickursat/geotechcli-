@@ -1,6 +1,26 @@
 import { z } from 'zod';
 
 // ---------------------------------------------------------------------------
+// Shallow foundation bearing capacity
+//
+// Four procedures are implemented and kept distinct. Terzaghi uses his own
+// factors and shape corrections; Meyerhof, Hansen and Vesic share the
+// Prandtl-Reissner Nq/Nc but each carries its own Nγ, shape factors and depth
+// factors.
+//
+// References:
+//   - Terzaghi, K. (1943). "Theoretical Soil Mechanics." Wiley.
+//   - Meyerhof, G.G. (1963). "Some recent research on the bearing capacity of
+//     foundations." Canadian Geotechnical Journal 1(1), 16-26.
+//   - Hansen, J.B. (1970). "A revised and extended formula for bearing
+//     capacity." Danish Geotechnical Institute Bulletin No. 28.
+//   - Vesic, A.S. (1973). "Analysis of ultimate loads of shallow foundations."
+//     JSMFD, ASCE, 99(SM1), 45-73.
+// ---------------------------------------------------------------------------
+
+const GAMMA_W = 9.81; // unit weight of water (kN/m³)
+
+// ---------------------------------------------------------------------------
 // Input schemas
 // ---------------------------------------------------------------------------
 
@@ -30,14 +50,23 @@ export interface BearingCapacityResult {
   steps: string[];
 }
 
-// ---------------------------------------------------------------------------
-// Bearing capacity factors (Terzaghi original)
-// ---------------------------------------------------------------------------
-
 function degToRad(deg: number): number {
   return (deg * Math.PI) / 180;
 }
 
+// ---------------------------------------------------------------------------
+// Bearing capacity factors
+// ---------------------------------------------------------------------------
+
+/**
+ * Terzaghi (1943) factors. Nq uses Terzaghi's own expression (which differs
+ * from the Prandtl-Reissner form used by the later methods).
+ *
+ * Terzaghi's Nγ is defined through the tabulated passive coefficient K_pγ and
+ * has no exact closed form. The Vesic (1973) expression is used as the
+ * closed-form surrogate — this is disclosed in the calculation steps because it
+ * runs roughly 25-40% above Terzaghi's tabulated Nγ over the common φ range.
+ */
 function terzaghiFactors(phi: number): { Nc: number; Nq: number; Ngamma: number } {
   const phiRad = degToRad(phi);
 
@@ -50,78 +79,110 @@ function terzaghiFactors(phi: number): { Nc: number; Nq: number; Ngamma: number 
   const b = 2 * Math.pow(Math.cos(degToRad(45 + phi / 2)), 2);
   const Nq = a / b;
 
-  // Nc = (Nq - 1) * cot(φ)
   const Nc = (Nq - 1) / Math.tan(phiRad);
-
-  // Nγ approximation (Kumbhojkar 1993)
   const Ngamma = 2 * (Nq + 1) * Math.tan(phiRad);
 
   return { Nc, Nq, Ngamma };
 }
 
-// ---------------------------------------------------------------------------
-// General bearing capacity factors (Meyerhof/Hansen/Vesic use these)
-// ---------------------------------------------------------------------------
-
-function generalFactors(phi: number): { Nc: number; Nq: number; Ngamma: number } {
-  const phiRad = degToRad(phi);
-
+/**
+ * Prandtl-Reissner Nq and Nc, shared by Meyerhof, Hansen and Vesic.
+ *   Nq = tan²(45 + φ/2)·exp(π·tanφ)
+ *   Nc = (Nq − 1)·cotφ
+ */
+function prandtlFactors(phi: number): { Nc: number; Nq: number } {
   if (phi === 0) {
-    return { Nc: 5.14, Nq: 1.0, Ngamma: 0.0 };
+    return { Nc: 5.14, Nq: 1.0 };
   }
-
-  // Nq = tan²(45 + φ/2) * exp(π tanφ)
+  const phiRad = degToRad(phi);
   const Nq =
-    Math.pow(Math.tan(degToRad(45 + phi / 2)), 2) *
-    Math.exp(Math.PI * Math.tan(phiRad));
-
-  // Nc = (Nq - 1) cot(φ)
+    Math.pow(Math.tan(degToRad(45 + phi / 2)), 2) * Math.exp(Math.PI * Math.tan(phiRad));
   const Nc = (Nq - 1) / Math.tan(phiRad);
+  return { Nc, Nq };
+}
 
-  // Nγ = 2(Nq + 1) tanφ (Vesic approximation, widely used)
-  const Ngamma = 2 * (Nq + 1) * Math.tan(phiRad);
+/** Meyerhof (1963): Nγ = (Nq − 1)·tan(1.4φ) */
+function meyerhofNgamma(phi: number, Nq: number): number {
+  if (phi === 0) return 0;
+  return (Nq - 1) * Math.tan(degToRad(1.4 * phi));
+}
 
-  return { Nc, Nq, Ngamma };
+/** Hansen (1970): Nγ = 1.5·(Nq − 1)·tanφ */
+function hansenNgamma(phi: number, Nq: number): number {
+  if (phi === 0) return 0;
+  return 1.5 * (Nq - 1) * Math.tan(degToRad(phi));
+}
+
+/** Vesic (1973): Nγ = 2·(Nq + 1)·tanφ */
+function vesicNgamma(phi: number, Nq: number): number {
+  if (phi === 0) return 0;
+  return 2 * (Nq + 1) * Math.tan(degToRad(phi));
+}
+
+// ---------------------------------------------------------------------------
+// Effective B/L ratio from the declared shape
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolves the declared shape and optional length into the B/L ratio used by
+ * the shape factors. A strip footing has B/L = 0; square and circular have
+ * B/L = 1. Supplying `length` without an explicit shape is treated as a
+ * rectangular footing.
+ */
+function effectiveBOverL(
+  shape: BearingCapacityInput['shape'],
+  B: number,
+  L: number | undefined,
+): { BL: number; resolvedShape: string } {
+  switch (shape) {
+    case 'square':
+      return { BL: 1, resolvedShape: 'square' };
+    case 'circular':
+      return { BL: 1, resolvedShape: 'circular' };
+    case 'rectangular':
+      if (L && L > 0) return { BL: Math.min(B / L, 1), resolvedShape: 'rectangular' };
+      return { BL: 0, resolvedShape: 'rectangular (no length given — treated as strip)' };
+    case 'strip':
+    default:
+      // Backwards compatible: an explicit length implies a rectangular footing.
+      if (L && L > 0) return { BL: Math.min(B / L, 1), resolvedShape: 'rectangular (inferred from length)' };
+      return { BL: 0, resolvedShape: 'strip' };
+  }
 }
 
 // ---------------------------------------------------------------------------
 // Shape factors
 // ---------------------------------------------------------------------------
 
-function meyerhofShapeFactors(
-  B: number,
-  L: number | undefined,
-  phi: number,
-): { sc: number; sq: number; sgamma: number } {
-  if (!L || L === 0) {
-    return { sc: 1, sq: 1, sgamma: 1 }; // strip
-  }
-  const phiRad = degToRad(phi);
-  const BL = B / L;
+/** Meyerhof (1963), with Kp = tan²(45 + φ/2). */
+function meyerhofShapeFactors(BL: number, phi: number): { sc: number; sq: number; sgamma: number } {
+  if (BL <= 0) return { sc: 1, sq: 1, sgamma: 1 };
+  const Kp = Math.pow(Math.tan(degToRad(45 + phi / 2)), 2);
+  const sc = 1 + 0.2 * BL * Kp;
+  const sqsg = phi >= 10 ? 1 + 0.1 * BL * Kp : 1;
+  return { sc, sq: sqsg, sgamma: sqsg };
+}
 
+/** Hansen (1970): sq uses sinφ. */
+function hansenShapeFactors(
+  BL: number, phi: number, Nc: number, Nq: number,
+): { sc: number; sq: number; sgamma: number } {
+  if (BL <= 0) return { sc: 1, sq: 1, sgamma: 1 };
   return {
-    sc: 1 + 0.2 * BL * Math.pow(Math.tan(degToRad(45 + phi / 2)), 2),
-    sq: phi > 10 ? 1 + 0.1 * BL * Math.pow(Math.tan(degToRad(45 + phi / 2)), 2) : 1,
-    sgamma: phi > 10 ? 1 + 0.1 * BL * Math.pow(Math.tan(degToRad(45 + phi / 2)), 2) : 1,
+    sc: 1 + (Nq / Nc) * BL,
+    sq: 1 + BL * Math.sin(degToRad(phi)),
+    sgamma: Math.max(1 - 0.4 * BL, 0.6),
   };
 }
 
-function hansenShapeFactors(
-  B: number,
-  L: number | undefined,
-  phi: number,
-  Nc: number,
-  Nq: number,
+/** Vesic (1973): sq uses tanφ. */
+function vesicShapeFactors(
+  BL: number, phi: number, Nc: number, Nq: number,
 ): { sc: number; sq: number; sgamma: number } {
-  if (!L || L === 0) {
-    return { sc: 1, sq: 1, sgamma: 1 };
-  }
-  const BL = B / L;
-  const phiRad = degToRad(phi);
-
+  if (BL <= 0) return { sc: 1, sq: 1, sgamma: 1 };
   return {
     sc: 1 + (Nq / Nc) * BL,
-    sq: 1 + BL * Math.sin(phiRad),
+    sq: 1 + BL * Math.tan(degToRad(phi)),
     sgamma: Math.max(1 - 0.4 * BL, 0.6),
   };
 }
@@ -130,17 +191,29 @@ function hansenShapeFactors(
 // Depth factors
 // ---------------------------------------------------------------------------
 
-function meyerhofDepthFactors(
-  B: number,
-  D: number,
-  phi: number,
-): { dc: number; dq: number; dgamma: number } {
+/** Meyerhof (1963) depth factors. */
+function meyerhofDepthFactors(B: number, D: number, phi: number): { dc: number; dq: number; dgamma: number } {
   const DB = D / B;
+  const rootKp = Math.tan(degToRad(45 + phi / 2));
+  const dc = 1 + 0.2 * DB * rootKp;
+  const dqdg = phi >= 10 ? 1 + 0.1 * DB * rootKp : 1;
+  return { dc, dq: dqdg, dgamma: dqdg };
+}
 
+/**
+ * Hansen (1970) / Vesic (1973) depth factors — identical between the two.
+ *   k = D/B          for D/B ≤ 1
+ *   k = arctan(D/B)  for D/B > 1  (radians)
+ *   dc = 1 + 0.4k,  dq = 1 + 2·tanφ·(1 − sinφ)²·k,  dγ = 1.0
+ */
+function hansenVesicDepthFactors(B: number, D: number, phi: number): { dc: number; dq: number; dgamma: number } {
+  const DB = D / B;
+  const k = DB <= 1 ? DB : Math.atan(DB);
+  const phiRad = degToRad(phi);
   return {
-    dc: 1 + 0.2 * DB * Math.tan(degToRad(45 + phi / 2)),
-    dq: phi > 10 ? 1 + 0.1 * DB * Math.tan(degToRad(45 + phi / 2)) : 1,
-    dgamma: phi > 10 ? 1 + 0.1 * DB * Math.tan(degToRad(45 + phi / 2)) : 1,
+    dc: 1 + 0.4 * k,
+    dq: 1 + 2 * Math.tan(phiRad) * Math.pow(1 - Math.sin(phiRad), 2) * k,
+    dgamma: 1.0,
   };
 }
 
@@ -152,11 +225,16 @@ export function calculateBearingCapacity(
   input: BearingCapacityInput,
 ): BearingCapacityResult {
   const validated = BearingCapacityInputSchema.parse(input);
-  const { width: B, length: L, depth: D, unitWeight: gamma, cohesion: c, frictionAngle: phi, method, factorOfSafety: FS } = validated;
+  const {
+    width: B, length: L, depth: D, unitWeight: gamma,
+    cohesion: c, frictionAngle: phi, method, factorOfSafety: FS,
+  } = validated;
 
   const steps: string[] = [];
   steps.push(`Method: ${method.charAt(0).toUpperCase() + method.slice(1)}`);
   steps.push(`B = ${B} m, D = ${D} m, γ = ${gamma} kN/m³, c = ${c} kPa, φ = ${phi}°`);
+
+  const { BL, resolvedShape } = effectiveBOverL(validated.shape, B, L);
 
   let Nc: number, Nq: number, Ngamma: number;
   let sc = 1, sq = 1, sgamma = 1;
@@ -164,63 +242,67 @@ export function calculateBearingCapacity(
 
   if (method === 'terzaghi') {
     ({ Nc, Nq, Ngamma } = terzaghiFactors(phi));
-    steps.push(`Bearing capacity factors (Terzaghi): Nc=${Nc.toFixed(2)}, Nq=${Nq.toFixed(2)}, Nγ=${Ngamma.toFixed(2)}`);
+    steps.push(`Bearing capacity factors (Terzaghi 1943): Nc=${Nc.toFixed(2)}, Nq=${Nq.toFixed(2)}, Nγ=${Ngamma.toFixed(2)}`);
+    steps.push(`Note: Terzaghi's Nγ is tabulated via K_pγ; the Vesic (1973) closed form is used here as a surrogate and runs above Terzaghi's tabulated values.`);
 
-    // Terzaghi shape corrections
+    // Terzaghi's original shape corrections (no depth factors in his method).
     if (validated.shape === 'square') {
       sc = 1.3; sgamma = 0.8;
-      steps.push(`Square footing: sc=1.3, sγ=0.8`);
+      steps.push(`Square footing (Terzaghi): sc=1.3, sγ=0.8`);
     } else if (validated.shape === 'circular') {
       sc = 1.3; sgamma = 0.6;
-      steps.push(`Circular footing: sc=1.3, sγ=0.6`);
+      steps.push(`Circular footing (Terzaghi): sc=1.3, sγ=0.6`);
+    } else {
+      steps.push(`Strip footing (Terzaghi): no shape correction`);
     }
   } else {
-    ({ Nc, Nq, Ngamma } = generalFactors(phi));
-    steps.push(`Bearing capacity factors: Nc=${Nc.toFixed(2)}, Nq=${Nq.toFixed(2)}, Nγ=${Ngamma.toFixed(2)}`);
+    ({ Nc, Nq } = prandtlFactors(phi));
 
     if (method === 'meyerhof') {
-      ({ sc, sq, sgamma } = meyerhofShapeFactors(B, L, phi));
+      Ngamma = meyerhofNgamma(phi, Nq);
+      ({ sc, sq, sgamma } = meyerhofShapeFactors(BL, phi));
       ({ dc, dq, dgamma } = meyerhofDepthFactors(B, D, phi));
-      steps.push(`Shape factors: sc=${sc.toFixed(3)}, sq=${sq.toFixed(3)}, sγ=${sgamma.toFixed(3)}`);
-      steps.push(`Depth factors: dc=${dc.toFixed(3)}, dq=${dq.toFixed(3)}, dγ=${dgamma.toFixed(3)}`);
-    } else if (method === 'hansen' || method === 'vesic') {
-      ({ sc, sq, sgamma } = hansenShapeFactors(B, L, phi, Nc, Nq));
-      ({ dc, dq, dgamma } = meyerhofDepthFactors(B, D, phi));
-      steps.push(`Shape factors (Hansen): sc=${sc.toFixed(3)}, sq=${sq.toFixed(3)}, sγ=${sgamma.toFixed(3)}`);
-      steps.push(`Depth factors: dc=${dc.toFixed(3)}, dq=${dq.toFixed(3)}, dγ=${dgamma.toFixed(3)}`);
+      steps.push(`Bearing capacity factors (Meyerhof 1963): Nc=${Nc.toFixed(2)}, Nq=${Nq.toFixed(2)}, Nγ=(Nq−1)tan(1.4φ)=${Ngamma.toFixed(2)}`);
+    } else if (method === 'hansen') {
+      Ngamma = hansenNgamma(phi, Nq);
+      ({ sc, sq, sgamma } = hansenShapeFactors(BL, phi, Nc, Nq));
+      ({ dc, dq, dgamma } = hansenVesicDepthFactors(B, D, phi));
+      steps.push(`Bearing capacity factors (Hansen 1970): Nc=${Nc.toFixed(2)}, Nq=${Nq.toFixed(2)}, Nγ=1.5(Nq−1)tanφ=${Ngamma.toFixed(2)}`);
+    } else {
+      Ngamma = vesicNgamma(phi, Nq);
+      ({ sc, sq, sgamma } = vesicShapeFactors(BL, phi, Nc, Nq));
+      ({ dc, dq, dgamma } = hansenVesicDepthFactors(B, D, phi));
+      steps.push(`Bearing capacity factors (Vesic 1973): Nc=${Nc.toFixed(2)}, Nq=${Nq.toFixed(2)}, Nγ=2(Nq+1)tanφ=${Ngamma.toFixed(2)}`);
     }
+
+    steps.push(`Shape: ${resolvedShape} (B/L = ${BL.toFixed(3)})`);
+    steps.push(`Shape factors: sc=${sc.toFixed(3)}, sq=${sq.toFixed(3)}, sγ=${sgamma.toFixed(3)}`);
+    steps.push(`Depth factors: dc=${dc.toFixed(3)}, dq=${dq.toFixed(3)}, dγ=${dgamma.toFixed(3)}`);
   }
 
   // --- Water table correction ---
-  // Case 1: GWT at or above foundation level → reduce γ in Nγ term and q in Nq term
-  // Case 2: GWT within influence zone (D to D+B) → interpolated reduction on Nγ term
-  // Case 3: GWT below D+B → no correction needed
+  // Case 1: GWT at or above foundation level → effective overburden and γ' in the Nγ term
+  // Case 2: GWT between D and D+B → γ interpolated across the influence zone
+  // Case 3: GWT below D+B → no correction
   const gwt = validated.waterTableDepth;
-  const gammaW = 9.81; // unit weight of water
+  const gammaPrime = Math.max(gamma - GAMMA_W, 0.1); // guard against γ ≤ γw
 
-  let q: number;            // overburden pressure at foundation level
-  let gammaBelow: number;   // effective unit weight below foundation for Nγ term
+  let q: number;          // overburden pressure at foundation level
+  let gammaBelow: number; // effective unit weight below foundation for the Nγ term
 
   if (gwt !== undefined && gwt < D + B) {
     if (gwt <= D) {
-      // Case 1: Water table at or above foundation level
-      // Overburden uses effective stress: γ*gwt + γ'*(D-gwt)
-      const gammaPrime = gamma - gammaW;
       q = gamma * gwt + gammaPrime * (D - gwt);
       gammaBelow = gammaPrime;
-      steps.push(`Water table at ${gwt}m (above foundation): q = γ×${gwt} + γ'×${(D - gwt).toFixed(1)} = ${q.toFixed(2)} kPa`);
+      steps.push(`Water table at ${gwt}m (at/above foundation): q = γ×${gwt} + γ'×${(D - gwt).toFixed(1)} = ${q.toFixed(2)} kPa`);
       steps.push(`Submerged unit weight γ' = ${gammaPrime.toFixed(2)} kN/m³ used in Nγ term`);
     } else {
-      // Case 2: Water table between D and D+B
-      // q uses full γ (water is below foundation), but Nγ term uses interpolated γ
       q = gamma * D;
-      const dw = gwt - D; // depth of water below foundation
-      const gammaPrime = gamma - gammaW;
+      const dw = gwt - D;
       gammaBelow = gammaPrime + (dw / B) * (gamma - gammaPrime);
       steps.push(`Water table at ${gwt}m (within influence zone): γ_eff = ${gammaBelow.toFixed(2)} kN/m³ (interpolated)`);
     }
   } else {
-    // Case 3: No water table effect
     q = gamma * D;
     gammaBelow = gamma;
   }

@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.142] - 2026-07-28
+
+### Deterministic engine correctness — liquefaction, bearing capacity, slope stability
+
+Three published methods did not match the sources they cite. All three errors were **unconservative**, and the existing tests could not see them because they assert direction and ordering rather than published values — all 830 passed before and after the fix.
+
+- **Liquefaction CRR was a mis-transcribed Boulanger & Idriss (2014) Eq. 2.24.** The published equation applies four different divisors to the four powers of (N₁)₆₀cs; the shipped code folded them onto a single variable `x = (N₁)₆₀cs / 14.1` with divisors 2.67 / 3.0 / 4.0. Resistance was overstated by 1.2× at (N₁)₆₀cs = 10, **2.8× at 20, 39× at 30**, and the curve crossed CRR = 1.0 at about (N₁)₆₀cs = 23 — beyond which any factor of safety was effectively infinite and no soil could ever be flagged as liquefiable. The published form is restored, capped at (N₁)₆₀cs = 37.5 as the reference specifies.
+- **Also added from the same reference:** magnitude scaling factor per Eqs. 2.19–2.20 (MSF<sub>max</sub> = 1.09 + ((N₁)₆₀cs / 31.5)², exactly 1.0 at M 7.5), overburden correction K<sub>σ</sub> per Eqs. 2.16–2.17 capped at 1.1, the iterative C<sub>N</sub> of Eq. 2.15b, and fines correction per Eq. 2.11. Results now report σ'<sub>v0</sub>, C<sub>N</sub>, r<sub>d</sub>, MSF, K<sub>σ</sub> and post-liquefaction volumetric strain.
+- **`bearing --method hansen` returned Vesić numbers.** The two methods differ in N<sub>γ</sub> — Hansen uses 1.5(N<sub>q</sub> − 1)tan φ, Vesić uses 2(N<sub>q</sub> + 1)tan φ — and in their shape factors, where Hansen's s<sub>q</sub> uses sin φ and Vesić's uses tan φ. Selecting Hansen silently produced Vesić's (larger) capacity. Each method now computes its own factors, and Meyerhof gets its own N<sub>γ</sub> = (N<sub>q</sub> − 1)tan(1.4φ).
+- **`--shape square` and `--shape circular` were ignored** unless `--length` was also passed, so shape factors defaulted to a strip footing. Shape now resolves B/L directly (1 for square and circular, 0 for strip) and still honours an explicit length.
+- **Slope stability read only the first soil layer**, making the layered-profile test tautological, and **`waterTableDepth` / `saturatedUnitWeight` were inert** — an inverted pore-pressure test meant u ≡ 0, so a rising water table never reduced the factor of safety. It also was not Bishop's method: it forced |α|, divided by m<sub>α</sub> twice, and sliced the full chord rather than the daylighted arc. Rewritten: slice weights integrate the actual layer stack with saturated unit weight below the phreatic surface, the arc is limited to where it daylights, and both Bishop Simplified (1955) and Ordinary/Fellenius (1936) are implemented properly — the ordinary method had never executed. Against Taylor's (1937) stability chart the result is now within 3.7% (previously ~26% low), and the frictional-only case returns 1.016 against the closed-form tan φ / tan β.
+- **Pinned with 44 golden tests** (`packages/core/tests/engine-golden-values.test.ts`) that assert published table values rather than directions. **25 of the 44 fail against the previous code** — verified by reverting the sources and re-running.
+
+**If you have run liquefaction triggering with any earlier version, re-run it.** Factors of safety were too high, and increasingly so in denser sands.
+
 ## [0.4.141] - 2026-07-28
 
 ### Surface verification waits for propagation
