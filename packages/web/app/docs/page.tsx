@@ -1,5 +1,6 @@
 import { Nav } from '@/components/Nav';
 import { Footer } from '@/components/Footer';
+import { DocsBrowser, type DocSection } from '@/components/DocsBrowser';
 import {
   DEFAULT_LLM_MODEL,
   DEFAULT_LLM_PROVIDER,
@@ -13,10 +14,11 @@ const globalFlagsTable = [
   ...GLOBAL_FLAG_DEFINITIONS.map((flag) => `| \`${flag.option}\` | ${flag.description} |`),
 ].join('\n');
 
-const sections = [
+const sections: DocSection[] = [
   {
     id: 'install',
     title: 'Installation',
+    group: 'Getting started',
     content: `\`\`\`bash
 # Install Node.js LTS first and verify the toolchain
 node -v
@@ -36,6 +38,7 @@ geotech status
   {
     id: 'config',
     title: 'Configuration',
+    group: 'Getting started',
     content: `geotechCLI stores configuration in \`~/.geotechcli/config.json\`.
 
 \`\`\`bash
@@ -102,6 +105,7 @@ BYOK runtime and smoke setup: npm run smoke:byok uses OPENROUTER_API_KEY, OPENRO
   {
     id: 'provider-contract',
     title: 'Provider-agnostic agent contract',
+    group: 'AI & agents',
     content: `Hosted GLM is the default strong-beta provider, but GeotechCLI agent prompts are built around a provider-agnostic operating contract. The contract tells hosted GLM, paid BYOK models, free OpenRouter routes, Hugging Face, and local OpenAI-compatible servers how to behave inside the same geotechnical workflow.
 
 The operating contract includes:
@@ -117,6 +121,7 @@ This keeps BYOK model quality dependent on model capability, while keeping Geote
   {
     id: 'skills',
     title: 'geotech skill',
+    group: 'AI & agents',
     content: `Bundled strong-beta skills ship with the CLI and bootstrap on first use. Use direct skill commands when you want a repeatable local workflow. Use the --skills flag when you want geotech agent or geotech chat to discover and call approved installed skills for that one session.
 
 \`\`\`bash
@@ -142,6 +147,7 @@ Strong beta currently bundles 49 skills: 48 approved executable skills and 1 pro
   {
     id: 'bearing',
     title: 'geotech bearing',
+    group: 'Deterministic engines',
     content: `Calculate bearing capacity using Terzaghi, Meyerhof, Hansen, or Vesic methods.
 
 \`\`\`bash
@@ -169,6 +175,7 @@ geotech bearing \\
   {
     id: 'liquefaction',
     title: 'geotech liquefaction',
+    group: 'Deterministic engines',
     content: `Seismic liquefaction triggering analysis using Boulanger & Idriss (2014) or NCEER simplified procedure.
 
 \`\`\`bash
@@ -188,6 +195,7 @@ geotech liquefaction --pga 0.25 --magnitude 7.5 --demo --plot
   {
     id: 'classify',
     title: 'geotech classify',
+    group: 'Deterministic engines',
     content: `Rock and soil classification systems.
 
 \`\`\`bash
@@ -207,6 +215,7 @@ geotech classify q-system --rqd 80 --jn 6 --jr 1.5 --ja 2 --jw 0.66 --srf 1
   {
     id: 'tunnel',
     title: 'geotech tunnel',
+    group: 'Deterministic engines',
     content: `Tunnel engineering commands — TBM prediction, selection, and cutter wear.
 
 \`\`\`bash
@@ -223,6 +232,7 @@ geotech tunnel cutter-wear --cai 3.5 --ucs 120 --distance 5000 --cutters 48
   {
     id: 'vision',
     title: 'geotech vision (AI)',
+    group: 'AI & agents',
     content: `AI-powered image analysis. Uses hosted GLM vision by default.
 
 \`\`\`bash
@@ -245,6 +255,7 @@ geotech vision log Appendix-2A-Geotechnical-Report-Part-6.pdf
   {
     id: 'analyze',
     title: 'geotech analyze',
+    group: 'Deterministic engines',
     content: `Local project-folder intelligence. This deterministic command scans a workspace, builds a project manifest, classifies geotechnical files, samples CSV/XLSX schemas, builds an evidence-bound GroundModel with visual review, records requested branch or standard context, and reports calculation-readiness routing without spending hosted-beta GPU time.
 
 \`\`\`bash
@@ -273,6 +284,7 @@ Current strong-beta scope: file discovery, AGS/PDF/image/GIS/CAD classification,
   {
     id: 'fem',
     title: 'geotech fem',
+    group: 'Deterministic engines',
     content: `Experimental deterministic FEM case drafting, reviewed draft execution, and 3D FEM/WebGL previews. The current strong-beta surfaces prepare review-gated foundation-settlement, staged-excavation deformation, and tunnel volume-loss settlement analysis cases, then either run a human-reviewed analysis_case.json through deterministic built-in preview backends or run built-in raft, excavation, and empirical tunnel settlement demos that validate analysis cases, produce deterministic result manifests, and export self-contained WebGL artifacts without spending hosted-beta model calls.
 
 \`\`\`bash
@@ -313,6 +325,7 @@ Agent and swarm mode see FEM through deterministic routing tools rather than pro
   {
     id: 'ingest',
     title: 'geotech ingest',
+    group: 'AI & agents',
     content: `Structured ingest for geotechnical PDFs and images. Use \`borehole-log\` for focused borehole extraction and \`geotech-document\` for broader report intelligence such as geology, lithology, classifications, and engineering parameters.
 
 \`\`\`bash
@@ -353,6 +366,7 @@ Hosted-beta reliability note: geotechnical PDFs above the best-result window are
   {
     id: 'signal',
     title: 'geotech signal analyze',
+    group: 'Deterministic engines',
     content: `Deterministic monitoring and time-series analysis for settlement, piezometer, inclinometer, vibration, and load-test files. This command parses CSV/TSV/XLSX data without an LLM, infers or accepts timestamp/depth/value/instrument/location columns, and emits trend summaries, optional threshold flags, missing interval detection, rate-of-change metrics, and chart-ready series. Threshold flags can come from project-specific --threshold / --rate-threshold values or from opt-in generic review profiles with --threshold-profile auto|settlement-review-mm|piezometer-review-kpa|inclinometer-review-mm|vibration-ppv-review-mm-s|load-test-review-kn. Generic profiles are internal R&D review triggers and remain gated until replaced or confirmed against project-specific trigger levels, units, baselines, and instrument conventions. Agent and swarm runs can consume the same deterministic summary through the sandboxed analyze_signal_file interpretation tool; LLMs may plan and review from the summary but cannot invent signal metrics.
 
 \`\`\`bash
@@ -383,6 +397,7 @@ Signal V0 is an internal strong-beta deterministic parser. Agent interpretation 
   {
     id: 'agent',
     title: 'geotech agent (AI)',
+    group: 'AI & agents',
     content: `Agentic geotechnical reasoning. No-prompt, dot-argument, --plan-only, --task, and prompted runs now start with project-aware discovery unless --no-workspace is supplied: the CLI resolves the workspace boundary from --workspace, .geotech/project.json, git root, or cwd; scans the selected root; writes .geotech project/evidence/context/run artifacts; computes workflow readiness; and asks which project workflow should run before spending hosted-beta time. Recognized prompted workflow requests are routed through the provider-neutral workflow router and confidence-gated deterministic project executors before any optional model review; custom questions and low-confidence routes fall back to the workspace-backed LLM path. Custom Terzaghi agent questions still support deterministic tools, persistent project memory with --project, and --swarm for role-based specialist planning over workspace evidence, standards readiness, calculation input drafts, skills, and review gates.
 
 \`\`\`bash
@@ -434,6 +449,7 @@ Strong-beta reliability note: project-aware discovery writes .geotech/project.js
   {
     id: 'export',
     title: 'geotech export',
+    group: 'Deterministic engines',
     content: `Export results to external formats.
 
 \`\`\`bash
@@ -450,6 +466,7 @@ geotech export csv --input samples/exports/mock-liquefaction.json --output data.
   {
     id: 'viz',
     title: 'geotech viz',
+    group: 'Deterministic engines',
     content: `Interactive browser visualization for saved JSON, GroundModel maps, SPT-depth charts, lab-depth charts, groundwater plots, CSV, and Excel data.
 
 \`\`\`bash
@@ -491,63 +508,22 @@ This command is meant for quick engineering review in an interactive browser wor
   {
     id: 'global-flags',
     title: 'Global Flags',
+    group: 'Reference',
     content: `Most calculation and analysis commands support these flags:
 
 ${globalFlagsTable}`,
   },
 ];
 
-function renderMarkdown(md: string) {
-  // Minimal markdown-to-HTML for code blocks, tables, and inline code
-  let html = md
-    .replace(/```(\w+)?\n([\s\S]*?)```/g, (_m, _lang, code) =>
-      `<pre class="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg p-4 my-4 overflow-x-auto font-[var(--font-mono)] text-[13px] leading-[1.8] text-[var(--text-secondary)]">${code.replace(/</g, '&lt;')}</pre>`
-    )
-    .replace(/`([^`]+)`/g, '<code class="bg-[var(--bg-card)] px-1.5 py-0.5 rounded text-[var(--accent-teal)] font-[var(--font-mono)] text-[12px]">$1</code>')
-    .replace(/\n\n/g, '</p><p class="text-[var(--text-secondary)] text-[14px] leading-[1.7] mb-4">')
-    .replace(/\|(.+)\|\n\|[-| ]+\|\n((?:\|.+\|\n?)+)/g, (_m, header, body) => {
-      const ths = header.split('|').filter(Boolean).map((h: string) => `<th class="px-3 py-2 text-left text-xs font-semibold text-[var(--text-primary)] border-b border-[var(--border-color)]">${h.trim()}</th>`).join('');
-      const rows = body.trim().split('\n').map((row: string) => {
-        const tds = row.split('|').filter(Boolean).map((d: string) => `<td class="px-3 py-2 text-xs text-[var(--text-secondary)] border-b border-[var(--border-color)] font-[var(--font-mono)]">${d.trim()}</td>`).join('');
-        return `<tr>${tds}</tr>`;
-      }).join('');
-      return `<table class="w-full my-4 border border-[var(--border-color)] rounded-lg overflow-hidden"><thead><tr>${ths}</tr></thead><tbody>${rows}</tbody></table>`;
-    });
-
-  return `<p class="text-[var(--text-secondary)] text-[14px] leading-[1.7] mb-4">${html}</p>`;
-}
+const intro =
+  'Reference for every geotechCLI command, the hosted GLM defaults, and the provider overrides available when you bring your own key. Deterministic engines run offline with no account; the AI commands use the hosted gateway unless you configure a provider. Start with Installation, then jump to the command you need.';
 
 export default function DocsPage() {
   return (
     <>
       <Nav />
-      <main className="pt-24 px-12 pb-16 max-w-[900px]">
-        <h1 className="text-4xl font-bold tracking-tight mb-4">Strong Beta Docs</h1>
-        <p className="text-[var(--text-secondary)] text-base mb-12">
-          Strong beta reference for geotechCLI commands, hosted multimodal GLM defaults, and optional advanced provider overrides.
-        </p>
-
-        {/* Table of contents */}
-        <nav className="mb-16 p-6 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl">
-          <h2 className="text-sm font-semibold mb-4 text-[var(--text-muted)] uppercase tracking-wider">Contents</h2>
-          <div className="grid grid-cols-3 gap-2">
-            {sections.map((s) => (
-              <a key={s.id} href={`#${s.id}`} className="text-[13px] text-[var(--accent-teal)] hover:text-[var(--text-primary)] transition font-[var(--font-mono)]">
-                {s.title}
-              </a>
-            ))}
-          </div>
-        </nav>
-
-        {/* Sections */}
-        {sections.map((s) => (
-          <section key={s.id} id={s.id} className="mb-16 scroll-mt-24">
-            <h2 className="text-2xl font-bold tracking-tight mb-6 pb-3 border-b border-[var(--border-color)]">
-              {s.title}
-            </h2>
-            <div dangerouslySetInnerHTML={{ __html: renderMarkdown(s.content) }} />
-          </section>
-        ))}
+      <main className="pt-24">
+        <DocsBrowser sections={sections} intro={intro} />
       </main>
       <Footer />
     </>

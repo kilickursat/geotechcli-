@@ -1,12 +1,25 @@
 import { Nav } from '@/components/Nav';
 import { Footer } from '@/components/Footer';
+import { ChangelogBrowser, type Release } from '@/components/ChangelogBrowser';
 import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 
-const releases = [
+const releases: Release[] = [
   {
     version: GEOTECHCLI_VERSION,
     date: '2026-07-28',
     tag: `${GEOTECHCLI_VERSION} Release`,
+    changes: [
+      { type: 'feat', text: 'Docs rebuilt around Sphinx/Furo navigation patterns: a persistent sidebar groups sections by progressive disclosure (Getting started → Deterministic engines → AI & agents → Reference) with scroll-spy highlighting, replacing the flat anchor grid you had to scroll back to the top to use' },
+      { type: 'feat', text: 'Docs filter searches section titles, groups and body text at once, narrowing both the sidebar and the page; code blocks now render as real elements with a language chip and copy button, and every heading has a Sphinx-style ¶ permalink with Furo-style previous/next cards' },
+      { type: 'feat', text: 'Changelog no longer renders all 127 releases expanded on one scroll: the three most recent are open, the rest collapse to one-line headers with version, tag, date and entry count, and expand/collapse all is one click' },
+      { type: 'feat', text: 'Changelog gains full-text search with match highlighting, Features/Fixes/Security/Breaking filter chips, and a sticky version index grouped by release series (0.4.x, 0.3.x, …) so any version is one click away' },
+      { type: 'fix', text: 'Both pages get a mobile sidebar drawer and no longer scroll horizontally on small viewports' },
+    ],
+  },
+  {
+    version: '0.4.135',
+    date: '2026-07-28',
+    tag: '0.4.135 Release',
     changes: [
       { type: 'fix', text: 'Sponsorship now runs through Patreon only. GitHub Sponsors was evaluated and removed: its payouts go through Stripe Connect, which does not support ゆうちょ銀行 (Japan Post Bank), so sponsorship money could not actually be received through it — shipping those buttons would have meant a payment flow that silently goes nowhere' },
       { type: 'fix', text: 'Withdrew the one-time contribution offer. Patreon memberships are recurring monthly with no one-time option, and advertising "$10 / $25 / $50 once" would promise something the project cannot honour. The support page now states plainly that sponsorship is billed monthly, can be cancelled any time, and that cancelling keeps the month already paid for' },
@@ -1412,51 +1425,12 @@ const releases = [
   },
 ];
 
-const typeColors: Record<string, string> = {
-  feat: 'bg-[rgba(45,212,191,0.15)] text-[var(--accent-teal)]',
-  fix: 'bg-[rgba(59,130,246,0.15)] text-[var(--accent-blue)]',
-  security: 'bg-[rgba(245,158,11,0.15)] text-[var(--accent-orange)]',
-  breaking: 'bg-[rgba(239,68,68,0.15)] text-red-400',
-};
-
 export default function ChangelogPage() {
   return (
     <>
       <Nav />
-      <main className="pt-24 px-12 pb-16 max-w-[800px]">
-        <h1 className="text-4xl font-bold tracking-tight mb-4">Changelog</h1>
-        <p className="text-[var(--text-secondary)] text-base mb-12">
-          Strong beta branch notes followed by the main historical release log.
-        </p>
-
-        {releases.map((release) => (
-          <section key={release.version} className="mb-16">
-            <div className="flex items-center gap-4 mb-6">
-              <h2 className="text-2xl font-bold tracking-tight">v{release.version}</h2>
-              <span className="font-[var(--font-mono)] text-xs text-[var(--text-muted)]">
-                {release.date}
-              </span>
-              <span className="px-2.5 py-0.5 bg-[rgba(45,212,191,0.1)] text-[var(--accent-teal)] text-[10px] font-semibold rounded-full uppercase tracking-wider">
-                {release.tag}
-              </span>
-            </div>
-
-            <div className="space-y-3">
-              {release.changes.map((change, i) => (
-                <div key={i} className="flex items-start gap-3">
-                  <span
-                    className={`shrink-0 mt-0.5 px-2 py-0.5 text-[10px] font-semibold rounded uppercase tracking-wider ${typeColors[change.type] ?? typeColors.feat}`}
-                  >
-                    {change.type}
-                  </span>
-                  <span className="text-[14px] text-[var(--text-secondary)] leading-[1.6]">
-                    {change.text}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </section>
-        ))}
+      <main className="pt-24">
+        <ChangelogBrowser releases={releases} />
       </main>
       <Footer />
     </>

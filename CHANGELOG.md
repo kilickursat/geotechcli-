@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.4.136] - 2026-07-28
+
+### Docs and Changelog rebuilt around Sphinx/Furo navigation patterns
+
+Both pages had become unreadable by growth rather than by design: the docs were 17 sections on a single scroll behind a flat 3-column anchor grid, and the changelog rendered **127 releases fully expanded** on one page with no way to search, filter, or jump. Both are rebuilt using the information-architecture patterns from [Sphinx](https://www.sphinx-doc.org/) and the [Furo](https://github.com/pradyunsg/furo) theme.
+
+- **Docs — persistent grouped sidebar.** Sections are now organised by progressive disclosure (Getting started → Deterministic engines → AI & agents → Reference) in a sticky sidebar that stays with you, instead of an anchor grid you had to scroll back to the top to reach. An `IntersectionObserver` scroll-spy highlights the section you are actually reading.
+- **Docs — filter across all content.** The sidebar filter matches section titles, groups **and body text**, so searching `liquefaction` narrows both the sidebar and the page to the 5 relevant sections.
+- **Docs — real code blocks.** The regex-to-HTML renderer behind `dangerouslySetInnerHTML` is replaced with a block parser rendering proper React elements: 16 code blocks now carry a language chip and a copy button, tables scroll horizontally instead of overflowing, and inline code, bold and links are tokenized rather than string-replaced.
+- **Docs — Sphinx-style permalinks and Furo-style prev/next.** Every section heading exposes a `¶` permalink anchor on hover, and each section ends with previous/next cards so the docs read as a sequence rather than a wall.
+- **Changelog — progressive disclosure.** The three most recent releases are expanded; the remaining 124 are collapsed to one-line headers showing version, tag, date and entry count. Expand/collapse all is one click.
+- **Changelog — search and type filters.** Full-text search across every entry with match highlighting, plus Features / Fixes / Security / Breaking filter chips. Filtering auto-expands surviving releases so matches are never hidden behind a collapsed header, and a counter reports how many of the entries are showing.
+- **Changelog — version index.** A sticky sidebar groups all releases by series (0.4.x, 0.3.x, …) with dates, so any version is one click away instead of a long scroll.
+- Both pages get a mobile drawer for the sidebar and no longer scroll horizontally on a 390px viewport. Layout, navigation, filtering and expansion were verified in a real headless Chromium against the built site.
+- **Release reliability:** added `packages/core/vitest.config.ts` raising the test and hook budget to 30s. The core suite runs 80+ files in parallel and several ingest tests do real PDF/OCR-shaped work; they finish in well under a second locally (the slowest is 778 ms) but twice exceeded vitest's 5s default on a loaded CI runner and failed a release for timing rather than for a genuine regression. The new budget is a ceiling for catching real hangs, not a target.
+
 ## [0.4.135] - 2026-07-28
 
 ### Patreon is the only sponsorship flow — GitHub Sponsors reverted
