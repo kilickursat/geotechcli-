@@ -49,18 +49,53 @@ export function calculateDupuitSeepage(input: DupuitSeepageInput): SeepageResult
   const iAvg = H / L;
   steps.push(`Average hydraulic gradient: i_avg = H/L = ${iAvg.toFixed(4)}`);
 
-  // Exit gradient (at downstream face, assuming parabolic phreatic surface)
-  const iExit = H / (L * (h2 > 0 ? 1 : 0.5));
-  const iExitUsed = h2 > 0 ? iAvg : H / (0.5 * L);
-  steps.push(`Exit gradient: i_exit ≈ ${iExitUsed.toFixed(4)}`);
+  // Exit gradient at the downstream face.
+  //
+  // This used to report the average gradient H/L, which is not an exit
+  // gradient: the gradient at the downstream face is always the larger of the
+  // two, which is precisely why piping initiates there. Reporting the average
+  // therefore inflated the factor of safety against piping.
+  //
+  // The engine already solves Dupuit-Forchheimer, so take the gradient that
+  // solution actually produces. Differentiating the Dupuit parabola
+  //   h(x)² = h₁² − (h₁² − h₂²)·x/L
+  // gives dh/dx = −(h₁² − h₂²) / (2·h·L), and evaluating at the downstream
+  // face (x = L, h = h₂):
+  //   i_exit = (h₁² − h₂²) / (2·h₂·L)
+  let iExitUsed: number;
+  let exitGradientUnbounded = false;
+
+  if (h2 > 0) {
+    iExitUsed = (h1 ** 2 - h2 ** 2) / (2 * h2 * L);
+    steps.push(
+      `Exit gradient (Dupuit, at downstream face): i_exit = (h₁² - h₂²) / (2·h₂·L) = ` +
+        `(${h1}² - ${h2}²) / (2·${h2}·${L}) = ${iExitUsed.toFixed(4)}`,
+    );
+    steps.push(`  (average gradient H/L = ${iAvg.toFixed(4)}; the exit gradient governs piping)`);
+  } else {
+    // With no tailwater the Dupuit exit gradient is unbounded: h₂ → 0 puts the
+    // phreatic surface on the downstream face itself. Treat this as a critical
+    // exit condition rather than reporting a finite number that would read as
+    // a safe result.
+    exitGradientUnbounded = true;
+    iExitUsed = Infinity;
+    steps.push(
+      'Exit gradient: unbounded — with zero downstream head the Dupuit phreatic surface ' +
+        'daylights on the exit face. Piping must be assessed with a flow net and a filter/cutoff design.',
+    );
+  }
 
   // Terzaghi critical gradient: i_cr = (Gs - 1) / (1 + e)
   const iCritical = (Gs - 1) / (1 + e);
   steps.push(`Critical gradient (Terzaghi): i_cr = (Gs - 1) / (1 + e) = (${Gs} - 1) / (1 + ${e}) = ${iCritical.toFixed(3)}`);
 
   // Factor of safety against piping
-  const FOS = iExitUsed > 0 ? iCritical / iExitUsed : Infinity;
-  steps.push(`Factor of safety against piping: FS = i_cr / i_exit = ${FOS === Infinity ? '∞' : FOS.toFixed(2)}`);
+  const FOS = exitGradientUnbounded ? 0 : iExitUsed > 0 ? iCritical / iExitUsed : Infinity;
+  steps.push(
+    `Factor of safety against piping: FS = i_cr / i_exit = ${
+      exitGradientUnbounded ? '0 (unbounded exit gradient)' : FOS === Infinity ? '∞' : FOS.toFixed(2)
+    }`,
+  );
 
   // Risk classification
   let heaveRisk: SeepageResult['heaveRisk'];
@@ -82,7 +117,7 @@ export function calculateDupuitSeepage(input: DupuitSeepageInput): SeepageResult
 
   return {
     seepageFlow: parseFloat(Q.toExponential(4)),
-    exitGradient: parseFloat(iExitUsed.toFixed(4)),
+    exitGradient: exitGradientUnbounded ? Infinity : parseFloat(iExitUsed.toFixed(4)),
     criticalGradient: parseFloat(iCritical.toFixed(4)),
     pipingFOS: FOS === Infinity ? 999 : parseFloat(FOS.toFixed(2)),
     heaveRisk,

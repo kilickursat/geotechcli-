@@ -10,7 +10,7 @@ authors:
 repository-code: "https://github.com/kilickursat/geotechcli-"
 url: "https://www.geotechcli.com"
 license: Apache-2.0
-version: 0.4.145
+version: 0.4.146
 date-released: 2026-07-28
 keywords:
   - geotechnical-engineering

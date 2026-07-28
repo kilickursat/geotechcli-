@@ -70,6 +70,8 @@ export function registerClassifyCommand(program: Command): void {
     .option('--d10 <mm>', 'D10 particle size (mm)', parseFloat)
     .option('--d30 <mm>', 'D30 particle size (mm)', parseFloat)
     .option('--d60 <mm>', 'D60 particle size (mm)', parseFloat)
+    .option('--ll-ratio <ratio>', 'LL(oven-dried)/LL(not dried) — organic (OL/OH) if < 0.75', parseFloat)
+    .option('--organic <percent>', 'Organic content by mass (%) — peat (Pt) at >= 75', parseFloat)
     .action((opts) => {
       const flags = getGlobalFlags(opts);
       const plasticityIndex = opts.pi ?? (
@@ -87,6 +89,8 @@ export function registerClassifyCommand(program: Command): void {
         d10: opts.d10,
         d30: opts.d30,
         d60: opts.d60,
+        liquidLimitOvenDriedRatio: opts.llRatio,
+        organicContentPercent: opts.organic,
       });
 
       if (flags.json) { renderJSON(result); return; }
