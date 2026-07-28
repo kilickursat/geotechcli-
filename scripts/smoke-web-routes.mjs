@@ -61,16 +61,58 @@ assert(
   'packages/web/lib/site.ts must define both the production (www) and beta hosts.',
 );
 assert(
+  siteSource.includes('https://github.com/sponsors/kilickursat'),
+  'packages/web/lib/site.ts must define the GitHub Sponsors URL as the primary sponsor flow.',
+);
+assert(
   siteSource.includes('https://www.patreon.com/16003704/join'),
-  'packages/web/lib/site.ts must define the Patreon donate (join) URL.',
+  'packages/web/lib/site.ts must keep the Patreon join URL for existing sponsors.',
 );
 assert(
   siteSource.includes('https://github.com/kilickursat/geotechcli-'),
   'packages/web/lib/site.ts must define the public GitHub repository URL.',
 );
 assert(
-  siteSource.includes('MEMBERSHIP_TIERS') && siteSource.includes('500'),
-  'packages/web/lib/site.ts must define the membership tiers including the top tier.',
+  siteSource.includes('ONE_TIME_AMOUNTS_USD') &&
+    ['10', '25', '50'].every((amount) => siteSource.includes(amount)),
+  'packages/web/lib/site.ts must define the one-time contribution amounts (10 / 25 / 50).',
+);
+assert(
+  siteSource.includes('MEMBERSHIP_TIERS') &&
+    ['Community Backer', 'Project Sustainer', 'Organization Sponsor'].every((tier) =>
+      siteSource.includes(tier),
+    ),
+  'packages/web/lib/site.ts must define the three monthly sponsorship tiers.',
+);
+assert(
+  !/Excellent Support|Diamond Supporter/.test(siteSource),
+  'The retired Excellent Support / Diamond Supporter tiers must not reappear in packages/web/lib/site.ts.',
+);
+
+// The support page must not tell sponsors to cancel immediately after paying —
+// one-time contributions now go through GitHub Sponsors instead.
+const pricingComponentSource = readText('packages', 'web', 'components', 'Pricing.tsx');
+const pricingRouteSource = readText('packages', 'web', 'app', 'pricing', 'page.tsx');
+for (const [label, source] of [
+  ['components/Pricing.tsx', pricingComponentSource],
+  ['app/pricing/page.tsx', pricingRouteSource],
+]) {
+  assert(
+    !/cancel your Patreon membership immediately/i.test(source),
+    `${label} must not instruct sponsors to cancel their membership immediately after paying.`,
+  );
+  assert(
+    source.includes('GITHUB_SPONSORS_URL'),
+    `${label} must link the GitHub Sponsors flow.`,
+  );
+}
+assert(
+  pricingComponentSource.includes('Recommended') && !pricingComponentSource.includes('Most popular'),
+  'components/Pricing.tsx must label the mid tier "Recommended", not "Most popular".',
+);
+assert(
+  /Trust note/i.test(pricingComponentSource),
+  'components/Pricing.tsx must carry the sponsorship trust note.',
 );
 
 const robotsSource = readText('packages', 'web', 'app', 'robots.ts');

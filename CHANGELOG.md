@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.134] - 2026-07-28
+
+### Sponsorship rework — GitHub Sponsors as the primary flow, honest one-time contributions
+
+- **GitHub Sponsors is now the primary sponsorship flow** (`https://github.com/sponsors/kilickursat`), exposed through `.github/FUNDING.yml` so the repo's Sponsor button offers it directly. Unlike the previous Patreon-only setup it supports **genuine one-time contributions of $10 / $25 / $50 with no automatic renewal** — nothing starts, so there is nothing to cancel afterwards.
+- **Removed the instruction telling sponsors to cancel their Patreon membership immediately after paying.** That workaround existed because Patreon has no one-time option, but asking someone to cancel a payment they just made undermines trust in the project. A web smoke assertion now fails if that copy ever returns.
+- **Retired the "Excellent Support" ($50) and "Diamond Supporter" ($500) tiers** along with their benefits — "hands-on collaboration time", "direct access to the maintainer" and "sponsored-feature prioritization". Those promised open-ended professional obligations that a donation should not buy, and read as gamified rather than credible to an engineering audience. Sponsorship at $500+ is now pointed at a separate organization-sponsorship conversation.
+- **New monthly tiers, matching the live Patreon prices exactly** so the site never advertises an amount different from what a sponsor is charged: Community Backer $10/mo (hosting, CI and shared API costs), Project Sustainer $50/mo (testing, documentation, security and releases), Organization Sponsor $100/mo (firms, labs and universities, with optional name or logo recognition). The mid tier is labelled **Recommended** rather than "Most popular", which would be a claim about sponsor data the project does not have.
+- **Added a trust note** to the support page and README: sponsorship is optional, never changes access, and does not purchase engineering approval, an SLA, roadmap control, or a guaranteed feature. Priorities remain based on safety, community value, and maintainer capacity.
+- **Support page restructured** per the donation review: the sponsorship ask now leads, the free-vs-sponsor-supported feature comparison moved below it, the duplicate donation block beneath the membership cards is gone, and a "prefer to contribute time?" panel makes clear that issues, docs, test cases and pull requests are equally valuable and never require sponsoring.
+- Patreon is kept throughout as a secondary flow for people who already sponsor there — existing support continues to count, with no need to move.
+- Added `SUPPORTERS.md` for the opt-in recognition the tiers reference, and realigned the sponsor badge, README, `CONTRIBUTING.md`, both package READMEs, the issue-template contact link, and the homepage CTA onto the new flow.
+
 ## [0.4.133] - 2026-07-19
 
 ### geotechCLI is now open source (Apache-2.0)

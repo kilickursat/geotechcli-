@@ -1,15 +1,15 @@
 'use client';
 
 import { Reveal } from '@/components/Reveal';
-import { IS_PUBLIC_PRODUCTION, PATREON_JOIN_URL, GITHUB_URL } from '@/lib/site';
+import { IS_PUBLIC_PRODUCTION, GITHUB_SPONSORS_URL, GITHUB_URL } from '@/lib/site';
 
 export function CTASection() {
   const installLabel = IS_PUBLIC_PRODUCTION ? 'Install geotechCLI →' : 'Install Beta →';
   const subcopy = IS_PUBLIC_PRODUCTION
-    ? 'Deterministic tools are free for everyone, no key required. The agentic LLM features are donation-supported — your support keeps them growing.'
+    ? 'Deterministic tools are free for everyone, no key required. The agentic LLM features are sponsor-supported — your support keeps them growing.'
     : 'No signup. No credit card. No provider key required. The strong beta is focused on real CLI usage and safe iteration.';
   const footnote = IS_PUBLIC_PRODUCTION
-    ? 'Deterministic tools free forever · LLM features donation-supported · Privacy-first'
+    ? 'Deterministic tools free forever · LLM features sponsor-supported · Privacy-first'
     : 'Free during beta · No credit card · Privacy-first AI evaluation';
   return (
     <section className="py-28 px-12 text-center max-w-[860px] mx-auto">
@@ -70,7 +70,7 @@ export function CTASection() {
                 {installLabel}
               </a>
               <a
-                href={PATREON_JOIN_URL}
+                href={GITHUB_SPONSORS_URL}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="px-8 py-3.5 font-semibold text-[15px] rounded-lg border transition-all duration-300 inline-block"
@@ -86,7 +86,7 @@ export function CTASection() {
                   el.style.color = 'var(--text-secondary)';
                 }}
               >
-                Support on Patreon
+                Sponsor the project
               </a>
               <a
                 href={GITHUB_URL}

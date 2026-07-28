@@ -13,9 +13,9 @@ the AI interprets, deterministic code owns every number.
 [![npm beta](https://img.shields.io/npm/v/geotechcli/beta?color=f5a623&label=beta)](https://www.npmjs.com/package/geotechcli?activeTab=versions)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![CI](https://github.com/kilickursat/geotechcli-/actions/workflows/ci.yml/badge.svg)](https://github.com/kilickursat/geotechcli-/actions/workflows/ci.yml)
-[![sponsor](https://img.shields.io/badge/sponsor-Patreon-f96854?logo=patreon)](https://www.patreon.com/16003704/join)
+[![sponsor](https://img.shields.io/badge/sponsor-GitHub-ea4aaa?logo=githubsponsors)](https://github.com/sponsors/kilickursat)
 
-[**Website**](https://www.geotechcli.com) · [**Documentation**](https://www.geotechcli.com/docs) · [**Changelog**](https://www.geotechcli.com/changelog) · [**Support the project**](#-support--sponsorship)
+[**Website**](https://www.geotechcli.com) · [**Documentation**](https://www.geotechcli.com/docs) · [**Changelog**](https://www.geotechcli.com/changelog) · [**Sponsor the project**](#-community-supported-open-source)
 
 </div>
 
@@ -44,7 +44,7 @@ Prefer your own models? **BYOK** is first-class: OpenAI, Anthropic, Zhipu/Z.ai,
 OpenAI-compatible/OpenRouter, and Hugging Face providers plug into the same evidence contract.
 
 > The hosted API bill is paid by the project. If geotechCLI saves you time,
-> [**sponsoring**](#-support--sponsorship) helps keep the free tier free.
+> [**sponsoring**](#-community-supported-open-source) helps keep the free tier free.
 
 ## Quick start
 
@@ -114,30 +114,45 @@ Agent quality is enforced, not hoped for: a deterministic **agent-task benchmark
 scenarios, zero network) gates every CI run — tool correctness, evidence citation, review-gate
 preservation, and fail-closed guardrails (fabricated values blocked, invented artifacts rejected).
 
-## 💖 Support & Sponsorship
+## 💖 Community-supported open source
 
-geotechCLI is free and open source, built and maintained with significant time and real hosted-API
-costs. If it helps your work, consider sponsoring — it directly funds development and keeps the
-hosted GLM tier free for everyone.
+**Keep geotechCLI open, reliable, and accessible.**
 
-| Tier | | What you get |
-|------|--|--------------|
-| **Supporter** | **$10/mo** | Fund development and the free hosted AI · your name in SUPPORTERS (opt-in) · early access to new AI features |
-| **Excellent Support** | **$50/mo** | Everything above · priority support and feedback · roadmap influence · hands-on collaboration time on *your* geotech projects |
-| **Diamond Supporter** | **$500/mo** | Everything above · deep-level implementation partnership · direct access to the maintainer · sponsored-feature prioritization |
+geotechCLI is an Apache-2.0 open-source toolkit for geotechnical engineering. The deterministic
+engines remain free for everyone. Sponsorship helps cover hosted AI usage, cross-platform testing,
+documentation, security maintenance, and the time required to review contributions and ship
+dependable releases.
+
+### Sponsor monthly
+
+| Tier | | Purpose |
+|------|--|---------|
+| **Community Backer** | **$10/mo** | Help cover hosting, CI, and shared API costs · optional recognition in [SUPPORTERS.md](SUPPORTERS.md) |
+| **Project Sustainer** *(recommended)* | **$50/mo** | Support documentation, testing, maintenance, and regular releases · optional recognition · periodic public project updates |
+| **Organization Sponsor** | **$100/mo** | For engineering firms, research groups, and universities · optional name or logo recognition on the sponsor page and README |
+
+### Prefer a one-time thank-you?
+
+Contribute **$10, $25, or $50 once — without automatic renewal.** GitHub Sponsors handles one-time
+contributions directly, so nothing starts and there is nothing to cancel afterwards.
 
 <div align="center">
 
-[**❤️ Become a sponsor on Patreon**](https://www.patreon.com/16003704/join)
+[**❤️ Sponsor on GitHub**](https://github.com/sponsors/kilickursat) · [Sponsor on Patreon instead](https://www.patreon.com/16003704/join)
 
 </div>
 
-> **Note on billing:** Patreon memberships renew monthly — there is no one-time option. To make a
-> one-time donation, you can cancel your membership any time, including right after your payment
-> clears, and you keep the month you paid for.
+> **Trust note:** Sponsorship is optional and never changes access to the project. It does not
+> purchase engineering approval, an SLA, roadmap control, or a guaranteed feature. Priorities remain
+> based on safety, community value, and maintainer capacity.
 
-Everyone can contribute regardless of sponsorship — issues and pull requests are always open.
-Sponsorship adds priority and collaboration on top; it is never a paywall.
+**Prefer to contribute time?** Report an issue, improve the documentation, propose a test case, or
+open a pull request. You never need to be a sponsor to contribute — issues and pull requests are
+open to everyone, and sponsorship is never a paywall.
+
+Sponsoring at $500+ or looking for a formal arrangement? Open a
+[discussion](https://github.com/kilickursat/geotechcli-/discussions) — organization sponsorship is a
+separate conversation.
 
 ## Contributing
 

@@ -19,53 +19,65 @@ export const SITE_URL = normalizeUrl(process.env.NEXT_PUBLIC_APP_URL);
 /** True only on the public production host (www). Everything else stays non-public / noindex. */
 export const IS_PUBLIC_PRODUCTION = SITE_URL === PUBLIC_PRODUCTION_URL;
 
-// Patreon donation links (honor-based Tier-1 funding).
-/** Donate CTA target: the membership / join flow. */
+// Sponsorship links. GitHub Sponsors is the primary flow because it supports
+// genuine one-time contributions alongside monthly tiers; Patreon is kept for
+// people who already sponsor there.
+
+/** Primary sponsor flow: GitHub Sponsors (monthly tiers + true one-time). */
+export const GITHUB_SPONSORS_URL = 'https://github.com/sponsors/kilickursat';
+/** Secondary flow: the Patreon membership / join page. */
 export const PATREON_JOIN_URL = 'https://www.patreon.com/16003704/join';
 /** Secondary link: the public creator page. */
 export const PATREON_PAGE_URL = 'https://www.patreon.com/c/geotechcli/posts';
 
-/** Minimum suggested donation shown in the UI. */
+/** Lowest monthly tier and lowest one-time amount shown in the UI. */
 export const DONATION_MINIMUM_USD = 10;
 
 /** Public open-source repository (Apache-2.0). */
 export const GITHUB_URL = 'https://github.com/kilickursat/geotechcli-';
 
-/** Patreon membership tiers shown on the support page (copy reworked for the site). */
+/** One-time contribution amounts — no automatic renewal, via GitHub Sponsors. */
+export const ONE_TIME_AMOUNTS_USD = [10, 25, 50] as const;
+
+/**
+ * Monthly sponsorship tiers. Prices mirror the live Patreon tiers so the site
+ * never advertises an amount different from what a sponsor is actually charged.
+ * Benefits describe funding purpose and optional recognition only — no support
+ * SLA, roadmap control, or professional-services commitments.
+ */
 export const MEMBERSHIP_TIERS = [
   {
-    id: 'supporter',
-    name: 'Supporter',
+    id: 'community-backer',
+    name: 'Community Backer',
     priceUsd: 10,
-    tagline: 'Keep the free hosted AI free',
+    tagline: 'Hosting, CI and shared API costs',
+    recommended: false,
     benefits: [
-      'Fund development and the hosted GLM API bill',
-      'Early access to new AI features',
-      'Your name in the SUPPORTERS list (opt-in)',
+      'Help cover hosting, CI, and shared API costs',
+      'Optional recognition in SUPPORTERS.md',
     ],
   },
   {
-    id: 'excellent',
-    name: 'Excellent Support',
+    id: 'project-sustainer',
+    name: 'Project Sustainer',
     priceUsd: 50,
-    tagline: 'Become part of the journey',
+    tagline: 'Testing, documentation, security and releases',
+    recommended: true,
     benefits: [
-      'Everything in Supporter',
-      'Priority support and feedback',
-      'Roadmap influence on new features',
-      'Hands-on collaboration time on your geotech projects',
+      'Support documentation, testing, maintenance, and regular releases',
+      'Optional recognition in SUPPORTERS.md',
+      'Periodic public project updates',
     ],
   },
   {
-    id: 'diamond',
-    name: 'Diamond Supporter',
-    priceUsd: 500,
-    tagline: 'Drive the future of the tool',
+    id: 'organization-sponsor',
+    name: 'Organization Sponsor',
+    priceUsd: 100,
+    tagline: 'Firms, labs and universities',
+    recommended: false,
     benefits: [
-      'Everything in Excellent Support',
-      'Deep-level implementation partnership',
-      'Direct access to the maintainer',
-      'Sponsored-feature prioritization',
+      'For engineering firms, research groups, and universities using geotechCLI',
+      'Optional name or logo recognition on the sponsor page and README',
     ],
   },
 ] as const;

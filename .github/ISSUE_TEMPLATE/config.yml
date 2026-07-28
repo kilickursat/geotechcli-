@@ -6,6 +6,6 @@ contact_links:
   - name: Security vulnerability (private)
     url: https://github.com/kilickursat/geotechcli-/security/advisories/new
     about: Report security issues privately — never as a public issue
-  - name: Support the project
-    url: https://www.patreon.com/16003704/join
-    about: Sponsorship funds development and keeps the hosted AI tier free
+  - name: Sponsor the project
+    url: https://github.com/sponsors/kilickursat
+    about: Monthly tiers or a one-time contribution — funds development and keeps the hosted AI tier free

@@ -5,8 +5,21 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 const releases = [
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-07-19',
+    date: '2026-07-28',
     tag: `${GEOTECHCLI_VERSION} Release`,
+    changes: [
+      { type: 'feat', text: 'GitHub Sponsors is now the primary sponsorship flow (github.com/sponsors/kilickursat), exposed through the repository Sponsor button. It supports genuine one-time contributions of $10 / $25 / $50 with no automatic renewal — nothing starts, so there is nothing to cancel afterwards' },
+      { type: 'fix', text: 'Removed the instruction telling sponsors to cancel their Patreon membership immediately after paying. That workaround existed because Patreon has no one-time option, but asking someone to cancel a payment they just made undermines trust' },
+      { type: 'fix', text: 'Retired the Excellent Support ($50) and Diamond Supporter ($500) tiers along with hands-on collaboration time, direct maintainer access, and sponsored-feature prioritization — a donation should not buy open-ended professional obligations. Sponsorship at $500+ is now a separate organization conversation' },
+      { type: 'feat', text: 'New monthly tiers matching the live Patreon prices exactly: Community Backer $10/mo, Project Sustainer $50/mo (labelled Recommended, not "Most popular"), and Organization Sponsor $100/mo for firms, labs and universities with optional name or logo recognition' },
+      { type: 'feat', text: 'Added a trust note across the support page and README: sponsorship is optional, never changes access, and does not purchase engineering approval, an SLA, roadmap control, or a guaranteed feature — priorities remain based on safety, community value, and maintainer capacity' },
+      { type: 'fix', text: 'Support page restructured: the sponsorship ask leads, the free-vs-sponsor-supported comparison moved below it, the duplicate donation block is gone, and a "prefer to contribute time?" panel makes clear that issues, docs and pull requests never require sponsoring. Patreon is kept as a secondary flow for existing sponsors' },
+    ],
+  },
+  {
+    version: '0.4.133',
+    date: '2026-07-19',
+    tag: '0.4.133 Release',
     changes: [
       { type: 'feat', text: 'geotechCLI is now open source under Apache-2.0 — the full source, including the deterministic engines, agent runtime, and prompts, is public at github.com/kilickursat/geotechcli- with a CITATION.cff for academic citation' },
       { type: 'feat', text: 'New membership tiers on the support page (Supporter $10 / Excellent Support $50 / Diamond Supporter $500) with an open-source contribution panel; contributions via issues and PRs are open to everyone' },

@@ -1,5 +1,7 @@
 # Shows the "Sponsor" button on the GitHub repo page.
+# GitHub Sponsors is the primary flow: it supports genuine one-time
+# contributions ($10 / $25 / $50, no automatic renewal) alongside monthly tiers.
+github: [kilickursat]
 patreon: geotechcli
 custom:
-  - "https://www.patreon.com/16003704/join"
   - "https://www.geotechcli.com/pricing"

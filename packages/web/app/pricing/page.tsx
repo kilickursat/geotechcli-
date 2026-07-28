@@ -5,7 +5,12 @@ import {
   DEFAULT_LLM_MODEL,
   DEFAULT_LLM_VISION_MODEL,
 } from '@geotechcli/core/meta';
-import { PATREON_JOIN_URL, DONATION_MINIMUM_USD } from '@/lib/site';
+import {
+  GITHUB_SPONSORS_URL,
+  PATREON_JOIN_URL,
+  DONATION_MINIMUM_USD,
+  ONE_TIME_AMOUNTS_USD,
+} from '@/lib/site';
 
 export default function PricingPage() {
   return (
@@ -14,7 +19,7 @@ export default function PricingPage() {
       <main className="pt-24">
         <Pricing />
         <section className="px-12 pb-24 max-w-[800px] mx-auto">
-          <h2 className="text-2xl font-bold tracking-tight mb-6">Donation &amp; Membership FAQ</h2>
+          <h2 className="text-2xl font-bold tracking-tight mb-6">Sponsorship FAQ</h2>
           <div className="space-y-8">
             <div>
               <h3 className="font-semibold mb-2">What is free?</h3>
@@ -36,25 +41,43 @@ export default function PricingPage() {
             <div>
               <h3 className="font-semibold mb-2">How much, and where?</h3>
               <p className="text-[var(--text-secondary)] text-sm leading-relaxed">
-                Donations start at ${DONATION_MINIMUM_USD} or more through Patreon —{' '}
+                Monthly tiers start at ${DONATION_MINIMUM_USD} through{' '}
+                <a
+                  href={GITHUB_SPONSORS_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[var(--accent-teal)] hover:brightness-110 transition"
+                >
+                  GitHub Sponsors
+                </a>
+                , which is the primary flow. If you already sponsor through{' '}
                 <a
                   href={PATREON_JOIN_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-[var(--accent-teal)] hover:brightness-110 transition"
                 >
-                  donate on Patreon
+                  Patreon
                 </a>
-                .
+                , that support continues to count and there is no need to move.
               </p>
             </div>
             <div>
-              <h3 className="font-semibold mb-2">How do I avoid being charged every month?</h3>
+              <h3 className="font-semibold mb-2">Is there a one-time option?</h3>
               <p className="text-[var(--text-secondary)] text-sm leading-relaxed">
-                Patreon has no one-time payment option; memberships renew automatically every month. Our goal is
-                a donation, not a subscription. To keep your donation a one-time gift and avoid automatic
-                withdrawals in the following months, cancel your Patreon membership immediately after your
-                payment clears — your support for the month still counts.
+                Yes. GitHub Sponsors supports genuine one-time contributions of{' '}
+                ${ONE_TIME_AMOUNTS_USD.join(', $')} with no automatic renewal — nothing starts, so there is
+                nothing to cancel afterwards. Monthly tiers can be cancelled at any time from your GitHub
+                sponsorship settings.
+              </p>
+            </div>
+            <div>
+              <h3 className="font-semibold mb-2">What does sponsorship get me?</h3>
+              <p className="text-[var(--text-secondary)] text-sm leading-relaxed">
+                Optional public recognition, and the project staying maintained. Sponsorship is optional and
+                never changes access to the project — it does not purchase engineering approval, an SLA,
+                roadmap control, or a guaranteed feature. Priorities remain based on safety, community value,
+                and maintainer capacity.
               </p>
             </div>
             <div>
