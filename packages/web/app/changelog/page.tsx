@@ -9,6 +9,14 @@ const releases: Release[] = [
     date: '2026-07-28',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'fix', text: 'The surface verification gate now polls each published surface until it agrees rather than reading it once. Cloudflare serves the site from many edge locations and npm serves dist-tags through a CDN, so both briefly report the previous version after a successful deploy; the gate failed on a release that was in fact fine. Surfaces that already agree still pass immediately, and one that never catches up still fails the run' },
+    ],
+  },
+  {
+    version: '0.4.140',
+    date: '2026-07-28',
+    tag: '0.4.140 Release',
+    changes: [
       { type: 'feat', text: 'Production pushes now tag themselves and publish the GitHub Release automatically. A release lands on four independent surfaces (npm dist-tags, the deployed site, the git tag, the GitHub Release) and tagging was the only one with no automation behind it, so GitHub Releases froze at v0.4.124 while fourteen versions shipped' },
       { type: 'feat', text: 'Release notes are now built from the changelog entry for that version. GitHub generates its notes from merged pull requests, and this repo releases by pushing branches directly, so the generated body had collapsed to a bare compare link' },
       { type: 'feat', text: 'A final gate asserts every published surface reports the version the commit claims: npm dist-tags, the deployed site and the git tag must agree or the run fails. Runs on production after tagging and on beta after deployment, and available locally as npm run verify:surfaces' },

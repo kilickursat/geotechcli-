@@ -28,18 +28,40 @@ const metadata = JSON.parse(
 const expected = metadata.version;
 const site = channel === 'beta' ? 'https://beta.geotechcli.com' : 'https://www.geotechcli.com';
 
+// npm serves dist-tags through a CDN and Cloudflare serves the site from many
+// edge locations, so both go on reporting the previous version for a short
+// window after a successful deploy — long enough that a single read fails while
+// nothing is actually wrong. Every other remote check in this pipeline polls,
+// and so must this one.
+const ATTEMPTS = Number(process.env.SURFACE_CHECK_ATTEMPTS ?? 20);
+const DELAY_MS = Number(process.env.SURFACE_CHECK_DELAY_MS ?? 15000);
+
 const failures = [];
 const results = [];
 
-function record(surface, actual, { skip = false, note = '' } = {}) {
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function settle(read) {
+  let actual = null;
+  for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
+    actual = await read().catch(() => null);
+    if (actual === expected) return { actual, attempt };
+    if (attempt < ATTEMPTS) await sleep(DELAY_MS);
+  }
+  return { actual, attempt: ATTEMPTS };
+}
+
+function record(surface, actual, { skip = false, note = '', attempt = 1 } = {}) {
   if (skip) {
     results.push(`  ~ ${surface.padEnd(26)} skipped${note ? ` (${note})` : ''}`);
     return;
   }
   const ok = actual === expected;
-  results.push(`  ${ok ? '✓' : '✗'} ${surface.padEnd(26)} ${actual ?? '(unreadable)'}`);
+  const suffix = ok && attempt > 1 ? `  (settled after ${attempt} attempts)` : '';
+  results.push(`  ${ok ? '✓' : '✗'} ${surface.padEnd(26)} ${actual ?? '(unreadable)'}${suffix}`);
   if (!ok) {
-    failures.push(`${surface} reports ${actual ?? '(unreadable)'}, expected ${expected}`);
+    const tried = attempt > 1 ? ` (still wrong after ${attempt} attempts)` : '';
+    failures.push(`${surface} reports ${actual ?? '(unreadable)'}, expected ${expected}${tried}`);
   }
 }
 
@@ -73,14 +95,16 @@ function gitTagExists(tag) {
 }
 
 const [cliTag, coreTag, deployed] = await Promise.all([
-  npmDistTag('geotechcli').catch(() => null),
-  npmDistTag('@geotechcli/core').catch(() => null),
-  siteVersion().catch(() => null),
+  settle(() => npmDistTag('geotechcli')),
+  settle(() => npmDistTag('@geotechcli/core')),
+  settle(() => siteVersion()),
 ]);
 
-record(`npm geotechcli@${channel}`, cliTag);
-record(`npm core@${channel}`, coreTag);
-record(channel === 'beta' ? 'beta.geotechcli.com' : 'www.geotechcli.com', deployed);
+record(`npm geotechcli@${channel}`, cliTag.actual, { attempt: cliTag.attempt });
+record(`npm core@${channel}`, coreTag.actual, { attempt: coreTag.attempt });
+record(channel === 'beta' ? 'beta.geotechcli.com' : 'www.geotechcli.com', deployed.actual, {
+  attempt: deployed.attempt,
+});
 
 // Tags and GitHub Releases exist only for production; the beta channel is
 // deliberately untagged, so asserting them there would be a false alarm.

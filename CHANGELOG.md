@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.141] - 2026-07-28
+
+### Surface verification waits for propagation
+
+The surface gate added in 0.4.140 failed on its first real run, and it was wrong to fail: npm had `beta` at 0.4.140 and the deploy had succeeded, but `beta.geotechcli.com` still answered 0.4.139 for a few seconds afterwards. Cloudflare serves the site from many edge locations and npm serves dist-tags through a CDN, so both keep reporting the previous version briefly after a successful deploy — the deploy job's own smoke check already polls for exactly this reason, and the new gate read each surface once.
+
+- `verify-release-surfaces` now polls each remote surface until it agrees or the attempts run out (20 attempts, 15s apart by default, tunable with `SURFACE_CHECK_ATTEMPTS` / `SURFACE_CHECK_DELAY_MS`), matching the retry behaviour of every other remote check in the pipeline.
+- Surfaces that already agree still pass immediately, so the happy path adds no waiting.
+- A surface that never catches up still fails the run, and the error now reports how many attempts it took before giving up.
+
 ## [0.4.140] - 2026-07-28
 
 ### Release surfaces stay in lockstep automatically
