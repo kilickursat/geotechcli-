@@ -33,7 +33,7 @@ export function banner(): void {
   console.log(chalk.bold.white(' ██║   ██║██╔══╝  ██║   ██║   ██║   ██╔══╝  ██║     ██╔══██║██║     ██║     ██║'));
   console.log(chalk.bold.cyan(' ╚██████╔╝███████╗╚██████╔╝   ██║   ███████╗╚██████╗██║  ██║╚██████╗███████╗██║'));
   console.log(chalk.bold.cyan('  ╚═════╝ ╚══════╝ ╚═════╝    ╚═╝   ╚══════╝ ╚═════╝╚═╝  ╚═╝ ╚═════╝╚══════╝╚═╝'));
-  console.log(chalk.gray(`  v${GEOTECHCLI_VERSION} | AI-native geotechnical engineering | https://beta.geotechcli.com`));
+  console.log(chalk.gray(`  v${GEOTECHCLI_VERSION} | AI-native geotechnical engineering | https://www.geotechcli.com`));
   console.log('');
 }
 

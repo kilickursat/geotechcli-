@@ -76,6 +76,15 @@ jobs:
             echo "::error::Potential hardcoded API key!" && exit 1
           fi
       - name: Audit deps
+        # This ran with `|| true` and so could never fail, which is how 13 high
+        # advisories accumulated unnoticed. It is a real gate at critical now.
+        # High is not the threshold yet because one high finding is unfixable:
+        # brace-expansion 5.0.8 patches it but drops the default export that
+        # minimatch imports inside the OpenNext build chain, so forcing it breaks
+        # build:cf. Tighten to high once that resolves upstream.
+        run: npm audit --audit-level=critical
+      - name: Report non-blocking advisories
+        if: always()
         run: npm audit --audit-level=high || true
       - name: Verify security hardening
         run: |

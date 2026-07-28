@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.4.143] - 2026-07-28
+
+### Dependency security — 13 high-severity advisories down to 1
+
+`npm audit` reported 20 vulnerabilities (13 high) and CI ran the check with `|| true`, so nothing ever failed a build on it and the backlog grew unnoticed. Total is now 8 (1 high).
+
+- **Next.js: 8 advisories fixed** by moving 15.5.18 → 15.5.22. These were the ones that mattered most, because Next is the runtime of the deployed Worker rather than build-only tooling: SSRF in Server Actions on custom servers, SSRF in rewrites via attacker-controlled destinations, cache confusion of response bodies, unauthenticated disclosure of internal Server Function endpoints, unbounded Server Action payloads on the Edge runtime, and DoS in both Server Actions and the image optimization API.
+- **postcss** → 8.5.23, clearing an arbitrary file read, a source-map path traversal and a stringify XSS, and with it `@tailwindcss/postcss`. Next pins postcss exactly, so this is carried by the root `overrides` block that already existed for that purpose.
+- **sharp** → 0.35.3, clearing inherited libvips CVEs. This one ships to npm users as a declared dependency of `@geotechcli/core`.
+- **wrangler** → 4.114.0, clearing `miniflare`, `undici` and `ws`.
+- **js-yaml** → 4.3.0, **tmp** → 0.2.7 (reaches the published CLI through exceljs), **form-data** → 4.0.6, **vite** → 8.1.5.
+- **`brace-expansion` is deliberately left at 5.0.5.** Version 5.0.8 fixes the advisory but removes the package's default export, and `minimatch` inside the OpenNext build chain does `import expand from 'brace-expansion'` — forcing the upgrade breaks `build:cf` outright, which was confirmed by trying it. The nested copies in the 1.x and 2.x lines are already at their patched releases (1.1.16 and 2.1.2); the advisory's `<=5.0.7` range sweeps those older majors regardless.
+
+Verified with the full pipeline against the upgraded tree: consistency, all builds, the OpenNext Cloudflare bundle, web typecheck, web route smoke, FEM draft-run, the agent-task benchmark, and 874 + 152 tests.
+
+### CLI banner points at the production site
+
+The startup banner advertised `beta.geotechcli.com`. It now shows `www.geotechcli.com`. The hosted-beta proxy endpoint is unchanged and still resolves to `beta.geotechcli.com/api/proxy`, which is where the service actually runs.
+
 ## [0.4.142] - 2026-07-28
 
 ### Deterministic engine correctness — liquefaction, bearing capacity, slope stability

@@ -9,6 +9,17 @@ const releases: Release[] = [
     date: '2026-07-28',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'security', text: 'Dependency security: 20 advisories (13 high) down to 8 (1 high). Next.js 15.5.18 to 15.5.22 fixes 8 advisories that mattered most because Next is the runtime of the deployed site, not build-only tooling: SSRF in Server Actions and in rewrites, cache confusion of response bodies, unauthenticated disclosure of internal Server Function endpoints, unbounded Edge Server Action payloads, and DoS in Server Actions and image optimization' },
+      { type: 'security', text: 'Also upgraded: postcss to 8.5.23 (arbitrary file read, source-map path traversal, stringify XSS) and with it @tailwindcss/postcss; sharp to 0.35.3, which ships to npm users via @geotechcli/core; wrangler to 4.114.0, clearing miniflare, undici and ws; plus js-yaml, tmp, form-data and vite' },
+      { type: 'security', text: 'brace-expansion is deliberately held at 5.0.5: 5.0.8 fixes the advisory but removes the default export, and minimatch inside the OpenNext build chain imports it as a default, so forcing the upgrade breaks the Cloudflare build. The nested 1.x and 2.x copies are already at their patched releases' },
+      { type: 'fix', text: 'The CLI startup banner now points at www.geotechcli.com instead of beta.geotechcli.com. The hosted-beta proxy endpoint is unchanged' },
+    ],
+  },
+  {
+    version: '0.4.142',
+    date: '2026-07-28',
+    tag: '0.4.142 Release',
+    changes: [
       { type: 'fix', text: 'Liquefaction CRR was a mis-transcribed Boulanger & Idriss (2014) Eq. 2.24: the four powers of (N1)60cs were folded onto a single variable with the wrong divisors. Resistance was overstated 2.8x at (N1)60cs = 20 and 39x at 30, and the curve crossed CRR = 1.0 near 23, beyond which nothing could ever be flagged as liquefiable. The published form is restored, capped at 37.5. If you ran triggering analysis on an earlier version, re-run it' },
       { type: 'fix', text: 'Added the rest of the same reference: magnitude scaling factor (Eqs. 2.19-2.20, exactly 1.0 at M 7.5), overburden correction Ksigma (Eqs. 2.16-2.17, capped at 1.1), the iterative CN of Eq. 2.15b and fines correction per Eq. 2.11. Results now report sigma-v0-prime, CN, rd, MSF, Ksigma and post-liquefaction volumetric strain' },
       { type: 'fix', text: 'bearing --method hansen returned Vesic numbers. The methods differ in N-gamma and in their shape factors, so selecting Hansen silently produced Vesic capacity. Each method now computes its own factors, and Meyerhof gets its own N-gamma' },
