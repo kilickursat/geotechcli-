@@ -1,8 +1,10 @@
 # Changelog
 
-## [0.4.136] - 2026-07-28
+## [0.4.137] - 2026-07-28
 
 ### Docs and Changelog rebuilt around Sphinx/Furo navigation patterns
+
+> 0.4.136 was tagged for this work but never published to any channel; 0.4.137 is the released version.
 
 Both pages had become unreadable by growth rather than by design: the docs were 17 sections on a single scroll behind a flat 3-column anchor grid, and the changelog rendered **127 releases fully expanded** on one page with no way to search, filter, or jump. Both are rebuilt using the information-architecture patterns from [Sphinx](https://www.sphinx-doc.org/) and the [Furo](https://github.com/pradyunsg/furo) theme.
 
