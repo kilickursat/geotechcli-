@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.4.139] - 2026-07-28
+
+### Fixed npm publishing for the CLI package
+
+The 0.4.138 release published `@geotechcli/core` but failed on `geotechcli` with a bare `404 Not Found - PUT`, leaving the version half-released and blocking both site deployments.
+
+- **Root cause.** npm resolves trusted publishing (OIDC) **per package**, by exchanging the GitHub id-token at `/-/npm/v1/oidc/token/exchange/package/<name>`. That exchange is deliberately non-throwing: when it fails, npm logs nothing at default verbosity and falls back to whatever `_authToken` sits in the npmrc — which is `setup-node`'s placeholder when no token is supplied. The scoped package still had a trusted publisher and published normally; the unscoped one did not, fell through to the placeholder, and the registry answered 404 (npm reports 404 rather than 403 for packages you have no write access to).
+- **Supplied a real credential.** The publish job now passes the `NPM_DIST_TAG_TOKEN` automation token as `NODE_AUTH_TOKEN`, so a package that OIDC cannot cover still authenticates. Trusted publishing keeps priority where it is configured.
+- **Kept provenance on both packages.** npm only auto-enables provenance on the OIDC path, so publishing through the token would have silently dropped the SLSA attestation. The publish script now requests `--provenance` explicitly whenever the runner can mint an id-token, which covers both paths.
+- **Made the failure legible.** Publishing now fails fast with a named cause when neither credential is usable — including when `NODE_AUTH_TOKEN` is the `setup-node` placeholder, which previously looked like a configured credential right up until the registry rejected it — and a failed publish prints which auth path was in play and both remedies.
+
 ## [0.4.138] - 2026-07-28
 
 ### Author ORCID on the citation metadata

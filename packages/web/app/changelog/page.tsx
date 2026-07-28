@@ -9,6 +9,16 @@ const releases: Release[] = [
     date: '2026-07-28',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'fix', text: 'Fixed npm publishing for the CLI package. The 0.4.139 release published @geotechcli/core but failed on geotechcli with a bare 404, leaving the version half-released and blocking both site deployments. npm resolves trusted publishing (OIDC) per package and the exchange fails silently, so the unscoped package fell back to a placeholder credential; the publish job now supplies the automation token as well' },
+      { type: 'fix', text: 'Kept SLSA provenance on both published packages. npm only auto-enables provenance on the OIDC path, so publishing through a token would have silently dropped the attestation; the publish script now requests it explicitly whenever the runner can mint an id-token' },
+      { type: 'fix', text: 'Publishing now fails fast with a named cause when neither credential is usable, including when the token is the setup-node placeholder, and a failed publish reports which auth path was in play and both remedies' },
+    ],
+  },
+  {
+    version: '0.4.138',
+    date: '2026-07-28',
+    tag: '0.4.138 Release',
+    changes: [
       { type: 'feat', text: "Added the maintainer's ORCID (0000-0003-4362-0704) to CITATION.cff, so GitHub's Cite this repository button and the APA/BibTeX exports it generates now carry a persistent author identifier; the same identifier is in the README BibTeX snippet" },
       { type: 'fix', text: 'The citation version had drifted to 0.4.133 while the project shipped four releases past it, so anyone citing geotechCLI was crediting the wrong release. CITATION.cff now reports the current version and release date, and release-consistency assertions fail the build if it falls behind again or if the author ORCID is missing or malformed' },
     ],

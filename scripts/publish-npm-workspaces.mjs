@@ -21,6 +21,47 @@ const packages = [
   { name: 'geotechcli', dir: 'packages/cli' },
 ];
 
+// setup-node writes this literal into the npmrc when no token is supplied, so an
+// unset secret looks like a configured credential right up until the registry
+// rejects it.
+const AUTH_TOKEN_PLACEHOLDER = 'XXXXX-XXXXX-XXXXX-XXXXX';
+
+function describeCredentials() {
+  const token = process.env.NODE_AUTH_TOKEN;
+  const hasToken = Boolean(token) && token !== AUTH_TOKEN_PLACEHOLDER;
+  const hasOidc = Boolean(
+    process.env.ACTIONS_ID_TOKEN_REQUEST_URL && process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN,
+  );
+
+  console.log(
+    `Registry credentials: automation token ${hasToken ? 'present' : 'absent'}, ` +
+      `OIDC id-token request ${hasOidc ? 'available' : 'unavailable'}`,
+  );
+
+  if (!hasToken && !hasOidc) {
+    throw new Error(
+      'No usable npm credentials: NODE_AUTH_TOKEN is unset (or is the setup-node placeholder) and the ' +
+        'workflow has no id-token permission. Set the NPM_DIST_TAG_TOKEN secret or grant id-token: write.',
+    );
+  }
+
+  return { hasToken, hasOidc };
+}
+
+function explainPublishFailure(name, { hasToken, hasOidc }) {
+  console.error(`\nPublishing ${name} failed.`);
+  console.error(
+    'npm resolves trusted publishing (OIDC) per package, and a missing trusted publisher fails silently — ' +
+      'npm then falls back to the token in the npmrc. A 404 on PUT therefore means neither path authenticated ' +
+      `for ${name} specifically (npm reports 404 rather than 403 for packages you cannot write to).`,
+  );
+  console.error(
+    `Current state: automation token ${hasToken ? 'present' : 'absent'}, ` +
+      `OIDC ${hasOidc ? 'available' : 'unavailable'}. Remedies: (a) confirm the NPM_DIST_TAG_TOKEN secret ` +
+      `grants read/write on ${name}, or (b) re-add the GitHub Actions trusted publisher for ${name} on npmjs.com.`,
+  );
+}
+
 async function readPackageJson(packageDir) {
   const packageUrl = new URL(`${packageDir}/package.json`, root);
   return JSON.parse(await readFile(packageUrl, 'utf8'));
@@ -64,7 +105,7 @@ async function waitForVisibility(packageName, version) {
   throw new Error(`${packageName}@${version} did not become visible on npm in time`);
 }
 
-async function publishPackage({ name, dir, version }) {
+async function publishPackage({ name, dir, version, credentials }) {
   const packagePath = fileURLToPath(new URL(`${dir}/`, root));
 
   if (await packageExists(name, version)) {
@@ -80,10 +121,22 @@ async function publishPackage({ name, dir, version }) {
     return;
   }
 
+  // npm only auto-enables provenance on the OIDC path, so a package that
+  // publishes with the token would silently lose its attestation. Ask for it
+  // explicitly whenever the runner can mint an id-token, which covers both paths.
+  const provenanceArgs = credentials.hasOidc ? ['--provenance'] : [];
+
   console.log(`Publishing ${name}@${version} (dist-tag: ${publishTag})`);
-  await run(npmCommand, ['publish', '--access', 'public', '--registry', registry, '--tag', publishTag], {
-    cwd: packagePath,
-  });
+  try {
+    await run(
+      npmCommand,
+      ['publish', '--access', 'public', '--registry', registry, '--tag', publishTag, ...provenanceArgs],
+      { cwd: packagePath },
+    );
+  } catch (error) {
+    explainPublishFailure(name, credentials);
+    throw error;
+  }
   await waitForVisibility(name, version);
 }
 
@@ -119,6 +172,8 @@ if (cli.manifest.dependencies?.['@geotechcli/core'] !== core.manifest.version) {
   );
 }
 
+const credentials = dryRun ? { hasToken: false, hasOidc: false } : describeCredentials();
+
 for (const pkg of manifests) {
-  await publishPackage({ name: pkg.name, dir: pkg.dir, version: pkg.manifest.version });
+  await publishPackage({ name: pkg.name, dir: pkg.dir, version: pkg.manifest.version, credentials });
 }
