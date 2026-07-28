@@ -7,14 +7,23 @@ import { z } from 'zod';
 //   - α-method (Tomlinson) for cohesive soils (undrained)
 //   - β-method (Burland) for cohesionless soils (drained)
 //   - SPT-based (Meyerhof 1976) for driven piles in sand/gravel
-//   - API RP 2GEO for offshore piles
 //
 // References:
 //   - Tomlinson, M.J. (1971). "Some effects of pile driving on skin friction."
 //   - Burland, J.B. (1973). "Shaft friction of piles in clay."
 //   - Meyerhof, G.G. (1976). "Bearing capacity and settlement of pile foundations."
-//   - API RP 2GEO (2014). "Geotechnical and Foundation Design Considerations."
+//   - Skempton, A.W. (1951). Nc = 9 for deep foundations in clay.
 //   - Eurocode 7 (EN 1997-1:2004), Section 7.6
+//
+// KNOWN LIMITATIONS — stated rather than implied:
+//   - α is the Tomlinson-style total-stress correlation on Su alone. It is NOT
+//     API RP 2GEO, which normalises on psi = Su/sigma'v0.
+//   - The base factor is Prandtl-Reissner, not Berezantsev. It under-predicts
+//     base resistance for deep piles and carries no L/D dependence.
+//   - Working-stress only: a single lumped factor of safety, no EC7 partial
+//     factors and no LRFD resistance factors.
+//   - Compression only: no uplift, no negative skin friction, no group effects.
+//   - H-section geometry uses a fixed 0.3 m flange assumption.
 // ---------------------------------------------------------------------------
 
 export const PileCapacityInputSchema = z.object({
@@ -120,8 +129,12 @@ function calculateVerticalStress(depth: number, layers: PileCapacityInput['layer
 // α coefficients (Tomlinson 1971, updated API RP 2GEO)
 // ---------------------------------------------------------------------------
 
+// This is the Tomlinson-style TOTAL-STRESS correlation, keyed on Su alone. It
+// is not API RP 2GEO: API keys alpha on the normalised ratio psi = Su/sigma'v0
+// (alpha = 0.5·psi^-0.5 for psi <= 1, 0.5·psi^-0.25 above), so the two diverge
+// wherever the effective overburden is not close to the implied value. The
+// engine reports which correlation it used so the assumption is visible.
 function getAlpha(su: number, pileType: string): number {
-  // API RP 2GEO / Tomlinson correlation
   if (pileType === 'driven') {
     if (su <= 25) return 1.0;
     if (su <= 50) return 1.0 - 0.5 * (su - 25) / 25;
@@ -141,7 +154,7 @@ function getAlpha(su: number, pileType: string): number {
 // β coefficients (Burland 1973)
 // ---------------------------------------------------------------------------
 
-function getBeta(phi: number, depth: number, pileType: string): number {
+function getBeta(phi: number, pileType: string): number {
   const phiRad = degToRad(phi);
   const Ko = 1 - Math.sin(phiRad);
   const KoMultiplier = pileType === 'driven' ? 1.5 : 1.0;
@@ -150,7 +163,16 @@ function getBeta(phi: number, depth: number, pileType: string): number {
 }
 
 // ---------------------------------------------------------------------------
-// Base bearing capacity factor Nq (Berezantsev 1961)
+// Base bearing capacity factor Nq — Prandtl-Reissner.
+//
+// This was labelled Berezantsev (1961), which it is not. It evaluates the
+// classical shallow-foundation factor Nq = e^(pi·tan phi)·tan²(45 + phi/2),
+// giving 18.4 / 33.3 / 64.2 at phi = 30 / 35 / 40. Berezantsev's deep-pile Nq
+// is substantially larger at the same friction angle and additionally depends
+// on the embedment ratio L/D, so using this factor UNDER-predicts base
+// resistance for a deep pile — conservative, but it must not be presented as
+// Berezantsev. Restoring the true Berezantsev chart needs the source tables;
+// until then the engine states which factor it applied.
 // ---------------------------------------------------------------------------
 
 function getBaseNq(phi: number): number {
@@ -185,6 +207,7 @@ export function calculatePileCapacity(input: PileCapacityInput): PileCapacityRes
   steps.push(`Base area Ab=${Ap.toFixed(4)} m², Perimeter P=${perimeter.toFixed(3)} m`);
 
   // Auto-select method based on dominant soil type
+  const methodWasAuto = v.method === 'auto';
   let method = v.method;
   if (method === 'auto') {
     const dominantSoil = layers.reduce((a, b) => b.thickness > a.thickness ? b : a);
@@ -215,14 +238,25 @@ export function calculatePileCapacity(input: PileCapacityInput): PileCapacityRes
 
     let fs = 0; // unit shaft friction (kPa)
 
-    if (method === 'alpha' && layer.undrained_shear_strength !== undefined) {
+    // A layer that carries a measured undrained shear strength must use it.
+    // The auto-selected method is chosen from the DOMINANT soil, so a profile
+    // that is mostly sand resolved to spt-meyerhof and then read N/2 for every
+    // clay layer, discarding the laboratory strength entirely: Su could be
+    // varied 25 -> 200 kPa without moving the answer, because fs stayed pinned
+    // at N/2. An explicit --method is still honoured; only the automatic
+    // choice defers to the better datum.
+    const isCohesive = layer.soilType === 'clay' || layer.soilType === 'silt';
+    const preferMeasuredSu =
+      methodWasAuto && isCohesive && layer.undrained_shear_strength !== undefined;
+
+    if ((method === 'alpha' || preferMeasuredSu) && layer.undrained_shear_strength !== undefined) {
       const su = layer.undrained_shear_strength;
       const alpha = getAlpha(su, pileType);
       fs = alpha * su;
       steps.push(`  Layer ${currentDepth.toFixed(1)}-${(currentDepth + effectiveThickness).toFixed(1)}m: α=${alpha.toFixed(2)}, Su=${su} kPa → fs=${fs.toFixed(1)} kPa`);
     } else if (method === 'beta' && layer.friction_angle !== undefined) {
       const phi = layer.friction_angle;
-      const beta = getBeta(phi, midDepth, pileType);
+      const beta = getBeta(phi, pileType);
       fs = beta * sigma_v_eff;
       // Limit shaft friction per API RP 2GEO
       fs = Math.min(fs, 115);
@@ -243,7 +277,7 @@ export function calculatePileCapacity(input: PileCapacityInput): PileCapacityRes
         const alpha = getAlpha(layer.undrained_shear_strength, pileType);
         fs = alpha * layer.undrained_shear_strength;
       } else if (layer.friction_angle !== undefined) {
-        const beta = getBeta(layer.friction_angle, midDepth, pileType);
+        const beta = getBeta(layer.friction_angle, pileType);
         fs = Math.min(beta * sigma_v_eff, 115);
       }
       steps.push(`  Layer ${currentDepth.toFixed(1)}-${(currentDepth + effectiveThickness).toFixed(1)}m: fs=${fs.toFixed(1)} kPa (fallback)`);
@@ -269,8 +303,15 @@ export function calculatePileCapacity(input: PileCapacityInput): PileCapacityRes
 
   let Qb = 0;
 
-  if (method === 'alpha' && baseLayer.undrained_shear_strength !== undefined) {
-    const Nc = 9; // bearing capacity factor for deep foundations in clay
+  const baseIsCohesive = baseLayer.soilType === 'clay' || baseLayer.soilType === 'silt';
+  const basePrefersMeasuredSu =
+    methodWasAuto && baseIsCohesive && baseLayer.undrained_shear_strength !== undefined;
+
+  if (
+    (method === 'alpha' || basePrefersMeasuredSu) &&
+    baseLayer.undrained_shear_strength !== undefined
+  ) {
+    const Nc = 9; // Skempton (1951) deep-foundation factor for clay
     const qb = Nc * baseLayer.undrained_shear_strength;
     Qb = qb * Ap;
     steps.push(`Base: Nc=${Nc}, Su=${baseLayer.undrained_shear_strength} kPa → qb=${qb.toFixed(0)} kPa, Qb=${Qb.toFixed(0)} kN`);

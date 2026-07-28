@@ -9,6 +9,18 @@ const releases: Release[] = [
     date: '2026-07-28',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'fix', text: 'pile: a measured undrained shear strength was being discarded. The method is auto-selected from the dominant soil, so a mostly-sand profile resolved to spt-meyerhof and then read N/2 for every clay layer. Su could be varied from 25 to 200 kPa, an eightfold change in the governing parameter, without moving the answer at all. For soft clay this was unconservative: 1563 kN returned where the measured strength supports 916 kN, 71% too high. A measured Su now governs its own layer, and so does the pile base; an explicit --method is still honoured exactly as given' },
+      { type: 'fix', text: 'seepage: the reported exit gradient was the average gradient H/L. The gradient at the downstream face is always the larger of the two, which is precisely why piping initiates there, so the factor of safety against piping was systematically optimistic in a life-safety check. It is now derived from the engine own Dupuit solution. For a 10 m to 2 m head across 8 m the exit gradient goes from 1.00 to 3.00 and the piping factor of safety from 0.97 to 0.32, so the previous figure was three times optimistic' },
+      { type: 'fix', text: 'classify: organic soils were unreachable. The result type declared an organic group but no code path could return it and there was no organic input, so peat and organic clays were reported as MH or CH. New --ll-ratio classifies OL and OH per ASTM D2487 when LL(oven-dried)/LL(not dried) is below 0.75, and --organic classifies peat as Pt at 75% organic content or more. Inorganic soils are unaffected' },
+      { type: 'fix', text: 'pile: two citations did not match the code. The base factor was labelled Berezantsev (1961) but evaluates Prandtl-Reissner, which under-predicts base resistance for deep piles, and the alpha correlation was labelled API RP 2GEO but is the Tomlinson total-stress form keyed on Su alone. Both are now documented for what they are, alongside the engine standing limitations: working stress only, compression only, no group effects' },
+      { type: 'feat', text: 'Golden-value coverage extended to 61 tests spanning six engines. Eight of the seventeen new tests fail against the previous code, verified before the fixes were written' },
+    ],
+  },
+  {
+    version: '0.4.145',
+    date: '2026-07-28',
+    tag: '0.4.145 Release',
+    changes: [
       { type: 'security', text: 'Dependency security: 20 advisories (13 high) down to 8 (1 high). Next.js 15.5.18 to 15.5.22 fixes 8 advisories that mattered most because Next is the runtime of the deployed site, not build-only tooling: SSRF in Server Actions and in rewrites, cache confusion of response bodies, unauthenticated disclosure of internal Server Function endpoints, unbounded Edge Server Action payloads, and DoS in Server Actions and image optimization' },
       { type: 'security', text: 'Also upgraded: postcss to 8.5.23 (arbitrary file read, source-map path traversal, stringify XSS) and with it @tailwindcss/postcss; sharp to 0.35.3, which ships to npm users via @geotechcli/core; wrangler to 4.114.0, clearing miniflare, undici and ws; plus js-yaml, tmp, form-data and vite' },
       { type: 'security', text: 'brace-expansion is deliberately held at 5.0.5: 5.0.8 fixes the advisory but removes the default export, and minimatch inside the OpenNext build chain imports it as a default, so forcing the upgrade breaks the Cloudflare build. The nested 1.x and 2.x copies are already at their patched releases' },

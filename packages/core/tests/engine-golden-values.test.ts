@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { calculateBearingCapacity } from '../src/geo/bearing-capacity.js';
 import { calculateLiquefaction } from '../src/geo/liquefaction.js';
 import { calculateSlopeStability } from '../src/geo/slope-stability.js';
+import { calculatePileCapacity } from '../src/geo/pile-capacity.js';
+import { calculateDupuitSeepage } from '../src/geo/seepage.js';
+import { classifyUSCS } from '../src/geo/classification.js';
 
 // ---------------------------------------------------------------------------
 // Golden-value regression tests.
@@ -436,5 +439,188 @@ describe('slope stability — closed-form benchmarks', () => {
     expect(r.criticalCircle.centerY).toBeGreaterThan(H * 0.5);
     expect(r.criticalCircle.centerX).toBeGreaterThan(-slopeBase);
     expect(r.criticalCircle.centerX).toBeLessThan(slopeBase * 3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 2 engines: pile capacity, seepage, USCS classification.
+//
+// These three shipped with no published-value coverage at all, and each was
+// found to contain a defect that the directional suites could not see.
+// ---------------------------------------------------------------------------
+
+describe('pile capacity — measured strength must govern over correlations', () => {
+  const pile = {
+    pileDiameter: 0.5,
+    pileLength: 15,
+    pileType: 'driven',
+    pileShape: 'circular',
+    waterTableDepth: 999,
+  } as const;
+
+  // A layer that carries a laboratory-measured undrained shear strength must
+  // use it. Reading N/2 from an SPT correlation and discarding a direct Su
+  // measurement throws away the better datum: at Su = 200 kPa the alpha method
+  // gives fs = 0.4 x 200 = 80 kPa against N/2 = 5 kPa, a factor of 16.
+  it('responds to a measured Su even when the layer also carries an SPT count', () => {
+    const withSu = (su: number) => calculatePileCapacity({
+      ...pile,
+      layers: [
+        { thickness: 12, soilType: 'sand', friction_angle: 33, spt_n: 20, unit_weight: 18 },
+        { thickness: 8, soilType: 'clay', undrained_shear_strength: su, spt_n: 10, unit_weight: 18 },
+      ],
+    } as never);
+
+    const soft = withSu(25);
+    const stiff = withSu(200);
+
+    expect(stiff.ultimateCapacity, 'Su is ignored — capacity does not move').toBeGreaterThan(
+      soft.ultimateCapacity,
+    );
+  });
+
+  // alpha per the Tomlinson-style total-stress correlation the engine
+  // implements: 1.0 up to Su = 25 kPa, tapering to 0.5 at 50 kPa, held at 0.5
+  // to 100 kPa, tapering to 0.4 at 200 kPa. fs = alpha x Su.
+  it.each([
+    [25, 1.0, 25],
+    [50, 0.5, 25],
+    [100, 0.5, 50],
+    [200, 0.4, 80],
+  ])('driven pile in clay at Su=%i kPa gives alpha=%f and fs=%i kPa', (su, _alpha, fs) => {
+    const r = calculatePileCapacity({
+      ...pile,
+      method: 'alpha',
+      layers: [{ thickness: 20, soilType: 'clay', undrained_shear_strength: su, unit_weight: 18 }],
+    } as never);
+    expect(r.shaftFrictionPerLayer[0].unitShaftFriction).toBeCloseTo(fs, 1);
+  });
+
+  // Deep-foundation base factor in clay is Nc = 9 (Skempton 1951), so
+  // qb = 9 Su and Qb = qb x Ab.
+  it('uses Nc = 9 for the base in clay (Skempton 1951)', () => {
+    const D = 0.5;
+    const Ab = Math.PI * (D / 2) ** 2;
+    const r = calculatePileCapacity({
+      ...pile,
+      pileDiameter: D,
+      method: 'alpha',
+      layers: [{ thickness: 20, soilType: 'clay', undrained_shear_strength: 100, unit_weight: 18 }],
+    } as never);
+    expect(r.baseResistance).toBeCloseTo(9 * 100 * Ab, 0);
+  });
+});
+
+describe('seepage — exit gradient from the Dupuit parabola', () => {
+  // The engine solves Dupuit-Forchheimer, so the exit gradient must be the
+  // gradient that solution actually produces at the downstream face, not the
+  // average across the path. Differentiating h(x)^2 = h1^2 - (h1^2 - h2^2)x/L
+  // gives dh/dx = -(h1^2 - h2^2) / (2hL), and at x = L, h = h2:
+  //
+  //     i_exit = (h1^2 - h2^2) / (2 * h2 * L)
+  //
+  // The exit gradient always exceeds the average H/L, which is why piping
+  // starts at the downstream face.
+  it.each([
+    [10, 2, 8, 3.0],
+    [8, 4, 10, 0.6],
+    [6, 3, 6, 0.75],
+  ])('h1=%i h2=%i L=%i gives i_exit=%f', (h1, h2, L, expected) => {
+    const r = calculateDupuitSeepage({
+      hydraulicConductivity: 1e-5,
+      upstreamHead: h1,
+      downstreamHead: h2,
+      seepageLength: L,
+      specificGravity: 2.65,
+      voidRatio: 0.7,
+    } as never);
+    expect(r.exitGradient).toBeCloseTo(expected, 2);
+  });
+
+  it('reports an exit gradient strictly above the average gradient', () => {
+    const h1 = 10, h2 = 2, L = 8;
+    const r = calculateDupuitSeepage({
+      hydraulicConductivity: 1e-5,
+      upstreamHead: h1,
+      downstreamHead: h2,
+      seepageLength: L,
+      specificGravity: 2.65,
+      voidRatio: 0.7,
+    } as never);
+    expect(r.exitGradient).toBeGreaterThan((h1 - h2) / L);
+  });
+
+  // Terzaghi critical gradient i_cr = (Gs - 1)/(1 + e).
+  it.each([
+    [2.65, 0.7, 0.9706],
+    [2.70, 0.5, 1.1333],
+    [2.65, 1.0, 0.825],
+  ])('critical gradient for Gs=%f e=%f is %f', (Gs, e, expected) => {
+    const r = calculateDupuitSeepage({
+      hydraulicConductivity: 1e-5,
+      upstreamHead: 5,
+      downstreamHead: 2,
+      seepageLength: 10,
+      specificGravity: Gs,
+      voidRatio: e,
+    } as never);
+    expect(r.criticalGradient).toBeCloseTo(expected, 3);
+  });
+});
+
+describe('USCS classification — ASTM D2487 organic groups', () => {
+  // ASTM D2487 separates organic soils by the ratio of the liquid limit after
+  // oven drying to the liquid limit not dried. A ratio below 0.75 classifies
+  // the soil as organic: OL when LL < 50, OH when LL >= 50.
+  it('classifies a low-plasticity organic silt as OL', () => {
+    const r = classifyUSCS({
+      gravelPercent: 5,
+      sandPercent: 25,
+      finesPercent: 70,
+      liquidLimit: 40,
+      plasticityIndex: 12,
+      liquidLimitOvenDriedRatio: 0.6,
+    } as never);
+    expect(r.symbol).toBe('OL');
+    expect(r.group).toBe('organic');
+  });
+
+  it('classifies a high-plasticity organic clay as OH', () => {
+    const r = classifyUSCS({
+      gravelPercent: 0,
+      sandPercent: 10,
+      finesPercent: 90,
+      liquidLimit: 65,
+      plasticityIndex: 30,
+      liquidLimitOvenDriedRatio: 0.65,
+    } as never);
+    expect(r.symbol).toBe('OH');
+    expect(r.group).toBe('organic');
+  });
+
+  it('classifies peat as Pt', () => {
+    const r = classifyUSCS({
+      gravelPercent: 0,
+      sandPercent: 5,
+      finesPercent: 95,
+      liquidLimit: 120,
+      plasticityIndex: 40,
+      organicContentPercent: 80,
+    } as never);
+    expect(r.symbol).toBe('Pt');
+    expect(r.group).toBe('organic');
+  });
+
+  it('leaves an inorganic soil unaffected by the organic test', () => {
+    const r = classifyUSCS({
+      gravelPercent: 5,
+      sandPercent: 25,
+      finesPercent: 70,
+      liquidLimit: 40,
+      plasticityIndex: 12,
+      liquidLimitOvenDriedRatio: 0.9,
+    } as never);
+    expect(r.group).toBe('fine-grained');
+    expect(['CL', 'ML', 'CL-ML']).toContain(r.symbol);
   });
 });

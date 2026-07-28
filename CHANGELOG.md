@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.146] - 2026-07-28
+
+### Engine correctness, phase 2 — pile capacity, seepage, USCS classification
+
+An audit of the six engines that had **no published-value coverage at all** found three more defects. As with 0.4.142, every one was invisible to the existing suites because those assert direction and ordering rather than absolute values, and all three erred on the unconservative side.
+
+- **`pile` — a measured undrained shear strength was being discarded.** The method is auto-selected from the *dominant* soil, so a mostly-sand profile resolved to `spt-meyerhof` and then read `N/2` for every clay layer, ignoring the laboratory strength completely. Su could be varied from 25 to 200 kPa — an eightfold change in the governing parameter — without moving the answer by a single kilonewton. A layer with Su = 200 kPa was contributing fs = 5 kPa where the α-method gives 80 kPa, a factor of 16. **For soft clay the effect was unconservative: a soft-clay profile returned 1563 kN where the measured strength supports 916 kN, 71% too high.** A measured Su now governs its own layer, and the pile base does the same. An explicit `--method` is still honoured exactly as given; only the automatic choice defers to the better datum.
+- **`seepage` — the reported exit gradient was the average gradient.** `exitGradient` was returning H/L. The gradient at the downstream face is always the larger of the two, which is precisely why piping initiates there, so the factor of safety against piping was systematically optimistic in a life-safety check. The engine already solves Dupuit-Forchheimer, so the exit gradient is now the one that solution actually produces — differentiating h(x)² = h₁² − (h₁² − h₂²)x/L and evaluating at the downstream face gives **i_exit = (h₁² − h₂²) / (2·h₂·L)**. For a 10 m / 2 m head across 8 m the exit gradient goes from 1.00 to 3.00 and the piping factor of safety from 0.97 to 0.32 — the previous figure was **three times optimistic**. With zero tailwater the Dupuit exit gradient is unbounded; that is now reported as a critical exit condition instead of a finite number that reads as safe.
+- **`classify` — organic soils were unreachable.** The result type declared an `organic` group but no code path could ever return it and there was no organic input, so peat and organic clays were being reported as MH or CH — the most compressible and weakest soils classified as ordinary ones. ASTM D2487 separates them on the ratio of liquid limit after oven drying to liquid limit not dried, so `--ll-ratio` now classifies OL below LL 50 and OH at or above it when the ratio is under 0.75, and `--organic` classifies Pt at 75% organic content or more (ASTM D4427). Inorganic soils are unaffected.
+
+**Provenance corrected rather than implied.** Two citations in `pile` did not match the code. The base factor was labelled Berezantsev (1961) but evaluates Prandtl-Reissner, giving 18.4 / 33.3 / 64.2 at φ = 30 / 35 / 40 where Berezantsev's deep-pile factor is substantially larger and also depends on L/D — so base resistance is under-predicted for deep piles. The α correlation was labelled API RP 2GEO but is the Tomlinson-style total-stress form on Su alone, where API normalises on ψ = Su/σ′v0. Both are now documented for what they are, along with the engine's other standing limitations: working stress only, compression only, no group effects, and a fixed 0.3 m H-section flange assumption. Restoring the true Berezantsev and API formulations needs the source tables.
+
+**Pinned with 17 further golden tests**, taking `engine-golden-values.test.ts` to 61. Eight of the new tests fail against the previous code — verified before the fixes were written.
+
 ## [0.4.145] - 2026-07-28
 
 ### Dependency security — 13 high-severity advisories down to 1

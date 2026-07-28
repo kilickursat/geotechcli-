@@ -13,6 +13,22 @@ export const USCSInputSchema = z.object({
   d10: z.number().positive().optional().describe('D10 particle size (mm)'),
   d30: z.number().positive().optional().describe('D30 particle size (mm)'),
   d60: z.number().positive().optional().describe('D60 particle size (mm)'),
+  // ASTM D2487 separates organic from inorganic fine-grained soils on the
+  // ratio of the liquid limit after oven drying to the liquid limit not dried.
+  // Without this input the organic groups are unreachable, which is how peat
+  // and organic clays were previously being reported as MH or CH.
+  liquidLimitOvenDriedRatio: z
+    .number()
+    .positive()
+    .max(2)
+    .optional()
+    .describe('LL(oven-dried) / LL(not dried) — organic if < 0.75 (ASTM D2487)'),
+  organicContentPercent: z
+    .number()
+    .min(0)
+    .max(100)
+    .optional()
+    .describe('Organic content by mass (%) — highly organic (Pt) at >= 75%'),
 });
 
 export type USCSInput = z.infer<typeof USCSInputSchema>;
@@ -32,10 +48,42 @@ export function classifyUSCS(input: USCSInput): USCSResult {
   steps.push(`Gravel: ${gravelPercent}%, Sand: ${sandPercent}%, Fines: ${finesPercent}%`);
   if (LL !== undefined) steps.push(`LL = ${LL}%, PI = ${PI ?? 'N/A'}%`);
 
-  const coarsePercent = gravelPercent + sandPercent;
+  // Highly organic soil (peat) is its own group and short-circuits the
+  // gradation and plasticity route entirely — ASTM D2487 identifies Pt by
+  // visual-manual examination; an explicit organic content is the closest
+  // machine-checkable proxy, using the ASTM D4427 peat threshold of 75%.
+  const { organicContentPercent, liquidLimitOvenDriedRatio } = v;
+
+  if (organicContentPercent !== undefined && organicContentPercent >= 75) {
+    steps.push(`Organic content ${organicContentPercent}% ≥ 75% → highly organic soil`);
+    return {
+      symbol: 'Pt',
+      name: 'Peat',
+      group: 'organic',
+      steps,
+    };
+  }
 
   // Fine-grained soil (≥50% fines)
   if (finesPercent >= 50) {
+    // Organic silts and clays: ASTM D2487 classifies a fine-grained soil as
+    // organic when LL(oven-dried)/LL(not dried) < 0.75. OL below LL 50, OH at
+    // or above it. This must be tested before the A-line route, otherwise an
+    // organic clay is reported as CL/CH and its compressibility understated.
+    if (liquidLimitOvenDriedRatio !== undefined && liquidLimitOvenDriedRatio < 0.75) {
+      const isHighPlasticity = LL !== undefined && LL >= 50;
+      steps.push(
+        `LL(oven-dried)/LL(not dried) = ${liquidLimitOvenDriedRatio} < 0.75 → organic soil`,
+      );
+      steps.push(`LL ${LL ?? 'N/A'} ${isHighPlasticity ? '≥' : '<'} 50 → ${isHighPlasticity ? 'OH' : 'OL'}`);
+      return {
+        symbol: isHighPlasticity ? 'OH' : 'OL',
+        name: isHighPlasticity ? 'Organic Clay / Organic Silt (high plasticity)' : 'Organic Silt / Organic Clay (low plasticity)',
+        group: 'organic',
+        steps,
+      };
+    }
+
     steps.push(`Fines ≥ 50% → Fine-grained soil`);
 
     if (LL === undefined || PI === undefined) {
