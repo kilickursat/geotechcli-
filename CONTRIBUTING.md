@@ -4,8 +4,7 @@ Thanks for helping build the open-source agentic AI CLI for geotechnical enginee
 Contributions of every size are welcome — bug reports from real project data are especially
 valuable. You never need to be a sponsor to contribute — issues and PRs are open to everyone
 and sponsorship is never a paywall. If you would like to support the project financially,
-[GitHub Sponsors](https://github.com/sponsors/kilickursat) offers monthly tiers and one-time
-contributions.
+[Patreon](https://www.patreon.com/16003704/join) offers monthly sponsorship tiers.
 
 ## Quick start (dev setup)
 

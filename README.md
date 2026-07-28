@@ -13,7 +13,7 @@ the AI interprets, deterministic code owns every number.
 [![npm beta](https://img.shields.io/npm/v/geotechcli/beta?color=f5a623&label=beta)](https://www.npmjs.com/package/geotechcli?activeTab=versions)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![CI](https://github.com/kilickursat/geotechcli-/actions/workflows/ci.yml/badge.svg)](https://github.com/kilickursat/geotechcli-/actions/workflows/ci.yml)
-[![sponsor](https://img.shields.io/badge/sponsor-GitHub-ea4aaa?logo=githubsponsors)](https://github.com/sponsors/kilickursat)
+[![sponsor](https://img.shields.io/badge/sponsor-Patreon-f96854?logo=patreon)](https://www.patreon.com/16003704/join)
 
 [**Website**](https://www.geotechcli.com) · [**Documentation**](https://www.geotechcli.com/docs) · [**Changelog**](https://www.geotechcli.com/changelog) · [**Sponsor the project**](#-community-supported-open-source)
 
@@ -131,14 +131,15 @@ dependable releases.
 | **Project Sustainer** *(recommended)* | **$50/mo** | Support documentation, testing, maintenance, and regular releases · optional recognition · periodic public project updates |
 | **Organization Sponsor** | **$100/mo** | For engineering firms, research groups, and universities · optional name or logo recognition on the sponsor page and README |
 
-### Prefer a one-time thank-you?
+### How sponsorship works
 
-Contribute **$10, $25, or $50 once — without automatic renewal.** GitHub Sponsors handles one-time
-contributions directly, so nothing starts and there is nothing to cancel afterwards.
+Sponsorship runs through Patreon and is billed **monthly**. You can change tier or cancel at any
+time from your Patreon account, and cancelling keeps the month you have already paid for. There is
+no minimum commitment and no contract.
 
 <div align="center">
 
-[**❤️ Sponsor on GitHub**](https://github.com/sponsors/kilickursat) · [Sponsor on Patreon instead](https://www.patreon.com/16003704/join)
+[**❤️ Sponsor on Patreon**](https://www.patreon.com/16003704/join)
 
 </div>
 

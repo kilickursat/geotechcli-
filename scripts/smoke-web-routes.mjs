@@ -61,21 +61,12 @@ assert(
   'packages/web/lib/site.ts must define both the production (www) and beta hosts.',
 );
 assert(
-  siteSource.includes('https://github.com/sponsors/kilickursat'),
-  'packages/web/lib/site.ts must define the GitHub Sponsors URL as the primary sponsor flow.',
-);
-assert(
   siteSource.includes('https://www.patreon.com/16003704/join'),
-  'packages/web/lib/site.ts must keep the Patreon join URL for existing sponsors.',
+  'packages/web/lib/site.ts must define the Patreon join URL as the sponsorship flow.',
 );
 assert(
   siteSource.includes('https://github.com/kilickursat/geotechcli-'),
   'packages/web/lib/site.ts must define the public GitHub repository URL.',
-);
-assert(
-  siteSource.includes('ONE_TIME_AMOUNTS_USD') &&
-    ['10', '25', '50'].every((amount) => siteSource.includes(amount)),
-  'packages/web/lib/site.ts must define the one-time contribution amounts (10 / 25 / 50).',
 );
 assert(
   siteSource.includes('MEMBERSHIP_TIERS') &&
@@ -89,23 +80,41 @@ assert(
   'The retired Excellent Support / Diamond Supporter tiers must not reappear in packages/web/lib/site.ts.',
 );
 
-// The support page must not tell sponsors to cancel immediately after paying —
-// one-time contributions now go through GitHub Sponsors instead.
+// Patreon is the only sponsorship flow. GitHub Sponsors payouts run through
+// Stripe Connect, which does not support the maintainer's bank, so no surface
+// may link it — a dead sponsor button is worse than none.
 const pricingComponentSource = readText('packages', 'web', 'components', 'Pricing.tsx');
 const pricingRouteSource = readText('packages', 'web', 'app', 'pricing', 'page.tsx');
+const ctaSource = readText('packages', 'web', 'components', 'CTASection.tsx');
+for (const [label, source] of [
+  ['components/Pricing.tsx', pricingComponentSource],
+  ['app/pricing/page.tsx', pricingRouteSource],
+  ['components/CTASection.tsx', ctaSource],
+]) {
+  assert(
+    !/github\.com\/sponsors/i.test(source) && !source.includes('GITHUB_SPONSORS_URL'),
+    `${label} must not link GitHub Sponsors — payouts are not receivable through it.`,
+  );
+  assert(
+    source.includes('PATREON_JOIN_URL'),
+    `${label} must link the Patreon sponsorship flow.`,
+  );
+}
+// The support page must not tell sponsors to cancel immediately after paying.
 for (const [label, source] of [
   ['components/Pricing.tsx', pricingComponentSource],
   ['app/pricing/page.tsx', pricingRouteSource],
 ]) {
   assert(
-    !/cancel your Patreon membership immediately/i.test(source),
+    !/cancel your Patreon membership immediately|immediately after your payment clears/i.test(source),
     `${label} must not instruct sponsors to cancel their membership immediately after paying.`,
   );
-  assert(
-    source.includes('GITHUB_SPONSORS_URL'),
-    `${label} must link the GitHub Sponsors flow.`,
-  );
 }
+// Patreon cannot process one-time payments, so nothing may advertise one.
+assert(
+  !/one-time|one time/i.test(pricingComponentSource),
+  'components/Pricing.tsx must not advertise a one-time contribution while Patreon is the only flow.',
+);
 assert(
   pricingComponentSource.includes('Recommended') && !pricingComponentSource.includes('Most popular'),
   'components/Pricing.tsx must label the mid tier "Recommended", not "Most popular".',
@@ -113,6 +122,10 @@ assert(
 assert(
   /Trust note/i.test(pricingComponentSource),
   'components/Pricing.tsx must carry the sponsorship trust note.',
+);
+assert(
+  /billed\{?'?\s*\}?\s*<?/.test(pricingComponentSource) && /monthly/i.test(pricingComponentSource),
+  'components/Pricing.tsx must state plainly that sponsorship is billed monthly.',
 );
 
 const robotsSource = readText('packages', 'web', 'app', 'robots.ts');

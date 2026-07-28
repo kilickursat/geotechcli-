@@ -18,6 +18,5 @@ geotech --help                 # everything else
 
 - **Website / docs:** https://www.geotechcli.com
 - **Source (Apache-2.0):** https://github.com/kilickursat/geotechcli-
-- **Sponsor the project:** https://github.com/sponsors/kilickursat — monthly tiers from $10,
-  or a one-time $10 / $25 / $50 contribution with no automatic renewal. Sponsorship keeps the
-  hosted AI tier free for everyone.
+- **Sponsor the project:** https://www.patreon.com/16003704/join — monthly tiers from $10.
+  Sponsorship keeps the hosted AI tier free for everyone; cancel any time.

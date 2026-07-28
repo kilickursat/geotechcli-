@@ -4,12 +4,10 @@ import {
 } from '@geotechcli/core/meta';
 import { FREE_DETERMINISTIC, TIER1_LLM, BYOK_PROVIDERS } from '@/lib/tiers';
 import {
-  GITHUB_SPONSORS_URL,
   PATREON_JOIN_URL,
   PATREON_PAGE_URL,
   GITHUB_URL,
   MEMBERSHIP_TIERS,
-  ONE_TIME_AMOUNTS_USD,
 } from '@/lib/site';
 
 // Community-supported open source section (kept exported as `Pricing` for existing
@@ -68,7 +66,7 @@ export function Pricing() {
                 ))}
               </ul>
               <a
-                href={GITHUB_SPONSORS_URL}
+                href={PATREON_JOIN_URL}
                 target="_blank"
                 rel="noopener noreferrer"
                 className={
@@ -77,43 +75,41 @@ export function Pricing() {
                     : 'text-center px-6 py-3 rounded-lg text-sm font-semibold border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition'
                 }
               >
-                Sponsor — ${tier.priceUsd}/mo
+                Sponsor on Patreon — ${tier.priceUsd}/mo
               </a>
             </div>
           ))}
         </div>
       </div>
 
-      {/* One-time contribution */}
+      {/* How billing works — stated plainly, not as a warning */}
       <div className="max-w-[1100px] mx-auto mt-6 rounded-2xl p-8 bg-[var(--bg-secondary)] border border-[var(--border-color)]">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h3 className="text-xl font-bold tracking-tight mb-1">Prefer a one-time thank-you?</h3>
+            <h3 className="text-xl font-bold tracking-tight mb-1">How sponsorship works</h3>
             <p className="text-[var(--text-secondary)] text-[14px] max-w-[560px] leading-relaxed">
-              Contribute{' '}
-              <span className="text-[var(--text-primary)] font-semibold">
-                ${ONE_TIME_AMOUNTS_USD.join(', $')}
-              </span>{' '}
-              once — without automatic renewal. GitHub Sponsors handles one-time contributions
-              directly, so there is nothing to cancel afterwards.
+              Sponsorship runs through Patreon and is billed{' '}
+              <span className="text-[var(--text-primary)] font-semibold">monthly</span>. You can change
+              tier or cancel at any time from your Patreon account, and cancelling keeps the month you
+              have already paid for. There is no minimum commitment and no contract.
             </p>
           </div>
           <div className="flex shrink-0 flex-col gap-3">
             <a
-              href={GITHUB_SPONSORS_URL}
+              href={PATREON_JOIN_URL}
               target="_blank"
               rel="noopener noreferrer"
               className="text-center px-7 py-3 rounded-lg text-sm font-bold bg-[var(--accent-teal)] text-[var(--bg-primary)] hover:brightness-110 transition"
             >
-              Make a one-time contribution
+              Sponsor on Patreon
             </a>
             <a
-              href={PATREON_JOIN_URL}
+              href={PATREON_PAGE_URL}
               target="_blank"
               rel="noopener noreferrer"
               className="text-center px-7 py-2.5 rounded-lg text-[13px] font-semibold border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition"
             >
-              Sponsor on Patreon instead
+              View our Patreon
             </a>
           </div>
         </div>
@@ -215,16 +211,8 @@ export function Pricing() {
           </div>
         </div>
         <p className="text-center text-[12px] text-[var(--text-muted)] mt-6">
-          Already sponsoring on{' '}
-          <a
-            href={PATREON_PAGE_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-[var(--accent-teal)] hover:brightness-110 transition"
-          >
-            Patreon
-          </a>
-          ? That support continues to count — no need to move.
+          Deterministic engines stay free whether or not anyone sponsors — they run offline with no
+          key and no account.
         </p>
       </div>
     </section>

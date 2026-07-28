@@ -5,12 +5,7 @@ import {
   DEFAULT_LLM_MODEL,
   DEFAULT_LLM_VISION_MODEL,
 } from '@geotechcli/core/meta';
-import {
-  GITHUB_SPONSORS_URL,
-  PATREON_JOIN_URL,
-  DONATION_MINIMUM_USD,
-  ONE_TIME_AMOUNTS_USD,
-} from '@/lib/site';
+import { PATREON_JOIN_URL, DONATION_MINIMUM_USD } from '@/lib/site';
 
 export default function PricingPage() {
   return (
@@ -43,15 +38,6 @@ export default function PricingPage() {
               <p className="text-[var(--text-secondary)] text-sm leading-relaxed">
                 Monthly tiers start at ${DONATION_MINIMUM_USD} through{' '}
                 <a
-                  href={GITHUB_SPONSORS_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-[var(--accent-teal)] hover:brightness-110 transition"
-                >
-                  GitHub Sponsors
-                </a>
-                , which is the primary flow. If you already sponsor through{' '}
-                <a
                   href={PATREON_JOIN_URL}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -59,16 +45,17 @@ export default function PricingPage() {
                 >
                   Patreon
                 </a>
-                , that support continues to count and there is no need to move.
+                , which is the only sponsorship flow: Community Backer $10, Project Sustainer $50, and
+                Organization Sponsor $100 per month.
               </p>
             </div>
             <div>
               <h3 className="font-semibold mb-2">Is there a one-time option?</h3>
               <p className="text-[var(--text-secondary)] text-sm leading-relaxed">
-                Yes. GitHub Sponsors supports genuine one-time contributions of{' '}
-                ${ONE_TIME_AMOUNTS_USD.join(', $')} with no automatic renewal — nothing starts, so there is
-                nothing to cancel afterwards. Monthly tiers can be cancelled at any time from your GitHub
-                sponsorship settings.
+                Not at the moment. Patreon memberships are billed monthly, and we would rather say so
+                plainly than advertise a one-time option we cannot actually process. You can cancel at
+                any time from your Patreon account and keep the month you have already paid for, so the
+                shortest possible commitment is a single month.
               </p>
             </div>
             <div>

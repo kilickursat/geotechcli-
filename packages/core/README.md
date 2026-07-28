@@ -16,4 +16,4 @@ npm install -g geotechcli
 
 - **Website / docs:** https://www.geotechcli.com
 - **Source (Apache-2.0):** https://github.com/kilickursat/geotechcli-
-- **Sponsor the project:** https://github.com/sponsors/kilickursat (monthly or one-time)
+- **Sponsor the project:** https://www.patreon.com/16003704/join (monthly, cancel any time)

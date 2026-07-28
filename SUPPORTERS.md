@@ -27,10 +27,9 @@ Organization tier can opt into a name or logo here and in the README.
 
 ## How to be listed
 
-Sponsor via [GitHub Sponsors](https://github.com/sponsors/kilickursat) or
-[Patreon](https://www.patreon.com/16003704/join), then open a pull request adding your name (and
-optionally a link) to the appropriate section, or mention it in your sponsorship message and it
-will be added for you.
+Sponsor via [Patreon](https://www.patreon.com/16003704/join), then open a pull request adding
+your name (and optionally a link) to the appropriate section, or mention it in your sponsorship
+message and it will be added for you.
 
 ## Contributing without sponsoring
 

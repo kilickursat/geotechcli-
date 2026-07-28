@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.4.135] - 2026-07-28
+
+### Patreon is the only sponsorship flow — GitHub Sponsors reverted
+
+- **Removed GitHub Sponsors entirely** and restored Patreon as the single sponsorship flow across the website, README, package READMEs, `CONTRIBUTING.md`, `SUPPORTERS.md`, the issue-template contact link, `.github/FUNDING.yml`, and the homepage CTA. GitHub Sponsors pays out through Stripe Connect, which **does not support ゆうちょ銀行 (Japan Post Bank)** — the maintainer's bank. Sponsorship money could not actually be received through it, so shipping those buttons would have meant a payment flow that silently goes nowhere.
+- **Withdrew the one-time contribution offer.** Patreon memberships are recurring monthly and it has no one-time option; advertising "$10 / $25 / $50 once" while only Patreon can process payments would promise something the project cannot honour. The support page and README now say plainly that sponsorship is billed monthly, can be changed or cancelled at any time, and that cancelling keeps the month already paid for. A smoke assertion fails if any one-time wording reappears while Patreon is the only flow.
+- **The 0.4.134 trust fixes are all retained**: no instruction to cancel immediately after paying (still guarded by a smoke assertion), no "Excellent Support" or "Diamond Supporter" tiers, no promises of hands-on collaboration time, direct maintainer access, or sponsored-feature prioritization. Tiers remain Community Backer $10 / Project Sustainer $50 (labelled Recommended) / Organization Sponsor $100, matching the live Patreon prices exactly. The trust note, the restructured page order, and the "prefer to contribute time?" panel are unchanged.
+- Smoke assertions now fail if any web surface links `github.com/sponsors`, so a dead sponsor button cannot be reintroduced by accident.
+
+> **Note on 0.4.134:** that version was published to the npm `beta` channel and deployed to the beta site with GitHub Sponsors as the primary flow. It never reached production or the npm `latest` channel. 0.4.135 supersedes it.
+
 ## [0.4.134] - 2026-07-28
 
 ### Sponsorship rework — GitHub Sponsors as the primary flow, honest one-time contributions

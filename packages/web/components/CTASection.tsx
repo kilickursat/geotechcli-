@@ -1,7 +1,7 @@
 'use client';
 
 import { Reveal } from '@/components/Reveal';
-import { IS_PUBLIC_PRODUCTION, GITHUB_SPONSORS_URL, GITHUB_URL } from '@/lib/site';
+import { IS_PUBLIC_PRODUCTION, PATREON_JOIN_URL, GITHUB_URL } from '@/lib/site';
 
 export function CTASection() {
   const installLabel = IS_PUBLIC_PRODUCTION ? 'Install geotechCLI →' : 'Install Beta →';
@@ -70,7 +70,7 @@ export function CTASection() {
                 {installLabel}
               </a>
               <a
-                href={GITHUB_SPONSORS_URL}
+                href={PATREON_JOIN_URL}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="px-8 py-3.5 font-semibold text-[15px] rounded-lg border transition-all duration-300 inline-block"
@@ -86,7 +86,7 @@ export function CTASection() {
                   el.style.color = 'var(--text-secondary)';
                 }}
               >
-                Sponsor the project
+                Sponsor on Patreon
               </a>
               <a
                 href={GITHUB_URL}

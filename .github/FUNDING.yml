@@ -1,7 +1,8 @@
 # Shows the "Sponsor" button on the GitHub repo page.
-# GitHub Sponsors is the primary flow: it supports genuine one-time
-# contributions ($10 / $25 / $50, no automatic renewal) alongside monthly tiers.
-github: [kilickursat]
+# Patreon is the only sponsorship flow. GitHub Sponsors was evaluated and
+# dropped: its payouts run through Stripe Connect, which does not support
+# ゆうちょ銀行 (Japan Post Bank), so the maintainer cannot receive money via it.
 patreon: geotechcli
 custom:
+  - "https://www.patreon.com/16003704/join"
   - "https://www.geotechcli.com/pricing"
