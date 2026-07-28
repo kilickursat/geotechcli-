@@ -256,17 +256,20 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_DIST_TAG_TOKEN }}
         run: |
+          # These used to warn and exit 0. A skipped promotion then looked
+          # identical to a successful one, which is how npm latest could sit a
+          # version behind production while the job reported green.
           if [ -z "$NODE_AUTH_TOKEN" ]; then
-            echo "::warning::NPM_DIST_TAG_TOKEN is not configured; skipping latest promotion. Create a granular npm automation token (read/write on geotechcli + @geotechcli/core) and add it as the NPM_DIST_TAG_TOKEN repository secret."
-            exit 0
+            echo "::error::NPM_DIST_TAG_TOKEN is not configured, so npm latest cannot be promoted. Create a granular npm automation token (read/write on geotechcli + @geotechcli/core) and add it as the NPM_DIST_TAG_TOKEN repository secret."
+            exit 1
           fi
 
           VERSION=$(node -p "require('./packages/core/package.json').version")
           for PKG in @geotechcli/core geotechcli; do
             PUBLISHED=$(npm view "$PKG@$VERSION" version 2>/dev/null || true)
             if [ "$PUBLISHED" != "$VERSION" ]; then
-              echo "::warning::$PKG@$VERSION is not on npm yet; skipping latest promotion for it (versions publish from strong-beta releases)."
-              continue
+              echo "::error::$PKG@$VERSION is not on npm, so production would ship a version users cannot install. Versions publish from strong-beta releases; check that the strong-beta publish job succeeded for this version."
+              exit 1
             fi
 
             CURRENT_LATEST=$(npm view "$PKG" dist-tags.latest 2>/dev/null || true)
@@ -368,6 +371,71 @@ jobs:
           });
           NODE
 
+  # Tagging used to be the one release surface with no automation behind it, so
+  # GitHub Releases silently froze at v0.4.124 while fourteen versions shipped to
+  # npm and to the site. A production push now tags and publishes the release
+  # itself rather than waiting for someone to remember.
+  tag-release:
+    name: Tag and publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: [verify, promote-latest, deploy-production]
+    if: github.ref == 'refs/heads/main'
+    permissions: { contents: write }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Extract version
+        id: version
+        run: echo "version=$(node -p "require('./packages/core/package.json').version")" >> $GITHUB_OUTPUT
+      - name: Create the release tag if it is missing
+        run: |
+          TAG="v${{ steps.version.outputs.version }}"
+          if git rev-parse --verify "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "$TAG already exists; leaving it alone"
+            exit 0
+          fi
+          git tag "$TAG"
+          git push origin "$TAG"
+          echo "created $TAG"
+      - name: Build release notes from the changelog entry
+        run: node scripts/extract-changelog-entry.mjs "${{ steps.version.outputs.version }}" release-notes.md
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: geotechCLI v${{ steps.version.outputs.version }}
+          body_path: release-notes.md
+
+  # Final gate: every surface must agree with the version this commit claims.
+  verify-surfaces:
+    name: Verify published surfaces
+    runs-on: ubuntu-latest
+    needs: [tag-release]
+    if: github.ref == 'refs/heads/main'
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: git fetch --tags --force
+      - run: node scripts/verify-release-surfaces.mjs
+
+  verify-beta-surfaces:
+    name: Verify published surfaces (beta)
+    runs-on: ubuntu-latest
+    needs: [publish, deploy-beta]
+    if: github.ref == 'refs/heads/strong-beta'
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node scripts/verify-release-surfaces.mjs --channel beta
+
   github-release:
     name: GitHub Release
     runs-on: ubuntu-latest
@@ -376,11 +444,15 @@ jobs:
     permissions: { contents: write }
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
       - name: Extract version
         id: version
         run: echo "version=$(node -p "require('./packages/core/package.json').version")" >> $GITHUB_OUTPUT
+      - name: Build release notes from the changelog entry
+        run: node scripts/extract-changelog-entry.mjs "${{ steps.version.outputs.version }}" release-notes.md
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: geotechCLI v${{ steps.version.outputs.version }}
-          generate_release_notes: true
+          body_path: release-notes.md

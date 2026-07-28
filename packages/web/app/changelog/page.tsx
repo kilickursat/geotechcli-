@@ -9,6 +9,17 @@ const releases: Release[] = [
     date: '2026-07-28',
     tag: `${GEOTECHCLI_VERSION} Release`,
     changes: [
+      { type: 'feat', text: 'Production pushes now tag themselves and publish the GitHub Release automatically. A release lands on four independent surfaces (npm dist-tags, the deployed site, the git tag, the GitHub Release) and tagging was the only one with no automation behind it, so GitHub Releases froze at v0.4.124 while fourteen versions shipped' },
+      { type: 'feat', text: 'Release notes are now built from the changelog entry for that version. GitHub generates its notes from merged pull requests, and this repo releases by pushing branches directly, so the generated body had collapsed to a bare compare link' },
+      { type: 'feat', text: 'A final gate asserts every published surface reports the version the commit claims: npm dist-tags, the deployed site and the git tag must agree or the run fails. Runs on production after tagging and on beta after deployment, and available locally as npm run verify:surfaces' },
+      { type: 'fix', text: 'Promote npm latest previously warned and exited 0 when the token was missing or the version was absent from npm, so a skipped promotion looked identical to a successful one. Both cases now fail the run with a named cause' },
+    ],
+  },
+  {
+    version: '0.4.139',
+    date: '2026-07-28',
+    tag: '0.4.139 Release',
+    changes: [
       { type: 'fix', text: 'Fixed npm publishing for the CLI package. The 0.4.139 release published @geotechcli/core but failed on geotechcli with a bare 404, leaving the version half-released and blocking both site deployments. npm resolves trusted publishing (OIDC) per package and the exchange fails silently, so the unscoped package fell back to a placeholder credential; the publish job now supplies the automation token as well' },
       { type: 'fix', text: 'Kept SLSA provenance on both published packages. npm only auto-enables provenance on the OIDC path, so publishing through a token would have silently dropped the attestation; the publish script now requests it explicitly whenever the runner can mint an id-token' },
       { type: 'fix', text: 'Publishing now fails fast with a named cause when neither credential is usable, including when the token is the setup-node placeholder, and a failed publish reports which auth path was in play and both remedies' },
