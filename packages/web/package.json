@@ -1,6 +1,6 @@
 {
   "name": "@geotechcli/web",
-  "version": "0.4.143",
+  "version": "0.4.144",
   "license": "Apache-2.0",
   "private": true,
   "scripts": {
@@ -17,7 +17,7 @@
     "cf:check": "node ../../node_modules/wrangler/bin/wrangler.js check"
   },
   "dependencies": {
-    "@geotechcli/core": "0.4.143",
+    "@geotechcli/core": "0.4.144",
     "@opennextjs/cloudflare": "1.18.0",
     "next": "15.5.22",
     "react": "^19.0.0",
