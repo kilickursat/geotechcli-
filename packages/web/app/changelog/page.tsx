@@ -5,8 +5,22 @@ import { GEOTECHCLI_VERSION } from '@geotechcli/core/meta';
 const releases = [
   {
     version: GEOTECHCLI_VERSION,
-    date: '2026-07-19',
+    date: '2026-07-28',
     tag: `${GEOTECHCLI_VERSION} Release`,
+    changes: [
+      { type: 'fix', text: 'Liquefaction: the Boulanger & Idriss (2014) CRR curve was mis-transcribed and failed unsafe — it over-predicted cyclic resistance by 1.2x at (N1)60cs = 10 rising to 39x at 30, so marginal layers were under-flagged. On an Mw 7.5 / 0.30g loose-sand profile, layers that should read FS 0.55 and 0.58 were reported MODERATE and LOW; they now report SEVERE. Re-run any liquefaction screening done on an earlier version' },
+      { type: 'fix', text: 'Liquefaction now follows the full B&I 2014 procedure — density-dependent magnitude scaling, the K-sigma overburden correction, the iterative CN, and the magnitude-dependent Idriss (1999) rd — while the NCEER path keeps its own Youd et al. (2001) corrections instead of borrowing B&I pieces. Settlement uses tributary layer thickness and an (N1)60cs-dependent volumetric strain instead of a hardcoded 2 m and a four-bin step' },
+      { type: 'fix', text: 'Bearing capacity: --method hansen was returning Vesic numbers because both shared one Ngamma and one set of shape factors. Meyerhof, Hansen and Vesic now each carry their own Ngamma, shape factors and depth factors (Hansen/Vesic with dgamma = 1.0)' },
+      { type: 'fix', text: 'Bearing capacity: --shape square and --shape circular were silently ignored unless --length was also given, so every shape returned the strip answer. The declared shape now resolves properly' },
+      { type: 'fix', text: 'Slope stability: only the first soil layer was ever used, and the water table was inert — the pore-pressure branch was inverted so u was always zero, making waterTableDepth and saturatedUnitWeight have no effect. Slice weights are now integrated per layer with real pore pressures' },
+      { type: 'fix', text: 'Slope stability was not Bishop’s method: it forced |alpha| so no slice could resist, divided by m-alpha twice, and sliced the full chord rather than the daylighted span. It now matches Taylor’s chart within 3.7% for phi=0 (previously ~26% low) and returns tan(phi)/tan(beta) for a cohesionless slope. --method ordinary previously ran Bishop and only relabelled the output; Fellenius is now its own procedure' },
+      { type: 'feat', text: 'Added 44 golden-value regression tests pinning these engines to published tables and closed-form benchmarks; 25 of them fail against the previous implementation. The existing engine tests only asserted direction and ordering, which every one of these defects satisfied' },
+    ],
+  },
+  {
+    version: '0.4.133',
+    date: '2026-07-19',
+    tag: '0.4.133 Release',
     changes: [
       { type: 'feat', text: 'geotechCLI is now open source under Apache-2.0 — the full source, including the deterministic engines, agent runtime, and prompts, is public at github.com/kilickursat/geotechcli- with a CITATION.cff for academic citation' },
       { type: 'feat', text: 'New membership tiers on the support page (Supporter $10 / Excellent Support $50 / Diamond Supporter $500) with an open-source contribution panel; contributions via issues and PRs are open to everyone' },
