@@ -173,6 +173,7 @@ If geotechCLI contributes to your research or engineering work, please cite it
 ```bibtex
 @software{geotechcli,
   author  = {Kilic, Kursat},
+  orcid   = {0000-0003-4362-0704},
   title   = {geotechCLI: an open-source agentic AI CLI for geotechnical engineering},
   url     = {https://github.com/kilickursat/geotechcli-},
   license = {Apache-2.0},

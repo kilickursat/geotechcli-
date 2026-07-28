@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.138] - 2026-07-28
+
+### Author ORCID on the citation metadata
+
+- Added the maintainer's ORCID (`0000-0003-4362-0704`) to `CITATION.cff`, replacing the placeholder that had been waiting for it. GitHub's *Cite this repository* button and the APA/BibTeX exports it generates now carry a persistent author identifier, so citations of geotechCLI resolve to the right researcher regardless of name formatting. The same identifier is added to the BibTeX snippet in the README.
+- Fixed the citation version, which had drifted to **0.4.133** while the project shipped four releases past it — anyone citing the software was crediting the wrong release. `CITATION.cff` now reports the current version and release date.
+- Added release-consistency assertions for both: the build fails if `CITATION.cff` falls behind the shared metadata version again, or if the author ORCID is missing or malformed.
+
 ## [0.4.137] - 2026-07-28
 
 ### Docs and Changelog rebuilt around Sphinx/Furo navigation patterns
