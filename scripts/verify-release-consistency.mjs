@@ -34,6 +34,31 @@ const lockCliPkg = lockfile.packages?.['packages/cli'];
 const lockCorePkg = lockfile.packages?.['packages/core'];
 const lockWebPkg = lockfile.packages?.['packages/web'];
 
+// npm `overrides` only rewrite TRANSITIVE resolutions. When a workspace also
+// declares the package directly, the override silently wins in the lockfile
+// while the manifest still demands its own version, and the two disagree. Local
+// `npm ci` tolerates that on some npm versions; the runner's does not, and the
+// release fails at install with "Missing: <pkg>@<version> from lock file". This
+// cost two releases (sharp, then postcss) before it was caught, so assert it
+// here rather than discovering it in CI. Fix a collision by declaring the
+// version directly in the workspace, not by overriding it.
+const rootPkg = readJson('package.json');
+for (const [name, overrideVersion] of Object.entries(rootPkg.overrides ?? {})) {
+  for (const [workspace, manifest] of [
+    ['packages/core', corePkg],
+    ['packages/cli', cliPkg],
+    ['packages/web', webPkg],
+  ]) {
+    const declared = manifest.dependencies?.[name] ?? manifest.devDependencies?.[name];
+    assert(
+      declared === undefined || declared === overrideVersion,
+      `${workspace} declares ${name}@${declared} directly while the root overrides block forces ${overrideVersion}. ` +
+        `npm overrides do not apply to direct dependencies, so the lockfile and the manifest will disagree and npm ci will fail. ` +
+        `Make ${workspace}/package.json declare exactly ${overrideVersion}, or drop the override.`,
+    );
+  }
+}
+
 assert(metadata.defaults.provider === 'hosted-beta', 'Strong beta must keep hosted-beta as the public default provider.');
 assert(metadata.defaults.model === 'glm-5.2', `Default text model must be glm-5.2, found ${metadata.defaults.model}.`);
 assert(metadata.defaults.visionModel === 'glm-5v-turbo', `Default vision model must be glm-5v-turbo, found ${metadata.defaults.visionModel}.`);

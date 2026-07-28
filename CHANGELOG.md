@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.4.144] - 2026-07-28
+## [0.4.145] - 2026-07-28
 
 ### Dependency security — 13 high-severity advisories down to 1
 
@@ -13,7 +13,9 @@
 - **js-yaml** → 4.3.0, **tmp** → 0.2.7 (reaches the published CLI through exceljs), **form-data** → 4.0.6, **vite** → 8.1.5.
 - **`brace-expansion` is deliberately left at 5.0.5.** Version 5.0.8 fixes the advisory but removes the package's default export, and `minimatch` inside the OpenNext build chain does `import expand from 'brace-expansion'` — forcing the upgrade breaks `build:cf` outright, which was confirmed by trying it. The nested copies in the 1.x and 2.x lines are already at their patched releases (1.1.16 and 2.1.2); the advisory's `<=5.0.7` range sweeps those older majors regardless.
 
-The lockfile was regenerated to apply these cleanly. `sharp` is declared as `^0.35.3` in `@geotechcli/core` rather than forced through `overrides`, because an override changes the package version without re-resolving its platform-specific optional dependencies — that left stale `@img/sharp-*@0.34.5` entries which `npm ci` rejected on CI while passing locally under a different npm version. The regenerated lockfile is net smaller and validates under `npm ci`.
+The lockfile was regenerated to apply these cleanly, and two releases were burned learning the same lesson: **npm `overrides` only rewrite transitive resolutions.** When a workspace also declares the package directly, the override wins in the lockfile while the manifest still demands its own version, the two disagree, and `npm ci` fails at install with `Missing: <pkg>@<version> from lock file` — on the runner but not locally, because npm versions differ in how strictly they validate this. It happened first with `sharp` (which additionally leaves stale `@img/sharp-*` platform entries behind) and again with `postcss`.
+
+Both are now declared directly where they belong — `sharp` as `^0.35.3` in `@geotechcli/core`, `postcss` as `8.5.23` in `@geotechcli/web` — and `verify:consistency` gained an assertion that fails the build when an override disagrees with a direct declaration in any workspace, so this cannot reach CI again.
 
 Verified with the full pipeline against the regenerated tree: consistency, all builds, the OpenNext Cloudflare bundle, web typecheck, web route smoke, FEM draft-run, the agent-task benchmark, and 874 + 152 tests.
 
