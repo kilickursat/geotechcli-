@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.4.145] - 2026-07-28
+
+### Dependency security — 13 high-severity advisories down to 1
+
+`npm audit` reported 20 vulnerabilities (13 high) and CI ran the check with `|| true`, so nothing ever failed a build on it and the backlog grew unnoticed. Total is now 8 (1 high).
+
+- **Next.js: 8 advisories fixed** by moving 15.5.18 → 15.5.22. These were the ones that mattered most, because Next is the runtime of the deployed Worker rather than build-only tooling: SSRF in Server Actions on custom servers, SSRF in rewrites via attacker-controlled destinations, cache confusion of response bodies, unauthenticated disclosure of internal Server Function endpoints, unbounded Server Action payloads on the Edge runtime, and DoS in both Server Actions and the image optimization API.
+- **postcss** → 8.5.23, clearing an arbitrary file read, a source-map path traversal and a stringify XSS, and with it `@tailwindcss/postcss`. Next pins postcss exactly, so this is carried by the root `overrides` block that already existed for that purpose.
+- **sharp** → 0.35.3, clearing inherited libvips CVEs. This one ships to npm users as a declared dependency of `@geotechcli/core`.
+- **wrangler** → 4.114.0, clearing `miniflare`, `undici` and `ws`.
+- **js-yaml** → 4.3.0, **tmp** → 0.2.7 (reaches the published CLI through exceljs), **form-data** → 4.0.6, **vite** → 8.1.5.
+- **`brace-expansion` is deliberately left at 5.0.5.** Version 5.0.8 fixes the advisory but removes the package's default export, and `minimatch` inside the OpenNext build chain does `import expand from 'brace-expansion'` — forcing the upgrade breaks `build:cf` outright, which was confirmed by trying it. The nested copies in the 1.x and 2.x lines are already at their patched releases (1.1.16 and 2.1.2); the advisory's `<=5.0.7` range sweeps those older majors regardless.
+
+The lockfile was regenerated to apply these cleanly, and two releases were burned learning the same lesson: **npm `overrides` only rewrite transitive resolutions.** When a workspace also declares the package directly, the override wins in the lockfile while the manifest still demands its own version, the two disagree, and `npm ci` fails at install with `Missing: <pkg>@<version> from lock file` — on the runner but not locally, because npm versions differ in how strictly they validate this. It happened first with `sharp` (which additionally leaves stale `@img/sharp-*` platform entries behind) and again with `postcss`.
+
+Both are now declared directly where they belong — `sharp` as `^0.35.3` in `@geotechcli/core`, `postcss` as `8.5.23` in `@geotechcli/web` — and `verify:consistency` gained an assertion that fails the build when an override disagrees with a direct declaration in any workspace, so this cannot reach CI again.
+
+Verified with the full pipeline against the regenerated tree: consistency, all builds, the OpenNext Cloudflare bundle, web typecheck, web route smoke, FEM draft-run, the agent-task benchmark, and 874 + 152 tests.
+
+### CLI banner points at the production site
+
+The startup banner advertised `beta.geotechcli.com`. It now shows `www.geotechcli.com`. The hosted-beta proxy endpoint is unchanged and still resolves to `beta.geotechcli.com/api/proxy`, which is where the service actually runs.
+
+## [0.4.142] - 2026-07-28
+
+### Deterministic engine correctness — liquefaction, bearing capacity, slope stability
+
+Three published methods did not match the sources they cite. All three errors were **unconservative**, and the existing tests could not see them because they assert direction and ordering rather than published values — all 830 passed before and after the fix.
+
+- **Liquefaction CRR was a mis-transcribed Boulanger & Idriss (2014) Eq. 2.24.** The published equation applies four different divisors to the four powers of (N₁)₆₀cs; the shipped code folded them onto a single variable `x = (N₁)₆₀cs / 14.1` with divisors 2.67 / 3.0 / 4.0. Resistance was overstated by 1.2× at (N₁)₆₀cs = 10, **2.8× at 20, 39× at 30**, and the curve crossed CRR = 1.0 at about (N₁)₆₀cs = 23 — beyond which any factor of safety was effectively infinite and no soil could ever be flagged as liquefiable. The published form is restored, capped at (N₁)₆₀cs = 37.5 as the reference specifies.
+- **Also added from the same reference:** magnitude scaling factor per Eqs. 2.19–2.20 (MSF<sub>max</sub> = 1.09 + ((N₁)₆₀cs / 31.5)², exactly 1.0 at M 7.5), overburden correction K<sub>σ</sub> per Eqs. 2.16–2.17 capped at 1.1, the iterative C<sub>N</sub> of Eq. 2.15b, and fines correction per Eq. 2.11. Results now report σ'<sub>v0</sub>, C<sub>N</sub>, r<sub>d</sub>, MSF, K<sub>σ</sub> and post-liquefaction volumetric strain.
+- **`bearing --method hansen` returned Vesić numbers.** The two methods differ in N<sub>γ</sub> — Hansen uses 1.5(N<sub>q</sub> − 1)tan φ, Vesić uses 2(N<sub>q</sub> + 1)tan φ — and in their shape factors, where Hansen's s<sub>q</sub> uses sin φ and Vesić's uses tan φ. Selecting Hansen silently produced Vesić's (larger) capacity. Each method now computes its own factors, and Meyerhof gets its own N<sub>γ</sub> = (N<sub>q</sub> − 1)tan(1.4φ).
+- **`--shape square` and `--shape circular` were ignored** unless `--length` was also passed, so shape factors defaulted to a strip footing. Shape now resolves B/L directly (1 for square and circular, 0 for strip) and still honours an explicit length.
+- **Slope stability read only the first soil layer**, making the layered-profile test tautological, and **`waterTableDepth` / `saturatedUnitWeight` were inert** — an inverted pore-pressure test meant u ≡ 0, so a rising water table never reduced the factor of safety. It also was not Bishop's method: it forced |α|, divided by m<sub>α</sub> twice, and sliced the full chord rather than the daylighted arc. Rewritten: slice weights integrate the actual layer stack with saturated unit weight below the phreatic surface, the arc is limited to where it daylights, and both Bishop Simplified (1955) and Ordinary/Fellenius (1936) are implemented properly — the ordinary method had never executed. Against Taylor's (1937) stability chart the result is now within 3.7% (previously ~26% low), and the frictional-only case returns 1.016 against the closed-form tan φ / tan β.
+- **Pinned with 44 golden tests** (`packages/core/tests/engine-golden-values.test.ts`) that assert published table values rather than directions. **25 of the 44 fail against the previous code** — verified by reverting the sources and re-running.
+
+**If you have run liquefaction triggering with any earlier version, re-run it.** Factors of safety were too high, and increasingly so in denser sands.
+
 ## [0.4.141] - 2026-07-28
 
 ### Surface verification waits for propagation
